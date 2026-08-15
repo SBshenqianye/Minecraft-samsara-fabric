@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "samsara",
+  "version": "${version}",
+  "name": "周目管理 (Samsara)",
+  "description": "世界生命周期管理：周目轮回、世界栈、时间倒流、编年记录（空间/时间/逆熵）",
+  "authors": ["shenqianye"],
+  "license": "MIT",
+  "environment": "*",
+  "entrypoints": {
+    "server": ["com.shenqianye.samsara.Samsara"]
+  },
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~26.2",
+    "java": ">=25",
+    "fabric-api": "*"
+  }
+}

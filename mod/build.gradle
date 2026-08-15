@@ -1,0 +1,37 @@
+plugins {
+    // plugins 块内版本必须用 ${...} 属性替换语法（Gradle 硬性要求）
+    id 'net.fabricmc.fabric-loom' version "${loom_version}"
+}
+
+version = project.mod_version
+group = project.maven_group
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    // 26.1 起 loom 直接使用 Mojang 官方映射（去混淆），不再需要 mappings 行
+    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    // 26.1 起依赖声明从 modImplementation 改为 implementation
+    implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+}
+
+processResources {
+    inputs.property "version", project.version
+    filesMatching("fabric.mod.json") {
+        expand "version": project.version
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = "UTF-8"
+    options.release = Integer.parseInt(project.java_version)
+}
+
+java {
+    withSourcesJar()
+    sourceCompatibility = JavaVersion.toVersion(project.java_version)
+    targetCompatibility = JavaVersion.toVersion(project.java_version)
+}
