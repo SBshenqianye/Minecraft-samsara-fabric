@@ -204,6 +204,8 @@ public class SeasonManager {
 
         // 5) same-world → 时间倒流（档），到期再传送；否则立即传送
         if ("same-world".equals(s.mode) && cfg.rewindDurationMs > 0) {
+            // 档3：开始记录本轮方块变化（差异库），供倒流逐格恢复
+            com.shenqianye.samsara.rewind.DiffRecorder.startRecording(s.id);
             String r = RewindEngine.getInstance().start(server, s.id, cfg.rewindDurationMs,
                     () -> onRewindComplete(server, s.id));
             return header + "\n" + r;
@@ -267,6 +269,7 @@ public class SeasonManager {
         if (RewindEngine.getInstance().running()) {
             rewindNote = "\n（已中止进行中的时间倒流）" + RewindEngine.getInstance().abort().replaceFirst("^[^：]*：", " ");
         }
+        com.shenqianye.samsara.rewind.DiffRecorder.stopRecording();
         s.state = Season.State.ENDED;
         s.endTime = Instant.now().toEpochMilli();
         save();
@@ -707,6 +710,19 @@ public class SeasonManager {
         data.settings.newCenterMaxDistance = v;
         save();
         return "新中心采样最大距离 = " + v;
+    }
+
+    /** 档3 差异库状态（记录开关 / 记录数 / 目录） */
+    public String diffStatus() {
+        boolean rec = com.shenqianye.samsara.rewind.DiffRecorder.recording();
+        com.shenqianye.samsara.rewind.DiffStore store = com.shenqianye.samsara.rewind.DiffStore.current();
+        if (store == null) {
+            return "档3 差异库：未初始化（需先 /season start 开倒流）\n当前记录开关: " + (rec ? "开" : "关");
+        }
+        return "档3 差异库：记录开关 " + (rec ? "开" : "关") + " · 周目 #"
+                + com.shenqianye.samsara.rewind.DiffRecorder.seasonId()
+                + " · 记录数 " + store.count()
+                + "\n目录: " + store.root();
     }
 
     /** 重新从磁盘加载 season.json（测试 load 路径） */

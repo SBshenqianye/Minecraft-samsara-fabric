@@ -57,6 +57,7 @@ gradlew.bat build
 - **配置命令**：`/samsara debug config`（无参=全部；`config <键>`=当前值；`config <键> <值>`=设置并回显）。键：`groupdist`/`birthjitter`/`birthreset`/`rewind`/`groupmin`/`groupmax`/`spawnradius`/`centermin`/`centermax`
 - **倒流时长单位**：`config rewind <时长>` 支持 `d/h/m/s` 和纯数字=秒，如 `1h`、`30m`、`3600s`、`1d`、`0.5d`；亦可 `/samsara debug rewind set <时长>`
 - **倒流中 `/season end`**：先中止倒流（未到点区块保留、已到点待停服清理），再置周目 ENDED
+- **档3 方块级倒流（v0.8 起步）**：`/samsara debug diff` 查看差异库记录状态；mixin 记录方块变化，倒流期对加载区块逐格恢复（懒加载）；未记录区域走删除兜底
 
 ## 结构
 

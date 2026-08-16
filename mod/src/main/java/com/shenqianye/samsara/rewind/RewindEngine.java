@@ -206,6 +206,8 @@ public class RewindEngine {
                         data.markedCount(), data.chunks.size(), newlyMarked);
             }
         }
+        // 档3：对已加载区块逐格恢复（懒加载；有差异记录时生效）
+        Tier3Restore.restoreRound(server, data);
         // 时长到期 → 完成回调（传送阶段）
         if (now >= data.startMs + data.durationMs && !data.teleportPhaseDone) {
             data.teleportPhaseDone = true;
@@ -298,6 +300,7 @@ public class RewindEngine {
         int seasonId = data.seasonId;
         int pending = data.chunks.size() - data.markedCount();
         clearPersistence();
+        Tier3Restore.reset();
         return "已中止倒流（周目 #" + seasonId + "），未到点区块 " + pending + " 个保留；已到点区块将在停服时删除（如需保留请在停服前重建）";
     }
 

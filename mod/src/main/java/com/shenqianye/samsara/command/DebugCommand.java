@@ -70,6 +70,8 @@ public class DebugCommand {
                                 .executes(ctx -> reply(ctx.getSource(), MANAGER.spawnInfo(
                                         ctx.getSource().getPlayerOrException(),
                                         ctx.getSource().getLevel()))))
+                        .then(Commands.literal("diff")
+                                .executes(ctx -> reply(ctx.getSource(), MANAGER.diffStatus())))
                         .then(Commands.literal("json")
                                 .executes(ctx -> reply(ctx.getSource(), MANAGER.rawJson()
                                         + "\n\n↑ season.json 位置: " + MANAGER.configPath())))
