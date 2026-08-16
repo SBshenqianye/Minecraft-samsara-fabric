@@ -230,13 +230,13 @@ public class DebugCommand {
                                         .then(Commands.argument("name", StringArgumentType.string())
                                                 .then(Commands.argument("p1", Vec2Argument.vec2())
                                                         .then(Commands.argument("p2", Vec2Argument.vec2())
-                                                                .executes(ctx -> claimAddFromVec2(ctx, "name", "p1", "p2", true))))))
+                                                                .executes(ctx -> claimAddFromVec2(ctx, "name", "p1", "p2", true)))))))
                         .then(Commands.literal("whitelist")
                                 .then(Commands.literal("json")
                                         .executes(ctx -> reply(ctx.getSource(), WhitelistStore.getInstance().rawJson()
                                                 + "\n\n↑ whitelist.json 位置: " + WhitelistStore.getInstance().configPath())))
                                 .then(Commands.literal("reload")
-                                        .executes(ctx -> reply(ctx.getSource(), WhitelistStore.getInstance().reload())))))));
+                                        .executes(ctx -> reply(ctx.getSource(), WhitelistStore.getInstance().reload()))))));
     }
 
     /** claim add/addc：从 Vec2 参数解析坐标（支持 ~ 相对偏移 / 数字），chunkMode=true 时按区块坐标×16 */
