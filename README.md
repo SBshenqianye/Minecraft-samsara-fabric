@@ -15,18 +15,21 @@ samsara/
 └── docs/       # 设计文档
 ```
 
-## 当前状态：M1 周目状态机（已完成：编译验证 + 运行时验收；**已升级到 MC 26.2**）
+## 当前状态：M2 分组出生 + 时间倒流（档2）（已完成：26.2 编译 + 运行时验收；当前版本 v0.6.0）
 
 > **服务端模组**：服务器只装本模组即得全部功能；客户端装了也可在单人存档使用（`environment: "*"` + `"server"` entrypoint，机制见 `mod/README.md`）。
 
 - [x] mod 项目骨架（**已锁定 26.2 版本链**并编译通过：fabric-api 0.157.0+26.2 / loader 0.19.3 / loom 1.17 / Java 25，见 `mod/README.md`）
 - [x] `tools/analyze.py` v0（多来源推断玩家最后登录：activity.log / 日志 / usercache，输出"距上次玩家登录 X 天"；零依赖，已实测）
 - [x] M1：Season 模型 + season.json 持久化 + `/season create/start/end/status` 状态机
-  - **编译**：Gradle 9.5.1 + loom 1.17 + JDK 25，BUILD SUCCESSFUL（26.1→26.2 代码零改动）
-  - **运行时验收**（开发服 runServer + 生产服 test-server，均基于 26.2 + RCON）：`create → PENDING`、`start → ACTIVE`、`end → ENDED` 全流程正确；
-    season.json 落盘（schemaVersion/currentSeasonId/startTime/endTime）且**重启后状态从磁盘恢复**
-  - **调试指令集**：`/samsara debug status/json/reload/reset/create/settime/fakeplayers`（COMMANDS_OWNER，详见 `mod/README.md`）
-- [ ] M2 分组出生 → M3 活跃度 → M4 区块管理/倒流 → M5 面板 → M6 玩偶影像 → M7 世界栈 → M8 里程碑/资格 → M9 身份同步
+- [x] **M2 分组出生 + 时间倒流（档2）**（2026-08-16 验收）：
+  - 出生中心计算（same-world 距旧中心 15000~40000 随机方向，避开已用方向）
+  - 分组算法（3~5 人/组、角度均分+抖动、组距≥300；来源=注入池+在线+usercache+playerdata）
+  - 全员传送 + 广播；离线玩家上线自动补传送；`/season respawn-groups` 重分组
+  - `/season start` 完整流程：建中心→分组→持久化 groupSpawns→**倒流（默认1天可配置）**→到期→传送共广播
+  - 时间倒流档2：未圈地块均匀分配倒流时刻，物理删除仅在**停服窗口**（备份+槽位清零，重启按当前版本重新生成）；保护集=世界出生圈+周目出生区+分组点+whitelist.json
+  - 测试通道：`/samsara debug fakeplayers`（注入）/`groups`（分组 dry-run）/`rewind preview|status|abort|set`
+- [ ] M3 活跃度 → M4 区块管理/倒流档3 → M5 面板 → M6 玩偶影像 → M7 世界栈 → M8 里程碑/资格 → M9 身份同步
 
 ## 环境要求
 
@@ -57,6 +60,24 @@ season.json 示例（`mod/run/config/samsara/season.json`，随服务器运行�
   "worldStack": [],
   "seasons": [ { "id": 1, "name": "S1-Test", "state": "ENDED", "mode": "same-world", ... } ]
 }
+```
+
+## M2 验收记录（2026-08-16，test-server / 26.2 / RCON）
+
+```
+> samsara debug fakeplayers Alice,Bob,... (10)   → 注入 10 名测试玩家（离线UUID）
+> samsara debug rewind set 0.00015               → 倒流时长设为 ~13 秒（测试用）
+> samsara debug rewind preview                   → 主世界已存在 246709 区块、受保护 27377、将倒流 219332
+> season start (J1)                              → 出生中心 (-18899,-9004) 距旧中心 (0,0) 20934 格 · 分组生成 · 倒流启动(12s)
+[倒流进度逐秒推进 6268→91963→176882→219332]
+> 倒流完成 → 广播 ✨ → 传送阶段：0 在线就位、20 离线记待传送
+> rewind.json 落盘；season.json 落盘（spawnCenter + 4 组 groupSpawns）
+> samsara debug rewind abort                     → 清理测试倒流状态
+[停服窗口物理删除验证（构造 3 标记区块 rewind.json）]
+> 停服 → "倒流物理删除完成: 6 个已标记区块清零（涉及 3 个区域文件，备份至 …/backups/purge_…）"
+> 校验 region/entities/poi 槽位已清零；rewind.json 清除；备份目录生成
+> 重启 → 世界正常加载，J1 仍 ACTIVE，分组数据从磁盘恢复
+> season respawn-groups                         → 围绕当前中心重新分组（5/5 两组）+ 传送
 ```
 
 ## 生产模式测试服务器（test-server/）

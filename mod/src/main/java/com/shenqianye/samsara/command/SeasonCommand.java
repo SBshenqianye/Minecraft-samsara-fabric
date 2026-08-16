@@ -16,10 +16,10 @@ import net.minecraft.server.permissions.Permissions;
 import net.minecraft.world.level.Level;
 
 /**
- * /season 命令（M1：status/info/create/start/end）。
+ * /season 命令（M1：status/info/create/start/end；M2：respawn-groups、start 完整流程）。
  * <p>
  * 权限：M1 用原版 COMMANDS_ADMIN（原 OP 等级 2），后续可接 fabric-permissions-api。
- * M2 起扩展：vote / key / respawn-groups；M8 起扩展资格与公投（§15）。
+ * M2 起扩展：respawn-groups（不换周目重分组）；vote / key 留 M8（§15）。
  * <p>
  * 26.1 适配要点（去混淆 + Mojang 官方命名）：
  * - CommandRegistryAccess → CommandBuildContext；ServerCommandSource → CommandSourceStack
@@ -57,10 +57,14 @@ public class SeasonCommand {
                                                 StringArgumentType.getString(ctx, "mode")))))))
                 .then(Commands.literal("start")
                         .requires(src -> isAdmin(src))
-                        .executes(ctx -> reply(ctx.getSource(), MANAGER.start())))
+                        .executes(ctx -> reply(ctx.getSource(), MANAGER.start(ctx.getSource().getServer()))))
                 .then(Commands.literal("end")
                         .requires(src -> isAdmin(src))
-                        .executes(ctx -> reply(ctx.getSource(), MANAGER.end()))));
+                        .executes(ctx -> reply(ctx.getSource(), MANAGER.end())))
+                .then(Commands.literal("respawn-groups")
+                        .requires(src -> isAdmin(src))
+                        .executes(ctx -> reply(ctx.getSource(),
+                                MANAGER.respawnGroups(ctx.getSource().getServer())))));
     }
 
     private static boolean isAdmin(CommandSourceStack src) {
@@ -69,7 +73,7 @@ public class SeasonCommand {
 
     /** /season info：模组说明 + 当前世界种子与出生点（测试便利：种子可查地图工具熟悉地形） */
     private static String infoText(CommandSourceStack src) {
-        StringBuilder sb = new StringBuilder("周目管理 samsara · M1 周目状态机（设计见 docs/周目系统设计文档.md）");
+        StringBuilder sb = new StringBuilder("周目管理 samsara · M2 分组出生（设计见 docs/周目系统设计文档.md）");
         MinecraftServer server = src.getServer();
         ServerLevel world = server.getLevel(Level.OVERWORLD);
         if (world != null) {

@@ -43,24 +43,39 @@ gradlew.bat build
 
 产物：`build/libs/samsara-<version>.jar`，放入服务器 `mods/`。
 
-## 运行（开发服）
+## M2 分组出生 + 时间倒流（档2）
 
-```
-gradlew.bat runServer
-```
+`/season start`（same-world 且 settings.rewindDurationDays&gt;0 时）执行完整流程：
+`新出生中心 → 分组（3~5人/组，角度均分+抖动，组距≥300）→ 持久化 groupSpawns → 启动倒流（默认 1 天可配置）→ 倒流到期 → 全员传送 + 广播；离线玩家上线补传送`。
+
+- 注册玩家来源：测试注入池 + 在线 + `usercache.json` + `world/dimensions/.../players/data/`
+- 倒流档2：未圈地块分配均匀倒流时刻，物理删除仅在**停服窗口**（SERVER_STOPPED，备份到 `backups/purge_<时间戳>/` 后清零区块槽位，重启按当前版本重新生成）
+- 保护集：世界出生保护圈 + 各周目出生区 + 分组出生点 + `whitelist.json` 配置区域
+- 配置文件：`config/samsara/rewind.json`（倒流时刻表），`config/samsara/whitelist.json`
 
 ## 结构
 
 ```
 src/main/java/com/shenqianye/samsara/
-├── Samsara.java              # 主入口（DedicatedServerModInitializer，server entrypoint）
+├── Samsara.java              # 主入口（server entrypoint + tick/停服/加入事件钩子）
 ├── command/
-│   ├── SeasonCommand.java    # /season status/info/create/start/end（M1）
+│   ├── SeasonCommand.java    # /season status/info/create/start/end/respawn-groups
 │   └── DebugCommand.java     # /samsara debug 调试指令集（COMMANDS_OWNER）
-└── season/
-    ├── Season.java           # 周目模型（设计文档 §3.3）
-    ├── SeasonData.java       # season.json 根结构
-    └── SeasonManager.java    # 状态机 + 持久化 + 调试支持方法（M1）
+├── season/
+│   ├── Season.java           # 周目模型（§3.3，含 spawnCenter/groupSpawns）
+│   ├── SeasonData.java       # season.json 根结构（含 settings）
+│   ├── SeasonManager.java    # 状态机 + 分组/传送/广播 + 调试支持（M1+M2）
+│   ├── GroupPlanner.java     # 分组算法（纯逻辑，可单测）
+│   ├── PlayerRegistry.java   # 注册玩家列表（来源合并 + 测试注入池）
+│   └── SpawnCenterCalculator.java # 出生中心计算（纯逻辑）
+├── whitelist/
+│   ├── WhitelistData.java    # whitelist.json 结构
+│   ├── WhitelistStore.java   # 配置白名单单例
+│   └── ChunkProtector.java   # 倒流保护集判定（区块粒度）
+└── rewind/
+    ├── RewindData.java       # rewind.json 结构
+    ├── McaRegion.java        # MCA 区域文件扫描/槽位清零/备份（独立于 MC 内部类）
+    └── RewindEngine.java     # 倒流调度器 + 停服物理删除 + dry-run
 ```
 
 ## 调试指令集（/samsara debug，COMMANDS_OWNER）
@@ -68,13 +83,16 @@ src/main/java/com/shenqianye/samsara/
 | 指令 | 作用 |
 |---|---|
 | `/samsara` | 帮助 |
-| `/samsara debug status` | 状态机详细状态 + season.json 绝对路径 |
-| `/samsara debug json` | 打印 season.json 原始内容（验证落盘） |
-| `/samsara debug reload` | 重新从磁盘加载（测 load 路径） |
+| `/samsara debug status` | 状态机概要 + 注入玩家数 + season.json 路径 |
+| `/samsara debug json` | 打印 season.json 原始内容 |
+| `/samsara debug reload` | 重新从磁盘加载 |
 | `/samsara debug reset` | 清空全部周目数据（危险操作） |
-| `/samsara debug create <名> [模式] [数量]` | 批量创建历史周目（ENDED、每天一个，测列表/ID 递增） |
-| `/samsara debug settime <id> <start\|end> <now\|epoch毫秒>` | 直接设置时间戳 |
-| `/samsara debug fakeplayers <数量>` | 生成离线玩家名称→UUID（"OfflinePlayer:"+名字，与 §16 身份设计一致，M2 分组测试用） |
+| `/samsara debug create <名> [模式] [数量]` | 批量创建历史周目 |
+| `/samsara debug settime <id> <start\|end> <now\|epoch毫秒>` | 设置时间戳 |
+| `/samsara debug fakeplayers <clear\|数字\|前缀 数量\|名字,名字...>` | 注入测试玩家（M2 分组测试数据） |
+| `/samsara debug groups [名单]` | 分组 dry-run（不落盘；缺省用注册玩家） |
+| `/samsara debug rewind preview\|status\|abort\|set <天>` | 倒流：预览扫描/状态/中止/时长配置 |
+| `/samsara debug whitelist json\|reload` | 白名单查看/重载 |
 
 > 权限说明：`/season` 管理子命令用 COMMANDS_ADMIN（原 OP 等级 2），`/samsara debug` 用 COMMANDS_OWNER（最高权限）。
 > 26.1 API 要点：类名用 Mojang 官方名（`net.minecraft.commands.CommandSourceStack` / `Commands` / `CommandBuildContext` / `net.minecraft.network.chat.Component`），Fabric API 的 `CommandRegistrationCallback` 未改名。
