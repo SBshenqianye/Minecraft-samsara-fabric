@@ -490,9 +490,8 @@ public class SeasonManager {
         if (!s.resetIndividualBirthpoint) {
             return;
         }
-        int top = overworld.getHeight(Heightmap.Types.OCEAN_FLOOR, x, z);
-        // y 放到地表上方一格（下方实心、本格可站），与 /spawnpoint 一致
-        int y = Math.max(1, top) + 1;
+        // y 用与传送一致的“地表上方一格”，避免 getHeight 异常导致 y=2 埋地底
+        int y = findSafeSurfaceY(overworld, x, z);
         // 与 SetSpawnCommand(/spawnpoint) 完全一致的写法：
         //  RespawnData.of(dimension, pos, yaw, pitch)；forced=true（无床也回此点）
         var respawnData = LevelData.RespawnData.of(overworld.dimension(), new BlockPos(x, y, z),
@@ -520,11 +519,38 @@ public class SeasonManager {
     }
 
     private void teleportPlayer(ServerPlayer player, ServerLevel overworld, int x, int z) {
-        int top = overworld.getHeight(Heightmap.Types.MOTION_BLOCKING, x, z);
-        int y = Math.max(1, top) + 1;
+        int y = findSafeSurfaceY(overworld, x, z);
         player.teleportTo(overworld, x + 0.5, y, z + 0.5, Set.of(),
                 player.getYRot(), player.getXRot(), false);
         player.sendSystemMessage(Component.literal("[周目管理] 你已传送至新出生区 (" + x + ", " + y + ", " + z + ")"));
+    }
+
+    /**
+     * 在 (x,z) 找安全站立高度：先强制加载区块，再取 MOTION_BLOCKING 高度。
+     * 防止 getHeight 在未加载/异常时返回极值（曾出现 Y=700000 传送到地底/天上）。
+     * 返回该列地表上方一格的 Y。
+     */
+    private int findSafeSurfaceY(ServerLevel overworld, int x, int z) {
+        try {
+            overworld.getChunk(x >> 4, z >> 4); // 强制加载/生成
+        } catch (Exception e) {
+            // 加载失败则回退世界出生点高度
+            return overworld.getHeight(Heightmap.Types.MOTION_BLOCKING, x, z) + 1;
+        }
+        int h = overworld.getHeight(Heightmap.Types.MOTION_BLOCKING, x, z);
+        int minY = overworld.dimensionType().minY();
+        int maxY = minY + overworld.dimensionType().height();
+        // 钳制：正常高度应在 [minY+1, maxY]；异常（0/极值）则从顶部往下扫
+        if (h <= minY || h > maxY) {
+            for (int yy = maxY - 1; yy > minY; yy--) {
+                var bs = overworld.getBlockState(new BlockPos(x, yy, z));
+                if (!bs.isAir() && bs.isCollisionShapeFullBlock(overworld, new BlockPos(x, yy, z))) {
+                    h = yy;
+                    break;
+                }
+            }
+        }
+        return Math.max(minY + 1, Math.min(maxY, h + 1));
     }
 
     private void broadcast(MinecraftServer server, String msg) {
