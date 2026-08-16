@@ -206,18 +206,25 @@ public class RewindEngine {
                         data.markedCount(), data.chunks.size(), newlyMarked);
             }
         }
-        // 档3：对已加载区块逐格恢复（懒加载；有差异记录时生效）
-        Tier3Restore.restoreRound(server, data);
+        // 档3：对已加载区块逐格恢复（懒加载；有差异记录时生效）。倒流完成后停止，
+        // 否则 p=1 会反复把 diff 记录（含恢复期间 setBlock 被记录的前状态）来回改写，方块无法留存
+        if (!data.teleportPhaseDone) {
+            Tier3Restore.restoreRound(server, data);
+        }
         // 时长到期 → 完成回调（传送阶段）
         if (now >= data.startMs + data.durationMs && !data.teleportPhaseDone) {
             data.teleportPhaseDone = true;
             save();
+            // 本轮 diff 记录结束（保留已写 diff 库；下一轮 /season start 重新开始记录）
+            DiffRecorder.stopRecording();
             Samsara.LOGGER.info("[周目管理 samsara] 倒流完成（{} 区块到点），进入传送阶段",
                     data.markedCount());
-            broadcast(server, "✨ 周目 #" + data.seasonId + " 倒流完成：旧世界未圈地已退场，开始全员传送至新出生区！");
             Runnable cb = onComplete;
             if (cb != null) {
+                broadcast(server, "✨ 周目 #" + data.seasonId + " 倒流完成：旧世界未圈地已退场，开始全员传送至新出生区！");
                 cb.run();
+            } else {
+                broadcast(server, "✨ 周目 #" + data.seasonId + " 倒流完成：旧世界未圈地已退场（本次为只倒流模式，未传送）");
             }
         }
     }
@@ -355,6 +362,8 @@ public class RewindEngine {
             target = edits.size();
         }
         int applied = 0;
+        // 强制加载目标区块（getChunk 会加载/生成），使恢复不依赖玩家在线
+        overworld.getChunk(cx, cz);
         for (int i = 0; i < Math.min(target, edits.size()); i++) {
             DiffStore.Edit e = edits.get(i);
             net.minecraft.core.BlockPos pos = new net.minecraft.core.BlockPos(e.x, e.y, e.z);
@@ -368,8 +377,18 @@ public class RewindEngine {
             if (overworld.getBlockState(pos).equals(t)) {
                 continue;
             }
-            overworld.setBlock(pos, t, 3);
-            applied++;
+            // 恢复自身的 setBlock 不记录 diff（避免自噬：恢复→被记录→再恢复成空气）
+            boolean wasRecording = DiffRecorder.recording();
+            DiffRecorder.setEnabled(false);
+            boolean ok;
+            try {
+                ok = overworld.setBlock(pos, t, 3);
+            } finally {
+                DiffRecorder.setEnabled(wasRecording);
+            }
+            if (ok) {
+                applied++;
+            }
         }
         return "区块 (" + cx + "," + cz + ") diff " + edits.size() + " 条 · 进度 " + (int) (p * 100)
                 + "% · 应恢复 " + Math.min(target, edits.size()) + " · 实际恢复 " + applied + " 格";

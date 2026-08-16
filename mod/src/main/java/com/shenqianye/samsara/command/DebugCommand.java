@@ -60,6 +60,56 @@ public class DebugCommand {
     private static void registerCommands(CommandDispatcher<CommandSourceStack> dispatcher,
                                          CommandBuildContext buildContext,
                                          Commands.CommandSelection selection) {
+        // diff 命令树（fake 虚假 diff / text 空中字画），独立变量避免括号层级错误
+        com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> diffCmd =
+                Commands.literal("diff")
+                        .executes(ctx -> reply(ctx.getSource(), MANAGER.diffStatus()))
+                        .then(Commands.literal("fake")
+                                .then(Commands.argument("cx", IntegerArgumentType.integer())
+                                        .then(Commands.argument("cz", IntegerArgumentType.integer())
+                                                .then(Commands.argument("count", IntegerArgumentType.integer(1, 4096))
+                                                        .executes(ctx -> reply(ctx.getSource(),
+                                                                com.shenqianye.samsara.rewind.DiffRecorder.fakeDiff(
+                                                                        IntegerArgumentType.getInteger(ctx, "cx"),
+                                                                        IntegerArgumentType.getInteger(ctx, "cz"),
+                                                                        IntegerArgumentType.getInteger(ctx, "count"),
+                                                                        com.shenqianye.samsara.rewind.DiffRecorder.stoneStateId()))) // 默认石头
+                                                        .then(Commands.argument("stateId", IntegerArgumentType.integer(0, 10000))
+                                                                .executes(ctx -> reply(ctx.getSource(),
+                                                                        com.shenqianye.samsara.rewind.DiffRecorder.fakeDiff(
+                                                                                IntegerArgumentType.getInteger(ctx, "cx"),
+                                                                                IntegerArgumentType.getInteger(ctx, "cz"),
+                                                                                IntegerArgumentType.getInteger(ctx, "count"),
+                                                                                IntegerArgumentType.getInteger(ctx, "stateId")))))))))
+                        .then(Commands.literal("text")
+                                .then(Commands.argument("x", IntegerArgumentType.integer())
+                                        .then(Commands.argument("y", IntegerArgumentType.integer())
+                                                .then(Commands.argument("z", IntegerArgumentType.integer())
+                                                        .then(Commands.argument("text", StringArgumentType.string())
+                                                                .executes(ctx -> reply(ctx.getSource(),
+                                                                        com.shenqianye.samsara.rewind.DiffRecorder.fakeDiffText(
+                                                                                IntegerArgumentType.getInteger(ctx, "x"),
+                                                                                IntegerArgumentType.getInteger(ctx, "y"),
+                                                                                IntegerArgumentType.getInteger(ctx, "z"),
+                                                                                StringArgumentType.getString(ctx, "text"),
+                                                                                com.shenqianye.samsara.rewind.DiffRecorder.stoneStateId(), 2))) // 默认石头, scale=2
+                                                                .then(Commands.argument("stateId", IntegerArgumentType.integer(0, 10000))
+                                                                        .executes(ctx -> reply(ctx.getSource(),
+                                                                                com.shenqianye.samsara.rewind.DiffRecorder.fakeDiffText(
+                                                                                        IntegerArgumentType.getInteger(ctx, "x"),
+                                                                                        IntegerArgumentType.getInteger(ctx, "y"),
+                                                                                        IntegerArgumentType.getInteger(ctx, "z"),
+                                                                                        StringArgumentType.getString(ctx, "text"),
+                                                                                        IntegerArgumentType.getInteger(ctx, "stateId"), 2)))
+                                                                        .then(Commands.argument("scale", IntegerArgumentType.integer(1, 8))
+                                                                                .executes(ctx -> reply(ctx.getSource(),
+                                                                                        com.shenqianye.samsara.rewind.DiffRecorder.fakeDiffText(
+                                                                                                IntegerArgumentType.getInteger(ctx, "x"),
+                                                                                                IntegerArgumentType.getInteger(ctx, "y"),
+                                                                                                IntegerArgumentType.getInteger(ctx, "z"),
+                                                                                                StringArgumentType.getString(ctx, "text"),
+                                                                                                IntegerArgumentType.getInteger(ctx, "stateId"),
+                                                                                                IntegerArgumentType.getInteger(ctx, "scale")))))))))));
         dispatcher.register(Commands.literal("samsara")
                 .executes(ctx -> reply(ctx.getSource(), help()))
                 .then(Commands.literal("version")
@@ -72,25 +122,7 @@ public class DebugCommand {
                                 .executes(ctx -> reply(ctx.getSource(), MANAGER.spawnInfo(
                                         ctx.getSource().getPlayerOrException(),
                                         ctx.getSource().getLevel()))))
-                        .then(Commands.literal("diff")
-                                .executes(ctx -> reply(ctx.getSource(), MANAGER.diffStatus()))
-                                .then(Commands.literal("fake")
-                                        .then(Commands.argument("cx", IntegerArgumentType.integer())
-                                                .then(Commands.argument("cz", IntegerArgumentType.integer())
-                                                        .then(Commands.argument("count", IntegerArgumentType.integer(1, 4096))
-                                                                .executes(ctx -> reply(ctx.getSource(),
-                                                                        com.shenqianye.samsara.rewind.DiffRecorder.fakeDiff(
-                                                                                IntegerArgumentType.getInteger(ctx, "cx"),
-                                                                                IntegerArgumentType.getInteger(ctx, "cz"),
-                                                                                IntegerArgumentType.getInteger(ctx, "count"),
-                                                                                1))) // 默认 stateId=1（石头）
-                                                                .then(Commands.argument("stateId", IntegerArgumentType.integer(0, 10000))
-                                                                        .executes(ctx -> reply(ctx.getSource(),
-                                                                                com.shenqianye.samsara.rewind.DiffRecorder.fakeDiff(
-                                                                                        IntegerArgumentType.getInteger(ctx, "cx"),
-                                                                                        IntegerArgumentType.getInteger(ctx, "cz"),
-                                                                                        IntegerArgumentType.getInteger(ctx, "count"),
-                                                                                        IntegerArgumentType.getInteger(ctx, "stateId"))))))))))
+                        .then(diffCmd)
                         .then(Commands.literal("flow")
                                 .then(Commands.literal("setup")
                                         .executes(ctx -> reply(ctx.getSource(),

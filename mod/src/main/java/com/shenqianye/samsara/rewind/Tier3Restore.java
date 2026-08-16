@@ -157,7 +157,14 @@ public class Tier3Restore {
         if (level.getBlockState(pos).equals(target)) {
             return false; // 已是目标状态
         }
-        level.setBlock(pos, target, 3);
+        // 恢复自身的 setBlock 不记录 diff（否则"恢复→被记成新变化→下一轮再恢复成空气"自噬）
+        boolean wasRecording = DiffRecorder.recording();
+        DiffRecorder.setEnabled(false);
+        try {
+            level.setBlock(pos, target, 3);
+        } finally {
+            DiffRecorder.setEnabled(wasRecording);
+        }
         return true;
     }
 

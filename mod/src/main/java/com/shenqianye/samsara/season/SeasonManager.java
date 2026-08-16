@@ -83,10 +83,18 @@ public class SeasonManager {
                 throw new RuntimeException("season.json 解析失败（可删除该文件后重启重建）: " + e.getMessage(), e);
             }
             // 迁移旧字段：rewindDurationDays（天）→ rewindDurationMs（毫秒）
-            // 旧文件只有 rewindDurationDays（非 null）；新文件两者都有，用 ms 为准
+            // 仅旧文件（无 rewindDurationMs 字段）迁移；新文件两者都有，以 ms 为准
             if (data.settings != null && data.settings.rewindDurationDays != null) {
-                data.settings.rewindDurationMs =
-                        (long) (data.settings.rewindDurationDays * 86_400_000L);
+                String raw;
+                try {
+                    raw = Files.readString(file, StandardCharsets.UTF_8);
+                } catch (IOException e) {
+                    raw = "";
+                }
+                if (!raw.contains("rewindDurationMs")) {
+                    data.settings.rewindDurationMs =
+                            (long) (data.settings.rewindDurationDays * 86_400_000L);
+                }
             }
         } else {
             data = new SeasonData();
