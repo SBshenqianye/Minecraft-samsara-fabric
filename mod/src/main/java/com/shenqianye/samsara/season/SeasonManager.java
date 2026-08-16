@@ -475,11 +475,32 @@ public class SeasonManager {
         if (!s.resetIndividualBirthpoint) {
             return;
         }
-        int top = overworld.getHeight(Heightmap.Types.MOTION_BLOCKING, x, z);
+        int top = overworld.getHeight(Heightmap.Types.OCEAN_FLOOR, x, z);
+        // 出生点通常放到该格正上方（地面再上空），避免嵌入方块
         int y = Math.max(1, top) + 1;
         var respawnData = LevelData.RespawnData.of(Level.OVERWORLD, new BlockPos(x, y, z),
                 player.getYRot(), player.getXRot());
+        // forced=true：即使该处无床/重生锚，也强制在该位置死后重生（而非回到世界出生点）
         player.setRespawnPosition(new ServerPlayer.RespawnConfig(respawnData, true), true);
+    }
+
+    /** debug：读取玩家当前重生点（RespawnConfig pos/dimension/forced），用于定位重生点 bug */
+    public String spawnInfo(ServerPlayer player, ServerLevel overworld) {
+        if (overworld == null) {
+            return "主世界不可用";
+        }
+        ServerPlayer.RespawnConfig rc = player.getRespawnConfig();
+        if (rc == null || rc.respawnData() == null) {
+            return "当前无自定义重生点（死后将回世界出生点）。world spawn: "
+                    + overworld.getRespawnData().pos().getX() + ", "
+                    + overworld.getRespawnData().pos().getZ();
+        }
+        LevelData.RespawnData rd = rc.respawnData();
+        BlockPos p = rd.pos();
+        return "重生点 pos=(" + p.getX() + "," + p.getY() + "," + p.getZ() + ") · 维度=" + rd.dimension()
+                + " · forced=" + rc.forced() + "\n世界出生点: "
+                + overworld.getRespawnData().pos().getX() + ", "
+                + overworld.getRespawnData().pos().getZ();
     }
 
     private void teleportPlayer(ServerPlayer player, ServerLevel overworld, int x, int z) {

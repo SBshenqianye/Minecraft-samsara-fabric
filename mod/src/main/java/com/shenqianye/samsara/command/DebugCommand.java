@@ -66,6 +66,10 @@ public class DebugCommand {
                         .requires(src -> isOwner(src))
                         .then(Commands.literal("status")
                                 .executes(ctx -> reply(ctx.getSource(), debugStatus())))
+                        .then(Commands.literal("spawninfo")
+                                .executes(ctx -> reply(ctx.getSource(), MANAGER.spawnInfo(
+                                        ctx.getSource().getPlayerOrException(),
+                                        ctx.getSource().getLevel()))))
                         .then(Commands.literal("json")
                                 .executes(ctx -> reply(ctx.getSource(), MANAGER.rawJson()
                                         + "\n\n↑ season.json 位置: " + MANAGER.configPath())))
@@ -251,6 +255,7 @@ public class DebugCommand {
                 + "/samsara version —— 模组版本号\n"
                 + "/samsara 调试指令（COMMANDS_OWNER）：\n"
                 + "/samsara debug status —— 状态机概要 + season.json 路径\n"
+                + "/samsara debug spawninfo —— 查看你当前的重生点（pos/维度/forced，定位重生 bug）\n"
                 + "/samsara debug json —— 打印 season.json 原始内容\n"
                 + "/samsara debug reload —— 重新从磁盘加载\n"
                 + "/samsara debug reset —— 清空全部周目数据（需二次确认）\n"
