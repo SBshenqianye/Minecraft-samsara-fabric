@@ -23,11 +23,16 @@ import java.util.concurrent.locks.ReentrantLock;
  */
 public class DiffStore {
     private static final int RECORD_SIZE = 24; // 4 + 4 + 4 + 4 + 8
+    /** 内存缓冲阈值：超过后自动落盘（避免每条一次磁盘 IO 卡死主线程） */
+    private static final int FLUSH_THRESHOLD = 4096;
     private static DiffStore instance;
 
     private final Path root;
     private final Map<Long, ReentrantLock> perChunkLocks = new HashMap<>();
     private final ReentrantLock globalLock = new ReentrantLock();
+    /** 每区块内存缓冲（尚未落盘的记录，按区块 key 分组） */
+    private final Map<Long, java.io.ByteArrayOutputStream> pending = new HashMap<>();
+    private int pendingCount;
 
     private DiffStore(Path root) {
         this.root = root;
@@ -72,43 +77,79 @@ public class DiffStore {
         }
     }
 
-    /** 追加一条方块变化记录（stateId = 变化前方块状态数值 id，恢复时还原此状态；0=空气合法） */
+    /**
+     * 追加一条方块变化记录（stateId = 变化前方块状态数值 id，恢复时还原此状态；0=空气合法）。
+     * 先写入内存缓冲，达到阈值或显式 flush() 时才批量落盘（避免每条一次磁盘 IO 阻塞服务器主线程）。
+     */
     public void record(int x, int y, int z, int stateId, long timeMs) {
         int cx = x >> 4;
         int cz = z >> 4;
-        ReentrantLock lock = lockFor(cx, cz);
-        lock.lock();
+        long key = ((long) cx << 32) | (cz & 0xFFFFFFFFL);
+        byte[] rec = new byte[RECORD_SIZE];
+        rec[0] = (byte) (stateId >>> 24);
+        rec[1] = (byte) (stateId >>> 16);
+        rec[2] = (byte) (stateId >>> 8);
+        rec[3] = (byte) stateId;
+        rec[4] = (byte) (x >>> 24);
+        rec[5] = (byte) (x >>> 16);
+        rec[6] = (byte) (x >>> 8);
+        rec[7] = (byte) x;
+        rec[8] = (byte) (y >>> 24);
+        rec[9] = (byte) (y >>> 16);
+        rec[10] = (byte) (y >>> 8);
+        rec[11] = (byte) y;
+        rec[12] = (byte) (z >>> 24);
+        rec[13] = (byte) (z >>> 16);
+        rec[14] = (byte) (z >>> 8);
+        rec[15] = (byte) z;
+        for (int i = 0; i < 8; i++) {
+            rec[16 + i] = (byte) (timeMs >>> (56 - i * 8));
+        }
+        globalLock.lock();
         try {
-            Path f = fileFor(cx, cz);
-            Files.createDirectories(f.getParent());
-            byte[] rec = new byte[RECORD_SIZE];
-            rec[0] = (byte) (stateId >>> 24);
-            rec[1] = (byte) (stateId >>> 16);
-            rec[2] = (byte) (stateId >>> 8);
-            rec[3] = (byte) stateId;
-            rec[4] = (byte) (x >>> 24);
-            rec[5] = (byte) (x >>> 16);
-            rec[6] = (byte) (x >>> 8);
-            rec[7] = (byte) x;
-            rec[8] = (byte) (y >>> 24);
-            rec[9] = (byte) (y >>> 16);
-            rec[10] = (byte) (y >>> 8);
-            rec[11] = (byte) y;
-            rec[12] = (byte) (z >>> 24);
-            rec[13] = (byte) (z >>> 16);
-            rec[14] = (byte) (z >>> 8);
-            rec[15] = (byte) z;
-            for (int i = 0; i < 8; i++) {
-                rec[16 + i] = (byte) (timeMs >>> (56 - i * 8));
+            java.io.ByteArrayOutputStream buf = pending.computeIfAbsent(key, k -> new java.io.ByteArrayOutputStream());
+            buf.write(rec, 0, RECORD_SIZE);
+            pendingCount++;
+            if (pendingCount >= FLUSH_THRESHOLD) {
+                flushLocked();
             }
-            try (RandomAccessFile raf = new RandomAccessFile(f.toFile(), "rw")) {
-                raf.seek(raf.length());
-                raf.write(rec);
-            }
-        } catch (IOException e) {
-            Samsara.LOGGER.error("[周目管理 samsara] diff 记录失败 {}: {}", fileFor(cx, cz), e.getMessage());
         } finally {
-            lock.unlock();
+            globalLock.unlock();
+        }
+    }
+
+    /** 把内存缓冲一次性落盘（fake 注入/倒流开始前调用，确保数据立即可读） */
+    public void flush() {
+        globalLock.lock();
+        try {
+            flushLocked();
+        } finally {
+            globalLock.unlock();
+        }
+    }
+
+    /** 前提：持有 globalLock。把 pending 缓冲按区块写入对应文件（追加）。 */
+    private void flushLocked() {
+        if (pending.isEmpty()) {
+            return;
+        }
+        Map<Long, byte[]> batches = new HashMap<>();
+        for (Map.Entry<Long, java.io.ByteArrayOutputStream> e : pending.entrySet()) {
+            batches.put(e.getKey(), e.getValue().toByteArray());
+        }
+        pending.clear();
+        pendingCount = 0;
+        for (Map.Entry<Long, byte[]> e : batches.entrySet()) {
+            int cx = (int) (e.getKey() >>> 32);
+            int cz = (int) (e.getKey().longValue());
+            Path f = fileFor(cx, cz);
+            try {
+                Files.createDirectories(f.getParent());
+                Files.write(f, e.getValue(), java.nio.file.StandardOpenOption.CREATE,
+                        java.nio.file.StandardOpenOption.APPEND);
+            } catch (IOException ex) {
+                Samsara.LOGGER.error("[周目管理 samsara] diff 落盘失败 {}: {}", f, ex.getMessage());
+            }
         }
     }
 

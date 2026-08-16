@@ -99,6 +99,7 @@ public class Tier3Restore {
         if (store == null) {
             return 0;
         }
+        store.flush(); // 先把内存缓冲落盘，再读取（保证读到最新记录）
 
         int applied = 0;
         int budget = MAX_PER_TICK;

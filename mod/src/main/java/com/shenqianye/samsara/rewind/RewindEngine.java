@@ -345,6 +345,7 @@ public class RewindEngine {
         if (store == null) {
             return "档3 差异库未初始化";
         }
+        store.flush(); // 先把内存缓冲落盘，再读取（保证读到最新记录）
         ServerLevel overworld = server.getLevel(Level.OVERWORLD);
         if (overworld == null) {
             return "主世界不可用";

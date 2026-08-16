@@ -109,6 +109,7 @@ public class DiffRecorder {
             int y = 64 + rnd.nextInt(96); // 64~159，地表附近便于观察
             store.record(x, y, z, stateId, now - i); // 时间递减：i=0 最新
         }
+        store.flush(); // 批量落盘，确保立即可读
         return "已注入 " + count + " 条虚假 diff 到区块 (" + cx + "," + cz + ")（stateId=" + stateId
                 + "，y=64~159 随机）· 倒流时会把这些格还原为指定方块";
     }
@@ -132,6 +133,13 @@ public class DiffRecorder {
         }
         if (text == null || text.isEmpty()) {
             return "文字为空";
+        }
+        // 总量上限：防止超大字画（长文本 × scale²）一次注入数万条阻塞服务器主线程
+        int maxPixels = 50_000;
+        long estimated = (long) text.length() * 25 * scale * scale;
+        if (estimated > maxPixels) {
+            return "字画规模过大（约 " + estimated + " 格 > 上限 " + maxPixels
+                    + "）：请缩短文字或调小 scale（当前 " + text.length() + " 字符 × scale=" + scale + "）";
         }
         long now = System.currentTimeMillis();
         int idx = 0;
@@ -168,6 +176,7 @@ public class DiffRecorder {
             }
             cursorX += 6; // 字符间距：5 宽 + 1 空格
         }
+        store.flush(); // 批量落盘，确保立即可读（倒流恢复读文件）
         if (idx == 0) {
             return "文字不含可绘制字符（仅支持 A-Z/0-9/部分符号）";
         }
