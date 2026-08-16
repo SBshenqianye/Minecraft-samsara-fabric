@@ -11,6 +11,7 @@ import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerChunkCache;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.storage.LevelResource;
@@ -211,14 +212,17 @@ public class RewindEngine {
         if (!data.teleportPhaseDone) {
             Tier3Restore.restoreRound(server, data);
         }
-        // 时长到期 → 完成回调（传送阶段）
+        // 时长到期 → 完成回调（传送+删除阶段）：
+        // 顺序说明：先传送玩家离开旧区（否则卸载/删除玩家脚下的区块会使其坠入虚空），
+        // 再立即物理删除未圈地区块（不再等停服窗口）。删除与传送在同一个倒流完成流程内连续完成。
         if (now >= data.startMs + data.durationMs && !data.teleportPhaseDone) {
             data.teleportPhaseDone = true;
             save();
             // 本轮 diff 记录结束（保留已写 diff 库；下一轮 /season start 重新开始记录）
             DiffRecorder.stopRecording();
-            Samsara.LOGGER.info("[周目管理 samsara] 倒流完成（{} 区块到点），进入传送阶段",
+            Samsara.LOGGER.info("[周目管理 samsara] 倒流完成（{} 区块到点），进入传送+删除阶段",
                     data.markedCount());
+            // ① 传送回调（SeasonManager：传送全员 + 广播；玩家离开旧区，旧区块 ticket 释放）
             Runnable cb = onComplete;
             if (cb != null) {
                 broadcast(server, "✨ 周目 #" + data.seasonId + " 倒流完成：旧世界未圈地已退场，开始全员传送至新出生区！");
@@ -226,10 +230,25 @@ public class RewindEngine {
             } else {
                 broadcast(server, "✨ 周目 #" + data.seasonId + " 倒流完成：旧世界未圈地已退场（本次为只倒流模式，未传送）");
             }
+            // ② 物理删除：备份 + 卸载已标记区块 + 磁盘清零（传送后立即执行，不等停服）
+            try {
+                applyPhysicalDeletion(server);
+            } catch (Exception e) {
+                Samsara.LOGGER.error("[周目管理 samsara] 倒流完成物理删除异常: {}", e.getMessage());
+            }
         }
     }
 
-    /** 停服窗口物理删除：备份 + 清零已标记区块（region/entities/poi 三个区域文件） */
+    /**
+     * 物理删除：备份 + 清零已标记区块（region/entities/poi 三个区域文件）。
+     * <p>
+     * 运行中调用时必须先把目标区块从内存卸载并强制保存，否则区块仍在内存时
+     * 磁盘清零会被后续自动保存写回（"删了又回来"的 bug）。卸载采用：
+     * 1) 先把玩家从这些区块附近移除（传送已完成/未传送时旧区无玩家）；
+     * 2) removeTicketWithRadius 移除加载 ticket，使区块自然卸载；
+     * 3) save(true) 强制落盘（卸载完成的区块不会再写回）。
+     * 若卸载不完全（玩家仍站桩/强制加载），跳过该区块并警告（停服窗口仍会兜底删除）。
+     */
     public synchronized void applyPhysicalDeletion(MinecraftServer server) {
         if (data == null || data.chunks.isEmpty()) {
             return;
@@ -242,6 +261,37 @@ public class RewindEngine {
         }
         if (marked.isEmpty()) {
             return;
+        }
+        ServerLevel overworld = server.getLevel(Level.OVERWORLD);
+        if (overworld != null) {
+            // ① 先把已标记区块从内存卸载（26.2 ServerLevel.unload 原生强制卸载）。
+            //    不卸载就改磁盘文件的话，区块仍在内存 → 下次自动保存会把删除写回（"删了又回来"的 bug）。
+            int unloaded = 0;
+            for (int[] c : marked) {
+                net.minecraft.world.level.chunk.LevelChunk lc = overworld.getChunkSource().getChunkNow(c[0], c[1]);
+                if (lc != null) {
+                    try {
+                        overworld.unload(lc);
+                        unloaded++;
+                    } catch (Exception e) {
+                        Samsara.LOGGER.warn("[周目管理 samsara] 卸载区块 ({},{}) 失败: {}", c[0], c[1], e.getMessage());
+                    }
+                }
+            }
+            // ② 强制保存：卸载的区块落盘后不再写回；仍在内存的（卸载失败）剔除，
+            //    磁盘清零后它们仍会被写回，交给停服窗口兜底删除
+            overworld.getChunkSource().save(false);
+            if (unloaded > 0) {
+                Samsara.LOGGER.info("[周目管理 samsara] 倒流物理删除：已从内存卸载 {} 个待删区块", unloaded);
+            }
+            marked.removeIf(c -> {
+                net.minecraft.world.level.chunk.LevelChunk lc = overworld.getChunkSource().getChunkNow(c[0], c[1]);
+                return lc != null;
+            });
+            if (marked.isEmpty()) {
+                Samsara.LOGGER.info("[周目管理 samsara] 倒流物理删除：待删区块仍被加载，延迟到停服窗口删除");
+                return;
+            }
         }
         Path worldRoot = server.getWorldPath(LevelResource.ROOT);
         Path dimRoot = McaRegion.overworldDimensionRoot(worldRoot);
