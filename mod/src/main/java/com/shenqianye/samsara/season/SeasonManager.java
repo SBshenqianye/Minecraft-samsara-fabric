@@ -276,6 +276,18 @@ public class SeasonManager {
         return "周目 #" + s.id + "「" + s.name + "」已结束（ENDED）" + rewindNote;
     }
 
+    /** /season skip —— 跳过当前 PENDING 周目（不开始，特殊标记 SKIPPED 以便/season status 速记） */
+    public String skip() {
+        Season s = currentPending();
+        if (s == null) {
+            return "当前没有待开始的 PENDING 周目（无待跳过项）";
+        }
+        s.state = Season.State.SKIPPED;
+        s.endTime = Instant.now().toEpochMilli(); // 复用 endTime 记跳过时刻
+        save();
+        return "已跳过周目 #" + s.id + "「" + s.name + "」（标记 SKIPPED，不开始）\n下次 /season status 会显示 SKIPPED；可 /season create 开新周目";
+    }
+
     /** 玩家加入（M2：倒流完成后的离线玩家补传送 + 重置本人出生点） */
     public void onPlayerJoin(MinecraftServer server, ServerPlayer player) {
         ServerLevel overworld = server.getLevel(Level.OVERWORLD);
@@ -479,12 +491,13 @@ public class SeasonManager {
             return;
         }
         int top = overworld.getHeight(Heightmap.Types.OCEAN_FLOOR, x, z);
-        // 出生点通常放到该格正上方（地面再上空），避免嵌入方块
+        // y 放到地表上方一格（下方实心、本格可站），与 /spawnpoint 一致
         int y = Math.max(1, top) + 1;
-        var respawnData = LevelData.RespawnData.of(Level.OVERWORLD, new BlockPos(x, y, z),
+        // 与 SetSpawnCommand(/spawnpoint) 完全一致的写法：
+        //  RespawnData.of(dimension, pos, yaw, pitch)；forced=true（无床也回此点）
+        var respawnData = LevelData.RespawnData.of(overworld.dimension(), new BlockPos(x, y, z),
                 player.getYRot(), player.getXRot());
-        // forced=true：即使该处无床/重生锚，也强制在该位置死后重生（而非回到世界出生点）
-        player.setRespawnPosition(new ServerPlayer.RespawnConfig(respawnData, true), true);
+        player.setRespawnPosition(new ServerPlayer.RespawnConfig(respawnData, true), false);
     }
 
     /** debug：读取玩家当前重生点（RespawnConfig pos/dimension/forced），用于定位重生点 bug */
@@ -574,7 +587,18 @@ public class SeasonManager {
     public String config(String key, String value) {
         SeasonData.Settings s = data.settings;
         if (key == null || key.isBlank()) {
-            return settingsText();
+            // 全部配置 + 每个 key 可用值类型说明
+            return "可配置项（键 · 类型 · 当前值）：\n"
+                    + "  groupdist · 整数(格) · " + s.groupMinDistance + "（0=所有组共用中心）\n"
+                    + "  birthjitter · 整数(格) · " + s.birthpointJitter + "（0=同组共用）\n"
+                    + "  birthreset · true|false · " + s.resetIndividualBirthpoint + "（是否重置玩家出生点）\n"
+                    + "  rewind · 时长(1h/30m/3600s/1d/0.5d) · " + DurationUtil.formatMs(s.rewindDurationMs) + "\n"
+                    + "  groupmin · 整数(1~groupmax) · " + s.groupSizeMin + "\n"
+                    + "  groupmax · 整数(groupmin~100) · " + s.groupSizeMax + "\n"
+                    + "  spawnradius · 整数(>=0) · " + s.spawnRadius + "\n"
+                    + "  centermin · 整数(>=0) · " + s.newCenterMinDistance + "（新中心距每个历史中心都≥此值）\n"
+                    + "  centermax · 整数(>=centermin) · " + s.newCenterMaxDistance + "\n"
+                    + "用法：/samsara debug config <键> 查看当前值；config <键> <值> 设置并回显";
         }
         // 读取当前值 helper（lambda 内不可直接改局部，用 switch）
         switch (key) {

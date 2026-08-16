@@ -61,6 +61,9 @@ public class SeasonCommand {
                 .then(Commands.literal("end")
                         .requires(src -> isAdmin(src))
                         .executes(ctx -> reply(ctx.getSource(), MANAGER.end())))
+                .then(Commands.literal("skip")
+                        .requires(src -> isAdmin(src))
+                        .executes(ctx -> reply(ctx.getSource(), MANAGER.skip())))
                 .then(Commands.literal("respawn-groups")
                         .requires(src -> isAdmin(src))
                         .executes(ctx -> reply(ctx.getSource(),

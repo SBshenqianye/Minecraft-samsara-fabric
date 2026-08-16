@@ -112,6 +112,9 @@ public class DebugCommand {
                                         .executes(ctx -> reply(ctx.getSource(), RewindEngine.getInstance().status())))
                                 .then(Commands.literal("abort")
                                         .executes(ctx -> reply(ctx.getSource(), RewindEngine.getInstance().abort())))
+                                .then(Commands.literal("purge")
+                                        .executes(ctx -> reply(ctx.getSource(),
+                                                RewindEngine.getInstance().purgeNow(ctx.getSource().getServer()))))
                                 .then(Commands.literal("set")
                                         .then(Commands.argument("dur", StringArgumentType.greedyString())
                                                 .executes(ctx -> reply(ctx.getSource(), MANAGER.setRewindDuration(
@@ -265,8 +268,8 @@ public class DebugCommand {
                 + "/samsara debug settime <id> <start|end> <now|epoch毫秒> —— 设置时间戳\n"
                 + "/samsara debug fakeplayers <clear|数字|前缀 数量|名字,名字...> —— 注入离线测试玩家（M2 分组用）\n"
                 + "/samsara debug groups [名单] —— 分组 dry-run（缺省用注册玩家）\n"
-                + "/samsara debug rewind preview|status|abort|set <时长> —— 倒流控制：预览/状态/中止/时长（支持 1h 30m 3600s 1d 0.5d）\n"
-                + "/samsara debug config [键] [值] —— 查看/设置配置（无键=全部；键: groupdist/birthjitter/birthreset/rewind/groupmin/groupmax/spawnradius/centermin/centermax）\n"
+                + "/samsara debug rewind preview|status|abort|purge|set <时长> —— 倒流控制：预览/状态/中止/立即删未保留区块/时长（支持 1h 30m 3600s 1d 0.5d）\n"
+                + "/samsara debug config [键] [值] —— 查看/设置配置（无键=全部含类型；键: groupdist/birthjitter/birthreset/rewind/groupmin/groupmax/spawnradius/centermin/centermax）\n"
                 + "/samsara debug whitelist json|reload —— 白名单查看/重载";
     }
 

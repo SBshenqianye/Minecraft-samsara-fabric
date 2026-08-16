@@ -308,6 +308,23 @@ public class RewindEngine {
         return data != null;
     }
 
+    /**
+     * 立即物理删除已标记（已到点）的未保留区块（备份 + 清零）。
+     * 供档3「逐步恢复后结尾删除」由管理员显式触发；等价于停服窗口删除但无需停服。
+     * 返回执行摘要。
+     */
+    public synchronized String purgeNow(MinecraftServer server) {
+        if (data == null || data.chunks.isEmpty()) {
+            return "当前没有进行中的倒流/待删区块";
+        }
+        int marked = data.markedCount();
+        if (marked == 0) {
+            return "没有已到点的区块可删（倒流尚未推进）";
+        }
+        applyPhysicalDeletion(server);
+        return "已立即删除 " + marked + " 个已到点（未保留）区块（已备份+清零，重启后按当前版本重新生成）";
+    }
+
     // ---- 内部 ----
 
     private record ScanResult(int total, int protectedCount, List<int[]> toRewind) {

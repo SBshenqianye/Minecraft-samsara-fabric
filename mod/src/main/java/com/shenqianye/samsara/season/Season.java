@@ -7,7 +7,7 @@ import java.util.List;
  * 周目（Season）—— 一世。字段与设计文档 §3.3 的 season.json 对应。
  */
 public class Season {
-    public enum State { PENDING, ACTIVE, ENDED, ARCHIVED }
+    public enum State { PENDING, ACTIVE, ENDED, ARCHIVED, SKIPPED }
 
     public int id;
     public String name;
