@@ -10,26 +10,26 @@
 ```
 samsara/
 ├── mod/        # Fabric 服务端模组（fabric-loom，mod id: samsara）
-├── datapack/   # 数据包（新周目开场流程/分组传送，规划中；pack_format=101）
+├── datapack/   # 数据包（pack.mcmeta 就绪，pack_format=107=26.2 的 data_major；开场流程/分组传送函数规划中）
 ├── tools/      # 离线分析脚本（analyze.py：不开服读存档活跃度）
 └── docs/       # 设计文档
 ```
 
-## 当前状态：M2 分组出生 + 时间倒流（档2）（已完成：26.2 编译 + 运行时验收；当前版本 v0.6.0）
+## 当前状态：M2 分组出生 + 时间倒流（档2/档3）（已完成：26.2 编译 + 运行时验收；当前版本 v0.8.8）
 
 > **服务端模组**：服务器只装本模组即得全部功能；客户端装了也可在单人存档使用（`environment: "*"` + `"server"` entrypoint，机制见 `mod/README.md`）。
 
 - [x] mod 项目骨架（**已锁定 26.2 版本链**并编译通过：fabric-api 0.157.0+26.2 / loader 0.19.3 / loom 1.17 / Java 25，见 `mod/README.md`）
 - [x] `tools/analyze.py` v0（多来源推断玩家最后登录：activity.log / 日志 / usercache，输出"距上次玩家登录 X 天"；零依赖，已实测）
 - [x] M1：Season 模型 + season.json 持久化 + `/season create/start/end/status` 状态机
-- [x] **M2 分组出生 + 时间倒流（档2）**（2026-08-16 验收）：
+- [x] **M2 分组出生 + 时间倒流（档2/档3）**（2026-08-16 验收；档3 方块级恢复与自动物理删除随 M2 迭代完成）：
   - 出生中心计算（same-world 距旧中心 15000~40000 随机方向，避开已用方向）
   - 分组算法（3~5 人/组、角度均分+抖动、组距≥300；来源=注入池+在线+usercache+playerdata）
   - 全员传送 + 广播；离线玩家上线自动补传送；`/season respawn-groups` 重分组
   - `/season start` 完整流程：建中心→分组→持久化 groupSpawns→**倒流（默认1天可配置）**→到期→传送共广播
-  - 时间倒流档2：未圈地块均匀分配倒流时刻，物理删除仅在**停服窗口**（备份+槽位清零，重启按当前版本重新生成）；保护集=世界出生圈+周目出生区+分组点+whitelist.json
-  - 测试通道：`/samsara debug fakeplayers`（注入）/`groups`（分组 dry-run）/`rewind preview|status|abort|set`
-- [ ] M3 活跃度 → M4 区块管理/倒流档3 → M5 面板 → M6 玩偶影像 → M7 世界栈 → M8 里程碑/资格 → M9 身份同步
+  - 时间倒流档2+档3：未圈地块均匀分配倒流时刻（区块波浪退场）+ 差异库方块级逐格恢复（懒加载）；**倒流完成即自动物理删除**（传送后立即备份+卸载+磁盘清零，不等停服；卸载不彻底的区块与中止倒流的已到点区块由停服窗口兜底，亦可 `/samsara debug rewind purge` 立即删）；保护集=**仅圈地**（whitelist.json，`/samsara debug claim` 维护）
+  - 测试通道：`/samsara debug fakeplayers`（注入）/`groups`（分组 dry-run）/`flow setup|rewind|teleport`（拆分 `/season start`）/`diff fake|text`（差异注入/空中字画）/`rewind preview|status|abort|purge|restore|set` / `claim add|addc|remove|list`
+- [ ] M3 活跃度 → M4 区块管理（倒流档3 已完成）→ M5 面板 → M6 玩偶影像 → M7 世界栈 → M8 里程碑/资格 → M9 身份同步
 
 ## 环境要求
 
@@ -74,11 +74,13 @@ season.json 示例（`mod/run/config/samsara/season.json`，随服务器运行�
 > rewind.json 落盘；season.json 落盘（spawnCenter + 4 组 groupSpawns）
 > samsara debug rewind abort                     → 清理测试倒流状态
 [停服窗口物理删除验证（构造 3 标记区块 rewind.json）]
-> 停服 → "倒流物理删除完成: 6 个已标记区块清零（涉及 3 个区域文件，备份至 …/backups/purge_…）"
-> 校验 region/entities/poi 槽位已清零；rewind.json 清除；备份目录生成
+> 停服 → "倒流物理删除完成: 6 个已标记区块清零（涉及 3 个区域文件，备份至 …/config/samsara/backups/purge_…）"
+> 校验 region/entities/poi 槽位已清零；rewind.json 归档；备份目录生成
 > 重启 → 世界正常加载，J1 仍 ACTIVE，分组数据从磁盘恢复
 > season respawn-groups                         → 围绕当前中心重新分组（5/5 两组）+ 传送
 ```
+
+> 注：上述验收记录中"停服窗口物理删除"是当时的实现；**v0.8.x 起已改为倒流完成即自动物理删除**（传送后立即执行，停服窗口仅作兜底），见上方当前状态。
 
 ## 生产模式测试服务器（test-server/）
 

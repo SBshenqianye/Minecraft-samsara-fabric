@@ -10,7 +10,7 @@
 - **是什么**：Minecraft Fabric 服务端模组，实现"轮回周目"系统——每个周目（赛季）自动计算新出生中心、玩家分组出生、世界时间倒流（区块波浪退场 + 方块级恢复）、圈地保护。
 - **技术栈**：Minecraft **26.2**（去混淆 Mojang 官方映射，无 yarn）、Fabric Loader 0.19.3、fabric-api 0.157.0+26.2、fabric-loom 1.17、Java 25、Gradle 9.5.1。
 - **代码位置**：`mod/src/main/java/com/shenqianye/samsara/`（约 21 个 Java 文件）
-- **设计文档**：`docs/` 目录（含 §2b 坐标规范、§10 禁止热删、§12 档3 倒流设计）
+- **设计文档**：`docs/` 目录（含 §2b 坐标规范、§10 删区块时机决策、§12 档3 倒流设计）
 
 ---
 
@@ -67,20 +67,20 @@ com/shenqianye/samsara/
 ### 数据文件（config/samsara/）
 - `season.json` — 周目列表 + Settings 配置
 - `whitelist.json` — 圈地
-- `rewind.json` — 进行中的倒流状态（完成后自动清除）
+- `rewind.json` — 进行中的倒流状态（完成后自动归档至 `config/samsara/archive/`，不删除；中止时清除）
 - `diff/s<赛季id>/` — 每区块 diff 记录（24 字节/条：stateId+x+y+z+timeMs）
 
 ---
 
 ## 4. 命令手册
 
-### 玩家命令
+### 玩家命令（全部以 /samsara 开头，无别名，设计文档 §17）
 ```
-/season create <名> [模式]      # 创建周目（PENDING；模式 same-world/new-world）
-/season start                   # 完整流程：setup→倒流→传送→删旧区
-/season end                     # 结束当前 ACTIVE
-/season skip                    # 跳过 PENDING
-/season status [页]             # 查看
+/samsara season create <名> [模式]   # 创建周目（PENDING；模式 same-world/new-world）
+/samsara season start                # 完整流程：setup→倒流→传送→删旧区
+/samsara season end                  # 结束当前 ACTIVE
+/samsara season skip                 # 跳过 PENDING
+/samsara season status [页]          # 查看
 ```
 
 ### OP 调试命令（玩家名须为 xh_unpkire）
@@ -88,10 +88,10 @@ com/shenqianye/samsara/
 /samsara debug flow setup               # 只准备（中心+分组+ACTIVE）
 /samsara debug flow rewind <true|false> # 只倒流（完成后是否传送）
 /samsara debug flow teleport            # 只传送
-/samsara debug diff                     # diff 库状态
+/samsara debug diff                     # diff 库状态（记录窗口/恢复源）
 /samsara debug diff fake <pos> <数量> [stateId]   # 注入虚假 diff（区块，坐标支持~）
 /samsara debug diff text <pos> <文字> [stateId] [scale]  # 空中字画（5×5 点阵）
-/samsara debug rewind preview|status|abort|purge|restore <pos>|set <时长>
+/samsara debug rewind preview|status|abort|purge|compact|restore <pos>|set <时长>
 /samsara debug claim add|addc <名> <p1> <p2>|remove <名>|list
 /samsara debug config [键] [值]         # groupdist/birthjitter/rewind/groupmin/...
 /samsara debug whitelist json|reload
@@ -108,11 +108,11 @@ com/shenqianye/samsara/
 - **OP 玩家**：`xh_unpkire`（offline 模式，名字精确匹配）
 - **启动**：`test-server/start-server.bat` 或 `java -jar fabric-server-launch.jar nogui`
 - **配置**：`rewind=30s`（测试用）、组距 1000、中心距 15000~40000、半径 1500、抖动 40
-- **备份策略**（用户要求）：固定 1 个初始备份 + 流水最新 2 个，当前保留：
-  - `backups/world_20260816_040401`（初始固定，2.3GB）
-  - `backups/world_20260816_155257`（2.3GB）
-  - `backups/world_20260816_165648`（3.9GB，测试前最后完整状态）
-- **purge 备份**：`world/backups/purge_<时间戳>/`（倒流删除前的区块备份，可回滚）
+- **备份策略**（用户要求，2026-08-17 起自动清理防磁盘膨胀）：`start-server.bat` 启动备份自动保留**初始 1 + 最新 2**；模组 `purge_*`/`compact_*` 各自动保留最新 **1** 份。当前保留：
+  - `backups/world_20260816_040401`（初始固定）
+  - `backups/world_20260816_165648`（流水）
+  - `backups/world_20260816_224131`（流水最新）
+- **purge 备份**：`config/samsara/backups/purge_<时间戳>/`（倒流删除前的区块备份，可回滚；不落存档目录，设计规范 §15）
 
 ### 开发环境
 - JDK25：`C:\Users\Administrator\AppData\Local\Temp\dsh-Ln5i7u\jdk25\jdk-25.0.4+7`
@@ -126,9 +126,9 @@ com/shenqianye/samsara/
 1. **RCON 中文传输乱码**（工具限制，游戏内正常）：`RconClient` 传中文会拆段报错，验证中文用游戏内。
 2. **区块删除后重生成 ≠ 创建时地形**：MC 特性（邻接依赖/结构规划），非 bug；要完全还原用初始备份。
 3. **`restoreChunkNow` 对远离出生点的区块**：强制 getChunk 后 setBlock 在 26.2 中仍可能受限（"not loaded"），但玩家在线视距内正常；字画注入已内置强制加载可绕过。
-4. **多人 ACTIVE 残留**：`current()` 取第一个 ACTIVE，测试后需清理 season.json（ACTIVE→ENDED）或用 `/season end`。
-5. **可能待做**：档3 逐步恢复后"结尾自动删除区块"已实现（倒流完成即删）；旗帜圈地系统尚未接入（目前用 debug claim 指令，按用户要求）。
-6. **Tier3Restore 无玩家在线时不恢复**（collectSpawningChunks 为空）——设计如此（懒加载），玩家在视距内才恢复；restore 命令可强制。
+4. **（已修复 2026-08-17）多人 ACTIVE 残留**：create/setup 已拦截双 ACTIVE；现存残留可用 `/season end` 清理。
+5. **可能待做**：旗帜圈地系统尚未接入（目前用 debug claim 指令，按用户要求）；`compact` 运行中执行时被 MC 占用的文件会跳过（停服窗口自动重试）。
+6. **Tier3Restore 无玩家在线时不恢复**（collectSpawningChunks 为空）——设计如此（懒加载），玩家在视距内才恢复；restore 命令可强制；无加载区块时视为恢复完成并归档。
 
 ---
 
@@ -138,13 +138,33 @@ com/shenqianye/samsara/
 - 性能：5.3 万条 diff 注入 **234ms**（修复前卡死 75s）；恢复 2.1 万格 **1086ms** 零卡顿
 - 倒流完成自动删除：`36908 个已标记区块清零（备份至 purge_20260816_212550）`，无需停服
 - 坐标语法糖：`diff text ~ ~ ~ SAM` → (0,71,0)、`~5 ~10 ~5` → (5,81,5) 全部验证通过
+- **2026-08-17 文件级回收实测**：`compact` 扫描 1060 个 .mca → 全空删除 862 个 + 压缩重写 20 个 → **释放 1,754 MB**（world 4,355 → 2,646 MB，region 384 → 13 个文件）
 
 ---
 
-## 8. 交接检查清单
+## 8. 2026-08-17 修复批次（未提交，工作树改动）
 
-- [x] 工作树干净（git status 无未提交改动）
-- [x] 服务器运行中（PID 37320，25565/25575）
-- [x] 赛季状态干净（无 ACTIVE 残留）
-- [x] 备份 3 个（初始 1 + 流水 2），磁盘空余 20.5GB
-- [x] 最近 3 个 commit：`1329bcb`（自动删除）、`61269cd`（性能）、`2ea73b3`（注入即显示）
+| 项 | 内容 |
+|---|---|
+| **diff 快照语义** | 记录常开（diff/current）；倒流启动冻结为恢复源 diff/s<N>（窗口=上次删块后至本次倒流开始）；完成时重置窗口；恢复读恢复源 → 倒流期间新改动不被本轮倒流 |
+| **待删队列** | 删除时仍加载的区块入 `pending-delete.json`（卸载即删；启动/停服兜底）；入队/删除前复查圈地；幂等（chunkExists） |
+| **文件级回收** | 清零后全空 .mca 直接整文件删除；`/samsara debug rewind compact` + 停服窗口自动压缩重写（备份至 `config/samsara/backups/compact_<ts>/`） |
+| **归档** | 倒流"走完"（传送完成 && 恢复完成）后 rewind.json 归档至 `config/samsara/archive/`（不删除）；中止清除且不删区块 |
+| **异步删除** | 备份+清零在后台线程执行；停服窗口 join 后执行 compact |
+| **M1 术语** | "已到点"→"已到倒流时刻/待退场"；abort 文案与实际一致（中止=全保留） |
+| **M2** | 禁止双 ACTIVE（create/setup 拦截） |
+| **M3** | 无可倒流区块时 `/season start` 回退直接传送，不卡 ACTIVE |
+| **L1-L8** | 组距文案动态/自适应散布、pending-teleports 持久化+清空再填充、fakeplayers 自动清空、死字段移除、rewind.json 落盘节流、恢复预算实际推进位置（不断档）、恢复在倒流结束后继续到完成 |
+| **文档** | `docs/设计规范.md` 新增 §11 diff 窗口、§12 待删队列/术语/文件级回收、§13 状态机约束、§14 其它约定 |
+
+**部署**：已部署 test-server（PID 随启动变化，端口 25565/25575）；备份 `backups/world_20260816_224131`；当前 #63 仍 ACTIVE（测试残留，可用 `/season end` 清理）。
+
+---
+
+## 9. 交接检查清单
+
+- [ ] 工作树有未提交改动（2026-08-17 修复批次，见 §8）
+- [x] 服务器运行中（25565/25575）
+- [x] 赛季状态：#63 ACTIVE 残留（测试后需清理）
+- [x] 备份：初始 1 + 流水 2 + 20260816_224131，磁盘空余 ~17GB
+- [x] 最近 3 个 commit：`bb3b963`（交接文档）、`1329bcb`（自动删除）、`61269cd`（性能）
