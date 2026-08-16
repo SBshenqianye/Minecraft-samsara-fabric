@@ -60,6 +60,8 @@ public class DebugCommand {
                                          Commands.CommandSelection selection) {
         dispatcher.register(Commands.literal("samsara")
                 .executes(ctx -> reply(ctx.getSource(), help()))
+                .then(Commands.literal("version")
+                        .executes(ctx -> reply(ctx.getSource(), versionInfo())))
                 .then(Commands.literal("debug")
                         .requires(src -> isOwner(src))
                         .then(Commands.literal("status")
@@ -245,7 +247,9 @@ public class DebugCommand {
     }
 
     private static String help() {
-        return "周目管理 samsara 调试指令（COMMANDS_OWNER）：\n"
+        return "周目管理 samsara 指令：\n"
+                + "/samsara version —— 模组版本号\n"
+                + "/samsara 调试指令（COMMANDS_OWNER）：\n"
                 + "/samsara debug status —— 状态机概要 + season.json 路径\n"
                 + "/samsara debug json —— 打印 season.json 原始内容\n"
                 + "/samsara debug reload —— 重新从磁盘加载\n"
@@ -257,6 +261,23 @@ public class DebugCommand {
                 + "/samsara debug rewind preview|status|abort|set <时长> —— 倒流控制：预览/状态/中止/时长（支持 1h 30m 3600s 1d 0.5d）\n"
                 + "/samsara debug config [键] [值] —— 查看/设置配置（无键=全部；键: groupdist/birthjitter/birthreset/rewind/groupmin/groupmax/spawnradius/centermin/centermax）\n"
                 + "/samsara debug whitelist json|reload —— 白名单查看/重载";
+    }
+
+    /** /samsara version：从 FabricLoader 取模组版本 + 显示名 + 简略配置 */
+    private static String versionInfo() {
+        String version = "unknown";
+        String name = "samsara";
+        try {
+            var container = net.fabricmc.loader.api.FabricLoader.getInstance().getModContainer("samsara");
+            if (container.isPresent()) {
+                version = container.get().getMetadata().getVersion().getFriendlyString();
+                name = container.get().getMetadata().getName();
+            }
+        } catch (Exception e) {
+            // 取不到版本就用 unknown
+        }
+        return "周目管理（" + name + "） · 版本 " + version
+                + " · MC 26.2 / Fabric —— 空间/时间/逆熵";
     }
 
     private static boolean isOwner(CommandSourceStack src) {
