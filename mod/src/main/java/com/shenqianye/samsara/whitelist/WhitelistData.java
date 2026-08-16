@@ -10,9 +10,7 @@ import java.util.List;
  * 配置用方块坐标，判定按区块坐标（§6.6：配置中的方块坐标自动取整）。
  */
 public class WhitelistData {
-    /** 世界出生点保护半径（方块；默认 1000） */
-    public int spawnProtectionRadius = 1000;
-    /** 额外区域（circle = 圆心+半径；rect = min/max 方块坐标） */
+    /** 额外区域（circle = 圆心+半径；rect = min/max 方块坐标）。保护集只取决于圈地（regions）。 */
     public List<Region> regions = new ArrayList<>();
 
     public static class Region {

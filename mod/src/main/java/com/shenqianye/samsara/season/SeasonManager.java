@@ -50,8 +50,9 @@ public class SeasonManager {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static SeasonManager instance;
     private final Path file;
+    private final Path pendingFile;
     private SeasonData data;
-    /** 倒流完成后离线玩家的待传送（uuid → 分组出生点），上线即传送 */
+    /** 倒流完成后离线玩家的待传送（uuid → 分组出生点），上线即传送；持久化以免重启丢失 */
     private final Map<UUID, int[]> pendingTeleports = new HashMap<>();
 
     private SeasonManager() {
@@ -62,7 +63,9 @@ public class SeasonManager {
             throw new RuntimeException("无法创建 samsara 配置目录", e);
         }
         file = dir.resolve("season.json");
+        pendingFile = dir.resolve("pending-teleports.json");
         load();
+        loadPendingTeleports();
     }
 
     public static synchronized SeasonManager getInstance() {
@@ -109,12 +112,66 @@ public class SeasonManager {
         }
     }
 
+    // ---- 离线玩家待传送持久化（重启不丢，L3 修复） ----
+
+    /** 序列化结构：pending-teleports.json */
+    public static class PendingState {
+        public List<Entry> entries = new ArrayList<>();
+
+        public static class Entry {
+            public String uuid;
+            public int x;
+            public int z;
+        }
+    }
+
+    private void savePendingTeleports() {
+        try {
+            PendingState s = new PendingState();
+            for (Map.Entry<UUID, int[]> e : pendingTeleports.entrySet()) {
+                PendingState.Entry en = new PendingState.Entry();
+                en.uuid = e.getKey().toString();
+                en.x = e.getValue()[0];
+                en.z = e.getValue()[1];
+                s.entries.add(en);
+            }
+            Files.writeString(pendingFile, GSON.toJson(s), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            com.shenqianye.samsara.Samsara.LOGGER.error("[周目管理 samsara] pending-teleports 写入失败: {}", e.getMessage());
+        }
+    }
+
+    private void loadPendingTeleports() {
+        pendingTeleports.clear();
+        if (!Files.exists(pendingFile)) {
+            return;
+        }
+        try {
+            PendingState s = GSON.fromJson(Files.readString(pendingFile, StandardCharsets.UTF_8), PendingState.class);
+            if (s != null) {
+                for (PendingState.Entry en : s.entries) {
+                    try {
+                        pendingTeleports.put(UUID.fromString(en.uuid), new int[]{en.x, en.z});
+                    } catch (IllegalArgumentException ignored) {
+                    }
+                }
+            }
+        } catch (Exception e) {
+            com.shenqianye.samsara.Samsara.LOGGER.warn("[周目管理 samsara] pending-teleports 解析失败: {}", e.getMessage());
+        }
+    }
+
     // ---- 状态机操作 ----
 
     /** /season create <name> [mode] */
     public String create(String name, String mode) {
         if (currentPending() != null) {
             return "存在未开始的周目 #" + currentPending().id + "「" + currentPending().name + "」，请先 start 或 end";
+        }
+        // M2 修复：不允许在已有 ACTIVE 周目时再创建（否则双 ACTIVE 并存，current() 取错）
+        Season active = firstActive();
+        if (active != null) {
+            return "已有进行中的周目 #" + active.id + "「" + active.name + "」（ACTIVE），请先 /season end 再创建";
         }
         if (!"same-world".equals(mode) && !"new-world".equals(mode)) {
             return "模式必须为 same-world 或 new-world";
@@ -148,10 +205,16 @@ public class SeasonManager {
         SeasonData.Settings cfg = data.settings;
         // same-world + 倒流 >0 → 启动倒流（到期自动传送）；否则立即传送
         if ("same-world".equals(s.mode) && cfg.rewindDurationMs > 0) {
-            // 档3：开始记录本轮方块变化（差异库）
-            com.shenqianye.samsara.rewind.DiffRecorder.startRecording(s.id);
+            // 记录窗口在 RewindEngine.start 内冻结（此后新改动属于下个窗口）
             String r = RewindEngine.getInstance().start(server, s.id, cfg.rewindDurationMs,
                     () -> onRewindComplete(server, s.id));
+            // M3 修复：世界无可倒流区块（全部受保护/为空）→ 不卡 ACTIVE，改为直接传送
+            if (r.equals(RewindEngine.NO_REWINDABLE_MSG)) {
+                int t = teleportSeasonPlayers(server, s);
+                broadcast(server, "🎉 周目 #" + s.id + "「" + s.name + "」已开启（世界无可倒流区块，跳过倒流）· 出生中心 ("
+                        + s.spawnCenter.x + ", " + s.spawnCenter.z + ") · 已传送 " + t + " 名在线玩家");
+                return setup + "\n" + r + "\n（已跳过倒流，改为直接传送在线玩家 " + t + " 名）";
+            }
             return setup + "\n" + r;
         }
         int t = teleportSeasonPlayers(server, s);
@@ -171,6 +234,11 @@ public class SeasonManager {
         }
         if (RewindEngine.getInstance().running()) {
             return "已有进行中的时间倒流，请先 /samsara debug rewind abort 再操作";
+        }
+        // M2 修复：已有其它 ACTIVE 周目时不允许再开启（避免双 ACTIVE 并存）
+        Season active = firstActive();
+        if (active != null && active.id != s.id) {
+            return "已有进行中的周目 #" + active.id + "「" + active.name + "」（ACTIVE），请先 /season end 再开启";
         }
         ServerLevel overworld = server.getLevel(Level.OVERWORLD);
         if (overworld == null) {
@@ -216,6 +284,11 @@ public class SeasonManager {
 
         // 3) 分组 + 持久化
         List<PlayerRegistry.RegPlayer> players = PlayerRegistry.getInstance().read(server);
+        // L6 修复：真实开周目自动清空测试注入池（避免假玩家残留进后续分组）
+        int injectedCleared = PlayerRegistry.getInstance().injectedCount();
+        if (injectedCleared > 0) {
+            PlayerRegistry.getInstance().clearInjected();
+        }
         GroupPlanner.Plan plan = GroupPlanner.plan(centerX, centerZ, cfg.spawnRadius, players, cfg, rnd);
         s.groupSpawns.clear();
         for (GroupPlanner.GroupSpawnPoint g : plan.groups) {
@@ -234,8 +307,10 @@ public class SeasonManager {
         data.currentSeasonId = s.id;
         save();
 
+        String injectedNote = injectedCleared > 0
+                ? "（已自动清空注入的测试玩家 " + injectedCleared + " 名）" : "";
         return "周目 #" + s.id + "「" + s.name + "」已准备（ACTIVE）· 出生中心 ("
-                + centerX + ", " + centerZ + ") · " + centerNote + "\n" + plan.report();
+                + centerX + ", " + centerZ + ") · " + centerNote + injectedNote + "\n" + plan.report();
     }
 
     /**
@@ -254,7 +329,7 @@ public class SeasonManager {
         if (cfg.rewindDurationMs <= 0) {
             return "倒流时长未配置（/samsara debug config rewind <时长>）";
         }
-        com.shenqianye.samsara.rewind.DiffRecorder.startRecording(s.id);
+        com.shenqianye.samsara.rewind.DiffRecorder.setEnabled(true); // 记录常开，确保已初始化
         String r = RewindEngine.getInstance().start(server, s.id, cfg.rewindDurationMs,
                 teleportAfter ? () -> onRewindComplete(server, s.id) : null);
         return r;
@@ -327,7 +402,9 @@ public class SeasonManager {
         if (RewindEngine.getInstance().running()) {
             rewindNote = "\n（已中止进行中的时间倒流）" + RewindEngine.getInstance().abort().replaceFirst("^[^：]*：", " ");
         }
-        com.shenqianye.samsara.rewind.DiffRecorder.stopRecording();
+        // 记录常开（diff 窗口继续累计），但清空本季待传送（已结束的周目不再补传送）
+        pendingTeleports.clear();
+        savePendingTeleports();
         s.state = Season.State.ENDED;
         s.endTime = Instant.now().toEpochMilli();
         save();
@@ -356,6 +433,7 @@ public class SeasonManager {
         if (pos != null) {
             teleportPlayer(player, overworld, pos[0], pos[1]);
             setPlayerBirthpoint(player, overworld, pos[0], pos[1], data.settings);
+            savePendingTeleports(); // 待传送被消费，落盘
             player.sendSystemMessage(Component.literal("[周目管理] 欢迎回来！你已被传送至本周目分组出生点 ("
                     + pos[0] + ", " + pos[1] + ")"));
             return;
@@ -378,6 +456,16 @@ public class SeasonManager {
     public Season currentPending() {
         for (Season s : data.seasons) {
             if (s.state == Season.State.PENDING) {
+                return s;
+            }
+        }
+        return null;
+    }
+
+    /** 第一个 ACTIVE 周目（无则 null）—— 用于阻止双 ACTIVE 并存（M2 修复） */
+    private Season firstActive() {
+        for (Season s : data.seasons) {
+            if (s.state == Season.State.ACTIVE) {
                 return s;
             }
         }
@@ -488,6 +576,8 @@ public class SeasonManager {
         if (overworld == null) {
             return 0;
         }
+        // L3 修复：先清空再按当前周目名单填充，避免旧周目的残留待传送条目
+        pendingTeleports.clear();
         Map<UUID, ServerPlayer> online = new HashMap<>();
         for (ServerPlayer p : server.getPlayerList().getPlayers()) {
             online.put(p.getUUID(), p);
@@ -522,6 +612,7 @@ public class SeasonManager {
                 teleported++;
             }
         }
+        savePendingTeleports(); // 持久化离线待传送（重启不丢）
         return teleported;
     }
 
@@ -825,17 +916,19 @@ public class SeasonManager {
         return "新中心采样最大距离 = " + v;
     }
 
-    /** 档3 差异库状态（记录开关 / 记录数 / 目录） */
+    /** 档3 差异库状态（记录窗口 / 恢复源 / 记录数） */
     public String diffStatus() {
-        boolean rec = com.shenqianye.samsara.rewind.DiffRecorder.recording();
-        com.shenqianye.samsara.rewind.DiffStore store = com.shenqianye.samsara.rewind.DiffStore.current();
-        if (store == null) {
-            return "档3 差异库：未初始化（需先 /season start 开倒流）\n当前记录开关: " + (rec ? "开" : "关");
+        String sb = "档3 差异库（常开记录）：记录 " + (com.shenqianye.samsara.rewind.DiffRecorder.recording() ? "开" : "关");
+        com.shenqianye.samsara.rewind.DiffStore w = com.shenqianye.samsara.rewind.DiffRecorder.store();
+        if (w == null) {
+            return sb + "\n记录窗口未初始化（需重启，DiffRecorder.init 未执行）";
         }
-        return "档3 差异库：记录开关 " + (rec ? "开" : "关") + " · 周目 #"
-                + com.shenqianye.samsara.rewind.DiffRecorder.seasonId()
-                + " · 记录数 " + store.count()
-                + "\n目录: " + store.root();
+        sb += "\n记录窗口: " + w.root().getFileName() + " · current 记录数 " + w.count();
+        if (com.shenqianye.samsara.rewind.RewindEngine.getInstance().running()) {
+            int sid = com.shenqianye.samsara.rewind.RewindEngine.getInstance().currentSeasonId();
+            sb += "\n恢复源: diff/s" + sid + "（本次倒流用，含上次删块后至今的全部改动）";
+        }
+        return sb;
     }
 
     /** 重新从磁盘加载 season.json（测试 load 路径） */
@@ -848,6 +941,8 @@ public class SeasonManager {
     public String reset() {
         data = new SeasonData();
         save();
+        pendingTeleports.clear();
+        savePendingTeleports();
         return "已清空全部周目数据（重置为初始状态）";
     }
 

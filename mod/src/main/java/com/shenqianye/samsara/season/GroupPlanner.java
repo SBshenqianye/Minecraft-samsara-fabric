@@ -40,13 +40,17 @@ public class GroupPlanner {
         public final List<GroupSpawnPoint> groups;
         /** 是否发生了无法满足组距的兜底放置 */
         public final boolean distanceViolated;
+        /** 本次使用的组距配置（报告用，L1 修复：不再硬编码 300） */
+        public final int minGroupDist;
 
-        Plan(int centerX, int centerZ, int radius, List<GroupSpawnPoint> groups, boolean distanceViolated) {
+        Plan(int centerX, int centerZ, int radius, List<GroupSpawnPoint> groups, boolean distanceViolated,
+             int minGroupDist) {
             this.centerX = centerX;
             this.centerZ = centerZ;
             this.radius = radius;
             this.groups = groups;
             this.distanceViolated = distanceViolated;
+            this.minGroupDist = minGroupDist;
         }
 
         /** 多行文本报告（设计规范 §2：每条一行、间隔号连接、块间空行） */
@@ -73,7 +77,7 @@ public class GroupPlanner {
                 }
             }
             if (distanceViolated) {
-                sb.append("⚠ 部分出生点未满足组距 ≥ 300（随机尝试耗尽，已兜底放置）\n");
+                sb.append("⚠ 部分出生点未满足组距 ≥ ").append(minGroupDist).append("（随机尝试耗尽，已兜底放置）\n");
             }
             return sb.toString().trim();
         }
@@ -103,6 +107,13 @@ public class GroupPlanner {
         int groupCount = Math.max(1, (n + s.groupSizeMax - 1) / s.groupSizeMax);
         int base = n / groupCount;
         int rem = n % groupCount;
+        // L5 修复：组数多时自动扩大散布半径，避免几十组挤在小半径里必然违反组距
+        // 估算半径随组数开方增长：each 组距 ≥ groupMinDistance 需要的环带宽度
+        int effectiveSpreadMax = s.spreadMaxRadius;
+        if (s.groupMinDistance > 0) {
+            int need = (int) Math.ceil(Math.sqrt(groupCount) * s.groupMinDistance * 0.6);
+            effectiveSpreadMax = Math.max(effectiveSpreadMax, Math.min(20000, need));
+        }
         List<GroupSpawnPoint> points = new ArrayList<>();
         boolean violated = false;
         int idx = 0;
@@ -124,14 +135,14 @@ public class GroupPlanner {
                 // 组距配置 = 0：所有组共用出生中心（设计：组间距离为 0 同样共用）
                 pos = new int[]{centerX, centerZ, 0};
             } else {
-                pos = placePoint(centerX, centerZ, i, groupCount, s, rnd, points);
+                pos = placePoint(centerX, centerZ, i, groupCount, s, effectiveSpreadMax, rnd, points);
                 if (pos[2] == 1) {
                     violated = true;
                 }
             }
             points.add(new GroupSpawnPoint(pos[0], pos[1], uuids, names));
         }
-        return new Plan(centerX, centerZ, radius, points, violated);
+        return new Plan(centerX, centerZ, radius, points, violated, s.groupMinDistance);
     }
 
     /**
@@ -139,12 +150,13 @@ public class GroupPlanner {
      * 极角 = i*(2π/g) ± 抖动(0.35 rad)，半径 = spreadMin~spreadMax 均匀；
      * 与已放置组距 ≥ groupMinDistance，最多 40 次尝试。
      */
-    private static int[] placePoint(int cx, int cz, int i, int g, SeasonData.Settings s, Random rnd,
-                                    List<GroupSpawnPoint> placed) {
+    private static int[] placePoint(int cx, int cz, int i, int g, SeasonData.Settings s, int spreadMax,
+                                    Random rnd, List<GroupSpawnPoint> placed) {
         double baseAngle = i * (2.0 * Math.PI / g);
+        double spreadMin = Math.min(s.spreadMinRadius, spreadMax);
         for (int attempt = 0; attempt < 40; attempt++) {
             double angle = baseAngle + (rnd.nextDouble() * 2 - 1) * 0.7;
-            double dist = s.spreadMinRadius + rnd.nextDouble() * (s.spreadMaxRadius - s.spreadMinRadius);
+            double dist = spreadMin + rnd.nextDouble() * (spreadMax - spreadMin);
             int x = cx + (int) Math.round(Math.cos(angle) * dist);
             int z = cz + (int) Math.round(Math.sin(angle) * dist);
             boolean ok = true;
@@ -159,7 +171,7 @@ public class GroupPlanner {
             }
         }
         // 兜底：均分角 + 最小半径（可能违反组距，由调用方标注）
-        return new int[]{cx + (int) Math.round(Math.cos(baseAngle) * s.spreadMinRadius),
-                cz + (int) Math.round(Math.sin(baseAngle) * s.spreadMinRadius), 1};
+        return new int[]{cx + (int) Math.round(Math.cos(baseAngle) * spreadMin),
+                cz + (int) Math.round(Math.sin(baseAngle) * spreadMin), 1};
     }
 }

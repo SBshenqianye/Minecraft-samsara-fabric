@@ -12,8 +12,7 @@ import java.nio.file.Path;
 /**
  * 配置白名单（M2 起，设计文档 §6.2.2）。单例（设计规范 §6）。
  * <p>
- * 读取 {@code config/samsara/whitelist.json}；不存在则写入默认值
- * （spawnProtectionRadius=1000，regions 空）。
+ * 读取 {@code config/samsara/whitelist.json}；不存在则写入默认值（regions 空）。
  * <p>
  * 判定逻辑在 {@link ChunkProtector}（结合世界出生点/各周目出生区做动态保护集）。
  */
