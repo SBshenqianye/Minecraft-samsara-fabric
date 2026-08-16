@@ -60,56 +60,56 @@ public class DebugCommand {
     private static void registerCommands(CommandDispatcher<CommandSourceStack> dispatcher,
                                          CommandBuildContext buildContext,
                                          Commands.CommandSelection selection) {
-        // diff 命令树（fake 虚假 diff / text 空中字画），独立变量避免括号层级错误
+        // diff 命令树（fake 虚假 diff / text 空中字画），独立变量避免括号层级错误。
+        // 坐标参数一律用原版参数类型支持 ~ / ~N 语法糖（设计规范 §2b）：
+        //   fake/restore 用 ColumnPosArgument（柱坐标 x z → 自动 ÷16 转区块）
+        //   text 用 BlockPosArgument（方块坐标 x y z）
         com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> diffCmd =
                 Commands.literal("diff")
                         .executes(ctx -> reply(ctx.getSource(), MANAGER.diffStatus()))
                         .then(Commands.literal("fake")
-                                .then(Commands.argument("cx", IntegerArgumentType.integer())
-                                        .then(Commands.argument("cz", IntegerArgumentType.integer())
-                                                .then(Commands.argument("count", IntegerArgumentType.integer(1, 4096))
+                                .then(Commands.argument("pos", net.minecraft.commands.arguments.coordinates.ColumnPosArgument.columnPos())
+                                        .then(Commands.argument("count", IntegerArgumentType.integer(1, 4096))
+                                                .executes(ctx -> reply(ctx.getSource(),
+                                                        com.shenqianye.samsara.rewind.DiffRecorder.fakeDiff(
+                                                                posToChunkX(ctx, "pos"),
+                                                                posToChunkZ(ctx, "pos"),
+                                                                IntegerArgumentType.getInteger(ctx, "count"),
+                                                                com.shenqianye.samsara.rewind.DiffRecorder.stoneStateId()))) // 默认石头
+                                                .then(Commands.argument("stateId", IntegerArgumentType.integer(0, 10000))
                                                         .executes(ctx -> reply(ctx.getSource(),
                                                                 com.shenqianye.samsara.rewind.DiffRecorder.fakeDiff(
-                                                                        IntegerArgumentType.getInteger(ctx, "cx"),
-                                                                        IntegerArgumentType.getInteger(ctx, "cz"),
+                                                                        posToChunkX(ctx, "pos"),
+                                                                        posToChunkZ(ctx, "pos"),
                                                                         IntegerArgumentType.getInteger(ctx, "count"),
-                                                                        com.shenqianye.samsara.rewind.DiffRecorder.stoneStateId()))) // 默认石头
-                                                        .then(Commands.argument("stateId", IntegerArgumentType.integer(0, 10000))
-                                                                .executes(ctx -> reply(ctx.getSource(),
-                                                                        com.shenqianye.samsara.rewind.DiffRecorder.fakeDiff(
-                                                                                IntegerArgumentType.getInteger(ctx, "cx"),
-                                                                                IntegerArgumentType.getInteger(ctx, "cz"),
-                                                                                IntegerArgumentType.getInteger(ctx, "count"),
-                                                                                IntegerArgumentType.getInteger(ctx, "stateId")))))))))
+                                                                        IntegerArgumentType.getInteger(ctx, "stateId"))))))))
                         .then(Commands.literal("text")
-                                .then(Commands.argument("x", IntegerArgumentType.integer())
-                                        .then(Commands.argument("y", IntegerArgumentType.integer())
-                                                .then(Commands.argument("z", IntegerArgumentType.integer())
-                                                        .then(Commands.argument("text", StringArgumentType.string())
+                                .then(Commands.argument("pos", net.minecraft.commands.arguments.coordinates.BlockPosArgument.blockPos())
+                                        .then(Commands.argument("text", StringArgumentType.string())
+                                                .executes(ctx -> reply(ctx.getSource(),
+                                                        com.shenqianye.samsara.rewind.DiffRecorder.fakeDiffText(
+                                                                posX(ctx, "pos"),
+                                                                posY(ctx, "pos"),
+                                                                posZ(ctx, "pos"),
+                                                                StringArgumentType.getString(ctx, "text"),
+                                                                com.shenqianye.samsara.rewind.DiffRecorder.stoneStateId(), 2))) // 默认石头, scale=2
+                                                .then(Commands.argument("stateId", IntegerArgumentType.integer(0, 10000))
+                                                        .executes(ctx -> reply(ctx.getSource(),
+                                                                com.shenqianye.samsara.rewind.DiffRecorder.fakeDiffText(
+                                                                        posX(ctx, "pos"),
+                                                                        posY(ctx, "pos"),
+                                                                        posZ(ctx, "pos"),
+                                                                        StringArgumentType.getString(ctx, "text"),
+                                                                        IntegerArgumentType.getInteger(ctx, "stateId"), 2)))
+                                                        .then(Commands.argument("scale", IntegerArgumentType.integer(1, 8))
                                                                 .executes(ctx -> reply(ctx.getSource(),
                                                                         com.shenqianye.samsara.rewind.DiffRecorder.fakeDiffText(
-                                                                                IntegerArgumentType.getInteger(ctx, "x"),
-                                                                                IntegerArgumentType.getInteger(ctx, "y"),
-                                                                                IntegerArgumentType.getInteger(ctx, "z"),
+                                                                                posX(ctx, "pos"),
+                                                                                posY(ctx, "pos"),
+                                                                                posZ(ctx, "pos"),
                                                                                 StringArgumentType.getString(ctx, "text"),
-                                                                                com.shenqianye.samsara.rewind.DiffRecorder.stoneStateId(), 2))) // 默认石头, scale=2
-                                                                .then(Commands.argument("stateId", IntegerArgumentType.integer(0, 10000))
-                                                                        .executes(ctx -> reply(ctx.getSource(),
-                                                                                com.shenqianye.samsara.rewind.DiffRecorder.fakeDiffText(
-                                                                                        IntegerArgumentType.getInteger(ctx, "x"),
-                                                                                        IntegerArgumentType.getInteger(ctx, "y"),
-                                                                                        IntegerArgumentType.getInteger(ctx, "z"),
-                                                                                        StringArgumentType.getString(ctx, "text"),
-                                                                                        IntegerArgumentType.getInteger(ctx, "stateId"), 2)))
-                                                                        .then(Commands.argument("scale", IntegerArgumentType.integer(1, 8))
-                                                                                .executes(ctx -> reply(ctx.getSource(),
-                                                                                        com.shenqianye.samsara.rewind.DiffRecorder.fakeDiffText(
-                                                                                                IntegerArgumentType.getInteger(ctx, "x"),
-                                                                                                IntegerArgumentType.getInteger(ctx, "y"),
-                                                                                                IntegerArgumentType.getInteger(ctx, "z"),
-                                                                                                StringArgumentType.getString(ctx, "text"),
-                                                                                                IntegerArgumentType.getInteger(ctx, "stateId"),
-                                                                                                IntegerArgumentType.getInteger(ctx, "scale")))))))))));
+                                                                                IntegerArgumentType.getInteger(ctx, "stateId"),
+                                                                                IntegerArgumentType.getInteger(ctx, "scale")))))))));
         dispatcher.register(Commands.literal("samsara")
                 .executes(ctx -> reply(ctx.getSource(), help()))
                 .then(Commands.literal("version")
@@ -179,13 +179,12 @@ public class DebugCommand {
                                         .executes(ctx -> reply(ctx.getSource(),
                                                 RewindEngine.getInstance().purgeNow(ctx.getSource().getServer()))))
                                 .then(Commands.literal("restore")
-                                        .then(Commands.argument("cx", IntegerArgumentType.integer())
-                                                .then(Commands.argument("cz", IntegerArgumentType.integer())
-                                                        .executes(ctx -> reply(ctx.getSource(),
-                                                                RewindEngine.getInstance().restoreChunkNow(
-                                                                        ctx.getSource().getServer(),
-                                                                        IntegerArgumentType.getInteger(ctx, "cx"),
-                                                                        IntegerArgumentType.getInteger(ctx, "cz")))))))
+                                        .then(Commands.argument("pos", net.minecraft.commands.arguments.coordinates.ColumnPosArgument.columnPos())
+                                                .executes(ctx -> reply(ctx.getSource(),
+                                                        RewindEngine.getInstance().restoreChunkNow(
+                                                                ctx.getSource().getServer(),
+                                                                posToChunkX(ctx, "pos"),
+                                                                posToChunkZ(ctx, "pos"))))))
                                 .then(Commands.literal("set")
                                         .then(Commands.argument("dur", StringArgumentType.greedyString())
                                                 .executes(ctx -> reply(ctx.getSource(), MANAGER.setRewindDuration(
@@ -256,6 +255,33 @@ public class DebugCommand {
             z2 *= 16;
         }
         return reply(ctx.getSource(), WhitelistStore.getInstance().claimAdd(name, x1, z1, x2, z2));
+    }
+
+    // ---- 坐标语法糖辅助（设计规范 §2b：坐标参数一律用原版参数类型支持 ~ / ~N）----
+
+    /** BlockPosArgument 的 x */
+    private static int posX(CommandContext<CommandSourceStack> ctx, String name) {
+        return net.minecraft.commands.arguments.coordinates.BlockPosArgument.getBlockPos(ctx, name).getX();
+    }
+
+    /** BlockPosArgument 的 y */
+    private static int posY(CommandContext<CommandSourceStack> ctx, String name) {
+        return net.minecraft.commands.arguments.coordinates.BlockPosArgument.getBlockPos(ctx, name).getY();
+    }
+
+    /** BlockPosArgument 的 z */
+    private static int posZ(CommandContext<CommandSourceStack> ctx, String name) {
+        return net.minecraft.commands.arguments.coordinates.BlockPosArgument.getBlockPos(ctx, name).getZ();
+    }
+
+    /** ColumnPosArgument 的 x（方块坐标）→ 区块 X（÷16） */
+    private static int posToChunkX(CommandContext<CommandSourceStack> ctx, String name) {
+        return Math.floorDiv(net.minecraft.commands.arguments.coordinates.ColumnPosArgument.getColumnPos(ctx, name).x(), 16);
+    }
+
+    /** ColumnPosArgument 的 z（方块坐标）→ 区块 Z（÷16） */
+    private static int posToChunkZ(CommandContext<CommandSourceStack> ctx, String name) {
+        return Math.floorDiv(net.minecraft.commands.arguments.coordinates.ColumnPosArgument.getColumnPos(ctx, name).z(), 16);
     }
 
     private static int create(CommandContext<CommandSourceStack> ctx, String mode, int count) {
@@ -381,8 +407,8 @@ public class DebugCommand {
                 + "/samsara debug settime <id> <start|end> <now|epoch毫秒> —— 设置时间戳\n"
                 + "/samsara debug fakeplayers <clear|数字|前缀 数量|名字,名字...> —— 注入离线测试玩家（M2 分组用）\n"
                 + "/samsara debug groups [名单] —— 分组 dry-run（缺省用注册玩家）\n"
-                + "/samsara debug rewind preview|status|abort|purge|restore <cx> <cz>|set <时长> —— 倒流控制：预览/状态/中止/立即删未保留区块/强制恢复某区块/时长（1h 30m 3600s 1d）\n"
-                + "/samsara debug diff [fake <cx> <cz> <数量> [stateId]] —— 档3差异库状态；fake=注入虚假diff测试可视化倒流\n"
+                + "/samsara debug rewind preview|status|abort|purge|restore <pos>|set <时长> —— 倒流控制：预览/状态/中止/立即删未保留区块/强制恢复某区块(坐标支持 ~/~N 自动转区块)/时长（1h 30m 3600s 1d）\n"
+                + "/samsara debug diff [fake <pos> <数量> [stateId]|text <pos> <文字> [stateId] [scale]] —— 档3差异库状态；fake=注入虚假diff（坐标支持 ~/~N 自动转区块）；text=空中字画（5x7点阵，坐标支持 ~/~N）\n"
                 + "/samsara debug flow setup|rewind <true|false>|teleport —— 拆分start：只准备/只倒流(完成后是否传送)/只传送\n"
                 + "/samsara debug config [键] [值] —— 查看/设置配置（无键=全部含类型；键: groupdist/birthjitter/birthreset/rewind/groupmin/groupmax/spawnradius/centermin/centermax）\n"
                 + "/samsara debug claim add|addc <名> <p1> <p2>|remove <名>|list —— 圈地保护不删区（坐标支持 ~/~N；add=方块坐标，addc=区块坐标×16；中文名用引号如 \"主城\"）\n"
