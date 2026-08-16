@@ -72,11 +72,8 @@ public class DiffStore {
         }
     }
 
-    /** 追加一条方块变化记录（stateId = 变化前方块状态数值 id，恢复时还原此状态） */
+    /** 追加一条方块变化记录（stateId = 变化前方块状态数值 id，恢复时还原此状态；0=空气合法） */
     public void record(int x, int y, int z, int stateId, long timeMs) {
-        if (stateId <= 0) {
-            return; // 空气/无效不记
-        }
         int cx = x >> 4;
         int cz = z >> 4;
         ReentrantLock lock = lockFor(cx, cz);

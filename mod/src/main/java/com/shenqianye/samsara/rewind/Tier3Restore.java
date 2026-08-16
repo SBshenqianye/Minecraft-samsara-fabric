@@ -64,19 +64,29 @@ public class Tier3Restore {
             return 0;
         }
 
-        // 收集已加载区块（玩家视距内）
+        // 收集已加载区块：用 collectSpawningChunks 拿全部真正加载的区块（含 forceload/玩家附近），
+        // 实现"懒加载：已加载区块才恢复，未加载不动"
         Set<Long> loadedChunks = new HashSet<>();
-        int view = 5; // 视距半径（区块），配合懒加载：玩家附近才处理
-        List<ServerPlayer> players = server.getPlayerList().getPlayers();
-        for (ServerPlayer pl : players) {
-            int pcx = pl.chunkPosition().x();
-            int pcz = pl.chunkPosition().z();
-            for (int dx = -view; dx <= view; dx++) {
-                for (int dz = -view; dz <= view; dz++) {
-                    int cx = pcx + dx;
-                    int cz = pcz + dz;
-                    if (overworld.isLoaded(new BlockPos(cx << 4, 0, cz << 4))) {
-                        loadedChunks.add(((long) cx << 32) | (cz & 0xFFFFFFFFL));
+        try {
+            java.util.List<net.minecraft.world.level.chunk.LevelChunk> chunks = new java.util.ArrayList<>();
+            overworld.getChunkSource().chunkMap.collectSpawningChunks(chunks);
+            for (net.minecraft.world.level.chunk.LevelChunk c : chunks) {
+                loadedChunks.add(((long) c.getPos().x() << 32) | (c.getPos().z() & 0xFFFFFFFFL));
+            }
+        } catch (Exception e) {
+            // collectSpawningChunks 失败则回退玩家视距扫描
+            int view = 5;
+            List<ServerPlayer> players = server.getPlayerList().getPlayers();
+            for (ServerPlayer pl : players) {
+                int pcx = pl.chunkPosition().x();
+                int pcz = pl.chunkPosition().z();
+                for (int dx = -view; dx <= view; dx++) {
+                    for (int dz = -view; dz <= view; dz++) {
+                        int cx = pcx + dx;
+                        int cz = pcz + dz;
+                        if (overworld.isLoaded(new BlockPos(cx << 4, 0, cz << 4))) {
+                            loadedChunks.add(((long) cx << 32) | (cz & 0xFFFFFFFFL));
+                        }
                     }
                 }
             }
@@ -105,7 +115,11 @@ public class Tier3Restore {
             }
             // 倒序（新改动优先退场）
             edits.sort((a, b) -> Long.compare(b.timeMs, a.timeMs));
-            int target = (int) Math.floor(edits.size() * p);
+            // ceil：进度 p>0 时至少恢复 1 条，避免少量改动时 floor(n*p) 恒为 0
+            int target = (int) Math.ceil(edits.size() * p);
+            if (target > edits.size()) {
+                target = edits.size();
+            }
             for (int i = already; i < target && budget > 0; i++) {
                 if (i >= edits.size()) {
                     break;
@@ -130,9 +144,10 @@ public class Tier3Restore {
             return false;
         }
         BlockState target = Block.stateById(e.stateId);
-        if (target == null || target.isAir()) {
-            return false; // 避免还原成空气造成异常
+        if (target == null) {
+            return false; // 无效状态 id
         }
+        // 注：target 允许是空气（stateId=0）——放置的方块倒流时被移除回空气，是档3 的核心效果之一
         // 被玩家/实体占用的格跳过
         if (!level.getEntities((net.minecraft.world.entity.Entity) null,
                 new net.minecraft.world.phys.AABB(pos), ex -> ex.blockPosition().equals(pos)).isEmpty()) {

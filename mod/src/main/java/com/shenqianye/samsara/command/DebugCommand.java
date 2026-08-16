@@ -117,6 +117,14 @@ public class DebugCommand {
                                 .then(Commands.literal("purge")
                                         .executes(ctx -> reply(ctx.getSource(),
                                                 RewindEngine.getInstance().purgeNow(ctx.getSource().getServer()))))
+                                .then(Commands.literal("restore")
+                                        .then(Commands.argument("cx", IntegerArgumentType.integer())
+                                                .then(Commands.argument("cz", IntegerArgumentType.integer())
+                                                        .executes(ctx -> reply(ctx.getSource(),
+                                                                RewindEngine.getInstance().restoreChunkNow(
+                                                                        ctx.getSource().getServer(),
+                                                                        IntegerArgumentType.getInteger(ctx, "cx"),
+                                                                        IntegerArgumentType.getInteger(ctx, "cz")))))))
                                 .then(Commands.literal("set")
                                         .then(Commands.argument("dur", StringArgumentType.greedyString())
                                                 .executes(ctx -> reply(ctx.getSource(), MANAGER.setRewindDuration(

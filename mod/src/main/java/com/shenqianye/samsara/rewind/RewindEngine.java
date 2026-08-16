@@ -325,6 +325,56 @@ public class RewindEngine {
         return "已立即删除 " + marked + " 个已到点（未保留）区块（已备份+清零，重启后按当前版本重新生成）";
     }
 
+    /**
+     * 立即对指定区块执行一次档3 恢复（读 diff 并按当前进度恢复该区块全部到点记录）。
+     * 用于验证/懒加载补恢复：强制恢复某个区块，不依赖玩家站位。
+     * 返回恢复格数。
+     */
+    public synchronized String restoreChunkNow(MinecraftServer server, int cx, int cz) {
+        if (data == null) {
+            return "当前没有进行中的倒流";
+        }
+        DiffStore store = DiffStore.current();
+        if (store == null) {
+            return "档3 差异库未初始化";
+        }
+        ServerLevel overworld = server.getLevel(Level.OVERWORLD);
+        if (overworld == null) {
+            return "主世界不可用";
+        }
+        double p = (double) (System.currentTimeMillis() - data.startMs) / data.durationMs;
+        p = Math.max(0, Math.min(1, p));
+        java.util.List<DiffStore.Edit> edits = store.readChunk(cx, cz);
+        if (edits.isEmpty()) {
+            return "区块 (" + cx + "," + cz + ") 无 diff 记录（可能没改过或 diff 目录无此区块）";
+        }
+        edits.sort((a, b) -> Long.compare(b.timeMs, a.timeMs)); // 新改动优先
+        // 进度 p>0 时至少恢复 1 条（ceil），避免少量改动时 floor(n*p) 恒为 0 永远不恢复
+        int target = (int) Math.ceil(edits.size() * p);
+        if (target > edits.size()) {
+            target = edits.size();
+        }
+        int applied = 0;
+        for (int i = 0; i < Math.min(target, edits.size()); i++) {
+            DiffStore.Edit e = edits.get(i);
+            net.minecraft.core.BlockPos pos = new net.minecraft.core.BlockPos(e.x, e.y, e.z);
+            if (!overworld.isLoaded(pos)) {
+                continue;
+            }
+            net.minecraft.world.level.block.state.BlockState t = net.minecraft.world.level.block.Block.stateById(e.stateId);
+            if (t == null) {
+                continue;
+            }
+            if (overworld.getBlockState(pos).equals(t)) {
+                continue;
+            }
+            overworld.setBlock(pos, t, 3);
+            applied++;
+        }
+        return "区块 (" + cx + "," + cz + ") diff " + edits.size() + " 条 · 进度 " + (int) (p * 100)
+                + "% · 应恢复 " + Math.min(target, edits.size()) + " · 实际恢复 " + applied + " 格";
+    }
+
     // ---- 内部 ----
 
     private record ScanResult(int total, int protectedCount, List<int[]> toRewind) {
