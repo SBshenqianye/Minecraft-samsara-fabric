@@ -107,7 +107,9 @@ public class WhitelistStore {
     /** debug 圈地：列表 */
     public String claimList() {
         if (data.regions.isEmpty()) {
-            return "当前无圈地 —— 倒流时全部区块都视为未保留（可删除）。\n用 /samsara debug claim add <名> <x1> <z1> <x2> <z2> 圈地保护";
+            return "当前无圈地 —— 倒流时全部区块都视为未保留（可删除）。\n"
+                    + "用 /samsara debug claim add <名> <p1> <p2> 圈地保护（坐标支持 ~ / ~N，方块坐标）\n"
+                    + "或用 /samsara debug claim addc <名> <p1> <p2>（区块坐标，自动×16）";
         }
         StringBuilder sb = new StringBuilder("当前圈地（受保护不删）：\n");
         for (WhitelistData.Region r : data.regions) {

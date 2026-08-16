@@ -13,8 +13,10 @@ import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.commands.CommandBuildContext;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.commands.arguments.coordinates.Vec2Argument;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.permissions.Permissions;
+import net.minecraft.world.phys.Vec2;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -152,23 +154,39 @@ public class DebugCommand {
                                                                 StringArgumentType.getString(ctx, "name"))))))
                                 .then(Commands.literal("add")
                                         .then(Commands.argument("name", StringArgumentType.word())
-                                                .then(Commands.argument("x1", IntegerArgumentType.integer())
-                                                        .then(Commands.argument("z1", IntegerArgumentType.integer())
-                                                                .then(Commands.argument("x2", IntegerArgumentType.integer())
-                                                                        .then(Commands.argument("z2", IntegerArgumentType.integer())
-                                                                                .executes(ctx -> reply(ctx.getSource(),
-                                                                                        WhitelistStore.getInstance().claimAdd(
-                                                                                                StringArgumentType.getString(ctx, "name"),
-                                                                                                IntegerArgumentType.getInteger(ctx, "x1"),
-                                                                                                IntegerArgumentType.getInteger(ctx, "z1"),
-                                                                                                IntegerArgumentType.getInteger(ctx, "x2"),
-                                                                                                IntegerArgumentType.getInteger(ctx, "z2")))))))))))
+                                                .then(Commands.argument("p1", Vec2Argument.vec2())
+                                                        .then(Commands.argument("p2", Vec2Argument.vec2())
+                                                                .executes(ctx -> claimAddFromVec2(ctx, "name", "p1", "p2", false))))))
+                                .then(Commands.literal("addc")
+                                        .then(Commands.argument("name", StringArgumentType.word())
+                                                .then(Commands.argument("p1", Vec2Argument.vec2())
+                                                        .then(Commands.argument("p2", Vec2Argument.vec2())
+                                                                .executes(ctx -> claimAddFromVec2(ctx, "name", "p1", "p2", true))))))
                         .then(Commands.literal("whitelist")
                                 .then(Commands.literal("json")
                                         .executes(ctx -> reply(ctx.getSource(), WhitelistStore.getInstance().rawJson()
                                                 + "\n\n↑ whitelist.json 位置: " + WhitelistStore.getInstance().configPath())))
                                 .then(Commands.literal("reload")
-                                        .executes(ctx -> reply(ctx.getSource(), WhitelistStore.getInstance().reload()))))));
+                                        .executes(ctx -> reply(ctx.getSource(), WhitelistStore.getInstance().reload())))))));
+    }
+
+    /** claim add/addc：从 Vec2 参数解析坐标（支持 ~ 相对偏移 / 数字），chunkMode=true 时按区块坐标×16 */
+    private static int claimAddFromVec2(CommandContext<CommandSourceStack> ctx, String nameArg,
+                                        String p1Arg, String p2Arg, boolean chunkMode) {
+        String name = StringArgumentType.getString(ctx, nameArg);
+        Vec2 p1 = Vec2Argument.getVec2(ctx, p1Arg);
+        Vec2 p2 = Vec2Argument.getVec2(ctx, p2Arg);
+        int x1 = (int) Math.round(p1.x);
+        int z1 = (int) Math.round(p1.y);
+        int x2 = (int) Math.round(p2.x);
+        int z2 = (int) Math.round(p2.y);
+        if (chunkMode) {
+            x1 *= 16;
+            z1 *= 16;
+            x2 *= 16;
+            z2 *= 16;
+        }
+        return reply(ctx.getSource(), WhitelistStore.getInstance().claimAdd(name, x1, z1, x2, z2));
     }
 
     private static int create(CommandContext<CommandSourceStack> ctx, String mode, int count) {
@@ -178,14 +196,19 @@ public class DebugCommand {
 
     /** debug status：短概要（总数+当前），长列表交给 /season status 分页；配置路径放末尾避免被刷掉 */
     private static String debugStatus() {
-        Season current = MANAGER.current();
-        String cur = current != null
-                ? "#" + current.id + "「" + current.name + "」 " + current.state
-                : "无（使用 /season create）";
-        return "周目总数: " + MANAGER.seasonCount() + " · 当前: " + cur
-                + " · 注入测试玩家: " + PlayerRegistry.getInstance().injectedCount()
-                + "\n（周目列表请用 /season status [页码] 分页查看）"
-                + "\n配置目录: " + MANAGER.configPath();
+        try {
+            Season current = MANAGER.current();
+            String cur = current != null
+                    ? "#" + current.id + "「" + current.name + "」 " + current.state
+                    : "无（使用 /season create）";
+            return "周目总数: " + MANAGER.seasonCount() + " · 当前: " + cur
+                    + " · 注入测试玩家: " + PlayerRegistry.getInstance().injectedCount()
+                    + "\n（周目列表请用 /season status [页码] 分页查看）"
+                    + "\n配置目录: " + MANAGER.configPath();
+        } catch (Exception e) {
+            com.shenqianye.samsara.Samsara.LOGGER.error("[周目管理 samsara] debugStatus 异常: ", e);
+            return "debugStatus 异常: " + e;
+        }
     }
 
     /** reset：需二次确认（首次置位提示，再次输入才真正清空） */
@@ -291,6 +314,7 @@ public class DebugCommand {
                 + "/samsara debug groups [名单] —— 分组 dry-run（缺省用注册玩家）\n"
                 + "/samsara debug rewind preview|status|abort|purge|set <时长> —— 倒流控制：预览/状态/中止/立即删未保留区块/时长（支持 1h 30m 3600s 1d 0.5d）\n"
                 + "/samsara debug config [键] [值] —— 查看/设置配置（无键=全部含类型；键: groupdist/birthjitter/birthreset/rewind/groupmin/groupmax/spawnradius/centermin/centermax）\n"
+                + "/samsara debug claim add|addc <名> <p1> <p2>|remove <名>|list —— 圈地保护不删区（坐标支持 ~/~N；add=方块坐标，addc=区块坐标×16）\n"
                 + "/samsara debug whitelist json|reload —— 白名单查看/重载";
     }
 

@@ -594,15 +594,20 @@ public class SeasonManager {
 
     /** M2 配置项汇总文本 */
     public String settingsText() {
-        SeasonData.Settings s = data.settings;
-        return "分组/出生配置：\n"
-                + "组大小 " + s.groupSizeMin + "~" + s.groupSizeMax
-                + " · 组距 " + s.groupMinDistance + " (0=共用)\n"
-                + "出生中心距历史集合 " + s.newCenterMinDistance + "~" + s.newCenterMaxDistance + "（仅下限生效）\n"
-                + "每个玩家出生点独立抖动 " + s.birthpointJitter + " 格 (0=同组共用)\n"
-                + "系统出生点重置 " + (s.resetIndividualBirthpoint ? "开" : "关")
-                + " · 出生区半径 " + s.spawnRadius
-                + " · 倒流时长 " + DurationUtil.formatMs(s.rewindDurationMs) + "（可配 如 1h / 30m / 3600s / 1d / 0.5d）";
+        try {
+            SeasonData.Settings s = data.settings;
+            return "分组/出生配置：\n"
+                    + "组大小 " + s.groupSizeMin + "~" + s.groupSizeMax
+                    + " · 组距 " + s.groupMinDistance + " (0=共用)\n"
+                    + "出生中心距历史集合 " + s.newCenterMinDistance + "~" + s.newCenterMaxDistance + "（仅下限生效）\n"
+                    + "每个玩家出生点独立抖动 " + s.birthpointJitter + " 格 (0=同组共用)\n"
+                    + "系统出生点重置 " + (s.resetIndividualBirthpoint ? "开" : "关")
+                    + " · 出生区半径 " + s.spawnRadius
+                    + " · 倒流时长 " + DurationUtil.formatMs(s.rewindDurationMs) + "（可配 如 1h / 30m / 3600s / 1d / 0.5d）";
+        } catch (Exception e) {
+            com.shenqianye.samsara.Samsara.LOGGER.error("[周目管理 samsara] settingsText 异常: ", e);
+            return "settingsText 异常: " + e;
+        }
     }
 
     /**
