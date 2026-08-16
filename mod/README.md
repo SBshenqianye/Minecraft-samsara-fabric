@@ -46,12 +46,15 @@ gradlew.bat build
 ## M2 分组出生 + 时间倒流（档2）
 
 `/season start`（same-world 且 settings.rewindDurationDays&gt;0 时）执行完整流程：
-`新出生中心 → 分组（3~5人/组，角度均分+抖动，组距≥300）→ 持久化 groupSpawns → 启动倒流（默认 1 天可配置）→ 倒流到期 → 全员传送 + 广播；离线玩家上线补传送`。
+`新出生中心 → 分组（3~5人/组，角度均分+抖动，组距默认 1000）→ 持久化 groupSpawns → 启动倒流（默认 1 天可配置）→ 倒流到期 → 全员传送 + 广播；离线玩家上线补传送`。
 
 - 注册玩家来源：测试注入池 + 在线 + `usercache.json` + `world/dimensions/.../players/data/`
 - 倒流档2：未圈地块分配均匀倒流时刻，物理删除仅在**停服窗口**（SERVER_STOPPED，备份到 `backups/purge_<时间戳>/` 后清零区块槽位，重启按当前版本重新生成）
 - 保护集：世界出生保护圈 + 各周目出生区 + 分组出生点 + `whitelist.json` 配置区域
-- 配置文件：`config/samsara/rewind.json`（倒流时刻表），`config/samsara/whitelist.json`
+- **新出生中心**：与全部历史中心集合（世界初始点 + 每个已开始周目中心）的距离都 ≥ `newCenterMinDistance`（默认 15000，无上限）
+- **每人独立系统出生点**：`resetIndividualBirthpoint` 开时，玩家无床死亡重生点重置到各自组出生点 ± `birthpointJitter`（确定性抖动，同组玩家也相差几十格，0=同组共用）
+- 配置文件：`config/samsara/season.json`（settings）、`config/samsara/rewind.json`（倒流时刻表）、`config/samsara/whitelist.json`
+- 调试配置：`/samsara debug settings [groupdist <格>|birthjitter <格>|birthreset <true|false>]` 查看/调整组距、出生点抖动、出生点重置开关
 
 ## 结构
 

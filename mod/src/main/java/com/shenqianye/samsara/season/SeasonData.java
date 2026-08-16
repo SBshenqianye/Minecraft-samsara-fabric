@@ -16,12 +16,12 @@ public class SeasonData {
     public Settings settings = new Settings();
 
     /**
-     * 全局配置项（设计文档 §3.3 settings + M2 倒流时长）。
+     * 全局配置项（设计文档 §3.3 settings + M2 倒流时长 + M2 出生点微调）。
      */
     public static class Settings {
         public int groupSizeMin = 3;
         public int groupSizeMax = 5;
-        public int groupMinDistance = 300;
+        public int groupMinDistance = 1000;
         public int spawnRadius = 1500;
         public int spreadMinRadius = 500;
         public int spreadMaxRadius = 2000;
@@ -29,5 +29,9 @@ public class SeasonData {
         public int newCenterMaxDistance = 40000;
         /** M2 时间倒流（档2）时长，单位天；&lt;=0 表示不开倒流、start 后立即传送 */
         public double rewindDurationDays = 1.0;
+        /** 每组内每个玩家出生点的独立抖动（方块）；0 = 同组共用组出生点 */
+        public int birthpointJitter = 40;
+        /** 是否把每个玩家的系统出生点重置到各自的分组出生点（0=关闭，保留玩家原出生点） */
+        public boolean resetIndividualBirthpoint = true;
     }
 }

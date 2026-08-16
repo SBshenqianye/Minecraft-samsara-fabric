@@ -12,6 +12,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Relative;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.level.storage.LevelData;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -141,7 +142,7 @@ public class SeasonManager {
         int oldX = prev != null ? prev.spawnCenter.x : spawn.getX();
         int oldZ = prev != null ? prev.spawnCenter.z : spawn.getZ();
 
-        // 2) 新出生中心
+        // 2) 新出生中心：must be ≥ newCenterMinDistance 远离每个历史中心
         int centerX;
         int centerZ;
         String centerNote;
@@ -151,15 +152,22 @@ public class SeasonManager {
             centerNote = "new-world 模式：使用世界出生点";
         } else {
             List<int[]> used = new ArrayList<>();
+            // 全部历史中心：世界出生点 + 每个已开始周目的出生中心（含第一次~上一次）
+            // 0,0 初始出生点也纳入，防止新中心又落在初始点附近
+            used.add(new int[]{spawn.getX(), spawn.getZ()});
             for (Season se : data.seasons) {
+                if (se == s) {
+                    continue;
+                }
                 if (se.startTime != null) {
                     used.add(new int[]{se.spawnCenter.x, se.spawnCenter.z});
                 }
             }
-            SpawnCenterCalculator.CenterResult c = SpawnCenterCalculator.next(oldX, oldZ, used, cfg, rnd);
+            SpawnCenterCalculator.CenterResult c =
+                    SpawnCenterCalculator.next(oldX, oldZ, used, cfg, rnd);
             centerX = c.x();
             centerZ = c.z();
-            centerNote = "距旧中心 (" + oldX + ", " + oldZ + ") " + c.distance() + " 格";
+            centerNote = "历史中心集合 " + used.size() + " 个 · 距最近 " + c.minDist() + " 格";
         }
         s.spawnCenter.x = centerX;
         s.spawnCenter.z = centerZ;
@@ -255,19 +263,31 @@ public class SeasonManager {
         return "周目 #" + s.id + "「" + s.name + "」已结束（ENDED）";
     }
 
-    /** 玩家加入（M2：倒流完成后的离线玩家补传送） */
+    /** 玩家加入（M2：倒流完成后的离线玩家补传送 + 重置本人出生点） */
     public void onPlayerJoin(MinecraftServer server, ServerPlayer player) {
-        int[] pos = pendingTeleports.remove(player.getUUID());
-        if (pos == null) {
-            return;
-        }
         ServerLevel overworld = server.getLevel(Level.OVERWORLD);
         if (overworld == null) {
             return;
         }
-        teleportPlayer(player, overworld, pos[0], pos[1]);
-        player.sendSystemMessage(Component.literal("[周目管理] 欢迎回来！你已被传送至本周目分组出生点 ("
-                + pos[0] + ", " + pos[1] + ")"));
+        int[] pos = pendingTeleports.remove(player.getUUID());
+        if (pos != null) {
+            teleportPlayer(player, overworld, pos[0], pos[1]);
+            setPlayerBirthpoint(player, overworld, pos[0], pos[1], data.settings);
+            player.sendSystemMessage(Component.literal("[周目管理] 欢迎回来！你已被传送至本周目分组出生点 ("
+                    + pos[0] + ", " + pos[1] + ")"));
+            return;
+        }
+        // 未在待传送名单，但属于当前 ACTIVE 周目分组 → 仅重置出生点（不强制传送）
+        Season s = current();
+        if (s != null && s.state == Season.State.ACTIVE) {
+            for (Season.GroupSpawn g : s.groupSpawns) {
+                if (g.playerUuids.contains(player.getUUID().toString())) {
+                    int[] indiv = individualBirthpoint(player.getUUID(), g.x, g.z, data.settings);
+                    setPlayerBirthpoint(player, overworld, indiv[0], indiv[1], data.settings);
+                    break;
+                }
+            }
+        }
     }
 
     // ---- 查询 ----
@@ -400,12 +420,14 @@ public class SeasonManager {
                     continue;
                 }
                 assigned.add(u);
+                int[] indiv = individualBirthpoint(u, g.x, g.z, data.settings);
                 ServerPlayer p = online.get(u);
                 if (p != null) {
-                    teleportPlayer(p, overworld, g.x, g.z);
+                    teleportPlayer(p, overworld, indiv[0], indiv[1]);
+                    setPlayerBirthpoint(p, overworld, indiv[0], indiv[1], data.settings);
                     teleported++;
                 } else {
-                    pendingTeleports.put(u, new int[]{g.x, g.z});
+                    pendingTeleports.put(u, new int[]{indiv[0], indiv[1]});
                 }
             }
         }
@@ -413,10 +435,41 @@ public class SeasonManager {
         for (ServerPlayer p : online.values()) {
             if (!assigned.contains(p.getUUID())) {
                 teleportPlayer(p, overworld, s.spawnCenter.x, s.spawnCenter.z);
+                setPlayerBirthpoint(p, overworld, s.spawnCenter.x, s.spawnCenter.z, data.settings);
                 teleported++;
             }
         }
         return teleported;
+    }
+
+    /**
+     * 玩家独立出生点 = 组出生点 + 由 UUID 确定的确定性抖动（方括号内），
+     * 保证同组不同玩家也相差一部分格、且跨重启稳定。
+     * jitter &lt;= 0 时返回组中心（同组共用）。
+     */
+    private int[] individualBirthpoint(UUID uuid, int gx, int gz, SeasonData.Settings s) {
+        int j = s.birthpointJitter;
+        if (j <= 0) {
+            return new int[]{gx, gz};
+        }
+        // 从 UUID 高位派生 [0,2j] 的抖动，减 j 后落在 [-j, j]
+        long h = uuid.getMostSignificantBits() ^ uuid.getLeastSignificantBits();
+        int dx = (int) ((h & 0x7FFFFF) % (2L * j + 1)) - j;
+        int dz = (int) (((h >>> 16) & 0x7FFFFF) % (2L * j + 1)) - j;
+        return new int[]{gx + dx, gz + dz};
+    }
+
+    /** 重置玩家系统出生点（死后无床重生的默认位置）到 (x,z)（M2，可配置关闭） */
+    private void setPlayerBirthpoint(ServerPlayer player, ServerLevel overworld, int x, int z,
+                                     SeasonData.Settings s) {
+        if (!s.resetIndividualBirthpoint) {
+            return;
+        }
+        int top = overworld.getHeight(Heightmap.Types.MOTION_BLOCKING, x, z);
+        int y = Math.max(1, top) + 1;
+        var respawnData = LevelData.RespawnData.of(Level.OVERWORLD, new BlockPos(x, y, z),
+                player.getYRot(), player.getXRot());
+        player.setRespawnPosition(new ServerPlayer.RespawnConfig(respawnData, true), true);
     }
 
     private void teleportPlayer(ServerPlayer player, ServerLevel overworld, int x, int z) {
@@ -460,6 +513,40 @@ public class SeasonManager {
         data.settings.rewindDurationDays = days;
         save();
         return "已设置倒流时长 " + days + " 天（下一次 /season start 生效）";
+    }
+
+    /** M2 配置项汇总文本 */
+    public String settingsText() {
+        SeasonData.Settings s = data.settings;
+        return "分组/出生配置：\n"
+                + "组大小 " + s.groupSizeMin + "~" + s.groupSizeMax
+                + " · 组距 " + s.groupMinDistance + " (0=共用)\n"
+                + "出生中心距历史集合 " + s.newCenterMinDistance + "~" + s.newCenterMaxDistance + "（仅下限生效）\n"
+                + "每个玩家出生点独立抖动 " + s.birthpointJitter + " 格 (0=同组共用)\n"
+                + "系统出生点重置 " + (s.resetIndividualBirthpoint ? "开" : "关")
+                + " · 出生区半径 " + s.spawnRadius
+                + " · 倒流时长 " + s.rewindDurationDays + " 天";
+    }
+
+    /** 设置组间距（方块；0 = 所有组共用中心） */
+    public String setGroupMinDistance(int blocks) {
+        data.settings.groupMinDistance = blocks;
+        save();
+        return "已设置组间最小距离 " + blocks + " 格（" + (blocks <= 0 ? "0 = 所有组共用中心" : "下一次 start/respawn-groups 生效") + "）";
+    }
+
+    /** 设置每个玩家出生点独立抖动（方块；0 = 同组共用） */
+    public String setBirthpointJitter(int blocks) {
+        data.settings.birthpointJitter = blocks;
+        save();
+        return "已设置每玩家出生点独立抖动 " + blocks + " 格（0 = 同组共用组出生点）";
+    }
+
+    /** 开关把每个玩家系统出生点重置到分组出生点 */
+    public String setResetIndividualBirthpoint(boolean on) {
+        data.settings.resetIndividualBirthpoint = on;
+        save();
+        return "系统出生点重置已" + (on ? "开启" : "关闭");
     }
 
     /** 重新从磁盘加载 season.json（测试 load 路径） */

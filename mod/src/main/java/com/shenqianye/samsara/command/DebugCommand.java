@@ -108,6 +108,20 @@ public class DebugCommand {
                                         .then(Commands.argument("days", DoubleArgumentType.doubleArg(0, 365))
                                                 .executes(ctx -> reply(ctx.getSource(), MANAGER.setRewindDuration(
                                                         DoubleArgumentType.getDouble(ctx, "days")))))))
+                        .then(Commands.literal("settings")
+                                .executes(ctx -> reply(ctx.getSource(), MANAGER.settingsText()))
+                                .then(Commands.literal("groupdist")
+                                        .then(Commands.argument("blocks", IntegerArgumentType.integer(0, 10000))
+                                                .executes(ctx -> reply(ctx.getSource(), MANAGER.setGroupMinDistance(
+                                                        IntegerArgumentType.getInteger(ctx, "blocks"))))))
+                                .then(Commands.literal("birthjitter")
+                                        .then(Commands.argument("blocks", IntegerArgumentType.integer(0, 1000))
+                                                .executes(ctx -> reply(ctx.getSource(), MANAGER.setBirthpointJitter(
+                                                        IntegerArgumentType.getInteger(ctx, "blocks"))))))
+                                .then(Commands.literal("birthreset")
+                                        .then(Commands.argument("on", StringArgumentType.word())
+                                                .executes(ctx -> reply(ctx.getSource(), MANAGER.setResetIndividualBirthpoint(
+                                                        Boolean.parseBoolean(StringArgumentType.getString(ctx, "on"))))))))
                         .then(Commands.literal("whitelist")
                                 .then(Commands.literal("json")
                                         .executes(ctx -> reply(ctx.getSource(), WhitelistStore.getInstance().rawJson()
@@ -232,6 +246,7 @@ public class DebugCommand {
                 + "/samsara debug fakeplayers <clear|数字|前缀 数量|名字,名字...> —— 注入离线测试玩家（M2 分组用）\n"
                 + "/samsara debug groups [名单] —— 分组 dry-run（缺省用注册玩家）\n"
                 + "/samsara debug rewind preview|status|abort|set <天> —— 倒流（档2）控制：预览/状态/中止/时长\n"
+                + "/samsara debug settings [groupdist <格>|birthjitter <格>|birthreset <true|false>] —— 查看/设置分组与出生配置\n"
                 + "/samsara debug whitelist json|reload —— 白名单查看/重载";
     }
 

@@ -119,9 +119,15 @@ public class GroupPlanner {
                 points.add(new GroupSpawnPoint(centerX, centerZ, uuids, names));
                 continue;
             }
-            int[] pos = placePoint(centerX, centerZ, i, groupCount, s, rnd, points);
-            if (pos[2] == 1) {
-                violated = true;
+            int[] pos;
+            if (s.groupMinDistance <= 0) {
+                // 组距配置 = 0：所有组共用出生中心（设计：组间距离为 0 同样共用）
+                pos = new int[]{centerX, centerZ, 0};
+            } else {
+                pos = placePoint(centerX, centerZ, i, groupCount, s, rnd, points);
+                if (pos[2] == 1) {
+                    violated = true;
+                }
             }
             points.add(new GroupSpawnPoint(pos[0], pos[1], uuids, names));
         }
