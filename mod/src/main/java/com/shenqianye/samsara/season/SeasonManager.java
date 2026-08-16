@@ -82,6 +82,12 @@ public class SeasonManager {
             } catch (Exception e) {
                 throw new RuntimeException("season.json 解析失败（可删除该文件后重启重建）: " + e.getMessage(), e);
             }
+            // 迁移旧字段：rewindDurationDays（天）→ rewindDurationMs（毫秒）
+            // 旧文件只有 rewindDurationDays（非 null）；新文件两者都有，用 ms 为准
+            if (data.settings != null && data.settings.rewindDurationDays != null) {
+                data.settings.rewindDurationMs =
+                        (long) (data.settings.rewindDurationDays * 86_400_000L);
+            }
         } else {
             data = new SeasonData();
         }
@@ -117,9 +123,9 @@ public class SeasonManager {
     /**
      * /season start（M2 完整流程，设计文档 §4）。
      * <p>
-     * same-world：新出生中心 = 距旧中心 15000~40000 格随机方向（避开已用方向）；
-     * new-world：使用世界出生点。随后分组并持久化；same-world 且 settings.rewindDurationDays &gt; 0
-     * 时启动时间倒流（档2），倒流到期后自动传送；否则立即传送 + 广播。
+     * same-world：新出生中心与全部历史中心集合都 ≥ newCenterMinDistance；
+     * new-world：使用世界出生点。随后分组并持久化；same-world 且 settings.rewindDurationMs &gt; 0
+     * 时启动时间倒流（档3/档2），倒流到期后自动传送；否则立即传送 + 广播。
      */
     public String start(MinecraftServer server) {
         Season s = currentPending();
@@ -196,10 +202,10 @@ public class SeasonManager {
         String header = "周目 #" + s.id + "「" + s.name + "」开始（ACTIVE）· 出生中心 ("
                 + centerX + ", " + centerZ + ") · " + centerNote;
 
-        // 5) same-world → 时间倒流（档2），到期再传送；否则立即传送
-        if ("same-world".equals(s.mode) && cfg.rewindDurationDays > 0) {
-            long durMs = (long) Math.max(1, cfg.rewindDurationDays * 86_400_000L);
-            String r = RewindEngine.getInstance().start(server, s.id, durMs, () -> onRewindComplete(server, s.id));
+        // 5) same-world → 时间倒流（档），到期再传送；否则立即传送
+        if ("same-world".equals(s.mode) && cfg.rewindDurationMs > 0) {
+            String r = RewindEngine.getInstance().start(server, s.id, cfg.rewindDurationMs,
+                    () -> onRewindComplete(server, s.id));
             return header + "\n" + r;
         }
         int t = teleportSeasonPlayers(server, s);
@@ -251,16 +257,20 @@ public class SeasonManager {
         return plan.report() + "\n已传送在线玩家 " + t + " 名（离线玩家上线后自动传送）";
     }
 
-    /** /season end */
+    /** /season end —— 若倒流进行中，先中止倒流，再置 ENDED */
     public String end() {
         Season s = current();
         if (s == null || s.state != Season.State.ACTIVE) {
             return "当前没有进行中的周目";
         }
+        String rewindNote = "";
+        if (RewindEngine.getInstance().running()) {
+            rewindNote = "\n（已中止进行中的时间倒流）" + RewindEngine.getInstance().abort().replaceFirst("^[^：]*：", " ");
+        }
         s.state = Season.State.ENDED;
         s.endTime = Instant.now().toEpochMilli();
         save();
-        return "周目 #" + s.id + "「" + s.name + "」已结束（ENDED）";
+        return "周目 #" + s.id + "「" + s.name + "」已结束（ENDED）" + rewindNote;
     }
 
     /** 玩家加入（M2：倒流完成后的离线玩家补传送 + 重置本人出生点） */
@@ -508,11 +518,15 @@ public class SeasonManager {
         return plan.report();
     }
 
-    /** 设置倒流时长（天，可配小数；&lt;=0 = 关闭倒流直接传送） */
-    public String setRewindDuration(double days) {
-        data.settings.rewindDurationDays = days;
+    /** 设置倒流时长（支持 d/h/m/s + 纯数字=秒，如 1h、90m、3600s、0.5d） */
+    public String setRewindDuration(String spec) {
+        long ms = DurationUtil.parse(spec);
+        if (ms <= 0) {
+            return "时长格式无效（支持 1h、90m、3600s、0.5d 或纯数字秒；<=0 关闭倒流直接传送）";
+        }
+        data.settings.rewindDurationMs = ms;
         save();
-        return "已设置倒流时长 " + days + " 天（下一次 /season start 生效）";
+        return "已设置倒流时长 " + DurationUtil.formatMs(ms) + "（下一次 /season start 生效）";
     }
 
     /** M2 配置项汇总文本 */
@@ -525,7 +539,87 @@ public class SeasonManager {
                 + "每个玩家出生点独立抖动 " + s.birthpointJitter + " 格 (0=同组共用)\n"
                 + "系统出生点重置 " + (s.resetIndividualBirthpoint ? "开" : "关")
                 + " · 出生区半径 " + s.spawnRadius
-                + " · 倒流时长 " + s.rewindDurationDays + " 天";
+                + " · 倒流时长 " + DurationUtil.formatMs(s.rewindDurationMs) + "（可配 如 1h / 30m / 3600s / 1d / 0.5d）";
+    }
+
+    /**
+     * 统一配置命令 /samsara debug config [key [value]]。
+     * 无参返回全部配置；只有 key 返回该配置当前值；key+value 设置并回显。
+     * 返回 null 表示 key 不存在（|null）以便命令层提示错误。
+     */
+    public String config(String key, String value) {
+        SeasonData.Settings s = data.settings;
+        if (key == null || key.isBlank()) {
+            return settingsText();
+        }
+        // 读取当前值 helper（lambda 内不可直接改局部，用 switch）
+        switch (key) {
+            case "groupdist" -> {
+                if (value != null) {
+                    return setGroupMinDistance(parseInt(value));
+                }
+                return "groupdist = " + s.groupMinDistance + "（0=所有组共用中心）";
+            }
+            case "birthjitter" -> {
+                if (value != null) {
+                    return setBirthpointJitter(parseInt(value));
+                }
+                return "birthjitter = " + s.birthpointJitter + "（0=同组共用）";
+            }
+            case "birthreset" -> {
+                if (value != null) {
+                    return setResetIndividualBirthpoint(Boolean.parseBoolean(value));
+                }
+                return "birthreset = " + s.resetIndividualBirthpoint;
+            }
+            case "rewind" -> {
+                if (value != null) {
+                    return setRewindDuration(value);
+                }
+                return "rewind = " + DurationUtil.formatMs(s.rewindDurationMs) + "（支持 1h/30m/3600s/1d/0.5d）";
+            }
+            case "groupmin" -> {
+                if (value != null) {
+                    return setGroupSizeMin(parseInt(value));
+                }
+                return "groupmin = " + s.groupSizeMin;
+            }
+            case "groupmax" -> {
+                if (value != null) {
+                    return setGroupSizeMax(parseInt(value));
+                }
+                return "groupmax = " + s.groupSizeMax;
+            }
+            case "spawnradius" -> {
+                if (value != null) {
+                    return setSpawnRadius(parseInt(value));
+                }
+                return "spawnradius = " + s.spawnRadius;
+            }
+            case "centermin" -> {
+                if (value != null) {
+                    return setNewCenterMin(parseInt(value));
+                }
+                return "centermin = " + s.newCenterMinDistance;
+            }
+            case "centermax" -> {
+                if (value != null) {
+                    return setNewCenterMax(parseInt(value));
+                }
+                return "centermax = " + s.newCenterMaxDistance;
+            }
+            default -> {
+                return null; // 未知配置项
+            }
+        }
+    }
+
+    private static int parseInt(String v) {
+        try {
+            return Integer.parseInt(v.trim());
+        } catch (Exception e) {
+            return 0;
+        }
     }
 
     /** 设置组间距（方块；0 = 所有组共用中心） */
@@ -547,6 +641,51 @@ public class SeasonManager {
         data.settings.resetIndividualBirthpoint = on;
         save();
         return "系统出生点重置已" + (on ? "开启" : "关闭");
+    }
+
+    private String setGroupSizeMin(int v) {
+        if (v < 1 || v > data.settings.groupSizeMax) {
+            return "groupmin 须在 [1, groupmax] 内";
+        }
+        data.settings.groupSizeMin = v;
+        save();
+        return "组大小下限 = " + v;
+    }
+
+    private String setGroupSizeMax(int v) {
+        if (v < data.settings.groupSizeMin || v > 100) {
+            return "groupmax 须在 [groupmin, 100] 内";
+        }
+        data.settings.groupSizeMax = v;
+        save();
+        return "组大小上限 = " + v;
+    }
+
+    private String setSpawnRadius(int v) {
+        if (v < 0) {
+            return "spawnradius 须 >= 0";
+        }
+        data.settings.spawnRadius = v;
+        save();
+        return "出生区半径 = " + v;
+    }
+
+    private String setNewCenterMin(int v) {
+        if (v < 0) {
+            return "centermin 须 >= 0";
+        }
+        data.settings.newCenterMinDistance = v;
+        save();
+        return "新中心最小距离 = " + v + "（距每个历史中心都 >= 此值）";
+    }
+
+    private String setNewCenterMax(int v) {
+        if (v < data.settings.newCenterMinDistance) {
+            return "centermax 须 >= centermin";
+        }
+        data.settings.newCenterMaxDistance = v;
+        save();
+        return "新中心采样最大距离 = " + v;
     }
 
     /** 重新从磁盘加载 season.json（测试 load 路径） */

@@ -34,7 +34,7 @@ import java.util.Random;
  * <p>
  * 机制（安全优先，遵守 §10「禁止热删，仅停服维护窗口执行」与 §6.5「先备份」）：
  * <ol>
- *   <li>{@code /season start}（same-world 且 settings.rewindDurationDays &gt; 0）时启动：
+ *   <li>{@code /season start}（same-world 且 settings.rewindDurationMs &gt; 0）时启动：
  *       扫描主世界 region/ 下已存在区块，除去保护集（世界出生圈 + 各周目出生区 +
  *       分组出生点 + whitelist.json 配置区域，见 {@link ChunkProtector}）；
  *       每个未圈地块分配均匀分布在时长内的"倒流时刻"，持久化 rewind.json；</li>

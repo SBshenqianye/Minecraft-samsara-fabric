@@ -54,7 +54,9 @@ gradlew.bat build
 - **新出生中心**：与全部历史中心集合（世界初始点 + 每个已开始周目中心）的距离都 ≥ `newCenterMinDistance`（默认 15000，无上限）
 - **每人独立系统出生点**：`resetIndividualBirthpoint` 开时，玩家无床死亡重生点重置到各自组出生点 ± `birthpointJitter`（确定性抖动，同组玩家也相差几十格，0=同组共用）
 - 配置文件：`config/samsara/season.json`（settings）、`config/samsara/rewind.json`（倒流时刻表）、`config/samsara/whitelist.json`
-- 调试配置：`/samsara debug settings [groupdist <格>|birthjitter <格>|birthreset <true|false>]` 查看/调整组距、出生点抖动、出生点重置开关
+- **配置命令**：`/samsara debug config`（无参=全部；`config <键>`=当前值；`config <键> <值>`=设置并回显）。键：`groupdist`/`birthjitter`/`birthreset`/`rewind`/`groupmin`/`groupmax`/`spawnradius`/`centermin`/`centermax`
+- **倒流时长单位**：`config rewind <时长>` 支持 `d/h/m/s` 和纯数字=秒，如 `1h`、`30m`、`3600s`、`1d`、`0.5d`；亦可 `/samsara debug rewind set <时长>`
+- **倒流中 `/season end`**：先中止倒流（未到点区块保留、已到点待停服清理），再置周目 ENDED
 
 ## 结构
 

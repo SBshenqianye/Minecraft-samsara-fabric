@@ -1,7 +1,6 @@
 package com.shenqianye.samsara.command;
 
 import com.mojang.brigadier.CommandDispatcher;
-import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
@@ -39,7 +38,8 @@ import java.util.UUID;
  * /samsara debug rewind preview     —— 倒流 dry-run（统计将倒流区块，不启动）
  * /samsara debug rewind status      —— 倒流进行状态
  * /samsara debug rewind abort       —— 中止进行中的倒流
- * /samsara debug rewind set &lt;天&gt;    —— 设置倒流时长（settings.rewindDurationDays）
+ * /samsara debug rewind set &lt;时长&gt;  —— 设置倒流时长（支持 1h/30m/3600s/1d/0.5d）
+ * /samsara debug config [键] [值]   —— 查看/设置配置（无键=全部；键=当前值；键+值=设置并回显）
  * /samsara debug whitelist json     —— 打印 whitelist.json 内容
  * /samsara debug whitelist reload   —— 重新加载 whitelist.json
  * </pre>
@@ -105,9 +105,18 @@ public class DebugCommand {
                                 .then(Commands.literal("abort")
                                         .executes(ctx -> reply(ctx.getSource(), RewindEngine.getInstance().abort())))
                                 .then(Commands.literal("set")
-                                        .then(Commands.argument("days", DoubleArgumentType.doubleArg(0, 365))
+                                        .then(Commands.argument("dur", StringArgumentType.greedyString())
                                                 .executes(ctx -> reply(ctx.getSource(), MANAGER.setRewindDuration(
-                                                        DoubleArgumentType.getDouble(ctx, "days")))))))
+                                                        StringArgumentType.getString(ctx, "dur")))))))
+                        .then(Commands.literal("config")
+                                .executes(ctx -> reply(ctx.getSource(), MANAGER.config(null, null)))
+                                .then(Commands.argument("key", StringArgumentType.word())
+                                        .executes(ctx -> replyOrErr(ctx, MANAGER.config(
+                                                StringArgumentType.getString(ctx, "key"), null)))
+                                        .then(Commands.argument("value", StringArgumentType.greedyString())
+                                                .executes(ctx -> replyOrErr(ctx, MANAGER.config(
+                                                        StringArgumentType.getString(ctx, "key"),
+                                                        StringArgumentType.getString(ctx, "value")))))))
                         .then(Commands.literal("settings")
                                 .executes(ctx -> reply(ctx.getSource(), MANAGER.settingsText()))
                                 .then(Commands.literal("groupdist")
@@ -245,8 +254,8 @@ public class DebugCommand {
                 + "/samsara debug settime <id> <start|end> <now|epoch毫秒> —— 设置时间戳\n"
                 + "/samsara debug fakeplayers <clear|数字|前缀 数量|名字,名字...> —— 注入离线测试玩家（M2 分组用）\n"
                 + "/samsara debug groups [名单] —— 分组 dry-run（缺省用注册玩家）\n"
-                + "/samsara debug rewind preview|status|abort|set <天> —— 倒流（档2）控制：预览/状态/中止/时长\n"
-                + "/samsara debug settings [groupdist <格>|birthjitter <格>|birthreset <true|false>] —— 查看/设置分组与出生配置\n"
+                + "/samsara debug rewind preview|status|abort|set <时长> —— 倒流控制：预览/状态/中止/时长（支持 1h 30m 3600s 1d 0.5d）\n"
+                + "/samsara debug config [键] [值] —— 查看/设置配置（无键=全部；键: groupdist/birthjitter/birthreset/rewind/groupmin/groupmax/spawnradius/centermin/centermax）\n"
                 + "/samsara debug whitelist json|reload —— 白名单查看/重载";
     }
 
@@ -257,5 +266,15 @@ public class DebugCommand {
     private static int reply(CommandSourceStack src, String message) {
         src.sendSuccess(() -> Component.literal("[周目管理·调试] " + message), false);
         return 1;
+    }
+
+    /** config 命令：message==null 表示未知配置项 */
+    private static int replyOrErr(CommandContext<CommandSourceStack> ctx, String message) {
+        if (message == null) {
+            ctx.getSource().sendSuccess(() -> Component.literal(
+                    "[周目管理·调试] 未知配置项（可用 /samsara debug config 查看全部）"), false);
+            return 0;
+        }
+        return reply(ctx.getSource(), message);
     }
 }

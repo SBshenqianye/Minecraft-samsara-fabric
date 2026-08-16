@@ -27,8 +27,12 @@ public class SeasonData {
         public int spreadMaxRadius = 2000;
         public int newCenterMinDistance = 15000;
         public int newCenterMaxDistance = 40000;
-        /** M2 时间倒流（档2）时长，单位天；&lt;=0 表示不开倒流、start 后立即传送 */
-        public double rewindDurationDays = 1.0;
+        /** M2 时间倒流（档3/档2）时长，单位毫秒；&lt;=0 表示不开倒流、start 后立即传送 */
+        public long rewindDurationMs = 86_400_000L;   // 默认 1 天
+
+        /** 旧字段（已弃用）：天为单位，仅用于读取旧 season.json 后迁移到 rewindDurationMs */
+        public Double rewindDurationDays;
+
         /** 每组内每个玩家出生点的独立抖动（方块）；0 = 同组共用组出生点 */
         public int birthpointJitter = 40;
         /** 是否把每个玩家的系统出生点重置到各自的分组出生点（0=关闭，保留玩家原出生点） */
