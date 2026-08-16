@@ -45,14 +45,14 @@ public class DiffStore {
         }
     }
 
-    /** 初始化/复用单例（season 切换时换目录） */
+    /** 打开/新建一个差异库（非单例：记录库 diff/current 与恢复库 diff/s<N> 可并存） */
+    public static DiffStore open(Path root) {
+        return new DiffStore(root);
+    }
+
+    /** 兼容入口：按赛季目录打开（恢复库用）；等价于 {@link #open(Path)} */
     public static synchronized DiffStore forSeason(Path configDir, int seasonId) {
-        Path d = configDir.resolve("diff").resolve("s" + seasonId);
-        if (instance != null && instance.root.equals(d)) {
-            return instance;
-        }
-        instance = new DiffStore(d);
-        return instance;
+        return new DiffStore(configDir.resolve("diff").resolve("s" + seasonId));
     }
 
     public static DiffStore current() {

@@ -7,6 +7,7 @@ import java.io.RandomAccessFile;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -102,7 +103,7 @@ public class McaRegion {
         return deleted;
     }
 
-    /** 同步一组区块坐标对应的主世界 region/entities/poi 三个区域文件的槽位 */
+    /** 同步一组区块坐标对应的主世界 region/entities/poi 三个区域文件的槽位；清零后若文件全空则整文件删除 */
     public static int deleteChunks(Path dimRoot, List<int[]> chunks) {
         // 按 (目录, 区域文件) 分组
         Map<Path, List<Integer>> byFile = new HashMap<>();
@@ -122,7 +123,153 @@ public class McaRegion {
         for (Map.Entry<Path, List<Integer>> e : byFile.entrySet()) {
             total += deleteSlots(e.getKey(), e.getValue());
         }
+        // 文件级回收：清零后 1024 槽全空（或本就全空）的文件直接删除（MC 视缺失=空，行为一致）
+        for (Path f : byFile.keySet()) {
+            deleteIfFullyEmpty(f);
+        }
         return total;
+    }
+
+    /** 判断 .mca 是否已无任何有效区块（1024 个位置槽全部为 0） */
+    public static boolean isFullyEmpty(Path file) {
+        byte[] header = readHeader(file);
+        if (header == null) {
+            return false;
+        }
+        for (int slot = 0; slot < 1024; slot++) {
+            int off = slot * 4;
+            int sectorOffset = ((header[off] & 0xFF) << 16) | ((header[off + 1] & 0xFF) << 8) | (header[off + 2] & 0xFF);
+            if (sectorOffset != 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** 全空则删除文件（尽力而为；文件被占用时跳过） */
+    public static boolean deleteIfFullyEmpty(Path file) {
+        if (!Files.exists(file) || !isFullyEmpty(file)) {
+            return false;
+        }
+        try {
+            Files.deleteIfExists(file);
+            Samsara.LOGGER.info("[周目管理 samsara] 全空区域文件已删除: {}", file.getFileName());
+            return true;
+        } catch (IOException e) {
+            Samsara.LOGGER.warn("[周目管理 samsara] 删除全空区域文件失败（可能被占用，停服窗口重试）: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    /** 压缩统计 */
+    public record CompactStats(int filesScanned, int filesDeleted, int filesRewritten, long bytesFreed) {
+    }
+
+    /**
+     * 区域文件瘦身（设计规范 §12 文件级回收）：扫描 region/entities/poi 全部 .mca ——
+     * 全空文件直接删除；部分有效文件先备份再重写为「只含有效区块」的紧凑文件
+     * （丢弃孤儿数据扇区，真正回收磁盘空间）。
+     * <p>
+     * 应在停服窗口（区域文件已关闭）调用；运行中调用为尽力而为（被占用文件跳过）。
+     *
+     * @param dimRoot     主世界维度目录（…/overworld）
+     * @param backupsRoot 备份根目录（…/backups），压缩前备份到 backups/compact_&lt;时间戳&gt;/
+     */
+    public static CompactStats compact(Path dimRoot, Path backupsRoot) {
+        String ts = java.time.LocalDateTime.now(java.time.ZoneId.systemDefault())
+                .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+        Path backupDir = backupsRoot.resolve("compact_" + ts).resolve("dimensions").resolve("minecraft")
+                .resolve("overworld");
+        int scanned = 0;
+        int deleted = 0;
+        int rewritten = 0;
+        long freed = 0;
+        for (String dir : new String[]{"region", "entities", "poi"}) {
+            Path d = dimRoot.resolve(dir);
+            for (Path f : listRegionFiles(d)) {
+                scanned++;
+                long size;
+                try {
+                    size = Files.size(f);
+                } catch (IOException e) {
+                    continue;
+                }
+                byte[] header = readHeader(f);
+                if (header == null) {
+                    continue;
+                }
+                // 收集有效槽 {slot, sectorOffset, sectorCount}
+                List<int[]> valid = new ArrayList<>();
+                for (int slot = 0; slot < 1024; slot++) {
+                    int off = slot * 4;
+                    int so = ((header[off] & 0xFF) << 16) | ((header[off + 1] & 0xFF) << 8) | (header[off + 2] & 0xFF);
+                    if (so != 0) {
+                        valid.add(new int[]{slot, so, header[off + 3] & 0xFF});
+                    }
+                }
+                if (valid.isEmpty()) {
+                    if (deleteIfFullyEmpty(f)) {
+                        deleted++;
+                        freed += size;
+                    }
+                    continue;
+                }
+                // 压缩重写：只保留有效区块数据
+                long totalSectors = 0;
+                for (int[] v : valid) {
+                    totalSectors += v[2];
+                }
+                if (totalSectors > 100_000) { // >400MB 单文件保护，跳过
+                    Samsara.LOGGER.warn("[周目管理 samsara] 压缩跳过超大文件 {}（{} 扇区）", f, totalSectors);
+                    continue;
+                }
+                try {
+                    byte[] packed = new byte[8192 + (int) (totalSectors * 4096)];
+                    int cursor = 2; // 数据扇区从 2 开始（0~1 为头部）
+                    try (RandomAccessFile raf = new RandomAccessFile(f.toFile(), "r")) {
+                        for (int[] v : valid) {
+                            raf.seek((long) v[1] * 4096);
+                            raf.readFully(packed, cursor * 4096, v[2] * 4096);
+                            int ho = v[0] * 4;
+                            packed[ho] = (byte) (cursor >>> 16);
+                            packed[ho + 1] = (byte) (cursor >>> 8);
+                            packed[ho + 2] = (byte) cursor;
+                            packed[ho + 3] = (byte) v[2];
+                            System.arraycopy(header, 4096 + v[0] * 4, packed, 4096 + v[0] * 4, 4);
+                            cursor += v[2];
+                        }
+                    }
+                    // 备份原文件 → 写临时文件 → 替换
+                    Path dst = backupDir.resolve(dir).resolve(f.getFileName().toString());
+                    Files.createDirectories(dst.getParent());
+                    Files.copy(f, dst, StandardCopyOption.REPLACE_EXISTING);
+                    Path tmp = f.resolveSibling(f.getFileName() + ".compact.tmp");
+                    Files.write(tmp, packed);
+                    Files.move(tmp, f, StandardCopyOption.REPLACE_EXISTING);
+                    freed += size - packed.length;
+                    rewritten++;
+                } catch (IOException e) {
+                    Samsara.LOGGER.warn("[周目管理 samsara] 压缩 {} 失败（可能被占用）: {}", f, e.getMessage());
+                }
+            }
+        }
+        return new CompactStats(scanned, deleted, rewritten, Math.max(0, freed));
+    }
+
+    /** 区块是否仍存在于磁盘（region 槽位置非 0）。用于幂等删除：已清零的区块不再重复备份/删除。 */
+    public static boolean chunkExists(Path dimRoot, int cx, int cz) {
+        RegionPos rp = RegionPos.ofChunk(cx, cz);
+        Path f = dimRoot.resolve("region").resolve("r." + rp.rx() + "." + rp.rz() + ".mca");
+        byte[] header = readHeader(f);
+        if (header == null) {
+            return false;
+        }
+        int localX = cx - rp.rx() * 32;
+        int localZ = cz - rp.rz() * 32;
+        int slot = localZ * 32 + localX;
+        int off = slot * 4;
+        int sectorOffset = ((header[off] & 0xFF) << 16) | ((header[off + 1] & 0xFF) << 8) | (header[off + 2] & 0xFF);
+        return sectorOffset != 0;
     }
 
     /**

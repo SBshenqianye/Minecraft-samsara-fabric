@@ -4,10 +4,11 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * rewind.json —— M2 时间倒流（档2 区块级波浪）调度表持久化。
+ * rewind.json —— M2 时间倒流调度表持久化。
  * <p>
- * 每个未圈地块分配一个均匀分布在 [startMs, startMs+durationMs] 内的"倒流时刻"，
- * 到点标记（marked）；物理删除只在停服窗口执行（设计文档 §10/§6.5）。
+ * 每个未圈地块分配一个均匀分布在 [startMs, startMs+durationMs] 内的「倒流时刻」，
+ * 到时打标（marked = 已到倒流时刻，待退场）。物理删除在倒流完成时执行：已卸载区块
+ * 后台清零，仍加载的入待删队列（卸载即删/停服兜底）。
  * 服务重启后凭本文件恢复倒流进度。
  */
 public class RewindData {
@@ -24,9 +25,9 @@ public class RewindData {
     public static class Chunk {
         public int x;
         public int z;
-        /** 倒流时刻（epoch ms） */
+        /** 倒流时刻（epoch ms）：到此刻该区块应退场 */
         public long rewindAtMs;
-        /** 已到点（等待停服物理删除） */
+        /** 已到倒流时刻（待退场：等待物理删除） */
         public boolean marked;
 
         public Chunk() {

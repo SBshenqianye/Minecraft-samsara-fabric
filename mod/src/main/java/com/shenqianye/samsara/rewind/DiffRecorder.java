@@ -1,9 +1,11 @@
 package com.shenqianye.samsara.rewind;
 
-import net.fabricmc.loader.api.FabricLoader;
+import com.shenqianye.samsara.Samsara;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
@@ -11,31 +13,94 @@ import java.nio.file.Path;
  * <p>
  * 由 {@link com.shenqianye.samsara.mixin.ServerLevelMixin} 在 {@code ServerLevel.setBlock}
  * 处调用：当方块<b>类型</b>实际变化（如破坏→空气、放置、TNT 爆破）时，把该格「变化前的状态」
- * 记入当前周目的 DiffStore，供倒流时逐格恢复。
+ * 记入当前记录窗口的 DiffStore，供倒流时逐格恢复。
+ * <p>
+ * <b>记录窗口（设计规范 §11 快照语义，2026-08-17 修订）</b>：记录<b>常开</b>——服务器启动即
+ * 写入 {@code diff/current/}；倒流真正启动时（扫描成功后）把 current <b>冻结</b> 为
+ * {@code diff/s<赛季id>/}（=本次倒流的恢复源，窗口 = 上次删块完成之后到本次倒流开始），
+ * 并开启新的 current；倒流完成（物理删除执行）时<b>重置</b>窗口（丢弃倒流期间的改动，
+ * 它们属于倒流开始之前的世界状态）。中止倒流不重置（窗口继续累计）。
  * <p>
  * 过滤：仅记录 block 类型变化（before.block != after.block）——自动过滤红石刻状态/流体/作物等
  * 只换状态不变类型的"世界模拟噪声"（与设计文档 §12.3 一致）。
  */
 public class DiffRecorder {
     private static DiffStore store;
-    private static int seasonId = -1;
     private static boolean enabled;
+    private static Path configDir;
 
     private DiffRecorder() {
     }
 
-    /** 开始记录新一轮目（start 时调用）；关闭则停止记 */
-    public static void startRecording(int sid) {
-        Path configDir = FabricLoader.getInstance().getConfigDir().resolve("samsara");
-        store = DiffStore.forSeason(configDir, sid);
-        seasonId = sid;
+    /** 服务器启动时初始化：开启常开记录窗口（diff/current） */
+    public static void init(Path samsaraConfigDir) {
+        configDir = samsaraConfigDir;
+        store = DiffStore.open(configDir.resolve("diff").resolve("current"));
         enabled = true;
-        com.shenqianye.samsara.Samsara.LOGGER.info("[周目管理 samsara] 档3 差异记录开始（周目 #{}）", sid);
+        Samsara.LOGGER.info("[周目管理 samsara] 档3 差异记录已开启（常开窗口 diff/current）");
     }
 
-    /** 停止记录（end / abort 时调用），保留已写 diff 库 */
-    public static void stopRecording() {
-        enabled = false;
+    /**
+     * 冻结当前记录窗口为 {@code diff/s<seasonId>/} 并开启新窗口（倒流启动时调用）。
+     * 冻结后的 s<seasonId> 即本次倒流的恢复源。失败（如目录已被占用）时保留 current 并告警。
+     */
+    public static synchronized void freezeCurrent(int seasonId) {
+        if (configDir == null || store == null) {
+            return;
+        }
+        try {
+            store.flush(); // 先落盘，再移动目录
+        } catch (Exception e) {
+            Samsara.LOGGER.warn("[周目管理 samsara] 冻结前 flush 失败: {}", e.getMessage());
+        }
+        Path current = configDir.resolve("diff").resolve("current");
+        Path dst = configDir.resolve("diff").resolve("s" + seasonId);
+        try {
+            if (Files.exists(current)) {
+                if (Files.exists(dst)) {
+                    Samsara.LOGGER.warn("[周目管理 samsara] 冻结覆盖已有恢复库 {}（旧数据作废）", dst);
+                    deleteRecursively(dst);
+                }
+                Files.createDirectories(current.getParent());
+                Files.move(current, dst);
+            }
+            Samsara.LOGGER.info("[周目管理 samsara] 差异库冻结: diff/current → diff/s{}（本次倒流恢复源，窗口=上次删块后至今）", seasonId);
+        } catch (IOException e) {
+            Samsara.LOGGER.error("[周目管理 samsara] 差异库冻结失败（保留 current 继续记录）: {}", e.getMessage());
+        }
+        store = DiffStore.open(current);
+    }
+
+    /**
+     * 重置记录窗口（倒流完成、物理删除执行时调用）：丢弃倒流期间的改动，
+     * 开启新窗口（下次倒流的恢复源将从此刻起累计）。
+     */
+    public static synchronized void resetWindow() {
+        if (configDir == null) {
+            return;
+        }
+        Path current = configDir.resolve("diff").resolve("current");
+        try {
+            store.flush();
+            deleteRecursively(current);
+            Files.createDirectories(current);
+        } catch (IOException e) {
+            Samsara.LOGGER.warn("[周目管理 samsara] 重置记录窗口失败: {}", e.getMessage());
+        }
+        store = DiffStore.open(current);
+        enabled = true;
+        Samsara.LOGGER.info("[周目管理 samsara] 差异记录窗口已重置（丢弃倒流期间改动，重新累计）");
+    }
+
+    private static void deleteRecursively(Path p) throws IOException {
+        if (!Files.exists(p)) {
+            return;
+        }
+        try (var walk = Files.walk(p)) {
+            for (Path f : (Iterable<Path>) walk.sorted(java.util.Comparator.reverseOrder())::iterator) {
+                Files.deleteIfExists(f);
+            }
+        }
     }
 
     /** 临时开关记录（倒流恢复自身 setBlock 时暂停，避免"恢复→被记录→再被恢复成空气"自噬） */
@@ -47,11 +112,20 @@ public class DiffRecorder {
         return enabled;
     }
 
-    public static int seasonId() {
-        return seasonId;
+    /** 当前记录窗口的库 */
+    public static DiffStore store() {
+        return store;
     }
 
-    public static DiffStore store() {
+    /**
+     * fake 注入目标库：倒流进行中注入到<b>恢复源</b>（diff/s&lt;N&gt;，倒流可见）；
+     * 无倒流时注入当前记录窗口（current，下次倒流可见）。
+     */
+    public static DiffStore fakeTarget() {
+        RewindEngine re = RewindEngine.getInstance();
+        if (re.running() && re.currentSeasonId() > 0) {
+            return DiffStore.forSeason(configDir, re.currentSeasonId());
+        }
         return store;
     }
 
@@ -93,7 +167,8 @@ public class DiffRecorder {
      * @return 描述文本
      */
     public static String fakeDiff(int cx, int cz, int count, int stateId) {
-        if (store == null) {
+        DiffStore target = fakeTarget();
+        if (target == null) {
             return "档3 差异库未初始化（先 /season start 或 /samsara debug flow setup + flow rewind）";
         }
         if (count <= 0 || count > 4096) {
@@ -107,11 +182,12 @@ public class DiffRecorder {
             int x = baseX + rnd.nextInt(16);
             int z = baseZ + rnd.nextInt(16);
             int y = 64 + rnd.nextInt(96); // 64~159，地表附近便于观察
-            store.record(x, y, z, stateId, now - i); // 时间递减：i=0 最新
+            target.record(x, y, z, stateId, now - i); // 时间递减：i=0 最新
         }
-        store.flush(); // 批量落盘，确保立即可读
+        target.flush(); // 批量落盘，确保立即可读
         return "已注入 " + count + " 条虚假 diff 到区块 (" + cx + "," + cz + ")（stateId=" + stateId
-                + "，y=64~159 随机）· 倒流时会把这些格还原为指定方块";
+                + "，y=64~159 随机）· " + (RewindEngine.getInstance().running()
+                ? "倒流恢复源" : "记录窗口（下次倒流）") + " 生效";
     }
 
     /**
@@ -134,7 +210,8 @@ public class DiffRecorder {
     /** 同 {@link #fakeDiffText(int, int, int, String, int, int)}，但 level 非空时立即放置字画方块 */
     public static String fakeDiffText(ServerLevel level, int x0, int y0, int z0, String text,
                                       int stateId, int scale) {
-        if (store == null) {
+        DiffStore target = fakeTarget();
+        if (target == null) {
             return "档3 差异库未初始化（先 /samsara debug flow setup + flow rewind）";
         }
         if (scale < 1 || scale > 8) {
@@ -176,7 +253,7 @@ public class DiffRecorder {
                                 int x = x0 + (cursorX + col) * scale + sx;
                                 int y = y0 - row * scale - sy; // 行0=顶，向下画（y 减小）
                                 int z = z0;
-                                store.record(x, y, z, stateId, now - idx);
+                                target.record(x, y, z, stateId, now - idx);
                                 if (level != null) {
                                     // 立即放置方块使字画当场可见；暂停记录避免"放置被记成新变化"。
                                     // 强制加载区块（getChunk 会加载/生成），保证即使远离玩家也能放置。
@@ -198,7 +275,7 @@ public class DiffRecorder {
             }
             cursorX += 6; // 字符间距：5 宽 + 1 空格
         }
-        store.flush(); // 批量落盘，确保立即可读（倒流恢复读文件）
+        target.flush(); // 批量落盘，确保立即可读（倒流恢复读文件）
         if (idx == 0) {
             return "文字不含可绘制字符（仅支持 A-Z/0-9/部分符号）";
         }

@@ -2,9 +2,11 @@ package com.shenqianye.samsara;
 
 import com.shenqianye.samsara.command.DebugCommand;
 import com.shenqianye.samsara.command.SeasonCommand;
+import com.shenqianye.samsara.rewind.DiffRecorder;
 import com.shenqianye.samsara.rewind.RewindEngine;
 import com.shenqianye.samsara.season.SeasonManager;
 import net.fabricmc.api.DedicatedServerModInitializer;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerChunkEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
@@ -37,13 +39,23 @@ public class Samsara implements DedicatedServerModInitializer {
         SeasonCommand.register();
         DebugCommand.register();
 
-        // M2 时间倒流：调度器（内部 5s 节流）
+        // 档3 差异记录：常开（diff/current 窗口；倒流开始冻结为恢复源）
+        DiffRecorder.init(net.fabricmc.loader.api.FabricLoader.getInstance()
+                .getConfigDir().resolve("samsara"));
+
+        // M2 时间倒流：调度器（内部 5s 节流：标记/恢复/传送/删除/归档）
         ServerTickEvents.END_SERVER_TICK.register(server ->
                 RewindEngine.getInstance().tick(server));
 
-        // M2 时间倒流：物理删除在停服窗口执行（备份 + 清零区块槽）
+        // M2 待删队列兜底：启动时清空前次遗留（加载中的跳过，卸载即删）
+        ServerLifecycleEvents.SERVER_STARTED.register(server ->
+                RewindEngine.getInstance().onServerStarted(server));
+
+        // M2 待删队列：区块卸载即删（不再等停服）；停服窗口兜底清空 + 归档/保留判定
+        ServerChunkEvents.CHUNK_UNLOAD.register((level, chunk) ->
+                RewindEngine.getInstance().onChunkUnload(level, chunk));
         ServerLifecycleEvents.SERVER_STOPPED.register(server ->
-                RewindEngine.getInstance().applyPhysicalDeletion(server));
+                RewindEngine.getInstance().onServerStopped(server));
 
         // M2 分组出生：倒流完成后的离线玩家上线补传送
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
