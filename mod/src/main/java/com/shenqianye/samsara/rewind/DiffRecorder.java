@@ -72,4 +72,33 @@ public class DiffRecorder {
         }
         store.record(pos.getX(), pos.getY(), pos.getZ(), stateId, System.currentTimeMillis());
     }
+
+    /**
+     * 注入虚假 diff 记录（测试可视化倒流用，不需真的改方块）。
+     * 在指定区块随机位置写 count 条记录，stateId = 指定方块（恢复时会把这些格还原成该方块，
+     * 若原本是空气则"变出方块"，肉眼可见倒流恢复）。
+     * 时间戳=now（视为最新改动 → 倒流最先恢复）。
+     *
+     * @return 描述文本
+     */
+    public static String fakeDiff(int cx, int cz, int count, int stateId) {
+        if (store == null) {
+            return "档3 差异库未初始化（先 /season start 或 /samsara debug flow setup + flow rewind）";
+        }
+        if (count <= 0 || count > 4096) {
+            return "数量须在 1~4096 之间";
+        }
+        java.util.Random rnd = new java.util.Random();
+        long now = System.currentTimeMillis();
+        int baseX = cx << 4;
+        int baseZ = cz << 4;
+        for (int i = 0; i < count; i++) {
+            int x = baseX + rnd.nextInt(16);
+            int z = baseZ + rnd.nextInt(16);
+            int y = 64 + rnd.nextInt(96); // 64~159，地表附近便于观察
+            store.record(x, y, z, stateId, now - i); // 时间递减：i=0 最新
+        }
+        return "已注入 " + count + " 条虚假 diff 到区块 (" + cx + "," + cz + ")（stateId=" + stateId
+                + "，y=64~159 随机）· 倒流时会把这些格还原为指定方块";
+    }
 }

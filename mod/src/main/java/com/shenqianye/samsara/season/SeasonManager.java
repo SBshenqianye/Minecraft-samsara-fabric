@@ -128,12 +128,41 @@ public class SeasonManager {
      * 时启动时间倒流（档3/档2），倒流到期后自动传送；否则立即传送 + 广播。
      */
     public String start(MinecraftServer server) {
+        // 拆分：setup（准备）→ 倒流或传送，见 flow 系列命令
+        String setup = setupSeason(server);
+        if (!setup.startsWith("周目 #")) {
+            return setup; // setup 失败
+        }
+        Season s = current();
+        if (s == null) {
+            return setup;
+        }
+        SeasonData.Settings cfg = data.settings;
+        // same-world + 倒流 >0 → 启动倒流（到期自动传送）；否则立即传送
+        if ("same-world".equals(s.mode) && cfg.rewindDurationMs > 0) {
+            // 档3：开始记录本轮方块变化（差异库）
+            com.shenqianye.samsara.rewind.DiffRecorder.startRecording(s.id);
+            String r = RewindEngine.getInstance().start(server, s.id, cfg.rewindDurationMs,
+                    () -> onRewindComplete(server, s.id));
+            return setup + "\n" + r;
+        }
+        int t = teleportSeasonPlayers(server, s);
+        broadcast(server, "🎉 周目 #" + s.id + "「" + s.name + "」已开启！出生中心 (" + s.spawnCenter.x + ", " + s.spawnCenter.z
+                + ") · 分组 " + s.groupSpawns.size() + " 组 · 已传送 " + t + " 名在线玩家");
+        return setup + "\n已传送在线玩家 " + t + " 名（离线玩家上线后自动传送）";
+    }
+
+    /**
+     * flow setup：只做「准备」——计算出生中心 + 分组 + 持久化 + 置 ACTIVE。
+     * 不启动倒流、不传送。返回摘要；失败返回错误。
+     */
+    public String setupSeason(MinecraftServer server) {
         Season s = currentPending();
         if (s == null) {
             return "没有待开始的周目（先 /season create）";
         }
         if (RewindEngine.getInstance().running()) {
-            return "已有进行中的时间倒流，请先 /samsara debug rewind abort 再开始新周目";
+            return "已有进行中的时间倒流，请先 /samsara debug rewind abort 再操作";
         }
         ServerLevel overworld = server.getLevel(Level.OVERWORLD);
         if (overworld == null) {
@@ -158,8 +187,6 @@ public class SeasonManager {
             centerNote = "new-world 模式：使用世界出生点";
         } else {
             List<int[]> used = new ArrayList<>();
-            // 全部历史中心：世界出生点 + 每个已开始周目的出生中心（含第一次~上一次）
-            // 0,0 初始出生点也纳入，防止新中心又落在初始点附近
             used.add(new int[]{spawn.getX(), spawn.getZ()});
             for (Season se : data.seasons) {
                 if (se == s) {
@@ -199,21 +226,44 @@ public class SeasonManager {
         data.currentSeasonId = s.id;
         save();
 
-        String header = "周目 #" + s.id + "「" + s.name + "」开始（ACTIVE）· 出生中心 ("
-                + centerX + ", " + centerZ + ") · " + centerNote;
+        return "周目 #" + s.id + "「" + s.name + "」已准备（ACTIVE）· 出生中心 ("
+                + centerX + ", " + centerZ + ") · " + centerNote + "\n" + plan.report();
+    }
 
-        // 5) same-world → 时间倒流（档），到期再传送；否则立即传送
-        if ("same-world".equals(s.mode) && cfg.rewindDurationMs > 0) {
-            // 档3：开始记录本轮方块变化（差异库），供倒流逐格恢复
-            com.shenqianye.samsara.rewind.DiffRecorder.startRecording(s.id);
-            String r = RewindEngine.getInstance().start(server, s.id, cfg.rewindDurationMs,
-                    () -> onRewindComplete(server, s.id));
-            return header + "\n" + r;
+    /**
+     * flow rewind：只启动倒流（不传送）。需当前已有 ACTIVE 周目。
+     * @param teleportAfter 倒流完成后是否自动传送（true=完整流程；false=只倒流不传送）
+     */
+    public String startRewindOnly(MinecraftServer server, boolean teleportAfter) {
+        Season s = current();
+        if (s == null || s.state != Season.State.ACTIVE) {
+            return "当前没有 ACTIVE 周目（先 /samsara debug flow setup）";
+        }
+        if (RewindEngine.getInstance().running()) {
+            return "已有进行中的时间倒流，请先 abort";
+        }
+        SeasonData.Settings cfg = data.settings;
+        if (cfg.rewindDurationMs <= 0) {
+            return "倒流时长未配置（/samsara debug config rewind <时长>）";
+        }
+        com.shenqianye.samsara.rewind.DiffRecorder.startRecording(s.id);
+        String r = RewindEngine.getInstance().start(server, s.id, cfg.rewindDurationMs,
+                teleportAfter ? () -> onRewindComplete(server, s.id) : null);
+        return r;
+    }
+
+    /**
+     * flow teleport：只传送当前 ACTIVE 周目玩家（不启动倒流）。
+     */
+    public String teleportOnly(MinecraftServer server) {
+        Season s = current();
+        if (s == null || s.state != Season.State.ACTIVE) {
+            return "当前没有 ACTIVE 周目（先 /samsara debug flow setup）";
         }
         int t = teleportSeasonPlayers(server, s);
-        broadcast(server, "🎉 周目 #" + s.id + "「" + s.name + "」已开启！出生中心 (" + centerX + ", " + centerZ
-                + ") · 分组 " + plan.groups.size() + " 组 · 已传送 " + t + " 名在线玩家");
-        return header + "\n" + plan.report() + "\n已传送在线玩家 " + t + " 名（离线玩家上线后自动传送）";
+        broadcast(server, "🎉 传送完成！周目 #" + s.id + "「" + s.name + "」出生中心 ("
+                + s.spawnCenter.x + ", " + s.spawnCenter.z + ") · " + t + " 名在线玩家就位");
+        return "已传送 " + t + " 名在线玩家（离线玩家上线后自动传送）";
     }
 
     /** 倒流完成回调：传送全员 + 广播（由 RewindEngine 到期调用） */

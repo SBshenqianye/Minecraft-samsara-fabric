@@ -73,7 +73,36 @@ public class DebugCommand {
                                         ctx.getSource().getPlayerOrException(),
                                         ctx.getSource().getLevel()))))
                         .then(Commands.literal("diff")
-                                .executes(ctx -> reply(ctx.getSource(), MANAGER.diffStatus())))
+                                .executes(ctx -> reply(ctx.getSource(), MANAGER.diffStatus()))
+                                .then(Commands.literal("fake")
+                                        .then(Commands.argument("cx", IntegerArgumentType.integer())
+                                                .then(Commands.argument("cz", IntegerArgumentType.integer())
+                                                        .then(Commands.argument("count", IntegerArgumentType.integer(1, 4096))
+                                                                .executes(ctx -> reply(ctx.getSource(),
+                                                                        com.shenqianye.samsara.rewind.DiffRecorder.fakeDiff(
+                                                                                IntegerArgumentType.getInteger(ctx, "cx"),
+                                                                                IntegerArgumentType.getInteger(ctx, "cz"),
+                                                                                IntegerArgumentType.getInteger(ctx, "count"),
+                                                                                1))) // 默认 stateId=1（石头）
+                                                                .then(Commands.argument("stateId", IntegerArgumentType.integer(0, 10000))
+                                                                        .executes(ctx -> reply(ctx.getSource(),
+                                                                                com.shenqianye.samsara.rewind.DiffRecorder.fakeDiff(
+                                                                                        IntegerArgumentType.getInteger(ctx, "cx"),
+                                                                                        IntegerArgumentType.getInteger(ctx, "cz"),
+                                                                                        IntegerArgumentType.getInteger(ctx, "count"),
+                                                                                        IntegerArgumentType.getInteger(ctx, "stateId"))))))))))
+                        .then(Commands.literal("flow")
+                                .then(Commands.literal("setup")
+                                        .executes(ctx -> reply(ctx.getSource(),
+                                                MANAGER.setupSeason(ctx.getSource().getServer()))))
+                                .then(Commands.literal("rewind")
+                                        .then(Commands.argument("teleportAfter", StringArgumentType.word())
+                                                .executes(ctx -> reply(ctx.getSource(),
+                                                        MANAGER.startRewindOnly(ctx.getSource().getServer(),
+                                                                Boolean.parseBoolean(StringArgumentType.getString(ctx, "teleportAfter")))))))
+                                .then(Commands.literal("teleport")
+                                        .executes(ctx -> reply(ctx.getSource(),
+                                                MANAGER.teleportOnly(ctx.getSource().getServer())))))
                         .then(Commands.literal("json")
                                 .executes(ctx -> reply(ctx.getSource(), MANAGER.rawJson()
                                         + "\n\n↑ season.json 位置: " + MANAGER.configPath())))
@@ -320,7 +349,9 @@ public class DebugCommand {
                 + "/samsara debug settime <id> <start|end> <now|epoch毫秒> —— 设置时间戳\n"
                 + "/samsara debug fakeplayers <clear|数字|前缀 数量|名字,名字...> —— 注入离线测试玩家（M2 分组用）\n"
                 + "/samsara debug groups [名单] —— 分组 dry-run（缺省用注册玩家）\n"
-                + "/samsara debug rewind preview|status|abort|purge|set <时长> —— 倒流控制：预览/状态/中止/立即删未保留区块/时长（支持 1h 30m 3600s 1d 0.5d）\n"
+                + "/samsara debug rewind preview|status|abort|purge|restore <cx> <cz>|set <时长> —— 倒流控制：预览/状态/中止/立即删未保留区块/强制恢复某区块/时长（1h 30m 3600s 1d）\n"
+                + "/samsara debug diff [fake <cx> <cz> <数量> [stateId]] —— 档3差异库状态；fake=注入虚假diff测试可视化倒流\n"
+                + "/samsara debug flow setup|rewind <true|false>|teleport —— 拆分start：只准备/只倒流(完成后是否传送)/只传送\n"
                 + "/samsara debug config [键] [值] —— 查看/设置配置（无键=全部含类型；键: groupdist/birthjitter/birthreset/rewind/groupmin/groupmax/spawnradius/centermin/centermax）\n"
                 + "/samsara debug claim add|addc <名> <p1> <p2>|remove <名>|list —— 圈地保护不删区（坐标支持 ~/~N；add=方块坐标，addc=区块坐标×16；中文名用引号如 \"主城\"）\n"
                 + "/samsara debug whitelist json|reload —— 白名单查看/重载";
