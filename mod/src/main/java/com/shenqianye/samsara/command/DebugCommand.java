@@ -88,6 +88,7 @@ public class DebugCommand {
                                         .then(Commands.argument("text", StringArgumentType.string())
                                                 .executes(ctx -> reply(ctx.getSource(),
                                                         com.shenqianye.samsara.rewind.DiffRecorder.fakeDiffText(
+                                                                levelOf(ctx),
                                                                 posX(ctx, "pos"),
                                                                 posY(ctx, "pos"),
                                                                 posZ(ctx, "pos"),
@@ -96,6 +97,7 @@ public class DebugCommand {
                                                 .then(Commands.argument("stateId", IntegerArgumentType.integer(0, 10000))
                                                         .executes(ctx -> reply(ctx.getSource(),
                                                                 com.shenqianye.samsara.rewind.DiffRecorder.fakeDiffText(
+                                                                        levelOf(ctx),
                                                                         posX(ctx, "pos"),
                                                                         posY(ctx, "pos"),
                                                                         posZ(ctx, "pos"),
@@ -104,6 +106,7 @@ public class DebugCommand {
                                                         .then(Commands.argument("scale", IntegerArgumentType.integer(1, 8))
                                                                 .executes(ctx -> reply(ctx.getSource(),
                                                                         com.shenqianye.samsara.rewind.DiffRecorder.fakeDiffText(
+                                                                                levelOf(ctx),
                                                                                 posX(ctx, "pos"),
                                                                                 posY(ctx, "pos"),
                                                                                 posZ(ctx, "pos"),
@@ -258,6 +261,12 @@ public class DebugCommand {
     }
 
     // ---- 坐标语法糖辅助（设计规范 §2b：坐标参数一律用原版参数类型支持 ~ / ~N）----
+
+    /** 命令执行所在的主世界（供 fakeDiffText 立即放置字画方块） */
+    private static net.minecraft.server.level.ServerLevel levelOf(CommandContext<CommandSourceStack> ctx) {
+        net.minecraft.server.MinecraftServer server = ctx.getSource().getServer();
+        return server == null ? null : server.getLevel(net.minecraft.world.level.Level.OVERWORLD);
+    }
 
     /** BlockPosArgument 的 x */
     private static int posX(CommandContext<CommandSourceStack> ctx, String name) {

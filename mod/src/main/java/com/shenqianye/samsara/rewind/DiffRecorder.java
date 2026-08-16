@@ -117,6 +117,9 @@ public class DiffRecorder {
     /**
      * 空中"字画"：用点阵字体把 text 逐像素写成虚假 diff（每个像素 = 一条记录，stateId=指定方块）。
      * 倒流时这些格逐格"凭空浮现"，形成空中文字/图案（可视化倒流测试）。
+     * <p>
+     * 若传入 level（命令层），注入的同时<b>立即放置方块</b>——字画当场可见；
+     * diff 记录仍保留，倒流恢复时目标已是该方块则跳过（字画保持）。
      *
      * @param x0/y0/z0 文字左上角起始坐标（y 建议 100+，抬头可见）
      * @param text     内容（A-Z/0-9/部分符号；小写自动转大写）
@@ -125,6 +128,12 @@ public class DiffRecorder {
      * @return 描述文本
      */
     public static String fakeDiffText(int x0, int y0, int z0, String text, int stateId, int scale) {
+        return fakeDiffText(null, x0, y0, z0, text, stateId, scale);
+    }
+
+    /** 同 {@link #fakeDiffText(int, int, int, String, int, int)}，但 level 非空时立即放置字画方块 */
+    public static String fakeDiffText(ServerLevel level, int x0, int y0, int z0, String text,
+                                      int stateId, int scale) {
         if (store == null) {
             return "档3 差异库未初始化（先 /samsara debug flow setup + flow rewind）";
         }
@@ -168,6 +177,19 @@ public class DiffRecorder {
                                 int y = y0 - row * scale - sy; // 行0=顶，向下画（y 减小）
                                 int z = z0;
                                 store.record(x, y, z, stateId, now - idx);
+                                if (level != null) {
+                                    // 立即放置方块使字画当场可见；暂停记录避免"放置被记成新变化"。
+                                    // 强制加载区块（getChunk 会加载/生成），保证即使远离玩家也能放置。
+                                    boolean was = enabled;
+                                    enabled = false;
+                                    try {
+                                        net.minecraft.core.BlockPos bp = new net.minecraft.core.BlockPos(x, y, z);
+                                        level.getChunk(x >> 4, z >> 4);
+                                        level.setBlock(bp, net.minecraft.world.level.block.Block.stateById(stateId), 3);
+                                    } finally {
+                                        enabled = was;
+                                    }
+                                }
                                 idx++;
                             }
                         }
