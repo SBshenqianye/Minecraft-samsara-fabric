@@ -120,7 +120,7 @@ public class DiffRecorder {
      * @param x0/y0/z0 文字左上角起始坐标（y 建议 100+，抬头可见）
      * @param text     内容（A-Z/0-9/部分符号；小写自动转大写）
      * @param stateId  方块状态 id（默认 1=石头）
-     * @param scale    放大倍数（1=5x7，2=10x14，…）
+     * @param scale    放大倍数（1=5x5，2=10x10，…）
      * @return 描述文本
      */
     public static String fakeDiffText(int x0, int y0, int z0, String text, int stateId, int scale) {
@@ -148,14 +148,16 @@ public class DiffRecorder {
                 }
                 continue; // 不支持的字符（含中文/emoji）跳过，避免数组越界崩溃
             }
-            for (int col = 0; col < 5; col++) {
-                int bits = glyph[col];
-                for (int row = 0; row < 7; row++) {
-                    if ((bits & (1 << row)) != 0) {
+            // 字库为行优先：每个元素 = 一行，低 5 位 = 5 列（bit0=最左列，行0=顶部）。
+            // 之前按"列优先"读（元素当列、位当行）导致字形转置 90° 躺下，已修正。
+            for (int row = 0; row < glyph.length; row++) {
+                int bits = glyph[row];
+                for (int col = 0; col < 5; col++) {
+                    if ((bits & (1 << col)) != 0) {
                         for (int sy = 0; sy < scale; sy++) {
                             for (int sx = 0; sx < scale; sx++) {
                                 int x = x0 + (cursorX + col) * scale + sx;
-                                int y = y0 - row * scale - sy; // 向上画（y 减小）
+                                int y = y0 - row * scale - sy; // 行0=顶，向下画（y 减小）
                                 int z = z0;
                                 store.record(x, y, z, stateId, now - idx);
                                 idx++;
@@ -176,7 +178,7 @@ public class DiffRecorder {
                 + "，scale=" + scale + "）· 起点 (" + x0 + "," + y0 + "," + z0 + ") · 倒流时逐格浮现";
     }
 
-    /** 5x7 点阵字体：下标 = char - ' '（32），每字符 5 列，每列低 7 位 = 7 行（bit0=最底行） */
+    /** 5x5 点阵字体（行优先）：下标 = char - ' '（32），每字符 5 行，每行低 5 位 = 5 列（bit0=最左列，行0=顶部） */
     private static final int[][] FONT_5X7 = new int[95][];
     static {
         // 空格
