@@ -148,17 +148,17 @@ public class DebugCommand {
                                 .then(Commands.literal("list")
                                         .executes(ctx -> reply(ctx.getSource(), WhitelistStore.getInstance().claimList())))
                                 .then(Commands.literal("remove")
-                                        .then(Commands.argument("name", StringArgumentType.word())
+                                        .then(Commands.argument("name", StringArgumentType.string())
                                                 .executes(ctx -> reply(ctx.getSource(),
                                                         WhitelistStore.getInstance().claimRemove(
                                                                 StringArgumentType.getString(ctx, "name"))))))
                                 .then(Commands.literal("add")
-                                        .then(Commands.argument("name", StringArgumentType.word())
+                                        .then(Commands.argument("name", StringArgumentType.string())
                                                 .then(Commands.argument("p1", Vec2Argument.vec2())
                                                         .then(Commands.argument("p2", Vec2Argument.vec2())
                                                                 .executes(ctx -> claimAddFromVec2(ctx, "name", "p1", "p2", false))))))
                                 .then(Commands.literal("addc")
-                                        .then(Commands.argument("name", StringArgumentType.word())
+                                        .then(Commands.argument("name", StringArgumentType.string())
                                                 .then(Commands.argument("p1", Vec2Argument.vec2())
                                                         .then(Commands.argument("p2", Vec2Argument.vec2())
                                                                 .executes(ctx -> claimAddFromVec2(ctx, "name", "p1", "p2", true))))))
@@ -314,7 +314,7 @@ public class DebugCommand {
                 + "/samsara debug groups [名单] —— 分组 dry-run（缺省用注册玩家）\n"
                 + "/samsara debug rewind preview|status|abort|purge|set <时长> —— 倒流控制：预览/状态/中止/立即删未保留区块/时长（支持 1h 30m 3600s 1d 0.5d）\n"
                 + "/samsara debug config [键] [值] —— 查看/设置配置（无键=全部含类型；键: groupdist/birthjitter/birthreset/rewind/groupmin/groupmax/spawnradius/centermin/centermax）\n"
-                + "/samsara debug claim add|addc <名> <p1> <p2>|remove <名>|list —— 圈地保护不删区（坐标支持 ~/~N；add=方块坐标，addc=区块坐标×16）\n"
+                + "/samsara debug claim add|addc <名> <p1> <p2>|remove <名>|list —— 圈地保护不删区（坐标支持 ~/~N；add=方块坐标，addc=区块坐标×16；中文名用引号如 \"主城\"）\n"
                 + "/samsara debug whitelist json|reload —— 白名单查看/重载";
     }
 

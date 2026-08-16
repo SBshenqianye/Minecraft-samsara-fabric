@@ -48,7 +48,7 @@ public class SeasonCommand {
                         .executes(ctx -> reply(ctx.getSource(), infoText(ctx.getSource()))))
                 .then(Commands.literal("create")
                         .requires(src -> isAdmin(src))
-                        .then(Commands.argument("name", StringArgumentType.word())
+                        .then(Commands.argument("name", StringArgumentType.string())
                                 .executes(ctx -> reply(ctx.getSource(), MANAGER.create(
                                         StringArgumentType.getString(ctx, "name"), "same-world")))
                                 .then(Commands.argument("mode", StringArgumentType.word())
