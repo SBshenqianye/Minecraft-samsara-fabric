@@ -254,8 +254,9 @@ public class RewindEngine {
         int deletedChunks = 0;
         try {
             for (Path src : touched.keySet()) {
+                // 备份到 backupDir/dimensions/minecraft/overworld/<region|entities|poi>/<file>
                 Path dst = backupDir.resolve("dimensions").resolve("minecraft").resolve("overworld")
-                        .resolve(worldRoot.relativize(src));
+                        .resolve(dimRoot.relativize(src));
                 Files.createDirectories(dst.getParent());
                 Files.copy(src, dst, StandardCopyOption.REPLACE_EXISTING);
                 backedUp++;
