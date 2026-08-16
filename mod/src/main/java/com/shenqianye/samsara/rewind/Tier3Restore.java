@@ -31,8 +31,10 @@ import java.util.Set;
  * 比例映射到倒流时长；这里简化为按进度 p 每区块恢复 p 比例的记录（较新的先退场）。
  */
 public class Tier3Restore {
-    /** 每 tick 全局最大恢复格数 */
+    /** 每 tick 全局最大恢复格数（分摊执行，避免单 tick 大量 setBlock 卡服） */
     public static int MAX_PER_TICK = 2000;
+    /** 每 tick 内执行预算（restoreRound 内部按此分摊，一次调用最多处理这么多格） */
+    private static final int PER_CALL_BUDGET = 400;
 
     private Tier3Restore() {
     }
@@ -102,7 +104,7 @@ public class Tier3Restore {
         store.flush(); // 先把内存缓冲落盘，再读取（保证读到最新记录）
 
         int applied = 0;
-        int budget = MAX_PER_TICK;
+        int budget = Math.min(MAX_PER_TICK, PER_CALL_BUDGET); // 单次调用分摊上限，跨 tick 推进
         for (long key : loadedChunks) {
             if (budget <= 0) {
                 break;
@@ -159,10 +161,11 @@ public class Tier3Restore {
             return false; // 已是目标状态
         }
         // 恢复自身的 setBlock 不记录 diff（否则"恢复→被记成新变化→下一轮再恢复成空气"自噬）
+        // flag=2（通知客户端、不触发邻居更新）：大规模恢复时避免邻居更新连锁卡服
         boolean wasRecording = DiffRecorder.recording();
         DiffRecorder.setEnabled(false);
         try {
-            level.setBlock(pos, target, 3);
+            level.setBlock(pos, target, 2);
         } finally {
             DiffRecorder.setEnabled(wasRecording);
         }

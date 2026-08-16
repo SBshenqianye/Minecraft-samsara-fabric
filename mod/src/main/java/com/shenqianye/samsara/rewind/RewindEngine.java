@@ -379,11 +379,12 @@ public class RewindEngine {
                 continue;
             }
             // 恢复自身的 setBlock 不记录 diff（避免自噬：恢复→被记录→再恢复成空气）
+            // flag=2：通知客户端但不触发邻居更新（大批量恢复时避免连锁卡服）
             boolean wasRecording = DiffRecorder.recording();
             DiffRecorder.setEnabled(false);
             boolean ok;
             try {
-                ok = overworld.setBlock(pos, t, 3);
+                ok = overworld.setBlock(pos, t, 2);
             } finally {
                 DiffRecorder.setEnabled(wasRecording);
             }

@@ -33,6 +33,8 @@ public class DiffStore {
     /** 每区块内存缓冲（尚未落盘的记录，按区块 key 分组） */
     private final Map<Long, java.io.ByteArrayOutputStream> pending = new HashMap<>();
     private int pendingCount;
+    /** 每区块内存缓存（已读入/已记录的 Edit，restoreRound 只读内存，不再反复读磁盘） */
+    private final Map<Long, List<Edit>> cache = new HashMap<>();
 
     private DiffStore(Path root) {
         this.root = root;
@@ -110,6 +112,8 @@ public class DiffStore {
             java.io.ByteArrayOutputStream buf = pending.computeIfAbsent(key, k -> new java.io.ByteArrayOutputStream());
             buf.write(rec, 0, RECORD_SIZE);
             pendingCount++;
+            // 同步更新内存缓存（restoreRound 只读缓存，不反复读磁盘）
+            cache.computeIfAbsent(key, k -> new ArrayList<>()).add(new Edit(x, y, z, stateId, timeMs));
             if (pendingCount >= FLUSH_THRESHOLD) {
                 flushLocked();
             }
@@ -153,31 +157,46 @@ public class DiffStore {
         }
     }
 
-    /** 解析一个区块文件的所有记录 */
+    /** 解析一个区块文件的所有记录（优先内存缓存；首次读盘后入缓存，后续零磁盘 IO） */
     public List<Edit> readChunk(int cx, int cz) {
+        long key = ((long) cx << 32) | (cz & 0xFFFFFFFFL);
+        globalLock.lock();
+        try {
+            List<Edit> cached = cache.get(key);
+            if (cached != null) {
+                return new ArrayList<>(cached); // 返回副本，避免调用方排序污染缓存
+            }
+        } finally {
+            globalLock.unlock();
+        }
         Path f = fileFor(cx, cz);
         List<Edit> out = new ArrayList<>();
-        if (!Files.exists(f)) {
-            return out;
-        }
-        try (RandomAccessFile raf = new RandomAccessFile(f.toFile(), "r")) {
-            long len = raf.length();
-            byte[] buf = new byte[RECORD_SIZE];
-            for (long pos = 0; pos + RECORD_SIZE <= len; pos += RECORD_SIZE) {
-                raf.seek(pos);
-                raf.readFully(buf);
-                int stateId = ((buf[0] & 0xFF) << 24) | ((buf[1] & 0xFF) << 16) | ((buf[2] & 0xFF) << 8) | (buf[3] & 0xFF);
-                int x = ((buf[4] & 0xFF) << 24) | ((buf[5] & 0xFF) << 16) | ((buf[6] & 0xFF) << 8) | (buf[7] & 0xFF);
-                int y = ((buf[8] & 0xFF) << 24) | ((buf[9] & 0xFF) << 16) | ((buf[10] & 0xFF) << 8) | (buf[11] & 0xFF);
-                int z = ((buf[12] & 0xFF) << 24) | ((buf[13] & 0xFF) << 16) | ((buf[14] & 0xFF) << 8) | (buf[15] & 0xFF);
-                long time = 0;
-                for (int i = 0; i < 8; i++) {
-                    time = (time << 8) | (buf[16 + i] & 0xFF);
+        if (Files.exists(f)) {
+            try (RandomAccessFile raf = new RandomAccessFile(f.toFile(), "r")) {
+                long len = raf.length();
+                byte[] buf = new byte[RECORD_SIZE];
+                for (long pos = 0; pos + RECORD_SIZE <= len; pos += RECORD_SIZE) {
+                    raf.seek(pos);
+                    raf.readFully(buf);
+                    int stateId = ((buf[0] & 0xFF) << 24) | ((buf[1] & 0xFF) << 16) | ((buf[2] & 0xFF) << 8) | (buf[3] & 0xFF);
+                    int x = ((buf[4] & 0xFF) << 24) | ((buf[5] & 0xFF) << 16) | ((buf[6] & 0xFF) << 8) | (buf[7] & 0xFF);
+                    int y = ((buf[8] & 0xFF) << 24) | ((buf[9] & 0xFF) << 16) | ((buf[10] & 0xFF) << 8) | (buf[11] & 0xFF);
+                    int z = ((buf[12] & 0xFF) << 24) | ((buf[13] & 0xFF) << 16) | ((buf[14] & 0xFF) << 8) | (buf[15] & 0xFF);
+                    long time = 0;
+                    for (int i = 0; i < 8; i++) {
+                        time = (time << 8) | (buf[16 + i] & 0xFF);
+                    }
+                    out.add(new Edit(x, y, z, stateId, time));
                 }
-                out.add(new Edit(x, y, z, stateId, time));
+            } catch (IOException e) {
+                Samsara.LOGGER.error("[周目管理 samsara] diff 读取失败 {}: {}", f, e.getMessage());
             }
-        } catch (IOException e) {
-            Samsara.LOGGER.error("[周目管理 samsara] diff 读取失败 {}: {}", f, e.getMessage());
+        }
+        globalLock.lock();
+        try {
+            cache.putIfAbsent(key, new ArrayList<>(out));
+        } finally {
+            globalLock.unlock();
         }
         return out;
     }
