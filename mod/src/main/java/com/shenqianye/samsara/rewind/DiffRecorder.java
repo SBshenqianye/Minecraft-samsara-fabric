@@ -135,11 +135,18 @@ public class DiffRecorder {
         }
         long now = System.currentTimeMillis();
         int idx = 0;
+        int skipped = 0;
+        StringBuilder skippedChars = new StringBuilder();
         int cursorX = 0; // 相对起点 x 偏移
         for (char ch : text.toUpperCase().toCharArray()) {
-            int[] glyph = FONT_5X7[ch - ' ']; // 下标 = char - 空格
+            int fi = ch - ' ';
+            int[] glyph = (fi >= 0 && fi < FONT_5X7.length) ? FONT_5X7[fi] : null;
             if (glyph == null) {
-                continue; // 不支持的字符跳过
+                skipped++;
+                if (skippedChars.length() < 12) {
+                    skippedChars.append(ch);
+                }
+                continue; // 不支持的字符（含中文/emoji）跳过，避免数组越界崩溃
             }
             for (int col = 0; col < 5; col++) {
                 int bits = glyph[col];
@@ -162,7 +169,10 @@ public class DiffRecorder {
         if (idx == 0) {
             return "文字不含可绘制字符（仅支持 A-Z/0-9/部分符号）";
         }
-        return "已注入 " + idx + " 条虚假 diff（空中字画 " + text.toUpperCase() + "，stateId=" + stateId
+        String skipNote = skipped > 0
+                ? "（已跳过 " + skipped + " 个不支持字符「" + skippedChars + "」，仅支持 A-Z/0-9/部分符号）"
+                : "";
+        return "已注入 " + idx + " 条虚假 diff（空中字画 " + text.toUpperCase() + skipNote + "，stateId=" + stateId
                 + "，scale=" + scale + "）· 起点 (" + x0 + "," + y0 + "," + z0 + ") · 倒流时逐格浮现";
     }
 
