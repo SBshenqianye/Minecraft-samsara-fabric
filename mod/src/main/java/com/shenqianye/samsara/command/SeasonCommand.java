@@ -1,11 +1,8 @@
 package com.shenqianye.samsara.command;
 
-import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.shenqianye.samsara.season.SeasonManager;
-import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
-import net.minecraft.commands.CommandBuildContext;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
@@ -16,7 +13,11 @@ import net.minecraft.server.permissions.Permissions;
 import net.minecraft.world.level.Level;
 
 /**
- * /season 命令（M1：status/info/create/start/end；M2：respawn-groups、start 完整流程）。
+ * 周目业务命令（M1：status/info/create/start/end；M2：respawn-groups、start 完整流程）。
+ * <p>
+ * <b>命令命名空间（设计文档 §17，2026-08-17 修订）</b>：全部命令以
+ * {@code /samsara} 开头，正式入口 {@code /samsara season ...}（挂在 /samsara 根下，
+ * 与其它模组不冲突）；不再注册 {@code /season} 别名（曾保留，用户决定去掉避免养成习惯）。
  * <p>
  * 权限：M1 用原版 COMMANDS_ADMIN（原 OP 等级 2），后续可接 fabric-permissions-api。
  * M2 起扩展：respawn-groups（不换周目重分组）；vote / key 留 M8（§15）。
@@ -32,13 +33,12 @@ public class SeasonCommand {
     private static final SeasonManager MANAGER = SeasonManager.getInstance();
 
     public static void register() {
-        CommandRegistrationCallback.EVENT.register(SeasonCommand::registerCommands);
+        // 命令树统一由 DebugCommand 挂在 /samsara 根下（seasonNode()），这里不再单独注册 /season
     }
 
-    private static void registerCommands(CommandDispatcher<CommandSourceStack> dispatcher,
-                                         CommandBuildContext buildContext,
-                                         Commands.CommandSelection selection) {
-        dispatcher.register(Commands.literal("season")
+    /** {@code /samsara season ...} 子树：由 DebugCommand 挂到 /samsara 根下 */
+    public static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> seasonNode() {
+        return Commands.literal("season")
                 .then(Commands.literal("status")
                         .executes(ctx -> reply(ctx.getSource(), MANAGER.statusText(1)))
                         .then(Commands.argument("page", IntegerArgumentType.integer(1))
@@ -67,7 +67,7 @@ public class SeasonCommand {
                 .then(Commands.literal("respawn-groups")
                         .requires(src -> isAdmin(src))
                         .executes(ctx -> reply(ctx.getSource(),
-                                MANAGER.respawnGroups(ctx.getSource().getServer())))));
+                                MANAGER.respawnGroups(ctx.getSource().getServer()))));
     }
 
     private static boolean isAdmin(CommandSourceStack src) {
