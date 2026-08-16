@@ -142,6 +142,27 @@ public class DebugCommand {
                                         .then(Commands.argument("on", StringArgumentType.word())
                                                 .executes(ctx -> reply(ctx.getSource(), MANAGER.setResetIndividualBirthpoint(
                                                         Boolean.parseBoolean(StringArgumentType.getString(ctx, "on"))))))))
+                        .then(Commands.literal("claim")
+                                .then(Commands.literal("list")
+                                        .executes(ctx -> reply(ctx.getSource(), WhitelistStore.getInstance().claimList())))
+                                .then(Commands.literal("remove")
+                                        .then(Commands.argument("name", StringArgumentType.word())
+                                                .executes(ctx -> reply(ctx.getSource(),
+                                                        WhitelistStore.getInstance().claimRemove(
+                                                                StringArgumentType.getString(ctx, "name"))))))
+                                .then(Commands.literal("add")
+                                        .then(Commands.argument("name", StringArgumentType.word())
+                                                .then(Commands.argument("x1", IntegerArgumentType.integer())
+                                                        .then(Commands.argument("z1", IntegerArgumentType.integer())
+                                                                .then(Commands.argument("x2", IntegerArgumentType.integer())
+                                                                        .then(Commands.argument("z2", IntegerArgumentType.integer())
+                                                                                .executes(ctx -> reply(ctx.getSource(),
+                                                                                        WhitelistStore.getInstance().claimAdd(
+                                                                                                StringArgumentType.getString(ctx, "name"),
+                                                                                                IntegerArgumentType.getInteger(ctx, "x1"),
+                                                                                                IntegerArgumentType.getInteger(ctx, "z1"),
+                                                                                                IntegerArgumentType.getInteger(ctx, "x2"),
+                                                                                                IntegerArgumentType.getInteger(ctx, "z2")))))))))))
                         .then(Commands.literal("whitelist")
                                 .then(Commands.literal("json")
                                         .executes(ctx -> reply(ctx.getSource(), WhitelistStore.getInstance().rawJson()

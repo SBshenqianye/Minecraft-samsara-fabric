@@ -169,7 +169,7 @@ public class RewindEngine {
             }
             sb.append(String.join(" ", parts)).append('\n');
         }
-        sb.append("保护集说明: 世界出生点保护圈(whitelist.json) + 各周目出生中心/分组出生点 + 配置区域");
+        sb.append("保护集说明: 仅圈地区域(whitelist.json regions，/samsara debug claim 维护)受保护；未圈地全部视为未保留可删");
         return sb.toString();
     }
 
@@ -332,7 +332,6 @@ public class RewindEngine {
 
     private ScanResult scan(MinecraftServer server) {
         WhitelistData wl = WhitelistStore.getInstance().data();
-        SeasonData sd = getSeasonData();
         ServerLevel overworld = server.getLevel(Level.OVERWORLD);
         Path dimRoot = McaRegion.overworldDimensionRoot(server.getWorldPath(LevelResource.ROOT));
         Path regionDir = dimRoot.resolve("region");
@@ -343,7 +342,7 @@ public class RewindEngine {
             List<int[]> exist = McaRegion.scanExisting(f);
             for (int[] c : exist) {
                 total++;
-                if (overworld != null && ChunkProtector.isProtected(overworld, wl, sd, c[0], c[1])) {
+                if (overworld != null && ChunkProtector.isProtected(overworld, wl, c[0], c[1])) {
                     protectedCount++;
                 } else {
                     toRewind.add(c);
@@ -351,10 +350,6 @@ public class RewindEngine {
             }
         }
         return new ScanResult(total, protectedCount, toRewind);
-    }
-
-    private SeasonData getSeasonData() {
-        return com.shenqianye.samsara.season.SeasonManager.getInstance().data();
     }
 
     private String summaryText(RewindData d) {

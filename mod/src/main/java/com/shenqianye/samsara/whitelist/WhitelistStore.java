@@ -69,6 +69,60 @@ public class WhitelistStore {
         return data;
     }
 
+    /** debug 圈地：添加矩形区域（不保留区 = 未圈地；倒流只保护圈地区域） */
+    public String claimAdd(String name, int x1, int z1, int x2, int z2) {
+        if (name == null || name.isBlank()) {
+            return "圈地名不能为空";
+        }
+        for (WhitelistData.Region r : data.regions) {
+            if (name.equals(r.name)) {
+                return "已存在同名圈地「" + name + "」，先 remove 再 add";
+            }
+        }
+        WhitelistData.Region r = new WhitelistData.Region();
+        r.name = name;
+        r.type = "rect";
+        r.minX = Math.min(x1, x2);
+        r.minZ = Math.min(z1, z2);
+        r.maxX = Math.max(x1, x2);
+        r.maxZ = Math.max(z1, z2);
+        data.regions.add(r);
+        save();
+        return "已圈地「" + name + "」(" + r.minX + "," + r.minZ + ")~(" + r.maxX + "," + r.maxZ
+                + ") · 这些区块受保护不参与倒流删除（当前共 " + data.regions.size() + " 个圈地）";
+    }
+
+    /** debug 圈地：删除 */
+    public String claimRemove(String name) {
+        for (int i = 0; i < data.regions.size(); i++) {
+            if (name.equals(data.regions.get(i).name)) {
+                data.regions.remove(i);
+                save();
+                return "已删除圈地「" + name + "」（剩余 " + data.regions.size() + " 个）";
+            }
+        }
+        return "未找到圈地「" + name + "」（/samsara debug claim list 查看）";
+    }
+
+    /** debug 圈地：列表 */
+    public String claimList() {
+        if (data.regions.isEmpty()) {
+            return "当前无圈地 —— 倒流时全部区块都视为未保留（可删除）。\n用 /samsara debug claim add <名> <x1> <z1> <x2> <z2> 圈地保护";
+        }
+        StringBuilder sb = new StringBuilder("当前圈地（受保护不删）：\n");
+        for (WhitelistData.Region r : data.regions) {
+            sb.append("  「").append(r.name).append("」 ");
+            if ("rect".equalsIgnoreCase(r.type)) {
+                sb.append("(").append(r.minX).append(",").append(r.minZ).append(")~(")
+                        .append(r.maxX).append(",").append(r.maxZ).append(")");
+            } else {
+                sb.append("圆心(").append(r.x).append(",").append(r.z).append(") 半径").append(r.radius);
+            }
+            sb.append("\n");
+        }
+        return sb.toString().trim();
+    }
+
     public String reload() {
         load();
         return "已从磁盘重新加载 " + file.getFileName();
