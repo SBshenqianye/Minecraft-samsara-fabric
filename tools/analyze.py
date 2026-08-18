@@ -266,18 +266,39 @@ def parse_logs(world):
 
 
 def read_activity_log(world):
-    """本模组 activity.log（M3 起）：每行 `epoch_ms name`，模组实时追加。"""
-    path = os.path.join(world, "config", "samsara", "activity.log")
+    """本模组 activity.log（M3 起）：每行 `<epoch_ms> <name> [JOIN|LEAVE]`，模组实时追加。
+    只取 JOIN（上线）作为"最后登录"。列缺省/未知事件按 JOIN 兼容旧格式。
+    兼容两种位置：`<world>/config/samsara/`（久路径）与 `<world>/../config/samsara/`（服务端根配置目录）；
+    滚动档 activity.1.log 一并读取。"""
+    candidates = [
+        os.path.join(world, "config", "samsara"),
+        os.path.normpath(os.path.join(world, "..", "config", "samsara")),
+    ]
     by_name = {}
-    if os.path.isfile(path):
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                for line in f:
-                    parts = line.split()
-                    if len(parts) >= 2 and parts[0].isdigit():
-                        by_name[parts[1]] = int(parts[0])
-        except Exception as e:
-            print("[警告] activity.log 读取失败: %s" % e)
+    seen_dirs = set()
+    for cfg_dir in candidates:
+        cfg_dir = os.path.normpath(cfg_dir)
+        if cfg_dir in seen_dirs:
+            continue
+        seen_dirs.add(cfg_dir)
+        for fn in ("activity.1.log", "activity.log"):  # 滚动档先（更旧），当前档后（更新）
+            path = os.path.join(cfg_dir, fn)
+            if not os.path.isfile(path):
+                continue
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        parts = line.split()
+                        if len(parts) < 2 or not parts[0].isdigit():
+                            continue
+                        ev = parts[2] if len(parts) >= 3 else "JOIN"
+                        if ev != "JOIN":
+                            continue  # 只取上线事件；LEAVE 不算"最后登录"
+                        ms = int(parts[0])
+                        if parts[1] not in by_name or ms > by_name[parts[1]]:
+                            by_name[parts[1]] = ms
+            except Exception as e:
+                print("[警告] %s 读取失败: %s" % (path, e))
     return by_name
 
 

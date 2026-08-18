@@ -15,7 +15,7 @@ samsara/
 └── docs/       # 设计文档
 ```
 
-## 当前状态：M2 分组出生 + 时间倒流（档2/档3）（已完成：26.2 编译 + 运行时验收；当前版本 v0.8.8）
+## 当前状态：M3 活跃度（已完成）+ M2 分组出生 + 时间倒流（档2/档3）（已完成：26.2 编译 + 运行时验收；当前版本 v0.8.8 · M3 2026-08-17 验收）
 
 > **服务端模组**：服务器只装本模组即得全部功能；客户端装了也可在单人存档使用（`environment: "*"` + `"server"` entrypoint，机制见 `mod/README.md`）。
 
@@ -29,7 +29,14 @@ samsara/
   - `/season start` 完整流程：建中心→分组→持久化 groupSpawns→**倒流（默认1天可配置）**→到期→传送共广播
   - 时间倒流档2+档3：未圈地块均匀分配倒流时刻（区块波浪退场）+ 差异库方块级逐格恢复（懒加载）；**倒流完成即自动物理删除**（传送后立即备份+卸载+磁盘清零，不等停服；卸载不彻底的区块与中止倒流的已到点区块由停服窗口兜底，亦可 `/samsara debug rewind purge` 立即删）；保护集=**仅圈地**（whitelist.json，`/samsara debug claim` 维护）
   - 测试通道：`/samsara debug fakeplayers`（注入）/`groups`（分组 dry-run）/`flow setup|rewind|teleport`（拆分 `/season start`）/`diff fake|text`（差异注入/空中字画）/`rewind preview|status|abort|purge|restore|set` / `claim add|addc|remove|list`
-- [ ] M3 活跃度 → M4 区块管理（倒流档3 已完成）→ M5 面板 → M6 玩偶影像 → M7 世界栈 → M8 里程碑/资格 → M9 身份同步
+- [x] **M3 活跃度**（2026-08-17 验收，v0.8.8）：
+  - `config/samsara/activity.log` 实时追加玩家上下线事件（JOIN/LEAVE，防膨胀旋转至 activity.1.log）
+  - 指标：近 7/14/30 天活跃玩家数、日均在线、峰值在线（事件重放）、近 30 天新见玩家
+  - 玩家分类：活跃（≤7天）/ 回归（8~30天）/ 流失（31~60天）/ 沉睡（>60天）
+  - 死服判定（建议）：连续 ≥N 天 0 人上线 且 近 30 天活跃 ≤M → 建议开新周目（`deaddays`/`deadactive` 可配）
+  - 命令：`/samsara activity [recent [天数]|stats|dead]`（全员）+ `/samsara debug activity [recent|stats|dead|simulate|clear]`（OWNER）
+  - `/samsara season status` 末尾附带活跃度紧凑段落；离线 `tools/analyze.py` 复读 activity.log（只取 JOIN）
+- [ ] M4 区块管理 → M5 面板 → M6 玩偶影像 → M7 世界栈 → M8 里程碑/资格 → M9 身份同步
 
 ## 环境要求
 

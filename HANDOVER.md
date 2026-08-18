@@ -168,3 +168,32 @@ com/shenqianye/samsara/
 - [x] 赛季状态：#63 ACTIVE 残留（测试后需清理）
 - [x] 备份：初始 1 + 流水 2 + 20260816_224131，磁盘空余 ~17GB
 - [x] 最近 3 个 commit：`bb3b963`（交接文档）、`1329bcb`（自动删除）、`61269cd`（性能）
+
+---
+
+## 10. M3 活跃度（2026-08-18 实现并验收，v0.8.8）
+
+**设计文档 §5 + §17.3 M3 预留兑现**；实现细节见 `docs/设计规范.md` §16。
+
+- **数据文件**：`config/samsara/activity.log`（主数据源）。格式 `epoch_ms 玩家名 JOIN|LEAVE`，实时追加；行数 ≥100000 滚为 `activity.1.log`（覆盖）防膨胀；`tools/analyze.py` 复读（只取 JOIN，兼容两种目录位置 + 滚动档）。
+- **钩子**：`Samsara.java` JOIN → `onJoin(name)`、DISCONNECT → `onLeave(name)`（`GameProfile.name()`，26.2 无 getName）。
+- **指标**：近 7/14/30 天活跃玩家数、日均在线、峰值在线（事件重放）、近 30 天新见玩家；玩家分类 活跃≤7 / 回归 8~30（在线≥10 分）/ 流失 31~60 / 沉睡 >60。
+- **死服判定**（建议，可配 `deaddays` 默认 14 / `deadactive` 默认 2）：连续 ≥N 天 0 人上线 且 近30天活跃 ≤M → 判「周目已死」建议开新周目；否则分「存活/接近死服」。
+- **命令**：
+  - `/samsara activity [recent [天数]|stats|dead]`（全员；recent 默认近 30 天）
+  - `/samsara debug activity recent|stats|dead|simulate <天数前> [近30天活跃]|clear`（OWNER；simulate 不写文件，clear 需二次确认）
+  - `/samsara season status` 末尾附紧凑活跃度段落（7/14/30天/峰值/日均/死服标记）
+  - `/samsara debug config` 新增 `deaddays`/`deadactive`
+- **新增/修改文件**：`activity/ActivityManager.java`（新）、`command/ActivityCommand.java`（新）、`SeasonData.Settings`（+deadDays/deadActiveMax）、`SeasonManager`（config 键 + statusText 段落 + setter）、`DebugCommand`（+activity 子树与帮助）、`Samsara.java`（+钩子）、`tools/analyze.py`（读新格式）。
+- **验收（test-server 26.2 / RCON，2026-08-18）**：
+  - 构造 18 条历史事件 → `stats` 输出正确：7/14/30 天活跃 3/3/4、日均 13 分、峰值 3、新见 4/共 6；分类 Bob/Alice/Carol 活跃、Dave 回归、Eve 流失、Frank 沉睡 ✓
+  - `season status` 附「活跃度: 7/14/30天 3/3/4 人 · 峰值 3 · 日均 13 分 · 近1天有登录」✓
+  - `simulate 14 2` → 死服；`simulate 7 3` → 存活；`simulate 20 1`/`300 1` → 死服 ✓
+  - `clear` 二次确认 → 清空 → `stats` 返「尚无活动记录」✓
+  - 空日志时 `recent/stats/dead/season status` 全部优雅降级 ✓
+  - `analyze.py` 解析 JOIN 行正确（Alice..Frank 时间戳按天偏移 ✓）
+- **部署**：samsara-0.8.8.jar（133129B）已复制到 `test-server/mods/`，当前运行中（25565/25575）。测试用的 activity.log 已清空，从部署起重新累计。
+- **已知注意**：RCON 传输中文在控制台显示乱码（工具限制，游戏内正常）；activity.log 里玩家名即游戏名（离线模式）。
+- **git**：工作树改动未提交（本次 M3 批次）。
+
+> 下个里程碑：M4（区块管理；倒流档3 已随 M2 完成，剩 M4a 化线为面几何库 / M4b 旗帜圈地 / M4c 安全删除）。

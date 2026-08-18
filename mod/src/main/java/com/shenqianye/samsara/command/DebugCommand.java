@@ -52,6 +52,8 @@ public class DebugCommand {
     private static final SeasonManager MANAGER = SeasonManager.getInstance();
     /** reset 二次确认标记：首次置位提示，再次执行才真正清空 */
     private static boolean resetArmed = false;
+    /** activity clear 二次确认标记：首次置位提示，再次执行才真正清空 activity.log */
+    private static boolean activityClearArmed = false;
 
     public static void register() {
         CommandRegistrationCallback.EVENT.register(DebugCommand::registerCommands);
@@ -118,6 +120,7 @@ public class DebugCommand {
                 .then(Commands.literal("version")
                         .executes(ctx -> reply(ctx.getSource(), versionInfo())))
                 .then(SeasonCommand.seasonNode())
+                .then(ActivityCommand.activityNode())
                 .then(Commands.literal("debug")
                         .requires(src -> isOwner(src))
                         .then(Commands.literal("status")
@@ -237,6 +240,34 @@ public class DebugCommand {
                                                 .then(Commands.argument("p1", Vec2Argument.vec2())
                                                         .then(Commands.argument("p2", Vec2Argument.vec2())
                                                                 .executes(ctx -> claimAddFromVec2(ctx, "name", "p1", "p2", true)))))))
+                        .then(Commands.literal("activity")
+                                .then(Commands.literal("recent")
+                                        .executes(ctx -> reply(ctx.getSource(),
+                                                com.shenqianye.samsara.activity.ActivityManager.getInstance().recentText(
+                                                        com.shenqianye.samsara.activity.ActivityManager.DEFAULT_RECENT_DAYS)))
+                                        .then(Commands.argument("days", IntegerArgumentType.integer(1, 365))
+                                                .executes(ctx -> reply(ctx.getSource(),
+                                                        com.shenqianye.samsara.activity.ActivityManager.getInstance().recentText(
+                                                                IntegerArgumentType.getInteger(ctx, "days"))))))
+                                .then(Commands.literal("stats")
+                                        .executes(ctx -> reply(ctx.getSource(),
+                                                com.shenqianye.samsara.activity.ActivityManager.getInstance().statsText())))
+                                .then(Commands.literal("dead")
+                                        .executes(ctx -> reply(ctx.getSource(),
+                                                com.shenqianye.samsara.activity.ActivityManager.getInstance().deadText())))
+                                .then(Commands.literal("simulate")
+                                        .then(Commands.argument("daysAgo", IntegerArgumentType.integer(0, 5000))
+                                                .executes(ctx -> reply(ctx.getSource(),
+                                                        com.shenqianye.samsara.activity.ActivityManager.getInstance().simulateText(
+                                                                IntegerArgumentType.getInteger(ctx, "daysAgo"),
+                                                                com.shenqianye.samsara.activity.ActivityManager.getInstance().active30Count())))
+                                                .then(Commands.argument("active30", IntegerArgumentType.integer(0, 100000))
+                                                        .executes(ctx -> reply(ctx.getSource(),
+                                                                com.shenqianye.samsara.activity.ActivityManager.getInstance().simulateText(
+                                                                        IntegerArgumentType.getInteger(ctx, "daysAgo"),
+                                                                        IntegerArgumentType.getInteger(ctx, "active30")))))))
+                                .then(Commands.literal("clear")
+                                        .executes(ctx -> reply(ctx.getSource(), clearActivity()))))
                         .then(Commands.literal("whitelist")
                                 .then(Commands.literal("json")
                                         .executes(ctx -> reply(ctx.getSource(), WhitelistStore.getInstance().rawJson()
@@ -329,6 +360,16 @@ public class DebugCommand {
         return MANAGER.reset();
     }
 
+    /** activity clear：需二次确认（首次置位提示，再次输入才真正清空活动日志） */
+    private static String clearActivity() {
+        if (!activityClearArmed) {
+            activityClearArmed = true;
+            return "⚠ 确认：清空 activity.log（活跃度历史将丢失，重新累计）。\n再次输入 /samsara debug activity clear 才会真正执行。";
+        }
+        activityClearArmed = false;
+        return com.shenqianye.samsara.activity.ActivityManager.getInstance().clear();
+    }
+
     /**
      * fakeplayers 三种形态 + clear：
      *  - `clear`             → 清空注入池
@@ -410,6 +451,7 @@ public class DebugCommand {
     private static String help() {
         return "周目管理 samsara 指令（全部以 /samsara 开头，避免与其他模组冲突）：\n"
                 + "/samsara season —— 周目业务（status/info/create/start/end/skip/respawn-groups；/season 为遗留别名）\n"
+                + "/samsara activity —— 活跃度（recent [天数]|stats|dead；默认近 30 天，全员可查）\n"
                 + "/samsara version —— 模组版本号\n"
                 + "/samsara 调试指令（COMMANDS_OWNER）：\n"
                 + "/samsara debug status —— 状态机概要 + season.json 路径\n"
@@ -426,7 +468,8 @@ public class DebugCommand {
                 + "/samsara debug flow setup|rewind <true|false>|teleport —— 拆分start：只准备/只倒流(完成后是否传送)/只传送\n"
                 + "/samsara debug config [键] [值] —— 查看/设置配置（无键=全部含类型；键: groupdist/birthjitter/birthreset/rewind/groupmin/groupmax/spawnradius/centermin/centermax）\n"
                 + "/samsara debug claim add|addc <名> <p1> <p2>|remove <名>|list —— 圈地保护不删区（坐标支持 ~/~N；add=方块坐标，addc=区块坐标×16；中文名用引号如 \"主城\"）\n"
-                + "/samsara debug whitelist json|reload —— 白名单查看/重载";
+                + "/samsara debug whitelist json|reload —— 白名单查看/重载"
+                + "\n/samsara debug activity recent|stats|dead|simulate <天数前> [近30天活跃]|clear —— M3 活跃度调试：日志聚合查看/死服判定模拟(不写文件)/清空日志(需二次确认)";
     }
 
     /** /samsara version：从 FabricLoader 取模组版本 + 显示名 + 简略配置 */

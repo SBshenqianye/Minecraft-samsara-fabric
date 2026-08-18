@@ -560,6 +560,8 @@ public class SeasonManager {
         if (RewindEngine.getInstance().running()) {
             sb.append("\n时间倒流进行中（").append(RewindEngine.getInstance().status()).append("）");
         }
+        // M3：附加活跃度紧凑段落（设计文档 §5.3.1 周目状态完整报告）
+        sb.append("\n").append(com.shenqianye.samsara.activity.ActivityManager.getInstance().compactLine());
         return sb.toString().trim();
     }
 
@@ -778,6 +780,8 @@ public class SeasonManager {
                     + "  spawnradius · 整数(>=0) · " + s.spawnRadius + "\n"
                     + "  centermin · 整数(>=0) · " + s.newCenterMinDistance + "（新中心距每个历史中心都≥此值）\n"
                     + "  centermax · 整数(>=centermin) · " + s.newCenterMaxDistance + "\n"
+                    + "  deaddays · 整数(>=0) · " + s.deadDays + "（M3 死服判定：连续 N 天 0 人上线）\n"
+                    + "  deadactive · 整数(>=0) · " + s.deadActiveMax + "（M3 死服判定：近 30 天活跃 ≤ N）\n"
                     + "用法：/samsara debug config <键> 查看当前值；config <键> <值> 设置并回显";
         }
         // 读取当前值 helper（lambda 内不可直接改局部，用 switch）
@@ -835,6 +839,18 @@ public class SeasonManager {
                     return setNewCenterMax(parseInt(value));
                 }
                 return "centermax = " + s.newCenterMaxDistance;
+            }
+            case "deaddays" -> {
+                if (value != null) {
+                    return setDeadDays(parseInt(value));
+                }
+                return "deaddays = " + s.deadDays + "（连续 N 天 0 人上线 → 死服判定条件一）";
+            }
+            case "deadactive" -> {
+                if (value != null) {
+                    return setDeadActiveMax(parseInt(value));
+                }
+                return "deadactive = " + s.deadActiveMax + "（近 30 天活跃 ≤ N → 死服判定条件二）";
             }
             default -> {
                 return null; // 未知配置项
@@ -914,6 +930,26 @@ public class SeasonManager {
         data.settings.newCenterMaxDistance = v;
         save();
         return "新中心采样最大距离 = " + v;
+    }
+
+    /** 设置 M3 死服判定：连续 N 天 0 人上线（条件一） */
+    private String setDeadDays(int v) {
+        if (v < 0) {
+            return "deaddays 须 >= 0";
+        }
+        data.settings.deadDays = v;
+        save();
+        return "死服判定条件一 = " + v + "（连续 N 天 0 人上线）";
+    }
+
+    /** 设置 M3 死服判定：近 30 天活跃玩家数上限（条件二） */
+    private String setDeadActiveMax(int v) {
+        if (v < 0) {
+            return "deadactive 须 >= 0";
+        }
+        data.settings.deadActiveMax = v;
+        save();
+        return "死服判定条件二 = " + v + "（近 30 天活跃 ≤ N）";
     }
 
     /** 档3 差异库状态（记录窗口 / 恢复源 / 记录数） */

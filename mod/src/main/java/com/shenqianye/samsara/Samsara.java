@@ -1,5 +1,6 @@
 package com.shenqianye.samsara;
 
+import com.shenqianye.samsara.activity.ActivityManager;
 import com.shenqianye.samsara.command.DebugCommand;
 import com.shenqianye.samsara.command.SeasonCommand;
 import com.shenqianye.samsara.rewind.DiffRecorder;
@@ -58,7 +59,13 @@ public class Samsara implements DedicatedServerModInitializer {
                 RewindEngine.getInstance().onServerStopped(server));
 
         // M2 分组出生：倒流完成后的离线玩家上线补传送
-        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
-                SeasonManager.getInstance().onPlayerJoin(server, handler.getPlayer()));
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
+            SeasonManager.getInstance().onPlayerJoin(server, handler.getPlayer());
+            // M3 活跃度：上线事件实时追加 activity.log
+            ActivityManager.getInstance().onJoin(handler.getPlayer().getGameProfile().name());
+        });
+        // M3 活跃度：下线事件实时追加 activity.log
+        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) ->
+                ActivityManager.getInstance().onLeave(handler.getPlayer().getGameProfile().name()));
     }
 }

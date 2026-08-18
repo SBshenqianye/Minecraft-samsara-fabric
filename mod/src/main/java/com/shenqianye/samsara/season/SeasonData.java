@@ -37,5 +37,10 @@ public class SeasonData {
         public int birthpointJitter = 40;
         /** 是否把每个玩家的系统出生点重置到各自的分组出生点（0=关闭，保留玩家原出生点） */
         public boolean resetIndividualBirthpoint = true;
+
+        /** M3 活跃度：死服判定阈值（设计文档 §5.2，可配置）——连续 N 天 0 人上线 */
+        public int deadDays = 14;
+        /** M3 活跃度：死服判定阈值——近 30 天活跃玩家数 ≤ 该值 */
+        public int deadActiveMax = 2;
     }
 }

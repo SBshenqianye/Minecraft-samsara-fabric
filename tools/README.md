@@ -2,7 +2,7 @@
 
 | 脚本 | 说明 |
 |---|---|
-| `analyze.py` | 活跃度分析 v0：不开服，多来源推断玩家最后登录（activity.log / 日志 joined 行 / usercache expiresOn 估算 / 旧版 lastPlayed），输出"距上次玩家登录 X 天"（零依赖，Python 3 标准库，已实测） |
+| `analyze.py` | 活跃度分析 v0：不开服，多来源推断玩家最后登录（activity.log / 日志 joined 行 / usercache expiresOn 估算 / 旧版 lastPlayed），输出"距上次玩家登录 X 天"（零依赖，Python 3 标准库，已实测；M3 起兼容 `epoch_ms name JOIN|LEAVE` 新格式，只取 JOIN，支持滚动档 activity.1.log 与服务端根配置目录两种位置） |
 
 用法示例：
 
