@@ -16,7 +16,9 @@ import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * 旗帜圈地交互（设计文档 §6.2.1 + §6.7）。
@@ -25,12 +27,21 @@ import java.util.Set;
  * 自然生成旗帜（结构旗帜）无方向图案 → 自动跳过。
  */
 public class ClaimInteractions {
+    /** 防抖：每个玩家上次交互的 tick 时间 */
+    private static final Map<UUID, Long> lastInteraction = new java.util.HashMap<>();
+    private static final long DEBOUNCE_TICKS = 20; // 1 秒冷却
 
     public static void init() {
         UseBlockCallback.EVENT.register((player, level, hand, hitResult) -> {
             if (level.isClientSide() || !(player instanceof ServerPlayer sp)) {
                 return InteractionResult.PASS;
             }
+            // 防抖：同一玩家 1 秒内不重复触发
+            long now = level.getGameTime();
+            Long last = lastInteraction.get(sp.getUUID());
+            if (last != null && now - last < DEBOUNCE_TICKS) return InteractionResult.PASS;
+            lastInteraction.put(sp.getUUID(), now);
+
             BlockPos pos = hitResult.getBlockPos();
             if (!(level.getBlockEntity(pos) instanceof BannerBlockEntity be)) {
                 return InteractionResult.PASS;
