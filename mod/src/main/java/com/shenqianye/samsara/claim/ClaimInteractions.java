@@ -71,28 +71,47 @@ public class ClaimInteractions {
         });
     }
 
-    /** 发送边界粒子 */
+    /** 发送边界粒子（§6.7：在保护区域边界的角点） */
     static void sendBoundaryParticles(ServerLevel level, ServerPlayer player,
                                        ChunkCoord center, List<ChunkCoord> influenced, double y) {
         Set<ChunkCoord> area = new HashSet<>(influenced);
         area.add(center);
-        // 找边界
-        Set<ChunkCoord> boundary = new HashSet<>();
+        // 收集边界角点（去重）
+        Set<long[]> corners = new HashSet<>();
         int[] dx = {0, 0, 1, -1};
         int[] dz = {1, -1, 0, 0};
         for (ChunkCoord c : area) {
             for (int i = 0; i < 4; i++) {
                 ChunkCoord nb = new ChunkCoord(c.x + dx[i], c.z + dz[i]);
                 if (!area.contains(nb)) {
-                    boundary.add(c);
-                    break;
+                    // c 的第 i 边朝外，收集该边的两个角点
+                    // 边方向：0=south(+z), 1=north(-z), 2=east(+x), 3=west(-x)
+                    switch (i) {
+                        case 0 -> { // south edge: z=(c.z+1)*16
+                            corners.add(new long[]{c.x * 16L, (c.z + 1) * 16L});
+                            corners.add(new long[]{(c.x + 1) * 16L, (c.z + 1) * 16L});
+                        }
+                        case 1 -> { // north edge: z=c.z*16
+                            corners.add(new long[]{c.x * 16L, c.z * 16L});
+                            corners.add(new long[]{(c.x + 1) * 16L, c.z * 16L});
+                        }
+                        case 2 -> { // east edge: x=(c.x+1)*16
+                            corners.add(new long[]{(c.x + 1) * 16L, c.z * 16L});
+                            corners.add(new long[]{(c.x + 1) * 16L, (c.z + 1) * 16L});
+                        }
+                        case 3 -> { // west edge: x=c.x*16
+                            corners.add(new long[]{c.x * 16L, c.z * 16L});
+                            corners.add(new long[]{c.x * 16L, (c.z + 1) * 16L});
+                        }
+                    }
+                    break; // 一个方向找到即可
                 }
             }
         }
-        for (ChunkCoord bc : boundary) {
+        for (long[] c : corners) {
             level.sendParticles(player, ParticleTypes.END_ROD,
-                    true, false, bc.x * 16 + 8.0, y, bc.z * 16 + 8.0,
-                    2, 0.5, 0.5, 0.5, 0.01);
+                    true, false, c[0], y, c[1],
+                    1, 0.0, 0.0, 0.0, 0.0);
         }
     }
 

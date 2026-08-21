@@ -42,37 +42,14 @@ public class ClaimParticles {
                 Extension ext = node.getExtension();
                 if (!ext.hasAnyDirection()) continue;
 
-                // 计算影响区域 → 边界区块 → 角点粒子
+                // 计算影响区域 → 边界角点粒子
                 List<ChunkCoord> influenced = node.getInfluencedCoords();
                 Set<ChunkCoord> area = new HashSet<>(influenced);
                 area.add(chunkPos);
-                Set<ChunkCoord> boundary = findBoundary(area);
-
-                for (ChunkCoord bc : boundary) {
-                    double x = bc.x * 16 + 8;
-                    double z = bc.z * 16 + 8;
-                    double y = pos.getY() + 1.0;
-                    level.sendParticles(player, ParticleTypes.END_ROD,
-                            true, false, x, y, z, 2, 0.5, 0.5, 0.5, 0.01);
-                }
+                double y = pos.getY() + 1.0;
+                ClaimInteractions.sendBoundaryParticles(level, player, chunkPos, influenced, y);
             }
         });
     }
 
-    /** 找边界区块：有邻居不在区域内的区块 */
-    private static Set<ChunkCoord> findBoundary(Set<ChunkCoord> area) {
-        Set<ChunkCoord> boundary = new HashSet<>();
-        int[] dx = {0, 0, 1, -1};
-        int[] dz = {1, -1, 0, 0};
-        for (ChunkCoord c : area) {
-            for (int i = 0; i < 4; i++) {
-                ChunkCoord nb = new ChunkCoord(c.x + dx[i], c.z + dz[i]);
-                if (!area.contains(nb)) {
-                    boundary.add(c);
-                    break;
-                }
-            }
-        }
-        return boundary;
-    }
 }
