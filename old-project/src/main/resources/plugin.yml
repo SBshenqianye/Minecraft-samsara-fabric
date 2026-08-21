@@ -1,0 +1,13 @@
+  name: chunk-manager
+  main: com.shenqianye.chunkmanager.ChunkManager
+  version: '0.1'
+  api-version: 1.20.6
+  authors: [shenqianye@outlook.com, illusion]
+  description: 区块删除管理插件
+  prefix: ChunkManager_
+
+  commands:
+    kit:
+      description: 点击就送钻石（*100）砖块（*256）大礼包
+      usage: /kit
+      permission: ChunkManager.kit
