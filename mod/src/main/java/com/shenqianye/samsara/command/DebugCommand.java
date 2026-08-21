@@ -269,6 +269,27 @@ public class DebugCommand {
                                                                         IntegerArgumentType.getInteger(ctx, "active30")))))))
                                 .then(Commands.literal("clear")
                                         .executes(ctx -> reply(ctx.getSource(), clearActivity()))))
+                        .then(Commands.literal("delete")
+                                .then(Commands.literal("dryrun")
+                                        .executes(ctx -> reply(ctx.getSource(),
+                                                com.shenqianye.samsara.claim.SafeDeletion.dryRun(
+                                                        ctx.getSource().getServer().getLevel(
+                                                                net.minecraft.world.level.Level.OVERWORLD)))))
+                                .then(Commands.literal("backup")
+                                        .executes(ctx -> reply(ctx.getSource(),
+                                                com.shenqianye.samsara.claim.SafeDeletion.backup(
+                                                        ctx.getSource().getServer().getLevel(
+                                                                net.minecraft.world.level.Level.OVERWORLD)))))
+                                .then(Commands.literal("execute")
+                                        .executes(ctx -> reply(ctx.getSource(),
+                                                com.shenqianye.samsara.claim.SafeDeletion.execute(
+                                                        ctx.getSource().getServer().getLevel(
+                                                                net.minecraft.world.level.Level.OVERWORLD)))))
+                                .then(Commands.literal("report")
+                                        .executes(ctx -> reply(ctx.getSource(),
+                                                com.shenqianye.samsara.claim.SafeDeletion.report(
+                                                        ctx.getSource().getServer().getLevel(
+                                                                net.minecraft.world.level.Level.OVERWORLD))))))
                         .then(Commands.literal("whitelist")
                                 .then(Commands.literal("json")
                                         .executes(ctx -> reply(ctx.getSource(), WhitelistStore.getInstance().rawJson()
