@@ -40,9 +40,10 @@ public class Samsara implements DedicatedServerModInitializer {
         SeasonCommand.register();
         DebugCommand.register();
 
-        // M4b 旗帜圈地：右键交互 + 手持旗帜粒子预览
+        // M4b 旗帜圈地：右键交互 + 粒子预览 + 放置监听
         com.shenqianye.samsara.claim.ClaimInteractions.init();
         com.shenqianye.samsara.claim.ClaimParticles.init();
+        com.shenqianye.samsara.claim.ClaimPlacementListener.init();
 
         // 档3 差异记录：常开（diff/current 窗口；倒流开始冻结为恢复源）
         DiffRecorder.init(net.fabricmc.loader.api.FabricLoader.getInstance()

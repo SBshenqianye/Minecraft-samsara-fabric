@@ -3,16 +3,20 @@ package com.shenqianye.samsara.command;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.shenqianye.samsara.claim.AreaService;
+import com.shenqianye.samsara.claim.ClaimInteractions;
 import com.shenqianye.samsara.claim.ClaimNode;
 import com.shenqianye.samsara.geometry.ChunkCoord;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.permissions.Permissions;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.BannerBlockEntity;
 import net.minecraft.world.level.block.entity.BannerPatternLayers;
 
 import java.util.List;
@@ -63,7 +67,7 @@ public class ClaimCommand {
                 // claim scan
                 .then(Commands.literal("scan")
                         .requires(src -> isAdmin(src))
-                        .executes(ctx -> reply(ctx.getSource(), scan())))
+                        .executes(ctx -> reply(ctx.getSource(), scan(ctx.getSource()))))
                 // claim preview
                 .then(Commands.literal("preview")
                         .requires(src -> isAdmin(src))
@@ -186,11 +190,34 @@ public class ClaimCommand {
                 + wl.size() + " 个保护区块";
     }
 
-    // ---- claim scan ----
+    // ---- claim scan（扫描世界中已放置的圈地旗帜） ----
 
-    private static String scan() {
-        // TODO: 扫描世界中的所有旗帜方块（需要 ServerLevel）
-        return "扫描功能待实现（需 ServerLevel 访问）";
+    private static String scan(CommandSourceStack src) {
+        var level = src.getServer().getLevel(net.minecraft.world.level.Level.OVERWORLD);
+        if (level == null) return "主世界不可用";
+        return scanLevel(level);
+    }
+
+    /** 扫描指定 ServerLevel 中的圈地旗帜（只扫描已加载区块） */
+    public static String scanLevel(net.minecraft.server.level.ServerLevel level) {
+        int[] found = {0};
+        int[] registered = {0};
+        level.getChunkSource().chunkMap.forEachBlockTickingChunk(chunk -> {
+            for (var entry : chunk.getBlockEntities().entrySet()) {
+                if (!(entry.getValue() instanceof BannerBlockEntity be)) continue;
+                List<ClaimNode.PatternEntry> patterns = ClaimInteractions.readPatterns(be);
+                if (patterns.isEmpty()) continue;
+                if (!ClaimInteractions.hasDirectionPatterns(patterns)) continue;
+                found[0]++;
+                BlockPos pos = entry.getKey();
+                ChunkCoord chunkPos = new ChunkCoord(pos.getX() >> 4, pos.getZ() >> 4);
+                if (AreaService.getInstance().getNode(chunkPos) != null) {
+                    registered[0]++;
+                }
+            }
+        });
+        return "扫描完成：已加载区块中发现 " + found[0] + " 面圈地旗"
+                + "（其中 " + registered[0] + " 面已注册）";
     }
 
     // ---- claim preview ----

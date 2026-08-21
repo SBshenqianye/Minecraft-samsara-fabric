@@ -3,7 +3,9 @@ package com.shenqianye.samsara.claim;
 import com.shenqianye.samsara.geometry.ChunkCoord;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.level.Level;
@@ -12,11 +14,15 @@ import net.minecraft.world.level.block.entity.BannerPatternLayers;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 旗帜圈地交互（设计文档 §6.2.1 + §6.7）。
- * 右键已放置的圈地旗 → 聊天显示详情（方向+距离+保护状态）。
+ * <p>
+ * 空手/手持旗帜 右键已放置的圈地旗 → 聊天显示详情 + 粒子预览影响范围。
+ * 自然生成旗帜（结构旗帜）无方向图案 → 自动跳过。
  */
 public class ClaimInteractions {
 
@@ -38,6 +44,7 @@ public class ClaimInteractions {
             Extension ext = node.getExtension();
             if (!ext.hasAnyDirection()) return InteractionResult.PASS;
 
+            // 显示详情
             List<ChunkCoord> influenced = node.getInfluencedCoords();
             boolean protected_ = AreaService.getInstance().isProtected(chunkPos.x, chunkPos.z);
             StringBuilder sb = new StringBuilder();
@@ -55,12 +62,42 @@ public class ClaimInteractions {
             if (ext.getLeftDown() > 0) sb.append("西南").append(ext.getLeftDown()).append(" ");
             if (ext.getRightDown() > 0) sb.append("东南").append(ext.getRightDown()).append(" ");
             sp.sendSystemMessage(Component.literal("[周目管理] " + sb.toString().trim()));
+
+            // 立即发送粒子预览（§6.7：右键时即时反馈）
+            if (level instanceof ServerLevel sl) {
+                sendBoundaryParticles(sl, sp, chunkPos, influenced, pos.getY() + 1.0);
+            }
             return InteractionResult.SUCCESS;
         });
     }
 
-    /** 从 BannerBlockEntity 读取图案列表 */
-    static List<ClaimNode.PatternEntry> readPatterns(BannerBlockEntity be) {
+    /** 发送边界粒子 */
+    static void sendBoundaryParticles(ServerLevel level, ServerPlayer player,
+                                       ChunkCoord center, List<ChunkCoord> influenced, double y) {
+        Set<ChunkCoord> area = new HashSet<>(influenced);
+        area.add(center);
+        // 找边界
+        Set<ChunkCoord> boundary = new HashSet<>();
+        int[] dx = {0, 0, 1, -1};
+        int[] dz = {1, -1, 0, 0};
+        for (ChunkCoord c : area) {
+            for (int i = 0; i < 4; i++) {
+                ChunkCoord nb = new ChunkCoord(c.x + dx[i], c.z + dz[i]);
+                if (!area.contains(nb)) {
+                    boundary.add(c);
+                    break;
+                }
+            }
+        }
+        for (ChunkCoord bc : boundary) {
+            level.sendParticles(player, ParticleTypes.END_ROD,
+                    true, false, bc.x * 16 + 8.0, y, bc.z * 16 + 8.0,
+                    2, 0.5, 0.5, 0.5, 0.01);
+        }
+    }
+
+    /** 从 BannerBlockEntity 读取图案列表（public 供 ClaimCommand.scan 调用） */
+    public static List<ClaimNode.PatternEntry> readPatterns(BannerBlockEntity be) {
         List<ClaimNode.PatternEntry> result = new ArrayList<>();
         BannerPatternLayers layers = be.getPatterns();
         if (layers == null) return result;
@@ -70,6 +107,12 @@ public class ClaimInteractions {
             result.add(new ClaimNode.PatternEntry(id, color));
         }
         return result;
+    }
+
+    /** 判断旗帜是否有方向图案（= 可能是圈地旗） */
+    public static boolean hasDirectionPatterns(List<ClaimNode.PatternEntry> patterns) {
+        ClaimNode node = new ClaimNode(new ChunkCoord(0, 0), "north", patterns);
+        return node.getExtension().hasAnyDirection();
     }
 
     /** 获取旗帜朝向（standing = rotation→facing，wall = block state facing） */
