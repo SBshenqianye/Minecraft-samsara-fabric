@@ -10,9 +10,12 @@ import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.permissions.Permissions;
+import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.entity.BannerPatternLayers;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -83,11 +86,11 @@ public class ClaimCommand {
 
     private static String giveBanner(CommandSourceStack src, String dir, int dist) {
         String patternId = switch (dir.toLowerCase()) {
-            case "n"  -> "ts"; case "s"  -> "bs";
-            case "w"  -> "ls"; case "e"  -> "rs";
-            case "nw" -> "tl"; case "sw" -> "bl";
-            case "ne" -> "tr"; case "se" -> "br";
-            case "all"-> "bri";
+            case "n"  -> "stripe_top"; case "s"  -> "stripe_bottom";
+            case "w"  -> "stripe_left"; case "e"  -> "stripe_right";
+            case "nw" -> "square_top_left"; case "sw" -> "square_bottom_left";
+            case "ne" -> "square_top_right"; case "se" -> "square_bottom_right";
+            case "all"-> "border";
             default -> null;
         };
         if (patternId == null) {
@@ -104,11 +107,24 @@ public class ClaimCommand {
         } catch (Exception e) {
             return "需要以玩家身份执行";
         }
-        // TODO: MC 26.2 — 暂用 stick 占位，待确认 banner item API 后改为真实旗帜
-        ItemStack banner = new ItemStack(Items.STICK);
+
+        // MC 26.2 API：Items.BANNER.white() + DataComponents.BANNER_PATTERNS
+        int colorValue = dist - 1; // dist 1~16 → color ordinal 0~15
+        DyeColor dye = DyeColor.byId(colorValue);
+
+        // 创建 BannerPattern 并用 Holder.direct 包装
+        var bp = new net.minecraft.world.level.block.entity.BannerPattern(
+                net.minecraft.resources.Identifier.fromNamespaceAndPath("minecraft", patternId),
+                "block.minecraft.banner." + patternId);
+        var layer = new BannerPatternLayers.Layer(net.minecraft.core.Holder.direct(bp), dye);
+        var layers = new BannerPatternLayers(List.of(layer));
+
+        ItemStack banner = new ItemStack(Items.BANNER.white());
+        banner.set(net.minecraft.core.component.DataComponents.BANNER_PATTERNS, layers);
         banner.setCount(1);
         player.getInventory().add(banner);
-        return "已给予旗帜（" + dirName + " " + dist + " 区块）。图案需手动合成或后续 API 完善后自动附带。";
+
+        return "已给予圈地旗：" + dirName + " " + dist + " 区块";
     }
 
     // ---- claim list ----

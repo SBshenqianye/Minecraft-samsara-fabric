@@ -18,14 +18,20 @@ public class Extension {
     private int leftDown; // 西南 (X- Z+)
     private int rightDown;// 东南 (X+ Z+)
 
-    // ---- MC 26.2 NBT 图案 ID → 方向映射 ----
+    // ---- MC 26.2 NBT 图案 asset_id → 方向映射 ----
     private static final Map<String, String> PATTERN_DIR;
     static {
         var b = new java.util.HashMap<String, String>();
-        b.put("ts","up");  b.put("bs","down");  b.put("ls","left"); b.put("rs","right");
-        b.put("tl","leftUp"); b.put("bl","leftDown"); b.put("tr","rightUp"); b.put("br","rightDown");
-        b.put("cs","center"); b.put("ms","middle"); b.put("dls","slash"); b.put("drs","backslash");
-        b.put("cr","cross"); b.put("sc","straightCross"); b.put("bri","border");
+        // 单向图案
+        b.put("stripe_top","up");  b.put("stripe_bottom","down");
+        b.put("stripe_left","left"); b.put("stripe_right","right");
+        b.put("square_top_left","leftUp"); b.put("square_bottom_left","leftDown");
+        b.put("square_top_right","rightUp"); b.put("square_bottom_right","rightDown");
+        // 组合图案
+        b.put("stripe_center","center"); b.put("stripe_middle","middle");
+        b.put("stripe_downleft","slash"); b.put("stripe_downright","backslash");
+        b.put("cross","cross"); b.put("straight_cross","straightCross");
+        b.put("border","border");
         PATTERN_DIR = java.util.Map.copyOf(b);
     }
 
