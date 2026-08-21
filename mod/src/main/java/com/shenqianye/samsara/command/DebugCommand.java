@@ -121,6 +121,7 @@ public class DebugCommand {
                         .executes(ctx -> reply(ctx.getSource(), versionInfo())))
                 .then(SeasonCommand.seasonNode())
                 .then(ActivityCommand.activityNode())
+                .then(ClaimCommand.claimNode())
                 .then(Commands.literal("debug")
                         .requires(src -> isOwner(src))
                         .then(Commands.literal("status")
