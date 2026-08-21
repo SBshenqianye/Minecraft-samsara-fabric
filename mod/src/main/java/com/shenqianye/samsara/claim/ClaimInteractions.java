@@ -82,47 +82,60 @@ public class ClaimInteractions {
         });
     }
 
-    /** 发送边界粒子（§6.7：在保护区域边界的角点） */
+    /** 发送边界粒子（§6.7：沿保护区域边界线均匀放置） */
     static void sendBoundaryParticles(ServerLevel level, ServerPlayer player,
                                        ChunkCoord center, List<ChunkCoord> influenced, double y) {
         Set<ChunkCoord> area = new HashSet<>(influenced);
         area.add(center);
-        // 收集边界角点（去重）
-        Set<long[]> corners = new HashSet<>();
+        // 收集所有朝外的边（每条边 = 两个端点）
+        Set<String> edges = new HashSet<>();
         int[] dx = {0, 0, 1, -1};
         int[] dz = {1, -1, 0, 0};
         for (ChunkCoord c : area) {
             for (int i = 0; i < 4; i++) {
                 ChunkCoord nb = new ChunkCoord(c.x + dx[i], c.z + dz[i]);
                 if (!area.contains(nb)) {
-                    // c 的第 i 边朝外，收集该边的两个角点
-                    // 边方向：0=south(+z), 1=north(-z), 2=east(+x), 3=west(-x)
+                    // c 的第 i 边朝外，生成该边的两个端点
+                    long x1, z1, x2, z2;
                     switch (i) {
                         case 0 -> { // south edge: z=(c.z+1)*16
-                            corners.add(new long[]{c.x * 16L, (c.z + 1) * 16L});
-                            corners.add(new long[]{(c.x + 1) * 16L, (c.z + 1) * 16L});
+                            x1 = c.x * 16L; z1 = (c.z + 1) * 16L;
+                            x2 = (c.x + 1) * 16L; z2 = (c.z + 1) * 16L;
                         }
                         case 1 -> { // north edge: z=c.z*16
-                            corners.add(new long[]{c.x * 16L, c.z * 16L});
-                            corners.add(new long[]{(c.x + 1) * 16L, c.z * 16L});
+                            x1 = c.x * 16L; z1 = c.z * 16L;
+                            x2 = (c.x + 1) * 16L; z2 = c.z * 16L;
                         }
                         case 2 -> { // east edge: x=(c.x+1)*16
-                            corners.add(new long[]{(c.x + 1) * 16L, c.z * 16L});
-                            corners.add(new long[]{(c.x + 1) * 16L, (c.z + 1) * 16L});
+                            x1 = (c.x + 1) * 16L; z1 = c.z * 16L;
+                            x2 = (c.x + 1) * 16L; z2 = (c.z + 1) * 16L;
                         }
-                        case 3 -> { // west edge: x=c.x*16
-                            corners.add(new long[]{c.x * 16L, c.z * 16L});
-                            corners.add(new long[]{c.x * 16L, (c.z + 1) * 16L});
+                        default -> { // west edge: x=c.x*16
+                            x1 = c.x * 16L; z1 = c.z * 16L;
+                            x2 = c.x * 16L; z2 = (c.z + 1) * 16L;
                         }
                     }
-                    break; // 一个方向找到即可
+                    // 去重：按字典序存储
+                    String key = Math.min(x1, x2) + "," + Math.min(z1, z2) + ","
+                            + Math.max(x1, x2) + "," + Math.max(z1, z2);
+                    edges.add(key);
                 }
             }
         }
-        for (long[] c : corners) {
-            level.sendParticles(player, ParticleTypes.END_ROD,
-                    true, false, c[0], y, c[1],
-                    1, 0.0, 0.0, 0.0, 0.0);
+        // 沿每条边均匀放置粒子（每 4 格一个）
+        for (String ek : edges) {
+            String[] p = ek.split(",");
+            long x1 = Long.parseLong(p[0]), z1 = Long.parseLong(p[1]);
+            long x2 = Long.parseLong(p[2]), z2 = Long.parseLong(p[3]);
+            long len = Math.max(Math.abs(x2 - x1), Math.abs(z2 - z1));
+            if (len == 0) continue;
+            long sx = Long.signum(x2 - x1);
+            long sz = Long.signum(z2 - z1);
+            for (long d = 0; d <= len; d += 4) {
+                level.sendParticles(player, ParticleTypes.END_ROD,
+                        true, false, x1 + sx * d, y, z1 + sz * d,
+                        1, 0.0, 0.0, 0.0, 0.0);
+            }
         }
     }
 
