@@ -16,6 +16,10 @@ dependencies {
     implementation "net.fabricmc:fabric-loader:${project.loader_version}"
     // 26.1 起依赖声明从 modImplementation 改为 implementation
     implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+
+    // M4a 化线为面单测：JUnit 5（纯 Java，无 MC 依赖）
+    testImplementation "org.junit.jupiter:junit-jupiter:5.10.2"
+    testRuntimeOnly "org.junit.platform:junit-platform-launcher"
 }
 
 processResources {
@@ -34,4 +38,8 @@ java {
     withSourcesJar()
     sourceCompatibility = JavaVersion.toVersion(project.java_version)
     targetCompatibility = JavaVersion.toVersion(project.java_version)
+}
+
+test {
+    useJUnitPlatform()
 }
