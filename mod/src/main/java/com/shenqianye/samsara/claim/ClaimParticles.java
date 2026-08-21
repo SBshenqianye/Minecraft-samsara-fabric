@@ -57,7 +57,7 @@ public class ClaimParticles {
                             List<ChunkCoord> influenced = node.getInfluencedCoords();
                             ClaimInteractions.sendBoundaryParticles(
                                     level, player, bannerPos, influenced,
-                                    entry.getKey().getY() + 1.0);
+                                    player.getY() + 0.5);
                         }
                     }
                 }

@@ -74,9 +74,9 @@ public class ClaimInteractions {
             if (ext.getRightDown() > 0) sb.append("东南").append(ext.getRightDown()).append(" ");
             sp.sendSystemMessage(Component.literal("[周目管理] " + sb.toString().trim()));
 
-            // 立即发送粒子预览（§6.7：右键时即时反馈）
+            // 立即发送粒子预览（§6.7：右键时即时反馈，Y 轴跟随玩家）
             if (level instanceof ServerLevel sl) {
-                sendBoundaryParticles(sl, sp, chunkPos, influenced, pos.getY() + 1.0);
+                sendBoundaryParticles(sl, sp, chunkPos, influenced, sp.getY() + 0.5);
             }
             return InteractionResult.SUCCESS;
         });
@@ -158,11 +158,18 @@ public class ClaimInteractions {
         return node.getExtension().hasAnyDirection();
     }
 
-    /** 获取旗帜朝向（standing = rotation→facing，wall = block state facing） */
+    /** 获取旗帜朝向（facing = 旗面朝向方向）
+     * <p>
+     * 站立旗帜：ROTATION_16 直接映射到 8 方向（0=south, 8=north, 12=east...）
+     * <p>
+     * 墙挂旗帜：FACING 属性指向贴墙方向（与旗面朝向相反），需要反转：
+     * FACING=EAST → 旗面朝 WEST，所以返回 "west"
+     */
     static String getFacing(Level level, BlockPos pos) {
         var state = level.getBlockState(pos);
         if (state.hasProperty(BlockStateProperties.FACING)) {
-            return state.getValue(BlockStateProperties.FACING).toString().toLowerCase();
+            // 墙挂旗帜：FACING 指向贴墙方向，需反转得到旗面朝向
+            return state.getValue(BlockStateProperties.FACING).getOpposite().toString().toLowerCase();
         }
         if (state.hasProperty(BlockStateProperties.ROTATION_16)) {
             int rot = state.getValue(BlockStateProperties.ROTATION_16);
