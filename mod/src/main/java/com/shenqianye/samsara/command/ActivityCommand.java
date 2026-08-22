@@ -21,6 +21,7 @@ public class ActivityCommand {
     /** {@code /samsara activity ...} 子树：由 DebugCommand 挂到 /samsara 根下 */
     public static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> activityNode() {
         return Commands.literal("activity")
+                .requires(src -> com.shenqianye.samsara.permission.PermissionChecker.check(src, "activity"))
                 .executes(ctx -> reply(ctx.getSource(), MANAGER.statsText()))
                 .then(Commands.literal("recent")
                         .executes(ctx -> reply(ctx.getSource(),

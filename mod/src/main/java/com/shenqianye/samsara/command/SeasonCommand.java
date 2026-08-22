@@ -39,6 +39,7 @@ public class SeasonCommand {
     /** {@code /samsara season ...} 子树：由 DebugCommand 挂到 /samsara 根下 */
     public static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> seasonNode() {
         return Commands.literal("season")
+                .requires(src -> com.shenqianye.samsara.permission.PermissionChecker.check(src, "season"))
                 .then(Commands.literal("status")
                         .executes(ctx -> reply(ctx.getSource(), MANAGER.statusText(1)))
                         .then(Commands.argument("page", IntegerArgumentType.integer(1))

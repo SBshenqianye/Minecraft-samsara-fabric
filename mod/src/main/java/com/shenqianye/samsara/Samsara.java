@@ -37,6 +37,8 @@ public class Samsara implements DedicatedServerModInitializer {
     @Override
     public void onInitializeServer() {
         LOGGER.info("[周目管理 samsara] 已加载 —— 空间/时间/逆熵，世界生命周期管理");
+        // 权限系统初始化（必须在命令注册前）
+        com.shenqianye.samsara.permission.PermissionConfig.getInstance();
         SeasonCommand.register();
         DebugCommand.register();
 

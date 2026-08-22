@@ -295,7 +295,36 @@ public class DebugCommand {
                                         .executes(ctx -> reply(ctx.getSource(), WhitelistStore.getInstance().rawJson()
                                                 + "\n\n↑ whitelist.json 位置: " + WhitelistStore.getInstance().configPath())))
                                 .then(Commands.literal("reload")
-                                        .executes(ctx -> reply(ctx.getSource(), WhitelistStore.getInstance().reload()))))));
+                                        .executes(ctx -> reply(ctx.getSource(), WhitelistStore.getInstance().reload()))))
+                        .then(permNode())));
+    }
+
+    /** 构建 /samsara perm 子命令树 */
+    private static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> permNode() {
+        return Commands.literal("perm")
+                .then(Commands.literal("list")
+                        .executes(ctx -> reply(ctx.getSource(), permList())))
+                .then(Commands.literal("set")
+                        .then(Commands.argument("command", StringArgumentType.greedyString())
+                                .then(Commands.argument("level", StringArgumentType.word())
+                                        .executes(ctx -> reply(ctx.getSource(),
+                                                permSet(ctx.getSource(),
+                                                        StringArgumentType.getString(ctx, "command"),
+                                                        StringArgumentType.getString(ctx, "level")))))))
+                .then(Commands.literal("reset")
+                        .then(Commands.argument("command", StringArgumentType.greedyString())
+                                .executes(ctx -> reply(ctx.getSource(),
+                                        permReset(StringArgumentType.getString(ctx, "command"))))))
+                .then(Commands.literal("info")
+                        .then(Commands.argument("command", StringArgumentType.greedyString())
+                                .executes(ctx -> reply(ctx.getSource(),
+                                        permInfo(StringArgumentType.getString(ctx, "command"))))))
+                .then(Commands.literal("owner")
+                        .then(Commands.argument("sub", StringArgumentType.word())
+                                .then(Commands.argument("name", StringArgumentType.word())
+                                        .executes(ctx -> reply(ctx.getSource(),
+                                                permOwner(StringArgumentType.getString(ctx, "sub"),
+                                                        StringArgumentType.getString(ctx, "name")))))));
     }
 
     /** claim add/addc：从 Vec2 参数解析坐标（支持 ~ 相对偏移 / 数字），chunkMode=true 时按区块坐标×16 */
@@ -390,6 +419,46 @@ public class DebugCommand {
         }
         activityClearArmed = false;
         return com.shenqianye.samsara.activity.ActivityManager.getInstance().clear();
+    }
+
+    // ---- perm 权限管理 ----
+
+    private static String permList() {
+        var config = com.shenqianye.samsara.permission.PermissionConfig.getInstance();
+        var entries = config.getAllEntries();
+        StringBuilder sb = new StringBuilder("命令权限配置（" + entries.size() + " 条）：\n");
+        for (var e : entries.entrySet()) {
+            sb.append("  /samsara ").append(e.getKey())
+              .append(" → ").append(e.getValue()).append("\n");
+        }
+        sb.append("\n数据文件: ").append(config.configPath());
+        return sb.toString().trim();
+    }
+
+    private static String permSet(CommandSourceStack src, String command, String levelStr) {
+        var config = com.shenqianye.samsara.permission.PermissionConfig.getInstance();
+        var playerLevel = com.shenqianye.samsara.permission.PermissionChecker.getPlayerLevel(src);
+        var newLevel = com.shenqianye.samsara.permission.PermissionLevel.fromString(levelStr);
+        return config.setEntry(command, newLevel, playerLevel);
+    }
+
+    private static String permReset(String command) {
+        return com.shenqianye.samsara.permission.PermissionConfig.getInstance().resetEntry(command);
+    }
+
+    private static String permInfo(String command) {
+        var config = com.shenqianye.samsara.permission.PermissionConfig.getInstance();
+        var level = config.getRequired(command);
+        return "/samsara " + command + " → " + level + "（当前所需等级）";
+    }
+
+    private static String permOwner(String sub, String name) {
+        var config = com.shenqianye.samsara.permission.PermissionConfig.getInstance();
+        return switch (sub.toLowerCase()) {
+            case "add" -> config.addOwner(name);
+            case "remove", "rm" -> config.removeOwner(name);
+            default -> "用法: /samsara debug perm owner <add|remove> <玩家名>";
+        };
     }
 
     /**

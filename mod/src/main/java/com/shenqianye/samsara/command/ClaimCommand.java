@@ -40,6 +40,7 @@ public class ClaimCommand {
     /** /samsara claim ... 子树 */
     public static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> claimNode() {
         return Commands.literal("claim")
+                .requires(src -> com.shenqianye.samsara.permission.PermissionChecker.check(src, "claim"))
                 // claim give <dir> <dist>
                 .then(Commands.literal("give")
                         .requires(src -> isAdmin(src))
