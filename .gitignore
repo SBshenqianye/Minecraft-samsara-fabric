@@ -1,9 +1,37 @@
+# Gradle
 .gradle/
 build/
+*.class
+
+# Minecraft server
 run/
 test-server/
+server.properties
+ops.json
+whitelist.json
+banned-players.json
+banned-ips.json
+usercache.json
+uuid-cache.json
 *.log
-reports/
-__pycache__/
 crash-reports/
+reports/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Python
+__pycache__/
+
+# DSH
 .dsh/
