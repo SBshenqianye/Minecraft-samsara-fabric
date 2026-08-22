@@ -42,6 +42,11 @@ samsara/
   - **M4c 安全删除**：`SafeDeletion`（dryrun/backup/execute/report，按白名单保护）
   - 粒子预览：手持旗帜时在**玩家头顶上方 + 旗帜高度**双层显示 END_ROD 边界粒子；空手不显示；停服时自动停止发包
   - 优雅停服：`SERVER_STOPPING` 钩子停止粒子发包 + 发送告别消息，减少客户端断连时渲染压力
+- [x] **权限等级系统**（2026-08-22）：
+  - 4 级权限：CONFIG > OWNER > OP > USER
+  - 每个命令可配置所需权限等级（`permissions.json` 持久化）
+  - owner 名单可配置（非写死），通过 `/samsara debug perm owner add|remove` 管理
+  - 命令：`/samsara debug perm list|set|reset|info|owner`
 - [ ] M5 面板 → M6 玩偶影像 → M7 世界栈 → M8 里程碑/资格 → M9 身份同步
 
 ## 环境要求

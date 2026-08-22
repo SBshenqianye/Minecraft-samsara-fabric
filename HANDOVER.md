@@ -1,6 +1,6 @@
 # samsara（周目管理）模组 — 交接文档
 
-> 交接日期：2026-08-22 ｜ 版本：v0.8.8（git HEAD 待提交）
+> 交接日期：2026-08-22 ｜ 版本：v0.8.9（权限系统 + M4 完整 + 优雅停服）
 > 交接人：AI 开发助手 ｜ 接收人：项目维护者
 
 ---
@@ -60,6 +60,10 @@ com/shenqianye/samsara/
 │   ├── ClaimPlacementListener.java 放置自动注册
 │   ├── ClaimBreakListener.java    破坏自动移除
 │   └── SafeDeletion.java     安全删除（dryrun/backup/execute/report）
+└── permission/
+    ├── PermissionLevel.java  等级枚举（CONFIG > OWNER > OP > USER）
+    ├── PermissionConfig.java 命令→等级映射持久化 + owner 配置
+    └── PermissionChecker.java 玩家等级判定 + 命令检查
 ├── season/
 │   ├── SeasonManager.java    状态机核心（setup/start/rewind/teleport/end/config）
 │   ├── Season.java           Season 模型 + State 枚举
@@ -123,6 +127,7 @@ com/shenqianye/samsara/
 /samsara debug claim add|addc <名> <p1> <p2>|remove <名>|list
 /samsara debug delete dryrun|backup|execute|report   # 安全删除（M4c）
 /samsara debug activity recent|stats|dead|simulate|clear  # 活跃度调试
+/samsara debug perm list|set|reset|info|owner  # 权限管理
 /samsara debug config [键] [值]         # groupdist/birthjitter/rewind/groupmin/deaddays/deadactive/...
 /samsara debug whitelist json|reload
 /samsara debug fakeplayers / groups / create / settime / reload / reset / spawninfo
@@ -288,3 +293,50 @@ com/shenqianye/samsara/
 - Intel Arc B580 驱动（32.0.101.8724）在服务器 `stop` 时客户端可能原生崩溃（exit code -1，无 Java 堆栈），已通过停服钩子缓解；根本解决需更新驱动
 - RCON 传输中文在控制台显示乱码（工具限制，游戏内正常）
 - MC 26.2 `ChunkPos` 是 Record，字段私有，用 `x()`/`z()` 访问器
+
+---
+
+## 12. 权限等级系统（2026-08-22 实现并验收）
+
+### 功能概述
+
+为所有 `/samsara` 命令提供可配置的权限等级控制：
+- 4 个等级：CONFIG（最高）> OWNER > OP > USER（最低）
+- 每个命令有默认权限等级，owner 可通过 `/samsara debug perm set` 自定义
+- 只能设置 ≤ 自己等级的命令（不能越级提权）
+- owner 名单可配置（通过 `/samsara debug perm owner add/remove`）
+
+### 新增文件
+
+- `permission/PermissionLevel.java` — 等级枚举 + 比较
+- `permission/PermissionConfig.java` — 加载/保存/查询 + owner 配置，持久化至 `config/samsara/permissions.json`
+- `permission/PermissionChecker.java` — 玩家等级判定（控制台=CONFIG, owner名单=OWNER, OP≥COMMANDS_MODERATOR=OP, 其他=USER）
+
+### 命令
+
+- `/samsara debug perm list` — 查看所有命令权限配置
+- `/samsara debug perm set <command> <level>` — 设置命令权限等级
+- `/samsara debug perm reset <command>` — 重置为默认等级
+- `/samsara debug perm info <command>` — 查看单个命令权限
+- `/samsara debug perm owner add|remove <name>` — 管理 owner 名单
+
+### 修改文件
+
+- `SeasonCommand.java` — 根节点添加 `.requires(PermissionChecker.check(...))`
+- `ClaimCommand.java` — 根节点添加 `.requires(PermissionChecker.check(...))`
+- `ActivityCommand.java` — 根节点添加 `.requires(PermissionChecker.check(...))`
+- `DebugCommand.java` — 新增 `perm` 子命令树 + helper 方法
+- `Samsara.java` — 启动时初始化 `PermissionConfig`
+
+### 验收（RCON，2026-08-22）
+
+- `perm list` 显示 37 条命令配置 ✓
+- `perm info` 显示单个命令等级 ✓
+- `perm owner add` 成功添加 owner ✓
+- `claim list` 正常执行（USER 级） ✓
+- `season status` 正常执行（USER 级） ✓
+
+### 已知注意
+
+- RCON 传输中文乱码（工具限制，游戏内正常）
+- `perm set` 的 `greedyString` 参数在 RCON 中无法正确处理空格，需游戏内执行
