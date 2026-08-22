@@ -40,10 +40,11 @@ public class Samsara implements DedicatedServerModInitializer {
         SeasonCommand.register();
         DebugCommand.register();
 
-        // M4b 旗帜圈地：右键交互 + 粒子预览 + 放置监听
+        // M4b 旗帜圈地：右键交互 + 粒子预览 + 放置监听 + 拆除监听
         com.shenqianye.samsara.claim.ClaimInteractions.init();
         com.shenqianye.samsara.claim.ClaimParticles.init();
         com.shenqianye.samsara.claim.ClaimPlacementListener.init();
+        com.shenqianye.samsara.claim.ClaimBreakListener.init();
 
         // 档3 差异记录：常开（diff/current 窗口；倒流开始冻结为恢复源）
         DiffRecorder.init(net.fabricmc.loader.api.FabricLoader.getInstance()
@@ -72,5 +73,14 @@ public class Samsara implements DedicatedServerModInitializer {
         // M3 活跃度：下线事件实时追加 activity.log
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) ->
                 ActivityManager.getInstance().onLeave(handler.getPlayer().getGameProfile().name()));
+
+        // 优雅停服：停止发送粒子包，发告别消息（减少客户端断连时的渲染压力）
+        ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
+            com.shenqianye.samsara.claim.ClaimParticles.shutdown();
+            for (var player : server.getPlayerList().getPlayers()) {
+                player.sendSystemMessage(
+                        net.minecraft.network.chat.Component.literal("[周目管理] 服务器即将关闭，请稍候…"));
+            }
+        });
     }
 }
