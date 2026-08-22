@@ -1,6 +1,6 @@
 # samsara（周目管理）模组 — 交接文档
 
-> 交接日期：2026-08-16 ｜ 版本：v0.8.8（git HEAD：`1329bcb`）
+> 交接日期：2026-08-22 ｜ 版本：v0.8.8（git HEAD 待提交）
 > 交接人：AI 开发助手 ｜ 接收人：项目维护者
 
 ---
@@ -25,6 +25,9 @@
 | **档3 倒流** | 区块波浪退场（时间表驱动）+ 方块级逐格恢复（diff 差异库） | ✅ |
 | **物理删除** | 倒流完成**即自动删除**未圈地区块（备份 + 卸载 + 磁盘清零，不等停服） | ✅ |
 | **圈地保护** | `/samsara debug claim` 维护，保护集只取决于圈地 | ✅ |
+| **M4a 几何库** | 化线为面（rasterize→graph→face→scanline→union），16 个单测全绿 | ✅ |
+| **M4b 旗帜圈地** | 放置/破坏自动注册/移除，8 个 claim 子命令，双层粒子预览 | ✅ |
+| **M4c 安全删除** | dryrun/backup/execute/report，按白名单保护 | ✅ |
 | **中文名** | season/claim 名称用引号支持中文（`string()` 参数） | ✅ |
 | **坐标语法糖** | 所有坐标参数用原版类型支持 `~`/`~N`（BlockPosArgument/ColumnPosArgument/Vec2Argument） | ✅ |
 | **调试拆分** | `/samsara debug flow setup\|rewind\|teleport` 拆分 `/season start` | ✅ |
@@ -40,7 +43,23 @@ com/shenqianye/samsara/
 ├── Samsara.java              入口：注册命令、tick 驱动倒流、停服兜底删除、JOIN 补传送
 ├── command/
 │   ├── SeasonCommand.java    /season 系列（create/start/end/skip/status/...）
-│   └── DebugCommand.java     /samsara debug 系列（调试全功能）
+│   ├── DebugCommand.java     /samsara debug 系列（调试全功能）
+│   ├── ClaimCommand.java     /samsara claim 系列（give/list/info/scan/rebuild/preview/remove/export）
+│   └── ActivityCommand.java  /samsara activity 系列（recent/stats/dead）
+├── activity/
+│   └── ActivityManager.java  活跃度管理（activity.log 读写/统计/死服判定/玩家分类）
+├── geometry/
+│   ├── Geometry.java         化线为面算法（rasterize→graph→face→scanline→union）
+│   └── ChunkCoord.java       整数区块坐标 + 8 方向邻居 + 方向索引
+├── claim/
+│   ├── Extension.java        15 种图案→8 方向映射 + 旋转 + 颜色强度
+│   ├── ClaimNode.java        旗帜节点（位置+朝向+图案→影响坐标）
+│   ├── AreaService.java      圈地服务（单例，白名单惰性重算，claims.json 持久化）
+│   ├── ClaimInteractions.java 右键交互 + 边界粒子预览 + 工具方法
+│   ├── ClaimParticles.java   手持旗帜粒子预览（双层 Y 轴，停服自动停止）
+│   ├── ClaimPlacementListener.java 放置自动注册
+│   ├── ClaimBreakListener.java    破坏自动移除
+│   └── SafeDeletion.java     安全删除（dryrun/backup/execute/report）
 ├── season/
 │   ├── SeasonManager.java    状态机核心（setup/start/rewind/teleport/end/config）
 │   ├── Season.java           Season 模型 + State 枚举
@@ -80,7 +99,16 @@ com/shenqianye/samsara/
 /samsara season start                # 完整流程：setup→倒流→传送→删旧区
 /samsara season end                  # 结束当前 ACTIVE
 /samsara season skip                 # 跳过 PENDING
-/samsara season status [页]          # 查看
+/samsara season status [页]          # 查看（附活跃度段落）
+/samsara activity [recent [天数]|stats|dead]  # 活跃度（全员）
+/samsara claim give <dir> <dist>     # 获取圈地旗（dir=n/ne/e/se/s/sw/wnw/all，dist=1~16）
+/samsara claim list                  # 列出所有圈地区域
+/samsara claim info [x z]            # 查看某位置详情
+/samsara claim scan                  # 扫描世界中所有圈地旗帜
+/samsara claim rebuild               # 重新计算白名单
+/samsara claim preview               # 预览保护区域
+/samsara claim remove <x> <z>        # 移除圈地节点
+/samsara claim export                # 导出圈地数据
 ```
 
 ### OP 调试命令（玩家名须为 xh_unpkire）
@@ -93,7 +121,9 @@ com/shenqianye/samsara/
 /samsara debug diff text <pos> <文字> [stateId] [scale]  # 空中字画（5×5 点阵）
 /samsara debug rewind preview|status|abort|purge|compact|restore <pos>|set <时长>
 /samsara debug claim add|addc <名> <p1> <p2>|remove <名>|list
-/samsara debug config [键] [值]         # groupdist/birthjitter/rewind/groupmin/...
+/samsara debug delete dryrun|backup|execute|report   # 安全删除（M4c）
+/samsara debug activity recent|stats|dead|simulate|clear  # 活跃度调试
+/samsara debug config [键] [值]         # groupdist/birthjitter/rewind/groupmin/deaddays/deadactive/...
 /samsara debug whitelist json|reload
 /samsara debug fakeplayers / groups / create / settime / reload / reset / spawninfo
 ```
@@ -117,7 +147,7 @@ com/shenqianye/samsara/
 ### 开发环境
 - JDK25：`C:\Users\Administrator\AppData\Local\Temp\dsh-Ln5i7u\jdk25\jdk-25.0.4+7`
 - Gradle home：`dsh-YYFeCv\gradle-home`，命令：`gradle-9.5.1/bin/gradle.bat build --offline`
-- **部署流程（重要）**：先停服 → 复制 `mod/build/libs/samsara-0.8.8.jar` 到 `test-server/mods/` → 删 `world/session.lock` → 启动。不停服部署会导致"An unexpected error"（旧 class 与新 jar 不一致）。
+- **部署流程（重要）**：使用 `.dsh/skills/mc-build-deploy-test.md` 流水线（编译→部署→重启→RCON 验证→文档更新）。手动步骤：先停服 → 复制 `mod/build/libs/samsara-*.jar` 到 `test-server/mods/` → 启动。**部署后必须重启服务器**（Fabric mod jar 替换不热加载 mixin/事件注册）。
 
 ---
 
@@ -127,8 +157,11 @@ com/shenqianye/samsara/
 2. **区块删除后重生成 ≠ 创建时地形**：MC 特性（邻接依赖/结构规划），非 bug；要完全还原用初始备份。
 3. **`restoreChunkNow` 对远离出生点的区块**：强制 getChunk 后 setBlock 在 26.2 中仍可能受限（"not loaded"），但玩家在线视距内正常；字画注入已内置强制加载可绕过。
 4. **（已修复 2026-08-17）多人 ACTIVE 残留**：create/setup 已拦截双 ACTIVE；现存残留可用 `/season end` 清理。
-5. **可能待做**：旗帜圈地系统尚未接入（目前用 debug claim 指令，按用户要求）；`compact` 运行中执行时被 MC 占用的文件会跳过（停服窗口自动重试）。
-6. **Tier3Restore 无玩家在线时不恢复**（collectSpawningChunks 为空）——设计如此（懒加载），玩家在视距内才恢复；restore 命令可强制；无加载区块时视为恢复完成并归档。
+5. **（已修复 2026-08-17）多人 ACTIVE 残留**：create/setup 已拦截双 ACTIVE；现存残留可用 `/season end` 清理。
+6. **旗帜圈地系统**：已实现 M4b（2026-08-22），`/samsara claim` 正式命令 + debug claim 调试入口并存。
+7. **Intel Arc B580 客户端崩溃**：服务器 `stop` 时客户端可能原生崩溃（exit code -1，无 Java 堆栈），已通过停服钩子缓解；根本解决需更新驱动。
+8. **`restoreChunkNow` 对远离出生点的区块**：强制 getChunk 后 setBlock 在 26.2 中仍可能受限（"not loaded"），但玩家在线视距内正常；字画注入已内置强制加载可绕过。
+9. **Tier3Restore 无玩家在线时不恢复**（collectSpawningChunks 为空）——设计如此（懒加载），玩家在视距内才恢复；restore 命令可强制；无加载区块时视为恢复完成并归档。
 
 ---
 
@@ -196,4 +229,62 @@ com/shenqianye/samsara/
 - **已知注意**：RCON 传输中文在控制台显示乱码（工具限制，游戏内正常）；activity.log 里玩家名即游戏名（离线模式）。
 - **git**：工作树改动未提交（本次 M3 批次）。
 
-> 下个里程碑：M4（区块管理；倒流档3 已随 M2 完成，剩 M4a 化线为面几何库 / M4b 旗帜圈地 / M4c 安全删除）。
+> 下个里程碑：M5（Web 面板，可选）。
+
+---
+
+## 11. M4 区块管理（2026-08-22 实现并验收，v0.8.8）
+
+**设计文档 §6 + §17.3 M4b/M4c 兑现**；实现细节见 `docs/设计规范.md`。
+
+### M4a 化线为面几何库
+
+- **文件**：`geometry/Geometry.java`（rasterize→graph→face traversal 半边→scanline fill→union）、`geometry/ChunkCoord.java`（整数坐标 + 8 方向邻居 + 方向索引 `dx+3*dz`）
+- **单测**：`geometry/GeometryTest.java`（16 个测试全绿，§6.3.4 用例）、`geometry/GeometryDebug.java`（调试追踪工具）
+- **算法**：栅格化线段→构建邻接图→面遍历（半边，稀疏图支持）→扫描线填充→并集去重
+- **已知修复**：方向索引公式（`1→East, -2→NE, -3→North...`）、扫描线填充假对角线（传入真实邻接）、重复面去重（排序点集 key）
+
+### M4b 旗帜圈地
+
+- **核心文件**：
+  - `claim/Extension.java` — 15 种 MC 26.2 图案→8 方向映射（全名 `stripe_top` 等）、颜色→强度、45° 旋转
+  - `claim/ClaimNode.java` — 位置+朝向+图案列表，延迟计算旋转后扩展 + 影响坐标集
+  - `claim/AreaService.java` — 单例，`ConcurrentHashMap<ChunkCoord, ClaimNode>`，`volatile Set<ChunkCoord> whitelist`，惰性重算（`dirty` 标记），`claims.json` 持久化
+  - `claim/ClaimInteractions.java` — `UseBlockCallback` 右键交互：聊天详情 + 边界粒子（防抖 20 tick）、`sendBoundaryParticles()` 沿朝外边每 4 格放置 END_ROD
+  - `claim/ClaimParticles.java` — `ServerTickEvents`，手持旗帜时扫描 32 格内圈地旗，双层 Y 轴粒子（玩家头顶 + 旗帜高度），空手不显示，停服自动停止
+  - `claim/ClaimPlacementListener.java` — 放置含方向图案的旗帜 → 自动注册 `AreaService.addNode()`
+  - `claim/ClaimBreakListener.java` — 破坏含方向图案的旗帜 → 自动 `AreaService.removeNode()`（`PlayerBlockBreakEvents.BEFORE`）
+  - `command/ClaimCommand.java` — 8 个子命令：`give <dir> <dist>` / `list` / `info [x z]` / `scan` / `rebuild` / `preview` / `remove <x> <z>` / `export`
+- **MC 26.2 API 关键点**：`Items.BANNER.white()` + `DataComponents.BANNER_PATTERNS` + `BannerPatternLayers` + `Holder.direct(BannerPattern)`；`Identifier.fromNamespaceAndPath()`；`BlockStateProperties.ROTATION_16`/`FACING`；`ItemTags.BANNERS` 检测手持物品
+- **命令**：`/samsara claim give/list/info/scan/rebuild/preview/remove/export`（§17.3 已登记 ✅）
+
+### M4c 安全删除
+
+- **文件**：`claim/SafeDeletion.java` — dryrun（扫描已加载区块，报告非白名单）、backup（复制 .mca 文件）、execute（仅报告，安全约束 §6.6）
+- **调试入口**：`/samsara debug delete dryrun|backup|execute|report`
+
+### 粒子修复（2026-08-22）
+
+- **Bug 1**：空手靠近也显示粒子 → 修复：`player.getMainHandItem().is(ItemTags.BANNERS)` 过滤
+- **Bug 2**：粒子在同格高度看不清 → 修复：Y = `player.getY() + player.getBbHeight() + 1.0`（头顶上方）
+- **Bug 3**：旗帜高度无粒子 → 修复：新增第二层 Y = `entry.getKey().getY() + 1.0`（两层差 ≤2 格时去重）
+
+### 优雅停服（2026-08-22）
+
+- `ClaimParticles.shutdown()` + `SERVER_STOPPING` 钩子：停服时停止粒子发包 + 发送告别消息
+- 解决 Intel Arc B580 驱动在断连时因渲染线程清理导致的原生崩溃（exit code -1）
+
+### 验收（test-server 26.2 / RCON + 客户端，2026-08-22）
+
+- 几何库 16 个单测全绿 ✓
+- 旗帜放置→自动注册→右键显示详情 ✓
+- 旗帜破坏→自动移除节点 ✓
+- 手持旗帜粒子预览：双层 Y 轴 ✓；空手无粒子 ✓
+- `/samsara claim give/list/info/scan/rebuild/preview/remove/export` 全部可用 ✓
+- 安全删除 dryrun/backup/report ✓
+
+### 已知注意
+
+- Intel Arc B580 驱动（32.0.101.8724）在服务器 `stop` 时客户端可能原生崩溃（exit code -1，无 Java 堆栈），已通过停服钩子缓解；根本解决需更新驱动
+- RCON 传输中文在控制台显示乱码（工具限制，游戏内正常）
+- MC 26.2 `ChunkPos` 是 Record，字段私有，用 `x()`/`z()` 访问器

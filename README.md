@@ -15,7 +15,7 @@ samsara/
 └── docs/       # 设计文档
 ```
 
-## 当前状态：M3 活跃度（已完成）+ M2 分组出生 + 时间倒流（档2/档3）（已完成：26.2 编译 + 运行时验收；当前版本 v0.8.8 · M3 2026-08-17 验收）
+## 当前状态：M4 区块管理（M4a/M4b/M4c 已完成）+ M3 活跃度（已完成）+ M2 分组出生 + 时间倒流（已完成：26.2 编译 + 运行时验收；当前版本 v0.8.8 · M4 2026-08-22 验收）
 
 > **服务端模组**：服务器只装本模组即得全部功能；客户端装了也可在单人存档使用（`environment: "*"` + `"server"` entrypoint，机制见 `mod/README.md`）。
 
@@ -36,7 +36,13 @@ samsara/
   - 死服判定（建议）：连续 ≥N 天 0 人上线 且 近 30 天活跃 ≤M → 建议开新周目（`deaddays`/`deadactive` 可配）
   - 命令：`/samsara activity [recent [天数]|stats|dead]`（全员）+ `/samsara debug activity [recent|stats|dead|simulate|clear]`（OWNER）
   - `/samsara season status` 末尾附带活跃度紧凑段落；离线 `tools/analyze.py` 复读 activity.log（只取 JOIN）
-- [ ] M4 区块管理 → M5 面板 → M6 玩偶影像 → M7 世界栈 → M8 里程碑/资格 → M9 身份同步
+- [x] **M4 区块管理**（2026-08-22 验收，v0.8.8）：
+  - **M4a 化线为面几何库**：`geometry/Geometry.java`（rasterize→graph→face traversal→scanline fill→union）+ `ChunkCoord.java`（8 方向邻居/方向索引）+ 16 个单测全绿
+  - **M4b 旗帜圈地**：`claim/AreaService`（节点管理 + 白名单惰性重算）、`ClaimNode`（位置+朝向+图案→影响坐标）、`Extension`（15 种图案→8 方向映射 + 旋转 + 颜色强度）、`ClaimInteractions`（右键交互 + 边界粒子预览）、`ClaimParticles`（手持旗帜粒子预览，双层 Y 轴）、`ClaimPlacementListener`（放置自动注册）、`ClaimBreakListener`（破坏自动移除）、`ClaimCommand`（give/list/info/scan/rebuild/preview/remove/export 8 个子命令）
+  - **M4c 安全删除**：`SafeDeletion`（dryrun/backup/execute/report，按白名单保护）
+  - 粒子预览：手持旗帜时在**玩家头顶上方 + 旗帜高度**双层显示 END_ROD 边界粒子；空手不显示；停服时自动停止发包
+  - 优雅停服：`SERVER_STOPPING` 钩子停止粒子发包 + 发送告别消息，减少客户端断连时渲染压力
+- [ ] M5 面板 → M6 玩偶影像 → M7 世界栈 → M8 里程碑/资格 → M9 身份同步
 
 ## 环境要求
 
