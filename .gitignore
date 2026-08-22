@@ -5,3 +5,5 @@ test-server/
 *.log
 reports/
 __pycache__/
+crash-reports/
+.dsh/
