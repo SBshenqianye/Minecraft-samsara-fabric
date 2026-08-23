@@ -3,122 +3,135 @@
 原版红石生存服务器的**世界生命周期管理系统**（Fabric 服务端模组 + 数据包 + 离线工具）。
 
 > 三大主题：**空间**（区块圈地/保存/重生成）· **时间**（周目轮回/新出生点/活跃度）· **逆熵**（时间倒流/玩偶影像）
-> 设计文档：`docs/周目系统设计文档.md`（16 章，里程碑 M0~M9）
+> 设计文档：`docs/周目系统设计文档.md`（16 章）
 
 ## 仓库布局
 
 ```
 samsara/
 ├── mod/        # Fabric 服务端模组（fabric-loom，mod id: samsara）
-├── datapack/   # 数据包（pack.mcmeta 就绪，pack_format=107=26.2 的 data_major；开场流程/分组传送函数规划中）
+├── datapack/   # 数据包（pack.mcmeta 就绪，pack_format=107=26.2 的 data_major）
 ├── tools/      # 离线分析脚本（analyze.py：不开服读存档活跃度）
 └── docs/       # 设计文档
 ```
 
-## 当前状态：M4 区块管理（M4a/M4b/M4c 已完成）+ M3 活跃度（已完成）+ M2 分组出生 + 时间倒流（已完成：26.2 编译 + 运行时验收；当前版本 v0.8.8 · M4 2026-08-22 验收）
+## 当前状态：v0.8.9（命令重构 + 粒子配置增强 + 旗帜放置修复）
 
 > **服务端模组**：服务器只装本模组即得全部功能；客户端装了也可在单人存档使用（`environment: "*"` + `"server"` entrypoint，机制见 `mod/README.md`）。
 
 - [x] mod 项目骨架（**已锁定 26.2 版本链**并编译通过：fabric-api 0.157.0+26.2 / loader 0.19.3 / loom 1.17 / Java 25，见 `mod/README.md`）
 - [x] `tools/analyze.py` v0（多来源推断玩家最后登录：activity.log / 日志 / usercache，输出"距上次玩家登录 X 天"；零依赖，已实测）
-- [x] M1：Season 模型 + season.json 持久化 + `/season create/start/end/status` 状态机
-- [x] **M2 分组出生 + 时间倒流（档2/档3）**（2026-08-16 验收；档3 方块级恢复与自动物理删除随 M2 迭代完成）：
-  - 出生中心计算（same-world 距旧中心 15000~40000 随机方向，避开已用方向）
-  - 分组算法（3~5 人/组、角度均分+抖动、组距≥300；来源=注入池+在线+usercache+playerdata）
-  - 全员传送 + 广播；离线玩家上线自动补传送；`/season respawn-groups` 重分组
-  - `/season start` 完整流程：建中心→分组→持久化 groupSpawns→**倒流（默认1天可配置）**→到期→传送共广播
-  - 时间倒流档2+档3：未圈地块均匀分配倒流时刻（区块波浪退场）+ 差异库方块级逐格恢复（懒加载）；**倒流完成即自动物理删除**（传送后立即备份+卸载+磁盘清零，不等停服；卸载不彻底的区块与中止倒流的已到点区块由停服窗口兜底，亦可 `/samsara debug rewind purge` 立即删）；保护集=**仅圈地**（whitelist.json，`/samsara debug claim` 维护）
-  - 测试通道：`/samsara debug fakeplayers`（注入）/`groups`（分组 dry-run）/`flow setup|rewind|teleport`（拆分 `/season start`）/`diff fake|text`（差异注入/空中字画）/`rewind preview|status|abort|purge|restore|set` / `claim add|addc|remove|list`
-- [x] **M3 活跃度**（2026-08-17 验收，v0.8.8）：
-  - `config/samsara/activity.log` 实时追加玩家上下线事件（JOIN/LEAVE，防膨胀旋转至 activity.1.log）
-  - 指标：近 7/14/30 天活跃玩家数、日均在线、峰值在线（事件重放）、近 30 天新见玩家
-  - 玩家分类：活跃（≤7天）/ 回归（8~30天）/ 流失（31~60天）/ 沉睡（>60天）
-  - 死服判定（建议）：连续 ≥N 天 0 人上线 且 近 30 天活跃 ≤M → 建议开新周目（`deaddays`/`deadactive` 可配）
-  - 命令：`/samsara activity [recent [天数]|stats|dead]`（全员）+ `/samsara debug activity [recent|stats|dead|simulate|clear]`（OWNER）
-  - `/samsara season status` 末尾附带活跃度紧凑段落；离线 `tools/analyze.py` 复读 activity.log（只取 JOIN）
-- [x] **M4 区块管理**（2026-08-22 验收，v0.8.8）：
-  - **M4a 化线为面几何库**：`geometry/Geometry.java`（rasterize→graph→face traversal→scanline fill→union）+ `ChunkCoord.java`（8 方向邻居/方向索引）+ 16 个单测全绿
-  - **M4b 旗帜圈地**：`claim/AreaService`（节点管理 + 白名单惰性重算）、`ClaimNode`（位置+朝向+图案→影响坐标）、`Extension`（15 种图案→8 方向映射 + 旋转 + 颜色强度）、`ClaimInteractions`（右键交互 + 边界粒子预览）、`ClaimParticles`（手持旗帜粒子预览，双层 Y 轴）、`ClaimPlacementListener`（放置自动注册）、`ClaimBreakListener`（破坏自动移除）、`ClaimCommand`（give/list/info/scan/rebuild/preview/remove/export 8 个子命令）
-  - **M4c 安全删除**：`SafeDeletion`（dryrun/backup/execute/report，按白名单保护）
-  - 粒子预览：手持旗帜时在**玩家头顶上方 + 旗帜高度**双层显示 END_ROD 边界粒子；空手不显示；停服时自动停止发包
-  - 优雅停服：`SERVER_STOPPING` 钩子停止粒子发包 + 发送告别消息，减少客户端断连时渲染压力
-- [x] **权限等级系统**（2026-08-22）：
-  - 4 级权限：CONFIG > OWNER > OP > USER
-  - 每个命令可配置所需权限等级（`permissions.json` 持久化）
-  - owner 名单可配置（非写死），通过 `/samsara debug perm owner add|remove` 管理
-  - 命令：`/samsara debug perm list|set|reset|info|owner`
+- [x] **M1 周目状态机**：Season 模型 + season.json 持久化 + `/season create/start/end/status` 状态机
+- [x] **M2 分组出生 + 时间倒流**：出生中心计算 + 分组算法 + 全员传送 + 广播 + 倒流（区块波浪退场 + 方块级恢复）+ 倒流完成即自动物理删除
+- [x] **M3 活跃度**：activity.log 实时追加 + 统计聚合 + 玩家分类 + 死服判定 + `/samsara activity` 命令
+- [x] **M4 区块管理**：化线为面几何库 + 旗帜圈地（放置/破坏自动注册/移除）+ 安全删除 + 粒子预览
+- [x] **权限等级系统**：4 级权限（CONFIG/OWNER/OP/USER）+ 命令可配置等级 + owner 名单可配置
+- [x] **命令重构**：玩家命令 `/samsara claim info|boundary` + 管理命令 `/samsara debug claim ...` + ChatFormat 统一消息格式 + 粒子枚举建议 + 字体/光束粒子独立配置
 - [ ] M5 面板 → M6 玩偶影像 → M7 世界栈 → M8 里程碑/资格 → M9 身份同步
+
+## 命令结构
+
+### 玩家命令（正常游玩使用）
+```
+/samsara claim info [x] [z]        查看区块圈地信息
+/samsara claim boundary            切换边界持续显示
+/samsara season status [页]        周目状态（附活跃度段落）
+/samsara season info               世界种子与出生点
+/samsara activity [recent|stats|dead]  活跃度查询
+/samsara version                   模组版本号
+```
+
+### 管理员命令（/samsara debug ...）
+```
+/samsara debug claim give <dir> <dist>   给予圈地旗帜
+/samsara debug claim list                列出所有圈地旗帜
+/samsara debug claim rebuild             重算白名单
+/samsara debug claim scan                扫描世界中的圈地旗帜
+/samsara debug claim remove <x> <z>     移除圈地节点
+/samsara debug claim info <x> <z>       查看指定区块详情
+/samsara debug claim particle ...        粒子配置（day/night/font/beam/list/shared/global）
+/samsara debug season|activity ...       周目/活跃度调试
+/samsara debug status|json|config|...    状态与配置
+/samsara debug fakeplayers|groups        测试数据注入与分组预览
+/samsara debug rewind|diff|flow          倒流与差异控制
+/samsara debug delete|whitelist|perm     安全删除/白名单/权限管理
+```
+
+## 消息格式
+
+所有命令返回消息使用 `ChatFormat` 统一格式化：
+- 首行 `[周目管理] ▸ 消息内容`，便于与上一条消息视觉区分
+- 后续行 `  ▸ 消息内容` 缩进对齐
+- 自动换行：CJK 字符按 2 宽度、ASCII 按 1 宽度，默认 34 宽度单位
+- 调试命令使用 `[周目管理·调试] ▸` 前缀
+
+## 粒子配置
+
+圈地边界粒子支持独立配置（`/samsara debug claim particle ...`）：
+- 昼间边界粒子（默认：smoke）
+- 夜间边界粒子（默认：end_rod）
+- 字体粒子（粒子文字渲染，默认：crit）
+- 光束粒子（方向光束，默认：enchant）
+- 共享显示 / 全图显示开关
+
+可用粒子：crit, enchant, smoke, large_smoke, flame, soul_fire_flame, end_rod, happy_villager, composter, portal, witch, cloud, note, heart, angry_villager, snowflake, ash, white_ash
 
 ## 环境要求
 
-- **JDK 25**（MC 26.2 硬性要求；本机 `C:\Program Files\Java` 只有 8/17/21/24，构建前需 `set JAVA_HOME=<JDK25>`）
+- **JDK 25**（MC 26.2 硬性要求）
 - Gradle 9.5.1（wrapper 已升级；loom 1.17 需要 Gradle 9.x）
 - Python 3（analyze.py 零依赖，仅标准库）
 
-## M1 验收记录（2026-08-15）
-
-```
-> season create S1-Test same-world   → 已创建周目 #1「S1-Test」（same-world，PENDING）
-> season start                        → 周目 #1 开始（ACTIVE）
-> season status                       → #1 ACTIVE · 始于 …
-> season end                          → 周目 #1 已结束（ENDED）
-> season status                       → #1 ENDED · 止于 … · 当前：#1 ENDED
-> season create S2-Test               → 已创建周目 #2（ID 递增正确）
-[重启服务器]
-> season status                       → #1 ENDED + #2 PENDING（持久化恢复 ✓）
-> season start / end                  → #2 ACTIVE → ENDED（流转正确）
-```
-
-season.json 示例（`mod/run/config/samsara/season.json`，随服务器运行自动生成）：
-
-```json
-{
-  "schemaVersion": 1,
-  "currentSeasonId": 2,
-  "worldStack": [],
-  "seasons": [ { "id": 1, "name": "S1-Test", "state": "ENDED", "mode": "same-world", ... } ]
-}
-```
-
-## M2 验收记录（2026-08-16，test-server / 26.2 / RCON）
-
-```
-> samsara debug fakeplayers Alice,Bob,... (10)   → 注入 10 名测试玩家（离线UUID）
-> samsara debug rewind set 0.00015               → 倒流时长设为 ~13 秒（测试用）
-> samsara debug rewind preview                   → 主世界已存在 246709 区块、受保护 27377、将倒流 219332
-> season start (J1)                              → 出生中心 (-18899,-9004) 距旧中心 (0,0) 20934 格 · 分组生成 · 倒流启动(12s)
-[倒流进度逐秒推进 6268→91963→176882→219332]
-> 倒流完成 → 广播 ✨ → 传送阶段：0 在线就位、20 离线记待传送
-> rewind.json 落盘；season.json 落盘（spawnCenter + 4 组 groupSpawns）
-> samsara debug rewind abort                     → 清理测试倒流状态
-[停服窗口物理删除验证（构造 3 标记区块 rewind.json）]
-> 停服 → "倒流物理删除完成: 6 个已标记区块清零（涉及 3 个区域文件，备份至 …/config/samsara/backups/purge_…）"
-> 校验 region/entities/poi 槽位已清零；rewind.json 归档；备份目录生成
-> 重启 → 世界正常加载，J1 仍 ACTIVE，分组数据从磁盘恢复
-> season respawn-groups                         → 围绕当前中心重新分组（5/5 两组）+ 传送
-```
-
-> 注：上述验收记录中"停服窗口物理删除"是当时的实现；**v0.8.x 起已改为倒流完成即自动物理删除**（传送后立即执行，停服窗口仅作兜底），见上方当前状态。
-
 ## 生产模式测试服务器（test-server/）
 
-一个**不依赖 Gradle、可直接双击启动**的 Fabric **26.2** 服务器，用于验证"生产加载路径"（模组从 `mods/` 目录扫描加载，而非开发服的 classpath 注入）：
+一个**不依赖 Gradle、可直接双击启动**的 Fabric **26.2** 服务器，用于验证"生产加载路径"：
 
 ```
 test-server/
 ├── start-server.bat       # 启动脚本（自动找 JDK 25；双击即可）
-├── fabric-server-launch.jar  # fat jar 启动器（loader+asm+mixin，与官方 installer 同构）
+├── fabric-server-launch.jar  # fat jar 启动器
 ├── server.jar             # MC 26.2 服务端（bundler）
 ├── libraries/             # fabric-loader 及其依赖
-├── mods/                  # ★ 模组放这里：samsara-0.3.0.jar + fabric-api-0.157.0+26.2.jar
-├── server.properties      # 已开 RCON（25575，密码 samsara-m1-test）便于测试
+├── mods/                  # 模组：samsara-*.jar + fabric-api-*.jar
+├── server.properties      # RCON（25575，密码 samsara-m1-test）
 └── eula.txt               # 已同意 EULA
 ```
 
-- 启动：双击 `start-server.bat`（或 `java -jar fabric-server-launch.jar nogui`）
-  - 脚本会**逐候选校验 JDK 版本 ≥25**（不再盲信 `JAVA_HOME` —— 若 `JAVA_HOME` 指向 JDK 8 会直接 UnsupportedClassVersionError 崩）
-  - 找不到 JDK 25 时运行 `install-jdk25.bat` 自动下载安装到 `.\jdk25\`，再重试
-- 已实测（26.2）：42 个模组从 `mods/` 正常加载，`/season create→start→end` 与 `/samsara debug` 全部可用
-- **注意**：本目录已 gitignore（含 server.jar 等大文件），如需重新生成可参照 `mod/README.md` 的说明
+## 验收记录
 
-> 背景：fabric-installer 在本沙箱无法联网（Windows 信任库被封锁），故按官方同构手工组装；期间定位并修复了两个关键点——fat jar 需写入 `Implementation-Version`（mixin 靠它探测 ASM 版本，否则 JAVA_25 兼容级判定失败）、`libraries/` 仅需 loader 的 7 个依赖。
+### M1 验收（2026-08-15）
+```
+> season create S1-Test same-world   → 已创建周目 #1（PENDING）
+> season start                        → 周目 #1 开始（ACTIVE）
+> season status                       → #1 ACTIVE
+> season end                          → 周目 #1 已结束（ENDED）
+```
+
+### M2 验收（2026-08-16）
+```
+> samsara debug fakeplayers Alice,Bob,... (10)   → 注入 10 名测试玩家
+> season start (J1)                              → 出生中心计算 · 分组生成 · 倒流启动
+> 倒流完成 → 传送阶段 → 广播
+```
+
+### M3 验收（2026-08-17）
+```
+> samsara activity stats    → 近7/14/30天活跃 3/3/4、日均13分、峰值3
+> samsara activity dead     → 死服判定正确
+```
+
+### M4 验收（2026-08-22）
+```
+> 几何库 16 个单测全绿
+> 旗帜放置→自动注册→右键显示详情
+> 旗帜破坏→自动移除节点
+> 手持旗帜粒子预览：双层 Y 轴 ✓
+> 安全删除 dryrun/backup/report ✓
+```
+
+### v0.8.9 验收（2026-08-23）
+```
+> 旗帜放置→自动注册（修复1 tick延迟问题）
+> /samsara debug claim particle list → 字体/光束粒子配置生效
+> ChatFormat 统一消息格式 → 自动换行 + 前缀分隔
+```

@@ -19,23 +19,23 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * M3 活跃度（活动度）—— <b>主数据源 activity.log</b> 的读写与聚合（设计文档 §5）。
+ * 活跃度（活动度）—— <b>主数据源 activity.log</b> 的读写与聚合。
  * <p>
  * <b>activity.log 格式</b>（一行一条，`epoch_ms 玩家名 事件`）：玩家上下线事件实时追加，
- * 服务端重启不丢，离线由 {@code tools/analyze.py} 复读（§5.1 主数据源）。
+ * 服务端重启不丢，离线由 {@code tools/analyze.py} 复读。
  * <pre>
  * 1787200000000 Alice JOIN
  * 1787200030000 Alice LEAVE
  * </pre>
  * <p>
- * 指标（§5.2）：
+ * 指标：
  * <ul>
  *   <li>周目维度：近 7/14/30 天活跃玩家数、日均在线（总在线时长/记录窗口天数）、峰值在线（事件重放取 max）、记录玩家数；</li>
  *   <li>玩家维度：活跃（≤7 天）、回归（8~30 天，且总分在线时长 &gt; 阈值；不足标注）、流失（31~60 天）、沉睡（&gt;60 天）；</li>
  *   <li>死服判定（建议，可配置）：连续 ≥deadDays 天 0 人上线 且 近 30 天活跃 ≤deadActiveMax → 判"周目已死"，建议开新周目。</li>
  * </ul>
  * <p>
- * 单例：JOIN/DISCONNECT 钩子与各命令共享同一实例（设计规范 §6）。
+ * 单例：JOIN/DISCONNECT 钩子与各命令共享同一实例。
  * <p>
  * 配置项（Settings，`/samsara debug config`）：{@code deadDays}（默认 14）、{@code deadActiveMax}（默认 2）。
  */
@@ -46,9 +46,9 @@ public class ActivityManager {
     /** 日志体积阈值（行）：超过后滚动到 activity.1.log 并开新文件（防无限膨胀） */
     private static final long ROTATE_LINES = 100_000L;
 
-    /** 回归分类的总在线时长阈值（秒）——低于此判定在线过短并标注；设计 §5.2"总时长 &gt; 阈值"的阈值取 10 分钟 */
+    /** 回归分类的总在线时长阈值（秒）——低于此判定在线过短并标注 */
     private static final long RETURN_MIN_ONLINE_SEC = 600;
-    /** 活跃窗口（天）：§5.2 固定 7；回归窗口取 8~30；流失 31~60；沉睡 &gt;60 */
+    /** 活跃窗口（天）：7；回归窗口取 8~30；流失 31~60；沉睡 &gt;60 */
     private static final long ACTIVE_DAYS = 7;
     private static final long RETURN_MAX_DAYS = 30;
     private static final long LOST_MAX_DAYS = 60;
@@ -254,7 +254,7 @@ public class ActivityManager {
         }
         recent.sort((a, b) -> Long.compare(b.lastJoin, a.lastJoin));
         if (recent.isEmpty()) {
-            return "近 " + days + " 天无玩家登录（activity.log 自 M3 部署后开始累计）"
+            return "近 " + days + " 天无玩家登录（activity.log 开始累计后记录）"
                     + "\n日志位置: " + configPath();
         }
         StringBuilder sb = new StringBuilder("近 " + days + " 天活跃玩家（" + recent.size() + " 人，按最后登录倒序）：\n");
@@ -301,7 +301,7 @@ public class ActivityManager {
         sb.append("周目维度（记录窗口 ").append(windowDays).append(" 天，自 ").append(fmtTs(first)).append("）：\n");
         sb.append("  最近 7 / 14 / 30 天活跃: ").append(a7).append(" / ").append(a14).append(" / ").append(a30).append(" 人\n");
         sb.append("  日均在线: ").append(fmtDurMs(totalOnline / windowDays)).append(" · 峰值在线: ").append(peak).append(" 人\n");
-        sb.append("  近 30 天新见玩家: ").append(newIn30).append(" 人（M3 记录起累积，共 ").append(stats.size()).append(" 人）\n");
+        sb.append("  近 30 天新见玩家: ").append(newIn30).append(" 人（记录起累积，共 ").append(stats.size()).append(" 人）\n");
         sb.append("玩家维度分类（按最后登录）：\n");
         List<PlayerStat> sorted = new ArrayList<>(stats.values());
         sorted.sort((a, b) -> Long.compare(b.lastJoin, a.lastJoin));
@@ -347,7 +347,7 @@ public class ActivityManager {
         return peak;
     }
 
-    /** 死服判定（§5.2，建议阈值可配置 Settings.deadDays / deadActiveMax） */
+    /** 死服判定（建议阈值可配置 Settings.deadDays / deadActiveMax） */
     public String deadText() {
         var cfg = settings();
         long now = System.currentTimeMillis();
@@ -388,7 +388,7 @@ public class ActivityManager {
         long now = System.currentTimeMillis();
         Map<String, PlayerStat> stats = aggregate(now);
         if (stats.isEmpty()) {
-            return "活跃度: 暂无记录（M3 起累计）";
+            return "活跃度: 暂无记录（起累计）";
         }
         int a7 = countActive(stats, now, ACTIVE_DAYS);
         int a14 = countActive(stats, now, 14);
@@ -419,7 +419,7 @@ public class ActivityManager {
     // ---- 玩家分类 ----
 
     /**
-     * 分类（§5.2，阈值取固定合理值，见类注释）：
+     * 分类（阈值取固定合理值，见类注释）：
      * 活跃 ≤7 天；回归 8~30 天（在线总时长不足 ≥10 分钟则标注）；流失 31~60 天；沉睡 &gt;60 天。
      */
     public String classify(PlayerStat st, long now) {

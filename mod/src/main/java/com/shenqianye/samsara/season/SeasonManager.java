@@ -780,8 +780,8 @@ public class SeasonManager {
                     + "  spawnradius · 整数(>=0) · " + s.spawnRadius + "\n"
                     + "  centermin · 整数(>=0) · " + s.newCenterMinDistance + "（新中心距每个历史中心都≥此值）\n"
                     + "  centermax · 整数(>=centermin) · " + s.newCenterMaxDistance + "\n"
-                    + "  deaddays · 整数(>=0) · " + s.deadDays + "（M3 死服判定：连续 N 天 0 人上线）\n"
-                    + "  deadactive · 整数(>=0) · " + s.deadActiveMax + "（M3 死服判定：近 30 天活跃 ≤ N）\n"
+                    + "  deaddays · 整数(>=0) · " + s.deadDays + "（死服判定：连续 N 天 0 人上线）\n"
+                    + "  deadactive · 整数(>=0) · " + s.deadActiveMax + "（死服判定：近 30 天活跃 ≤ N）\n"
                     + "用法：/samsara debug config <键> 查看当前值；config <键> <值> 设置并回显";
         }
         // 读取当前值 helper（lambda 内不可直接改局部，用 switch）
@@ -952,9 +952,9 @@ public class SeasonManager {
         return "死服判定条件二 = " + v + "（近 30 天活跃 ≤ N）";
     }
 
-    /** 档3 差异库状态（记录窗口 / 恢复源 / 记录数） */
+    /** 差异库状态（记录窗口 / 恢复源 / 记录数） */
     public String diffStatus() {
-        String sb = "档3 差异库（常开记录）：记录 " + (com.shenqianye.samsara.rewind.DiffRecorder.recording() ? "开" : "关");
+        String sb = "差异库（常开记录）：记录 " + (com.shenqianye.samsara.rewind.DiffRecorder.recording() ? "开" : "关");
         com.shenqianye.samsara.rewind.DiffStore w = com.shenqianye.samsara.rewind.DiffRecorder.store();
         if (w == null) {
             return sb + "\n记录窗口未初始化（需重启，DiffRecorder.init 未执行）";

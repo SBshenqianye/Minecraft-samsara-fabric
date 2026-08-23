@@ -26,8 +26,8 @@ import org.slf4j.LoggerFactory;
  *       零副作用 —— 功能由服务器端提供，客户端无需安装。</li>
  * </ul>
  * <p>
- * M2 钩子：END_SERVER_TICK 驱动倒流调度；SERVER_STOPPED 执行倒流物理删除
- * （停服窗口，世界已保存、区域文件已关闭，遵守"仅维护窗口删区块"§10）；
+ * 时间倒流钩子：END_SERVER_TICK 驱动倒流调度；SERVER_STOPPED 执行倒流物理删除
+ * （停服窗口，世界已保存、区域文件已关闭，遵守"仅维护窗口删区块"原则）；
  * JOIN 处理倒流完成后的离线玩家补传送。
  */
 public class Samsara implements DedicatedServerModInitializer {
@@ -42,37 +42,37 @@ public class Samsara implements DedicatedServerModInitializer {
         SeasonCommand.register();
         DebugCommand.register();
 
-        // M4b 旗帜圈地：右键交互 + 粒子预览 + 放置监听 + 拆除监听
+        // 旗帜圈地：右键交互 + 粒子预览 + 放置监听 + 拆除监听
         com.shenqianye.samsara.claim.ClaimInteractions.init();
         com.shenqianye.samsara.claim.ClaimParticles.init();
         com.shenqianye.samsara.claim.ClaimPlacementListener.init();
         com.shenqianye.samsara.claim.ClaimBreakListener.init();
 
-        // 档3 差异记录：常开（diff/current 窗口；倒流开始冻结为恢复源）
+        // 差异记录：常开（diff/current 窗口；倒流开始冻结为恢复源）
         DiffRecorder.init(net.fabricmc.loader.api.FabricLoader.getInstance()
                 .getConfigDir().resolve("samsara"));
 
-        // M2 时间倒流：调度器（内部 5s 节流：标记/恢复/传送/删除/归档）
+        // 时间倒流：调度器（内部 5s 节流：标记/恢复/传送/删除/归档）
         ServerTickEvents.END_SERVER_TICK.register(server ->
                 RewindEngine.getInstance().tick(server));
 
-        // M2 待删队列兜底：启动时清空前次遗留（加载中的跳过，卸载即删）
+        // 待删队列兜底：启动时清空前次遗留（加载中的跳过，卸载即删）
         ServerLifecycleEvents.SERVER_STARTED.register(server ->
                 RewindEngine.getInstance().onServerStarted(server));
 
-        // M2 待删队列：区块卸载即删（不再等停服）；停服窗口兜底清空 + 归档/保留判定
+        // 待删队列：区块卸载即删（不再等停服）；停服窗口兜底清空 + 归档/保留判定
         ServerChunkEvents.CHUNK_UNLOAD.register((level, chunk) ->
                 RewindEngine.getInstance().onChunkUnload(level, chunk));
         ServerLifecycleEvents.SERVER_STOPPED.register(server ->
                 RewindEngine.getInstance().onServerStopped(server));
 
-        // M2 分组出生：倒流完成后的离线玩家上线补传送
+        // 分组出生：倒流完成后的离线玩家上线补传送
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
             SeasonManager.getInstance().onPlayerJoin(server, handler.getPlayer());
-            // M3 活跃度：上线事件实时追加 activity.log
+            // 活跃度：上线事件实时追加 activity.log
             ActivityManager.getInstance().onJoin(handler.getPlayer().getGameProfile().name());
         });
-        // M3 活跃度：下线事件实时追加 activity.log
+        // 活跃度：下线事件实时追加 activity.log
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) ->
                 ActivityManager.getInstance().onLeave(handler.getPlayer().getGameProfile().name()));
 
@@ -81,7 +81,8 @@ public class Samsara implements DedicatedServerModInitializer {
             com.shenqianye.samsara.claim.ClaimParticles.shutdown();
             for (var player : server.getPlayerList().getPlayers()) {
                 player.sendSystemMessage(
-                        net.minecraft.network.chat.Component.literal("[周目管理] 服务器即将关闭，请稍候…"));
+                        com.shenqianye.samsara.command.ChatFormat.formatComponent(
+                                "服务器即将关闭，请稍候…"));
             }
         });
     }

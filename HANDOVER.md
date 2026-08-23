@@ -1,6 +1,6 @@
 # samsara（周目管理）模组 — 交接文档
 
-> 交接日期：2026-08-22 ｜ 版本：v0.8.9（权限系统 + M4 完整 + 优雅停服）
+> 交接日期：2026-08-23 ｜ 版本：v0.8.9（命令重构 + 粒子配置增强 + 旗帜放置修复）
 > 交接人：AI 开发助手 ｜ 接收人：项目维护者
 
 ---
@@ -43,9 +43,10 @@ com/shenqianye/samsara/
 ├── Samsara.java              入口：注册命令、tick 驱动倒流、停服兜底删除、JOIN 补传送
 ├── command/
 │   ├── SeasonCommand.java    /season 系列（create/start/end/skip/status/...）
-│   ├── DebugCommand.java     /samsara debug 系列（调试全功能）
-│   ├── ClaimCommand.java     /samsara claim 系列（give/list/info/scan/rebuild/preview/remove/export）
-│   └── ActivityCommand.java  /samsara activity 系列（recent/stats/dead）
+│   ├── DebugCommand.java     /samsara debug 系列（调试全功能 + 管理员 claim 命令）
+│   ├── ClaimCommand.java     /samsara claim 系列（info/boundary，玩家命令）
+│   ├── ActivityCommand.java  /samsara activity 系列（recent/stats/dead）
+│   └── ChatFormat.java       统一消息格式化（前缀 + 自动换行 + 玩家级宽度配置）
 ├── activity/
 │   └── ActivityManager.java  活跃度管理（activity.log 读写/统计/死服判定/玩家分类）
 ├── geometry/
@@ -57,7 +58,9 @@ com/shenqianye/samsara/
 │   ├── AreaService.java      圈地服务（单例，白名单惰性重算，claims.json 持久化）
 │   ├── ClaimInteractions.java 右键交互 + 边界粒子预览 + 工具方法
 │   ├── ClaimParticles.java   手持旗帜粒子预览（双层 Y 轴，停服自动停止）
-│   ├── ClaimPlacementListener.java 放置自动注册
+│   ├── ClaimParticleConfig.java 粒子配置（昼夜边界/字体/光束独立配置，持久化）
+│   ├── ClaimParticleText.java 粒子文字渲染（加粗笔画，billboard 效果）
+│   ├── ClaimPlacementListener.java 放置自动注册（1 tick 延迟确保 block entity 创建）
 │   ├── ClaimBreakListener.java    破坏自动移除
 │   └── SafeDeletion.java     安全删除（dryrun/backup/execute/report）
 └── permission/
@@ -97,42 +100,34 @@ com/shenqianye/samsara/
 
 ## 4. 命令手册
 
-### 玩家命令（全部以 /samsara 开头，无别名，设计文档 §17）
+### 玩家命令（正常游玩使用）
 ```
-/samsara season create <名> [模式]   # 创建周目（PENDING；模式 same-world/new-world）
-/samsara season start                # 完整流程：setup→倒流→传送→删旧区
-/samsara season end                  # 结束当前 ACTIVE
-/samsara season skip                 # 跳过 PENDING
-/samsara season status [页]          # 查看（附活跃度段落）
-/samsara activity [recent [天数]|stats|dead]  # 活跃度（全员）
-/samsara claim give <dir> <dist>     # 获取圈地旗（dir=n/ne/e/se/s/sw/wnw/all，dist=1~16）
-/samsara claim list                  # 列出所有圈地区域
-/samsara claim info [x z]            # 查看某位置详情
-/samsara claim scan                  # 扫描世界中所有圈地旗帜
-/samsara claim rebuild               # 重新计算白名单
-/samsara claim preview               # 预览保护区域
-/samsara claim remove <x> <z>        # 移除圈地节点
-/samsara claim export                # 导出圈地数据
+/samsara claim info [x] [z]        查看区块圈地信息
+/samsara claim boundary            切换边界持续显示
+/samsara season status [页]        周目状态（附活跃度段落）
+/samsara season info               世界种子与出生点
+/samsara activity [recent|stats|dead]  活跃度查询
+/samsara version                   模组版本号
 ```
 
-### OP 调试命令（玩家名须为 xh_unpkire）
+### 管理员命令（/samsara debug ...，OWNER 权限）
 ```
-/samsara debug flow setup               # 只准备（中心+分组+ACTIVE）
-/samsara debug flow rewind <true|false> # 只倒流（完成后是否传送）
-/samsara debug flow teleport            # 只传送
-/samsara debug diff                     # diff 库状态（记录窗口/恢复源）
-/samsara debug diff fake <pos> <数量> [stateId]   # 注入虚假 diff（区块，坐标支持~）
-/samsara debug diff text <pos> <文字> [stateId] [scale]  # 空中字画（5×5 点阵）
-/samsara debug rewind preview|status|abort|purge|compact|restore <pos>|set <时长>
-/samsara debug claim add|addc <名> <p1> <p2>|remove <名>|list
-/samsara debug delete dryrun|backup|execute|report   # 安全删除（M4c）
-/samsara debug activity recent|stats|dead|simulate|clear  # 活跃度调试
-/samsara debug perm list|set|reset|info|owner  # 权限管理
-/samsara debug config [键] [值]         # groupdist/birthjitter/rewind/groupmin/deaddays/deadactive/...
-/samsara debug whitelist json|reload
-/samsara debug fakeplayers / groups / create / settime / reload / reset / spawninfo
+/samsara debug claim give <dir> <dist>   给予圈地旗帜（dir=n/ne/e/se/s/sw/wnw/all，dist=1~16）
+/samsara debug claim list                列出所有圈地旗帜
+/samsara debug claim rebuild             重算白名单
+/samsara debug claim scan                扫描世界中的圈地旗帜
+/samsara debug claim remove <x> <z>     移除圈地节点
+/samsara debug claim info <x> <z>       查看指定区块详情
+/samsara debug claim particle day|night|font|beam <name>  设置粒子类型（Tab 补全）
+/samsara debug claim particle list       查看粒子配置
+/samsara debug claim particle shared|global on|off  共享/全图显示开关
+/samsara debug season|activity ...       周目/活跃度调试
+/samsara debug status|json|config|...    状态与配置
+/samsara debug fakeplayers|groups        测试数据注入与分组预览
+/samsara debug rewind|diff|flow          倒流与差异控制
+/samsara debug delete|whitelist|perm     安全删除/白名单/权限管理
 ```
-**坐标一律支持 `~`/`~N`**（相对玩家）；区块坐标命令（fake/restore）自动 ÷16 转区块。
+坐标一律支持 `~`/`~N`（相对玩家）。
 
 ---
 
@@ -255,13 +250,17 @@ com/shenqianye/samsara/
   - `claim/Extension.java` — 15 种 MC 26.2 图案→8 方向映射（全名 `stripe_top` 等）、颜色→强度、45° 旋转
   - `claim/ClaimNode.java` — 位置+朝向+图案列表，延迟计算旋转后扩展 + 影响坐标集
   - `claim/AreaService.java` — 单例，`ConcurrentHashMap<ChunkCoord, ClaimNode>`，`volatile Set<ChunkCoord> whitelist`，惰性重算（`dirty` 标记），`claims.json` 持久化
-  - `claim/ClaimInteractions.java` — `UseBlockCallback` 右键交互：聊天详情 + 边界粒子（防抖 20 tick）、`sendBoundaryParticles()` 沿朝外边每 4 格放置 END_ROD
-  - `claim/ClaimParticles.java` — `ServerTickEvents`，手持旗帜时扫描 32 格内圈地旗，双层 Y 轴粒子（玩家头顶 + 旗帜高度），空手不显示，停服自动停止
-  - `claim/ClaimPlacementListener.java` — 放置含方向图案的旗帜 → 自动注册 `AreaService.addNode()`
+  - `claim/ClaimInteractions.java` — `UseBlockCallback` 右键交互：聊天详情 + 边界粒子（防抖 20 tick）、`sendBoundaryParticles()` 沿朝外边每4格放置粒子
+  - `claim/ClaimParticles.java` — `ServerTickEvents`，手持旗帜时在管理区域内显示边界粒子 + 箭头 + 尺寸文字，空手不显示，停服自动停止
+  - `claim/ClaimParticleConfig.java` — 粒子配置（昼夜边界/字体/光束独立配置，持久化至 `claim-particles.json`）
+  - `claim/ClaimParticleText.java` — 粒子文字渲染（5×7 点阵字体，加粗笔画，billboard 效果）
+  - `claim/ClaimPlacementListener.java` — 放置含方向图案的旗帜 → 自动注册 `AreaService.addNode()`（1 tick 延迟确保 block entity 创建）
   - `claim/ClaimBreakListener.java` — 破坏含方向图案的旗帜 → 自动 `AreaService.removeNode()`（`PlayerBlockBreakEvents.BEFORE`）
-  - `command/ClaimCommand.java` — 8 个子命令：`give <dir> <dist>` / `list` / `info [x z]` / `scan` / `rebuild` / `preview` / `remove <x> <z>` / `export`
+  - `command/ClaimCommand.java` — 玩家命令：`info [x z]` / `boundary`
+  - `command/DebugCommand.java` — 管理员命令：`claim give/list/rebuild/scan/remove/info/particle`
+  - `command/ChatFormat.java` — 统一消息格式化（前缀 `▸` + 自动换行 + 玩家级宽度配置）
 - **MC 26.2 API 关键点**：`Items.BANNER.white()` + `DataComponents.BANNER_PATTERNS` + `BannerPatternLayers` + `Holder.direct(BannerPattern)`；`Identifier.fromNamespaceAndPath()`；`BlockStateProperties.ROTATION_16`/`FACING`；`ItemTags.BANNERS` 检测手持物品
-- **命令**：`/samsara claim give/list/info/scan/rebuild/preview/remove/export`（§17.3 已登记 ✅）
+- **命令**：玩家 `/samsara claim info|boundary` + 管理员 `/samsara debug claim give|list|rebuild|scan|remove|info|particle`
 
 ### M4c 安全删除
 

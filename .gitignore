@@ -36,3 +36,7 @@ __pycache__/
 
 # DSH
 .dsh/
+
+META-INF/
+
+net/

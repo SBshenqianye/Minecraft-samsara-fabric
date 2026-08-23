@@ -6,28 +6,20 @@ import com.shenqianye.samsara.season.SeasonManager;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
-import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.permissions.Permissions;
 import net.minecraft.world.level.Level;
 
 /**
- * 周目业务命令（M1：status/info/create/start/end；M2：respawn-groups、start 完整流程）。
+ * 周目业务命令：{@code /samsara season ...}
  * <p>
- * <b>命令命名空间（设计文档 §17，2026-08-17 修订）</b>：全部命令以
- * {@code /samsara} 开头，正式入口 {@code /samsara season ...}（挂在 /samsara 根下，
- * 与其它模组不冲突）；不再注册 {@code /season} 别名（曾保留，用户决定去掉避免养成习惯）。
+ * 包含 status/info/create/start/end/skip/respawn-groups 子命令。
  * <p>
- * 权限：M1 用原版 COMMANDS_ADMIN（原 OP 等级 2），后续可接 fabric-permissions-api。
- * M2 起扩展：respawn-groups（不换周目重分组）；vote / key 留 M8（§15）。
+ * <b>命令命名空间</b>：全部命令以 {@code /samsara} 开头，
+ * 正式入口 {@code /samsara season ...}（挂在 /samsara 根下，与其它模组不冲突）。
  * <p>
- * 26.1 适配要点（去混淆 + Mojang 官方命名）：
- * - CommandRegistryAccess → CommandBuildContext；ServerCommandSource → CommandSourceStack
- * - CommandManager → Commands；Text → Component
- * - sendFeedback(Supplier&lt;Text&gt;, boolean) → sendSuccess(Supplier&lt;Component&gt;, boolean)
- * - hasPermissionLevel(2) → permissions().hasPermission(Permissions.COMMANDS_ADMIN)（26.1 全新 PermissionSet 权限模型）
- * - StringArgumentType 改用 brigadier 原版（MC 26.1 已移除 net.minecraft.commands.arguments.StringArgumentType 包装类）
+ * 权限：使用原版 COMMANDS_ADMIN（OP 等级 2），后续可接 fabric-permissions-api。
  */
 public class SeasonCommand {
     private static final SeasonManager MANAGER = SeasonManager.getInstance();
@@ -77,7 +69,7 @@ public class SeasonCommand {
 
     /** /season info：模组说明 + 当前世界种子与出生点（测试便利：种子可查地图工具熟悉地形） */
     private static String infoText(CommandSourceStack src) {
-        StringBuilder sb = new StringBuilder("周目管理 samsara · M2 分组出生（设计见 docs/周目系统设计文档.md）");
+        StringBuilder sb = new StringBuilder("周目管理 samsara · 分组出生（设计见 docs/周目系统设计文档.md）");
         MinecraftServer server = src.getServer();
         ServerLevel world = server.getLevel(Level.OVERWORLD);
         if (world != null) {
@@ -88,8 +80,18 @@ public class SeasonCommand {
         return sb.toString();
     }
 
+    /**
+     * 发送格式化回复消息到聊天栏。
+     * <p>
+     * 使用 {@link ChatFormat} 统一格式：首行带 {@code [周目管理] ▸ } 前缀，
+     * 后续行缩进对齐，自动换行（默认 34 宽度单位）。
+     *
+     * @param src     命令源
+     * @param message 消息文本（支持 {@code \n} 换行）
+     * @return 固定返回 1（brigadier 命令执行成功）
+     */
     private static int reply(CommandSourceStack src, String message) {
-        src.sendSuccess(() -> Component.literal("[周目管理] " + message), false);
+        src.sendSuccess(() -> ChatFormat.formatComponent(message), false);
         return 1;
     }
 }

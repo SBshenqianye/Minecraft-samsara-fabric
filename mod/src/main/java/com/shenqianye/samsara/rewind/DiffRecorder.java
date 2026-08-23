@@ -9,20 +9,20 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
- * 档3 方块变化记录器（DiffRecorder）。
+ * 方块变化记录器（DiffRecorder）。
  * <p>
  * 由 {@link com.shenqianye.samsara.mixin.ServerLevelMixin} 在 {@code ServerLevel.setBlock}
  * 处调用：当方块<b>类型</b>实际变化（如破坏→空气、放置、TNT 爆破）时，把该格「变化前的状态」
  * 记入当前记录窗口的 DiffStore，供倒流时逐格恢复。
  * <p>
- * <b>记录窗口（设计规范 §11 快照语义，2026-08-17 修订）</b>：记录<b>常开</b>——服务器启动即
- * 写入 {@code diff/current/}；倒流真正启动时（扫描成功后）把 current <b>冻结</b> 为
- * {@code diff/s<赛季id>/}（=本次倒流的恢复源，窗口 = 上次删块完成之后到本次倒流开始），
+ * <b>记录窗口</b>：记录<b>常开</b>——服务器启动即写入 {@code diff/current/}；
+ * 倒流真正启动时（扫描成功后）把 current <b>冻结</b> 为 {@code diff/s<赛季id>/}
+ * （=本次倒流的恢复源，窗口 = 上次删块完成之后到本次倒流开始），
  * 并开启新的 current；倒流完成（物理删除执行）时<b>重置</b>窗口（丢弃倒流期间的改动，
  * 它们属于倒流开始之前的世界状态）。中止倒流不重置（窗口继续累计）。
  * <p>
  * 过滤：仅记录 block 类型变化（before.block != after.block）——自动过滤红石刻状态/流体/作物等
- * 只换状态不变类型的"世界模拟噪声"（与设计文档 §12.3 一致）。
+ * 只换状态不变类型的"世界模拟噪声"。
  */
 public class DiffRecorder {
     private static DiffStore store;
@@ -37,7 +37,7 @@ public class DiffRecorder {
         configDir = samsaraConfigDir;
         store = DiffStore.open(configDir.resolve("diff").resolve("current"));
         enabled = true;
-        Samsara.LOGGER.info("[周目管理 samsara] 档3 差异记录已开启（常开窗口 diff/current）");
+        Samsara.LOGGER.info("[samsara] 差异记录已开启（常开窗口 diff/current）");
     }
 
     /**
@@ -169,7 +169,7 @@ public class DiffRecorder {
     public static String fakeDiff(int cx, int cz, int count, int stateId) {
         DiffStore target = fakeTarget();
         if (target == null) {
-            return "档3 差异库未初始化（先 /season start 或 /samsara debug flow setup + flow rewind）";
+            return "差异库未初始化（先 /season start 或 /samsara debug flow setup + flow rewind）";
         }
         if (count <= 0 || count > 4096) {
             return "数量须在 1~4096 之间";
@@ -212,7 +212,7 @@ public class DiffRecorder {
                                       int stateId, int scale) {
         DiffStore target = fakeTarget();
         if (target == null) {
-            return "档3 差异库未初始化（先 /samsara debug flow setup + flow rewind）";
+            return "差异库未初始化（先 /samsara debug flow setup + flow rewind）";
         }
         if (scale < 1 || scale > 8) {
             return "scale 须在 1~8";

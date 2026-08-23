@@ -81,6 +81,8 @@ public class ClaimInteractions {
                         ClaimParticleConfig.getInstance().getParticleForTime(sl.getOverworldClockTime() % 24000);
                 sendBoundaryParticles(sl, sp, chunkPos, influenced, particleY,
                         (net.minecraft.core.particles.ParticleOptions) boundaryParticle);
+                // 记录右键时间，使边界持续显示 10 秒
+                ClaimParticles.notifyRightClick(sp.getUUID());
                 // 箭头和文字由 ClaimParticles 的 TextDisplay 持续处理
             }
             return InteractionResult.SUCCESS;

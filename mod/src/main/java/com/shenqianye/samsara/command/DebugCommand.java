@@ -14,7 +14,6 @@ import net.minecraft.commands.CommandBuildContext;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.coordinates.Vec2Argument;
-import net.minecraft.network.chat.Component;
 import net.minecraft.server.permissions.Permissions;
 import net.minecraft.world.phys.Vec2;
 
@@ -35,7 +34,7 @@ import java.util.UUID;
  * /samsara debug create &lt;名&gt; [模式] [数量] —— 批量创建历史周目（ENDED，每天一个）
  * /samsara debug settime &lt;id&gt; &lt;start|end&gt; &lt;now|epoch毫秒&gt; —— 设置时间戳
  * /samsara debug fakeplayers &lt;数量|前缀 数量|名字1,名字2...|clear&gt;
- *                          —— 注入离线玩家名单（M2 分组测试数据），clear 清空注入池
+ *                          —— 注入离线玩家名单（分组测试数据），clear 清空注入池
  * /samsara debug groups [名单]       —— 分组 dry-run（不落盘；名单缺省 = 注册玩家）
  * /samsara debug rewind preview     —— 倒流 dry-run（统计将倒流区块，不启动）
  * /samsara debug rewind status      —— 倒流进行状态
@@ -45,8 +44,6 @@ import java.util.UUID;
  * /samsara debug whitelist json     —— 打印 whitelist.json 内容
  * /samsara debug whitelist reload   —— 重新加载 whitelist.json
  * </pre>
- * <p>
- * 26.1 API 约定与 {@link SeasonCommand} 一致（Mojang 类名 + PermissionSet 权限模型 + brigadier 参数类型）。
  */
 public class DebugCommand {
     private static final SeasonManager MANAGER = SeasonManager.getInstance();
@@ -63,7 +60,7 @@ public class DebugCommand {
                                          CommandBuildContext buildContext,
                                          Commands.CommandSelection selection) {
         // diff 命令树（fake 虚假 diff / text 空中字画），独立变量避免括号层级错误。
-        // 坐标参数一律用原版参数类型支持 ~ / ~N 语法糖（设计规范 §2b）：
+        // 坐标参数一律用原版参数类型支持 ~ / ~N 语法糖：
         //   fake/restore 用 ColumnPosArgument（柱坐标 x z → 自动 ÷16 转区块）
         //   text 用 BlockPosArgument（方块坐标 x y z）
         com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> diffCmd =
@@ -224,23 +221,91 @@ public class DebugCommand {
                                                 .executes(ctx -> reply(ctx.getSource(), MANAGER.setResetIndividualBirthpoint(
                                                         Boolean.parseBoolean(StringArgumentType.getString(ctx, "on"))))))))
                         .then(Commands.literal("claim")
+                                // debug claim give <dir> <dist>
+                                .then(Commands.literal("give")
+                                        .then(Commands.argument("dir", StringArgumentType.word())
+                                                .then(Commands.argument("dist", IntegerArgumentType.integer(1, 16))
+                                                        .executes(ctx -> reply(ctx.getSource(), debugGiveBanner(
+                                                                ctx.getSource(),
+                                                                StringArgumentType.getString(ctx, "dir"),
+                                                                IntegerArgumentType.getInteger(ctx, "dist")))))))
+                                // debug claim list
                                 .then(Commands.literal("list")
-                                        .executes(ctx -> reply(ctx.getSource(), WhitelistStore.getInstance().claimList())))
+                                        .executes(ctx -> reply(ctx.getSource(), debugListNodes())))
+                                // debug claim rebuild
+                                .then(Commands.literal("rebuild")
+                                        .executes(ctx -> reply(ctx.getSource(), debugRebuild())))
+                                // debug claim scan
+                                .then(Commands.literal("scan")
+                                        .executes(ctx -> reply(ctx.getSource(), debugScan(ctx.getSource()))))
+                                // debug claim remove <x> <z>
                                 .then(Commands.literal("remove")
-                                        .then(Commands.argument("name", StringArgumentType.string())
-                                                .executes(ctx -> reply(ctx.getSource(),
-                                                        WhitelistStore.getInstance().claimRemove(
-                                                                StringArgumentType.getString(ctx, "name"))))))
-                                .then(Commands.literal("add")
-                                        .then(Commands.argument("name", StringArgumentType.string())
-                                                .then(Commands.argument("p1", Vec2Argument.vec2())
-                                                        .then(Commands.argument("p2", Vec2Argument.vec2())
-                                                                .executes(ctx -> claimAddFromVec2(ctx, "name", "p1", "p2", false))))))
-                                .then(Commands.literal("addc")
-                                        .then(Commands.argument("name", StringArgumentType.string())
-                                                .then(Commands.argument("p1", Vec2Argument.vec2())
-                                                        .then(Commands.argument("p2", Vec2Argument.vec2())
-                                                                .executes(ctx -> claimAddFromVec2(ctx, "name", "p1", "p2", true)))))))
+                                        .then(Commands.argument("x", IntegerArgumentType.integer())
+                                                .then(Commands.argument("z", IntegerArgumentType.integer())
+                                                        .executes(ctx -> reply(ctx.getSource(),
+                                                                debugRemoveNode(
+                                                                        IntegerArgumentType.getInteger(ctx, "x"),
+                                                                        IntegerArgumentType.getInteger(ctx, "z")))))))
+                                // debug claim info <x> <z>
+                                .then(Commands.literal("info")
+                                        .then(Commands.argument("x", IntegerArgumentType.integer())
+                                                .then(Commands.argument("z", IntegerArgumentType.integer())
+                                                        .executes(ctx -> reply(ctx.getSource(),
+                                                                ClaimCommand.infoAt(
+                                                                        IntegerArgumentType.getInteger(ctx, "x"),
+                                                                        IntegerArgumentType.getInteger(ctx, "z")))))))
+                                // debug claim particle ...
+                                .then(Commands.literal("particle")
+                                        .then(Commands.literal("day")
+                                                .then(Commands.argument("name", StringArgumentType.word())
+                                                        .suggests((ctx, builder) -> {
+                                                            for (String name : com.shenqianye.samsara.claim.ClaimParticleConfig.getAvailableParticleNames()) {
+                                                                builder.suggest(name);
+                                                            }
+                                                            return builder.buildFuture();
+                                                        })
+                                                        .executes(ctx -> reply(ctx.getSource(),
+                                                                debugSetParticle("day", StringArgumentType.getString(ctx, "name"))))))
+                                        .then(Commands.literal("night")
+                                                .then(Commands.argument("name", StringArgumentType.word())
+                                                        .suggests((ctx, builder) -> {
+                                                            for (String name : com.shenqianye.samsara.claim.ClaimParticleConfig.getAvailableParticleNames()) {
+                                                                builder.suggest(name);
+                                                            }
+                                                            return builder.buildFuture();
+                                                        })
+                                                        .executes(ctx -> reply(ctx.getSource(),
+                                                                debugSetParticle("night", StringArgumentType.getString(ctx, "name"))))))
+                                        .then(Commands.literal("font")
+                                                .then(Commands.argument("name", StringArgumentType.word())
+                                                        .suggests((ctx, builder) -> {
+                                                            for (String name : com.shenqianye.samsara.claim.ClaimParticleConfig.getAvailableParticleNames()) {
+                                                                builder.suggest(name);
+                                                            }
+                                                            return builder.buildFuture();
+                                                        })
+                                                        .executes(ctx -> reply(ctx.getSource(),
+                                                                debugSetParticle("font", StringArgumentType.getString(ctx, "name"))))))
+                                        .then(Commands.literal("beam")
+                                                .then(Commands.argument("name", StringArgumentType.word())
+                                                        .suggests((ctx, builder) -> {
+                                                            for (String name : com.shenqianye.samsara.claim.ClaimParticleConfig.getAvailableParticleNames()) {
+                                                                builder.suggest(name);
+                                                            }
+                                                            return builder.buildFuture();
+                                                        })
+                                                        .executes(ctx -> reply(ctx.getSource(),
+                                                                debugSetParticle("beam", StringArgumentType.getString(ctx, "name"))))))
+                                        .then(Commands.literal("list")
+                                                .executes(ctx -> reply(ctx.getSource(), debugListParticles())))
+                                        .then(Commands.literal("shared")
+                                                .then(Commands.argument("on_off", StringArgumentType.word())
+                                                        .executes(ctx -> reply(ctx.getSource(),
+                                                                debugSetSharedDisplay(StringArgumentType.getString(ctx, "on_off"))))))
+                                        .then(Commands.literal("global")
+                                                .then(Commands.argument("on_off", StringArgumentType.word())
+                                                        .executes(ctx -> reply(ctx.getSource(),
+                                                                debugSetGlobalDisplay(StringArgumentType.getString(ctx, "on_off"))))))))
                         .then(Commands.literal("activity")
                                 .then(Commands.literal("recent")
                                         .executes(ctx -> reply(ctx.getSource(),
@@ -346,7 +411,7 @@ public class DebugCommand {
         return reply(ctx.getSource(), WhitelistStore.getInstance().claimAdd(name, x1, z1, x2, z2));
     }
 
-    // ---- 坐标语法糖辅助（设计规范 §2b：坐标参数一律用原版参数类型支持 ~ / ~N）----
+    // ---- 坐标语法糖辅助（坐标参数一律用原版参数类型支持 ~ / ~N）----
 
     /** 命令执行所在的主世界（供 fakeDiffText 立即放置字画方块） */
     private static net.minecraft.server.level.ServerLevel levelOf(CommandContext<CommandSourceStack> ctx) {
@@ -502,7 +567,7 @@ public class DebugCommand {
             return reply(ctx.getSource(), "参数为空（clear=清空；数字=批量 TestPlayer1..N；前缀+数字=如 guard 3；逗号分隔名字）");
         }
         PlayerRegistry.getInstance().inject(names);
-        StringBuilder sb = new StringBuilder("注入 " + names.size() + " 名测试玩家（名 → 离线UUID，M2 分组数据）：\n");
+        StringBuilder sb = new StringBuilder("注入 " + names.size() + " 名测试玩家（名 → 离线UUID，分组数据）：\n");
         for (String name : names) {
             UUID offlineUuid = UUID.nameUUIDFromBytes(("OfflinePlayer:" + name).getBytes(StandardCharsets.UTF_8));
             sb.append("  ").append(name).append(" → ").append(offlineUuid).append('\n');
@@ -539,28 +604,150 @@ public class DebugCommand {
         return MANAGER.previewGroups(ctx.getSource().getServer(), players);
     }
 
+    // ---- debug claim 命令实现 ----
+
+    /** debug give：给予玩家圈地旗帜 */
+    private static String debugGiveBanner(CommandSourceStack src, String dir, int dist) {
+        String patternId = switch (dir.toLowerCase()) {
+            case "n"  -> "stripe_top"; case "s"  -> "stripe_bottom";
+            case "w"  -> "stripe_left"; case "e"  -> "stripe_right";
+            case "nw" -> "square_top_left"; case "sw" -> "square_bottom_left";
+            case "ne" -> "square_top_right"; case "se" -> "square_bottom_right";
+            case "all"-> "border";
+            default -> null;
+        };
+        if (patternId == null) {
+            return "方向无效（n/ne/e/se/s/sw/w/nw/all）";
+        }
+        String dirName = switch (dir.toLowerCase()) {
+            case "n" -> "北"; case "s" -> "南"; case "w" -> "西"; case "e" -> "东";
+            case "nw" -> "西北"; case "sw" -> "西南"; case "ne" -> "东北"; case "se" -> "东南";
+            case "all" -> "全方向"; default -> dir;
+        };
+        net.minecraft.server.level.ServerPlayer player;
+        try {
+            player = src.getPlayerOrException();
+        } catch (Exception e) {
+            return "需要以玩家身份执行";
+        }
+
+        int colorValue = dist - 1;
+        net.minecraft.world.item.DyeColor dye = net.minecraft.world.item.DyeColor.byId(colorValue);
+
+        var bp = new net.minecraft.world.level.block.entity.BannerPattern(
+                net.minecraft.resources.Identifier.fromNamespaceAndPath("minecraft", patternId),
+                "block.minecraft.banner." + patternId);
+        var layer = new net.minecraft.world.level.block.entity.BannerPatternLayers.Layer(
+                net.minecraft.core.Holder.direct(bp), dye);
+        var layers = new net.minecraft.world.level.block.entity.BannerPatternLayers(List.of(layer));
+
+        net.minecraft.world.item.ItemStack banner = new net.minecraft.world.item.ItemStack(
+                net.minecraft.world.item.Items.BANNER.white());
+        banner.set(net.minecraft.core.component.DataComponents.BANNER_PATTERNS, layers);
+        banner.setCount(1);
+        player.getInventory().add(banner);
+
+        return "已给予圈地旗：" + dirName + " " + dist + " 区块";
+    }
+
+    /** debug list：列出所有已注册的圈地旗帜 */
+    private static String debugListNodes() {
+        java.util.Map<com.shenqianye.samsara.geometry.ChunkCoord, com.shenqianye.samsara.claim.ClaimNode> nodes =
+                com.shenqianye.samsara.claim.AreaService.getInstance().getNodes();
+        if (nodes.isEmpty()) {
+            return "当前无圈地旗帜";
+        }
+        java.util.Set<com.shenqianye.samsara.geometry.ChunkCoord> wl =
+                com.shenqianye.samsara.claim.AreaService.getInstance().getWhitelist();
+        StringBuilder sb = new StringBuilder("圈地旗帜（" + nodes.size() + " 面）· 保护区块 " + wl.size() + " 个：\n");
+        for (var e : nodes.entrySet()) {
+            com.shenqianye.samsara.geometry.ChunkCoord loc = e.getKey();
+            com.shenqianye.samsara.claim.ClaimNode n = e.getValue();
+            sb.append("  ").append(loc).append(" 朝向").append(n.getFacing())
+                    .append(" 图案").append(n.getPatterns().size()).append(" 个\n");
+        }
+        sb.append("数据文件: ").append(com.shenqianye.samsara.claim.AreaService.getInstance().configPath());
+        return sb.toString().trim();
+    }
+
+    /** debug rebuild：强制重算白名单 */
+    private static String debugRebuild() {
+        com.shenqianye.samsara.claim.AreaService.getInstance().recompute();
+        java.util.Set<com.shenqianye.samsara.geometry.ChunkCoord> wl =
+                com.shenqianye.samsara.claim.AreaService.getInstance().getWhitelist();
+        return "白名单已重算：" + com.shenqianye.samsara.claim.AreaService.getInstance().getNodes().size()
+                + " 面旗帜 → " + wl.size() + " 个保护区块";
+    }
+
+    /** debug scan：扫描世界中已放置的圈地旗帜 */
+    private static String debugScan(CommandSourceStack src) {
+        var level = src.getServer().getLevel(net.minecraft.world.level.Level.OVERWORLD);
+        if (level == null) return "主世界不可用";
+        return com.shenqianye.samsara.command.ClaimCommand.scanLevel(level);
+    }
+
+    /** debug remove：移除指定位置的圈地旗帜 */
+    private static String debugRemoveNode(int x, int z) {
+        return com.shenqianye.samsara.claim.AreaService.getInstance().removeNode(
+                new com.shenqianye.samsara.geometry.ChunkCoord(x, z));
+    }
+
+    /** debug particle：设置粒子类型 */
+    private static String debugSetParticle(String type, String name) {
+        var config = com.shenqianye.samsara.claim.ClaimParticleConfig.getInstance();
+        if (!com.shenqianye.samsara.claim.ClaimParticleConfig.isValidParticle(name)) {
+            return "无效粒子类型: " + name + "\n可用: " + com.shenqianye.samsara.claim.ClaimParticleConfig.getAvailableParticles();
+        }
+        return switch (type) {
+            case "day" -> { config.setDayParticle(name); yield "昼间边界粒子已设为: " + name; }
+            case "night" -> { config.setNightParticle(name); yield "夜间边界粒子已设为: " + name; }
+            case "font" -> { config.setFontParticle(name); yield "字体粒子已设为: " + name; }
+            case "beam" -> { config.setBeamParticle(name); yield "光束粒子已设为: " + name; }
+            default -> "未知类型: " + type;
+        };
+    }
+
+    /** debug particle list：显示当前粒子配置 */
+    private static String debugListParticles() {
+        var config = com.shenqianye.samsara.claim.ClaimParticleConfig.getInstance();
+        return "当前粒子配置：\n  昼间边界: " + config.getDayParticleName()
+                + "\n  夜间边界: " + config.getNightParticleName()
+                + "\n  字体: " + config.getFontParticleName()
+                + "\n  光束: " + config.getBeamParticleName()
+                + "\n  共享显示: " + (config.isSharedDisplay() ? "ON（所有人可见）" : "OFF（仅持有者可见）")
+                + "\n  全图显示: " + (config.isGlobalDisplay() ? "ON（不在管理区域内也显示）" : "OFF（仅管理区域内显示）")
+                + "\n可用粒子: " + com.shenqianye.samsara.claim.ClaimParticleConfig.getAvailableParticles();
+    }
+
+    /** debug particle shared：设置共享显示 */
+    private static String debugSetSharedDisplay(String onOff) {
+        boolean shared = onOff.equalsIgnoreCase("on") || onOff.equalsIgnoreCase("true");
+        com.shenqianye.samsara.claim.ClaimParticleConfig.getInstance().setSharedDisplay(shared);
+        return "共享显示已设为: " + (shared ? "ON（所有人可见 TextDisplay）" : "OFF（仅手持旗帜者可见粒子）");
+    }
+
+    /** debug particle global：设置全图显示 */
+    private static String debugSetGlobalDisplay(String onOff) {
+        boolean global = onOff.equalsIgnoreCase("on") || onOff.equalsIgnoreCase("true");
+        com.shenqianye.samsara.claim.ClaimParticleConfig.getInstance().setGlobalDisplay(global);
+        return "全图显示已设为: " + (global ? "ON（不在管理区域内也显示边界）" : "OFF（仅管理区域内显示）");
+    }
+
     private static String help() {
-        return "周目管理 samsara 指令（全部以 /samsara 开头，避免与其他模组冲突）：\n"
-                + "/samsara season —— 周目业务（status/info/create/start/end/skip/respawn-groups；/season 为遗留别名）\n"
-                + "/samsara activity —— 活跃度（recent [天数]|stats|dead；默认近 30 天，全员可查）\n"
-                + "/samsara version —— 模组版本号\n"
-                + "/samsara 调试指令（COMMANDS_OWNER）：\n"
-                + "/samsara debug status —— 状态机概要 + season.json 路径\n"
-                + "/samsara debug spawninfo —— 查看你当前的重生点（pos/维度/forced，定位重生 bug）\n"
-                + "/samsara debug json —— 打印 season.json 原始内容\n"
-                + "/samsara debug reload —— 重新从磁盘加载\n"
-                + "/samsara debug reset —— 清空全部周目数据（需二次确认）\n"
-                + "/samsara debug create <名> [模式] [数量] —— 批量创建历史周目（ENDED）\n"
-                + "/samsara debug settime <id> <start|end> <now|epoch毫秒> —— 设置时间戳\n"
-                + "/samsara debug fakeplayers <clear|数字|前缀 数量|名字,名字...> —— 注入离线测试玩家（M2 分组用）\n"
-                + "/samsara debug groups [名单] —— 分组 dry-run（缺省用注册玩家）\n"
-                + "/samsara debug rewind preview|status|abort|purge|compact|restore <pos>|set <时长> —— 倒流控制：预览/状态/中止/立即删未保留区块/区域文件瘦身(全空删+压缩重写)/强制恢复某区块(坐标支持 ~/~N 自动转区块)/时长（1h 30m 3600s 1d）\n"
-                + "/samsara debug diff [fake <pos> <数量> [stateId]|text <pos> <文字> [stateId] [scale]] —— 档3差异库状态；fake=注入虚假diff（坐标支持 ~/~N 自动转区块）；text=空中字画（5x7点阵，坐标支持 ~/~N）\n"
-                + "/samsara debug flow setup|rewind <true|false>|teleport —— 拆分start：只准备/只倒流(完成后是否传送)/只传送\n"
-                + "/samsara debug config [键] [值] —— 查看/设置配置（无键=全部含类型；键: groupdist/birthjitter/birthreset/rewind/groupmin/groupmax/spawnradius/centermin/centermax）\n"
-                + "/samsara debug claim add|addc <名> <p1> <p2>|remove <名>|list —— 圈地保护不删区（坐标支持 ~/~N；add=方块坐标，addc=区块坐标×16；中文名用引号如 \"主城\"）\n"
-                + "/samsara debug whitelist json|reload —— 白名单查看/重载"
-                + "\n/samsara debug activity recent|stats|dead|simulate <天数前> [近30天活跃]|clear —— M3 活跃度调试：日志聚合查看/死服判定模拟(不写文件)/清空日志(需二次确认)";
+        return "周目管理 samsara 指令：\n"
+                + "玩家命令：\n"
+                + "  /samsara claim info [x] [z] —— 查看区块圈地信息\n"
+                + "  /samsara claim boundary —— 切换边界持续显示\n"
+                + "  /samsara season —— 周目业务（status/info/create/start/end/skip/respawn-groups）\n"
+                + "  /samsara activity —— 活跃度（recent [天数]|stats|dead）\n"
+                + "  /samsara version —— 模组版本号\n"
+                + "管理员命令（/samsara debug ...）：\n"
+                + "  debug claim give|list|rebuild|scan|remove|info|particle —— 圈地管理\n"
+                + "  debug season|activity —— 周目/活跃度调试\n"
+                + "  debug status|json|reload|reset|config|settings —— 状态与配置\n"
+                + "  debug fakeplayers|groups —— 测试数据注入与分组预览\n"
+                + "  debug rewind|diff|flow —— 倒流与差异控制\n"
+                + "  debug delete|whitelist|perm —— 安全删除/白名单/权限管理";
     }
 
     /** /samsara version：从 FabricLoader 取模组版本 + 显示名 + 简略配置 */
@@ -584,16 +771,26 @@ public class DebugCommand {
         return src.permissions().hasPermission(Permissions.COMMANDS_OWNER);
     }
 
+    /**
+     * 发送格式化调试回复消息到聊天栏。
+     * <p>
+     * 使用 {@link ChatFormat} 统一格式：首行带 {@code [周目管理·调试] ▸ } 前缀，
+     * 后续行缩进对齐，自动换行（默认 34 宽度单位）。
+     *
+     * @param src     命令源
+     * @param message 消息文本（支持 {@code \n} 换行）
+     * @return 固定返回 1（brigadier 命令执行成功）
+     */
     private static int reply(CommandSourceStack src, String message) {
-        src.sendSuccess(() -> Component.literal("[周目管理·调试] " + message), false);
+        src.sendSuccess(() -> ChatFormat.formatDebugComponent(message), false);
         return 1;
     }
 
     /** config 命令：message==null 表示未知配置项 */
     private static int replyOrErr(CommandContext<CommandSourceStack> ctx, String message) {
         if (message == null) {
-            ctx.getSource().sendSuccess(() -> Component.literal(
-                    "[周目管理·调试] 未知配置项（可用 /samsara debug config 查看全部）"), false);
+            ctx.getSource().sendSuccess(() -> ChatFormat.formatDebugComponent(
+                    "未知配置项（可用 /samsara debug config 查看全部）"), false);
             return 0;
         }
         return reply(ctx.getSource(), message);

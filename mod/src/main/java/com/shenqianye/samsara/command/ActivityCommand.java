@@ -4,16 +4,14 @@ import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.shenqianye.samsara.activity.ActivityManager;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
-import net.minecraft.network.chat.Component;
 
 /**
- * M3 活跃度业务命令（设计文档 §17.3 预留表）：{@code /samsara activity <recent|stats|dead>}。
+ * 活跃度业务命令：{@code /samsara activity <recent|stats|dead>}。
  * <p>
  * 查询=全员（与 /samsara season 一致）；活跃度概览：近期登录、统计（在线时长/频率/分类）、死服状态。
  * {@code recent} 可选 [天数]（默认 30）。
  * <p>
- * 命令树由 DebugCommand 挂在 {@code /samsara} 根下；调试用 {@code /samsara debug activity ...}（OWNER）。
- * 26.1 API 约定同 {@link SeasonCommand}（Mojang 命名 + PermissionSet）。
+ * 命令树由 DebugCommand 挂在 {@code /samsara} 根下。
  */
 public class ActivityCommand {
     private static final ActivityManager MANAGER = ActivityManager.getInstance();
@@ -35,8 +33,18 @@ public class ActivityCommand {
                         .executes(ctx -> reply(ctx.getSource(), MANAGER.deadText())));
     }
 
+    /**
+     * 发送格式化回复消息到聊天栏。
+     * <p>
+     * 使用 {@link ChatFormat} 统一格式：首行带 {@code [周目管理] ▸ } 前缀，
+     * 后续行缩进对齐，自动换行（默认 34 宽度单位）。
+     *
+     * @param src     命令源
+     * @param message 消息文本（支持 {@code \n} 换行）
+     * @return 固定返回 1（brigadier 命令执行成功）
+     */
     private static int reply(CommandSourceStack src, String message) {
-        src.sendSuccess(() -> Component.literal("[周目管理] " + message), false);
+        src.sendSuccess(() -> ChatFormat.formatComponent(message), false);
         return 1;
     }
 }

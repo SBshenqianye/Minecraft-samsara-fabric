@@ -6,12 +6,16 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 
 /**
- * 粒子文字渲染（§6.7 增强）：用 {@code DiffRecorder.FONT_5X7} 点阵字体，
- * 在指定世界坐标处用粒子「写」出文字，替代旧版 ArmorStand 浮动文字。
+ * 粒子文字渲染：用 {@code DiffRecorder.FONT_5X7} 点阵字体，
+ * 在指定世界坐标处用粒子「写」出文字。
  * <p>
  * 特点：纯粒子、无实体、随玩家距离自然淡出；适合显示圈地尺寸/方向等简短信息。
+ * 笔画加粗：每个像素点额外绘制相邻位置，使字体在远距离更清晰可见。
  */
 public final class ClaimParticleText {
+
+    /** 笔画加粗偏移量（上下左右各扩展1格，共3x3区域） */
+    private static final int[][] THICK_OFFSETS = {{0, 0}, {1, 0}, {-1, 0}, {0, 1}, {0, -1}};
 
     private ClaimParticleText() {
     }
@@ -41,9 +45,7 @@ public final class ClaimParticleText {
                         double px = cx + (cursorX + col);
                         double py = cy - row;
                         double pz = cz;
-                        level.sendParticles(player, color,
-                                true, true, px, py, pz,
-                                1, 0.0, 0.0, 0.0, 0.0);
+                        drawThickPixel(level, player, px, py, pz, color);
                     }
                 }
             }
@@ -97,13 +99,44 @@ public final class ClaimParticleText {
                         double px = cx + localX * cos;
                         double py = cy + localY;
                         double pz = cz + localX * sin;
-                        level.sendParticles(player, color,
-                                true, true, px, py, pz,
-                                1, 0.0, 0.0, 0.0, 0.0);
+                        drawThickPixelFacing(level, player, px, py, pz, cos, sin, color);
                     }
                 }
             }
             cursorX += gap;
+        }
+    }
+
+    /**
+     * 绘制加粗像素点（固定平面版本）。
+     * 在原始像素位置周围额外绘制4个相邻点，使笔画更粗。
+     */
+    private static void drawThickPixel(ServerLevel level, ServerPlayer player,
+                                        double px, double py, double pz,
+                                        ParticleOptions color) {
+        for (int[] off : THICK_OFFSETS) {
+            level.sendParticles(player, color,
+                    true, true, px + off[0], py + off[1], pz,
+                    1, 0.0, 0.0, 0.0, 0.0);
+        }
+    }
+
+    /**
+     * 绘制加粗像素点（billboard 旋转版本）。
+     * 偏移量沿旋转后的文字平面方向扩展。
+     */
+    private static void drawThickPixelFacing(ServerLevel level, ServerPlayer player,
+                                              double px, double py, double pz,
+                                              double cos, double sin,
+                                              ParticleOptions color) {
+        for (int[] off : THICK_OFFSETS) {
+            // off[0] = 水平偏移（沿旋转方向），off[1] = 垂直偏移（Y 轴）
+            double rx = px + off[0] * cos;
+            double ry = py + off[1];
+            double rz = pz + off[0] * sin;
+            level.sendParticles(player, color,
+                    true, true, rx, ry, rz,
+                    1, 0.0, 0.0, 0.0, 0.0);
         }
     }
 }

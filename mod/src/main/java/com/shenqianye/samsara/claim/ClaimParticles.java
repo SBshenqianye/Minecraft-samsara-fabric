@@ -7,7 +7,6 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.ParticleOptions;
 import net.minecraft.core.particles.ParticleType;
-import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.network.chat.Component;
@@ -24,12 +23,16 @@ import org.joml.Vector3f;
 import java.util.*;
 
 /**
- * 区块信息显示 v8（解耦版）。
+ * 区块信息显示 v9（解耦版）。
  * <p>
- * 手持旗帜 → 读取 AreaService 管理列表 → 若玩家位于管理区域内 → 显示区块信息。
+ * 触发条件（任一即可）：
+ * 1. 手持旗帜 → 读取 AreaService 管理列表 → 若玩家位于管理区域内 → 显示区块信息
+ * 2. /samsara claim boundary 开启持续显示
+ * 3. 右键旗帜后 10 秒内持续显示
+ * <p>
  * 不关心具体是哪个旗帜管理该区域，只关心是否在管理区域内。
  * <p>
- * 共享显示 OFF（默认）：粒子方案，仅手持旗帜的玩家可见
+ * 共享显示 OFF（默认）：粒子方案，仅相关玩家可见
  * 共享显示 ON：TextDisplay 方案，所有人可见
  */
 public class ClaimParticles {
@@ -37,6 +40,15 @@ public class ClaimParticles {
 
     private static final Map<UUID, Display.TextDisplay> arrowDisplays = new HashMap<>();
     private static final Map<UUID, Display.TextDisplay> infoDisplays = new HashMap<>();
+
+    /** 持久显示边界开关：玩家 UUID → 是否开启 */
+    private static final Set<UUID> boundaryToggle = new HashSet<>();
+
+    /** 右键旗帜时间：玩家 UUID → 最近右键时间（毫秒） */
+    private static final Map<UUID, Long> rightClickTime = new HashMap<>();
+
+    /** 右键旗帜后持续显示时长（毫秒） */
+    private static final long RIGHT_CLICK_DURATION_MS = 10_000L;
 
     private static final String[] ARROWS = {"↑", "↗", "→", "↘", "↓", "↙", "←", "↖"};
 
@@ -56,6 +68,36 @@ public class ClaimParticles {
             if (d != null && d.isAlive()) d.discard();
         }
         infoDisplays.clear();
+        boundaryToggle.clear();
+        rightClickTime.clear();
+    }
+
+    /** 切换玩家的持续边界显示开关，返回切换后的状态 */
+    public static boolean toggleBoundary(UUID playerUUID) {
+        if (boundaryToggle.contains(playerUUID)) {
+            boundaryToggle.remove(playerUUID);
+            return false;
+        } else {
+            boundaryToggle.add(playerUUID);
+            return true;
+        }
+    }
+
+    /** 玩家右键旗帜时调用，记录时间戳以持续显示 10 秒 */
+    public static void notifyRightClick(UUID playerUUID) {
+        rightClickTime.put(playerUUID, System.currentTimeMillis());
+    }
+
+    /** 判断玩家是否应该看到边界 */
+    private static boolean shouldShowBoundary(ServerPlayer player) {
+        // 条件 1：手持旗帜
+        if (player.getMainHandItem().is(ItemTags.BANNERS)) return true;
+        // 条件 2：持久显示已开启
+        if (boundaryToggle.contains(player.getUUID())) return true;
+        // 条件 3：右键旗帜后 10 秒内
+        Long lastClick = rightClickTime.get(player.getUUID());
+        if (lastClick != null && System.currentTimeMillis() - lastClick < RIGHT_CLICK_DURATION_MS) return true;
+        return false;
     }
 
     private static EntityType<?> getTextDisplayType() {
@@ -76,21 +118,25 @@ public class ClaimParticles {
             for (ServerPlayer player : server.getPlayerList().getPlayers()) {
                 if (!(player.level() instanceof ServerLevel level)) continue;
 
-                boolean holdingBanner = player.getMainHandItem().is(ItemTags.BANNERS);
-                if (!holdingBanner) {
+                // 手持旗帜 OR 持续显示开关 OR 右键后10秒内
+                boolean showBoundary = shouldShowBoundary(player);
+                if (!showBoundary) {
                     if (sharedDisplay) removeDisplays(player);
                     continue;
                 }
 
-                // 解耦：只关心玩家是否在管理区域内
-                ChunkCoord playerChunk = new ChunkCoord(
-                        player.blockPosition().getX() >> 4,
-                        player.blockPosition().getZ() >> 4);
-
+                // 全图显示模式：跳过管理区域检查；否则要求玩家在管理区域内
+                boolean globalDisplay = ClaimParticleConfig.getInstance().isGlobalDisplay();
                 Set<ChunkCoord> whitelist = AreaService.getInstance().getWhitelist();
-                if (!whitelist.contains(playerChunk)) {
-                    if (sharedDisplay) removeDisplays(player);
-                    continue;
+
+                if (!globalDisplay) {
+                    ChunkCoord playerChunk = new ChunkCoord(
+                            player.blockPosition().getX() >> 4,
+                            player.blockPosition().getZ() >> 4);
+                    if (!whitelist.contains(playerChunk)) {
+                        if (sharedDisplay) removeDisplays(player);
+                        continue;
+                    }
                 }
 
                 activePlayers.add(player.getUUID());
@@ -200,9 +246,11 @@ public class ClaimParticles {
     /**
      * 粒子光束：从玩家右手到管理区域核心。
      * 使用 getViewVector 获取实际视线方向（而非身体朝向）。
+     * 光束粒子类型可通过配置独立设置。
      */
     private static void sendParticleBeam(ServerLevel level, ServerPlayer player,
                                           double targetX, double targetZ) {
+        ParticleOptions beamType = (ParticleOptions) ClaimParticleConfig.getInstance().getBeamParticle();
         // 使用视线方向向量（包含头部旋转，不仅仅是身体朝向）
         var look = player.getViewVector(1.0f);
         double lookX = look.x;
@@ -229,14 +277,15 @@ public class ClaimParticles {
         int particles = (int) (dist / 1.5) + 1;
         for (int i = 2; i <= particles + 2; i++) {
             double t = (double) i / (particles + 4);
-            level.sendParticles(player, ParticleTypes.CRIT,
+            level.sendParticles(player, beamType,
                     true, true, hx + dx * t, hy, hz + dz * t,
                     1, 0.0, 0.0, 0.0, 0.0);
         }
     }
 
     /**
-     * 粒子文字：在管理区域中心上方用 CRIT 粒子写出区块尺寸。
+     * 粒子文字：在管理区域中心上方用粒子写出区块尺寸。
+     * 字体粒子类型可通过配置独立设置。
      */
     private static void sendParticleText(ServerLevel level, ServerPlayer player,
                                           double centerX, double centerZ,
@@ -249,8 +298,9 @@ public class ClaimParticles {
         }
         String text = (maxX - minX + 1) + "X" + (maxZ - minZ + 1);
 
+        ParticleOptions fontType = (ParticleOptions) ClaimParticleConfig.getInstance().getFontParticle();
         double eyeY = player.getY() + player.getBbHeight() + 1.0;
-        ClaimParticleText.drawFacing(level, player, centerX, eyeY, centerZ, text, 6, ParticleTypes.CRIT);
+        ClaimParticleText.drawFacing(level, player, centerX, eyeY, centerZ, text, 6, fontType);
     }
 
     // ========================================================================

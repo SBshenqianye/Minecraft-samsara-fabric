@@ -1,60 +1,40 @@
 package com.shenqianye.samsara.command;
 
 import com.mojang.brigadier.arguments.IntegerArgumentType;
-import com.mojang.brigadier.arguments.StringArgumentType;
 import com.shenqianye.samsara.claim.AreaService;
 import com.shenqianye.samsara.claim.ClaimInteractions;
 import com.shenqianye.samsara.claim.ClaimNode;
-import com.shenqianye.samsara.claim.ClaimParticleConfig;
+import com.shenqianye.samsara.claim.ClaimParticles;
 import com.shenqianye.samsara.geometry.ChunkCoord;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
-import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.server.permissions.Permissions;
-import net.minecraft.world.item.DyeColor;
-import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BannerBlockEntity;
-import net.minecraft.world.level.block.entity.BannerPatternLayers;
 
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 /**
- * 旗帜圈地命令（设计文档 §17.3 M4b）：{@code /samsara claim ...}
+ * 旗帜圈地命令（玩家用）：{@code /samsara claim ...}
  * <p>
- * 给予旗帜 / 列表 / 详情 / 重建白名单 / 扫描 / 预览 / 移除 / 导出。
+ * 仅包含正常游玩中需要使用的命令：
+ * <ul>
+ *   <li>{@code info [x] [z]} — 查看指定区块的圈地信息</li>
+ *   <li>{@code boundary} — 切换边界持续显示开关</li>
+ * </ul>
+ * 管理员命令（give/list/rebuild/scan/remove/particle）已移至
+ * {@code /samsara debug claim ...}。
  */
 public class ClaimCommand {
 
-    // ---- 染料颜色序号 → NBT Color 值映射（反向：距离 → color） ----
-    private static final String[] COLOR_NAMES = {
-        "white","orange","magenta","light_blue","yellow","lime",
-        "pink","gray","light_gray","cyan","purple","blue",
-        "brown","green","red","black"
-    };
-
-    /** /samsara claim ... 子树 */
+    /** /samsara claim ... 子树（玩家命令） */
     public static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> claimNode() {
         return Commands.literal("claim")
                 .requires(src -> com.shenqianye.samsara.permission.PermissionChecker.check(src, "claim"))
-                // claim give <dir> <dist>
-                .then(Commands.literal("give")
-                        .requires(src -> isAdmin(src))
-                        .then(Commands.argument("dir", StringArgumentType.word())
-                                .then(Commands.argument("dist", IntegerArgumentType.integer(1, 16))
-                                        .executes(ctx -> reply(ctx.getSource(), giveBanner(
-                                                ctx.getSource(),
-                                                StringArgumentType.getString(ctx, "dir"),
-                                                IntegerArgumentType.getInteger(ctx, "dist")))))))
-                // claim list
-                .then(Commands.literal("list")
-                        .executes(ctx -> reply(ctx.getSource(), listNodes())))
-                // claim info [pos]
+                // claim info [x] [z]
                 .then(Commands.literal("info")
                         .executes(ctx -> reply(ctx.getSource(), infoAtPlayer(ctx.getSource())))
                         .then(Commands.argument("x", IntegerArgumentType.integer())
@@ -62,111 +42,9 @@ public class ClaimCommand {
                                         .executes(ctx -> reply(ctx.getSource(),
                                                 infoAt(IntegerArgumentType.getInteger(ctx, "x"),
                                                       IntegerArgumentType.getInteger(ctx, "z")))))))
-                // claim rebuild
-                .then(Commands.literal("rebuild")
-                        .requires(src -> isAdmin(src))
-                        .executes(ctx -> reply(ctx.getSource(), rebuild())))
-                // claim scan
-                .then(Commands.literal("scan")
-                        .requires(src -> isAdmin(src))
-                        .executes(ctx -> reply(ctx.getSource(), scan(ctx.getSource()))))
-                // claim preview
-                .then(Commands.literal("preview")
-                        .requires(src -> isAdmin(src))
-                        .executes(ctx -> reply(ctx.getSource(), preview())))
-                // claim remove <x> <z>
-                .then(Commands.literal("remove")
-                        .requires(src -> isAdmin(src))
-                        .then(Commands.argument("x", IntegerArgumentType.integer())
-                                .then(Commands.argument("z", IntegerArgumentType.integer())
-                                        .executes(ctx -> reply(ctx.getSource(),
-                                                removeNode(IntegerArgumentType.getInteger(ctx, "x"),
-                                                          IntegerArgumentType.getInteger(ctx, "z")))))))
-                // claim export
-                .then(Commands.literal("export")
-                        .requires(src -> isAdmin(src))
-                        .executes(ctx -> reply(ctx.getSource(), export())))
-                // claim particle day <name>
-                .then(Commands.literal("particle")
-                        .requires(src -> isAdmin(src))
-                        .then(Commands.literal("day")
-                                .then(Commands.argument("name", StringArgumentType.word())
-                                        .executes(ctx -> reply(ctx.getSource(),
-                                                setParticle("day", StringArgumentType.getString(ctx, "name"))))))
-                        .then(Commands.literal("night")
-                                .then(Commands.argument("name", StringArgumentType.word())
-                                        .executes(ctx -> reply(ctx.getSource(),
-                                                setParticle("night", StringArgumentType.getString(ctx, "name"))))))
-                        .then(Commands.literal("list")
-                                .executes(ctx -> reply(ctx.getSource(), listParticles())))
-                        .then(Commands.literal("shared")
-                                .then(Commands.argument("on_off", StringArgumentType.word())
-                                        .executes(ctx -> reply(ctx.getSource(),
-                                                setSharedDisplay(StringArgumentType.getString(ctx, "on_off")))))));
-    }
-
-    // ---- claim give ----
-
-    private static String giveBanner(CommandSourceStack src, String dir, int dist) {
-        String patternId = switch (dir.toLowerCase()) {
-            case "n"  -> "stripe_top"; case "s"  -> "stripe_bottom";
-            case "w"  -> "stripe_left"; case "e"  -> "stripe_right";
-            case "nw" -> "square_top_left"; case "sw" -> "square_bottom_left";
-            case "ne" -> "square_top_right"; case "se" -> "square_bottom_right";
-            case "all"-> "border";
-            default -> null;
-        };
-        if (patternId == null) {
-            return "方向无效（n/ne/e/se/s/sw/w/nw/all）";
-        }
-        String dirName = switch (dir.toLowerCase()) {
-            case "n" -> "北"; case "s" -> "南"; case "w" -> "西"; case "e" -> "东";
-            case "nw" -> "西北"; case "sw" -> "西南"; case "ne" -> "东北"; case "se" -> "东南";
-            case "all" -> "全方向"; default -> dir;
-        };
-        ServerPlayer player;
-        try {
-            player = src.getPlayerOrException();
-        } catch (Exception e) {
-            return "需要以玩家身份执行";
-        }
-
-        // MC 26.2 API：Items.BANNER.white() + DataComponents.BANNER_PATTERNS
-        int colorValue = dist - 1; // dist 1~16 → color ordinal 0~15
-        DyeColor dye = DyeColor.byId(colorValue);
-
-        // 创建 BannerPattern 并用 Holder.direct 包装
-        var bp = new net.minecraft.world.level.block.entity.BannerPattern(
-                net.minecraft.resources.Identifier.fromNamespaceAndPath("minecraft", patternId),
-                "block.minecraft.banner." + patternId);
-        var layer = new BannerPatternLayers.Layer(net.minecraft.core.Holder.direct(bp), dye);
-        var layers = new BannerPatternLayers(List.of(layer));
-
-        ItemStack banner = new ItemStack(Items.BANNER.white());
-        banner.set(net.minecraft.core.component.DataComponents.BANNER_PATTERNS, layers);
-        banner.setCount(1);
-        player.getInventory().add(banner);
-
-        return "已给予圈地旗：" + dirName + " " + dist + " 区块";
-    }
-
-    // ---- claim list ----
-
-    private static String listNodes() {
-        Map<ChunkCoord, ClaimNode> nodes = AreaService.getInstance().getNodes();
-        if (nodes.isEmpty()) {
-            return "当前无圈地旗帜。用 /samsara claim give <方向> <距离> 获取";
-        }
-        Set<ChunkCoord> wl = AreaService.getInstance().getWhitelist();
-        StringBuilder sb = new StringBuilder("圈地旗帜（" + nodes.size() + " 面）· 保护区块 " + wl.size() + " 个：\n");
-        for (Map.Entry<ChunkCoord, ClaimNode> e : nodes.entrySet()) {
-            ChunkCoord loc = e.getKey();
-            ClaimNode n = e.getValue();
-            sb.append("  ").append(loc).append(" 朝向").append(n.getFacing())
-                    .append(" 图案").append(n.getPatterns().size()).append(" 个\n");
-        }
-        sb.append("数据文件: ").append(AreaService.getInstance().configPath());
-        return sb.toString().trim();
+                // claim boundary — 持续显示边界开关
+                .then(Commands.literal("boundary")
+                        .executes(ctx -> reply(ctx.getSource(), toggleBoundary(ctx.getSource()))));
     }
 
     // ---- claim info ----
@@ -183,7 +61,7 @@ public class ClaimCommand {
         return infoAt(cx, cz);
     }
 
-    private static String infoAt(int x, int z) {
+    static String infoAt(int x, int z) {
         ChunkCoord loc = new ChunkCoord(x, z);
         ClaimNode node = AreaService.getInstance().getNode(loc);
         boolean protected_ = AreaService.getInstance().isProtected(x, z);
@@ -200,22 +78,20 @@ public class ClaimCommand {
         return sb.toString();
     }
 
-    // ---- claim rebuild ----
+    // ---- claim boundary ----
 
-    private static String rebuild() {
-        AreaService.getInstance().recompute();
-        Set<ChunkCoord> wl = AreaService.getInstance().getWhitelist();
-        return "白名单已重算：" + AreaService.getInstance().getNodes().size() + " 面旗帜 → "
-                + wl.size() + " 个保护区块";
+    private static String toggleBoundary(CommandSourceStack src) {
+        ServerPlayer player;
+        try {
+            player = src.getPlayerOrException();
+        } catch (Exception e) {
+            return "需要以玩家身份执行";
+        }
+        boolean nowOn = ClaimParticles.toggleBoundary(player.getUUID());
+        return "边界持续显示已" + (nowOn ? "开启 ✓（进入管理区域自动显示）" : "关闭 ✗");
     }
 
-    // ---- claim scan（扫描世界中已放置的圈地旗帜） ----
-
-    private static String scan(CommandSourceStack src) {
-        var level = src.getServer().getLevel(net.minecraft.world.level.Level.OVERWORLD);
-        if (level == null) return "主世界不可用";
-        return scanLevel(level);
-    }
+    // ---- 扫描工具（供 debug claim scan 调用） ----
 
     /** 扫描指定 ServerLevel 中的圈地旗帜（只扫描已加载区块） */
     public static String scanLevel(net.minecraft.server.level.ServerLevel level) {
@@ -239,75 +115,17 @@ public class ClaimCommand {
                 + "（其中 " + registered[0] + " 面已注册）";
     }
 
-    // ---- claim preview ----
-
-    private static String preview() {
-        Set<ChunkCoord> wl = AreaService.getInstance().getWhitelist();
-        if (wl.isEmpty()) return "无保护区块";
-        // 找边界
-        int minX = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE;
-        int minZ = Integer.MAX_VALUE, maxZ = Integer.MIN_VALUE;
-        for (ChunkCoord c : wl) {
-            minX = Math.min(minX, c.x); maxX = Math.max(maxX, c.x);
-            minZ = Math.min(minZ, c.z); maxZ = Math.max(maxZ, c.z);
-        }
-        return "保护区域：(" + minX + "," + minZ + ")~(" + maxX + "," + maxZ + ") "
-                + wl.size() + " 区块 · " + (maxX - minX + 1) + "×" + (maxZ - minZ + 1);
-    }
-
-    // ---- claim remove ----
-
-    private static String removeNode(int x, int z) {
-        return AreaService.getInstance().removeNode(new ChunkCoord(x, z));
-    }
-
-    // ---- claim export ----
-
-    private static String export() {
-        Map<ChunkCoord, ClaimNode> nodes = AreaService.getInstance().getNodes();
-        Set<ChunkCoord> wl = AreaService.getInstance().getWhitelist();
-        StringBuilder sb = new StringBuilder("圈地导出（JSON 格式）：\n");
-        sb.append("  旗帜: ").append(nodes.size()).append(" 面\n");
-        sb.append("  保护区块: ").append(wl.size()).append(" 个\n");
-        sb.append("  数据文件: ").append(AreaService.getInstance().configPath());
-        return sb.toString();
-    }
-
-    // ---- claim particle ----
-
-    private static String setParticle(String time, String name) {
-        ClaimParticleConfig config = ClaimParticleConfig.getInstance();
-        if (time.equals("day")) {
-            config.setDayParticle(name);
-            return "昼间边界粒子已设为: " + name;
-        } else {
-            config.setNightParticle(name);
-            return "夜间边界粒子已设为: " + name;
-        }
-    }
-
-    private static String listParticles() {
-        ClaimParticleConfig config = ClaimParticleConfig.getInstance();
-        return "当前边界粒子配置：\n  昼间: " + config.getDayParticleName()
-                + "\n  夜间: " + config.getNightParticleName()
-                + "\n  共享显示: " + (config.isSharedDisplay() ? "ON（所有人可见）" : "OFF（仅持有者可见）")
-                + "\n可用粒子: " + ClaimParticleConfig.getAvailableParticles();
-    }
-
-    private static String setSharedDisplay(String onOff) {
-        boolean shared = onOff.equalsIgnoreCase("on") || onOff.equalsIgnoreCase("true");
-        ClaimParticleConfig.getInstance().setSharedDisplay(shared);
-        return "共享显示已设为: " + (shared ? "ON（所有人可见 TextDisplay）" : "OFF（仅手持旗帜者可见粒子）");
-    }
-
     // ---- 工具 ----
 
-    private static boolean isAdmin(CommandSourceStack src) {
-        return src.permissions().hasPermission(Permissions.COMMANDS_ADMIN);
-    }
-
+    /**
+     * 发送格式化回复消息到聊天栏。
+     *
+     * @param src     命令源
+     * @param message 消息文本
+     * @return 固定返回 1
+     */
     private static int reply(CommandSourceStack src, String message) {
-        src.sendSuccess(() -> Component.literal("[周目管理] " + message), false);
+        src.sendSuccess(() -> ChatFormat.formatComponent(message), false);
         return 1;
     }
 }
