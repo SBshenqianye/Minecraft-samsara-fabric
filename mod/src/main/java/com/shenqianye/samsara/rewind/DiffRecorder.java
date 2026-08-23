@@ -287,7 +287,7 @@ public class DiffRecorder {
     }
 
     /** 5x5 点阵字体（行优先）：下标 = char - ' '（32），每字符 5 行，每行低 5 位 = 5 列（bit0=最左列，行0=顶部） */
-    private static final int[][] FONT_5X7 = new int[95][];
+    public static final int[][] FONT_5X7 = new int[95][];
     static {
         // 空格
         FONT_5X7[' ' - ' '] = new int[]{0, 0, 0, 0, 0};

@@ -5,6 +5,7 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.shenqianye.samsara.claim.AreaService;
 import com.shenqianye.samsara.claim.ClaimInteractions;
 import com.shenqianye.samsara.claim.ClaimNode;
+import com.shenqianye.samsara.claim.ClaimParticleConfig;
 import com.shenqianye.samsara.geometry.ChunkCoord;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -84,7 +85,24 @@ public class ClaimCommand {
                 // claim export
                 .then(Commands.literal("export")
                         .requires(src -> isAdmin(src))
-                        .executes(ctx -> reply(ctx.getSource(), export())));
+                        .executes(ctx -> reply(ctx.getSource(), export())))
+                // claim particle day <name>
+                .then(Commands.literal("particle")
+                        .requires(src -> isAdmin(src))
+                        .then(Commands.literal("day")
+                                .then(Commands.argument("name", StringArgumentType.word())
+                                        .executes(ctx -> reply(ctx.getSource(),
+                                                setParticle("day", StringArgumentType.getString(ctx, "name"))))))
+                        .then(Commands.literal("night")
+                                .then(Commands.argument("name", StringArgumentType.word())
+                                        .executes(ctx -> reply(ctx.getSource(),
+                                                setParticle("night", StringArgumentType.getString(ctx, "name"))))))
+                        .then(Commands.literal("list")
+                                .executes(ctx -> reply(ctx.getSource(), listParticles())))
+                        .then(Commands.literal("shared")
+                                .then(Commands.argument("on_off", StringArgumentType.word())
+                                        .executes(ctx -> reply(ctx.getSource(),
+                                                setSharedDisplay(StringArgumentType.getString(ctx, "on_off")))))));
     }
 
     // ---- claim give ----
@@ -253,6 +271,33 @@ public class ClaimCommand {
         sb.append("  保护区块: ").append(wl.size()).append(" 个\n");
         sb.append("  数据文件: ").append(AreaService.getInstance().configPath());
         return sb.toString();
+    }
+
+    // ---- claim particle ----
+
+    private static String setParticle(String time, String name) {
+        ClaimParticleConfig config = ClaimParticleConfig.getInstance();
+        if (time.equals("day")) {
+            config.setDayParticle(name);
+            return "昼间边界粒子已设为: " + name;
+        } else {
+            config.setNightParticle(name);
+            return "夜间边界粒子已设为: " + name;
+        }
+    }
+
+    private static String listParticles() {
+        ClaimParticleConfig config = ClaimParticleConfig.getInstance();
+        return "当前边界粒子配置：\n  昼间: " + config.getDayParticleName()
+                + "\n  夜间: " + config.getNightParticleName()
+                + "\n  共享显示: " + (config.isSharedDisplay() ? "ON（所有人可见）" : "OFF（仅持有者可见）")
+                + "\n可用粒子: " + ClaimParticleConfig.getAvailableParticles();
+    }
+
+    private static String setSharedDisplay(String onOff) {
+        boolean shared = onOff.equalsIgnoreCase("on") || onOff.equalsIgnoreCase("true");
+        ClaimParticleConfig.getInstance().setSharedDisplay(shared);
+        return "共享显示已设为: " + (shared ? "ON（所有人可见 TextDisplay）" : "OFF（仅手持旗帜者可见粒子）");
     }
 
     // ---- 工具 ----

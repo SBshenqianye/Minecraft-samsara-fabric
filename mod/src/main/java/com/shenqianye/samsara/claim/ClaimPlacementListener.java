@@ -41,16 +41,21 @@ public class ClaimPlacementListener {
 
     private static InteractionResult handlePlacement(ServerPlayer sp, Level level,
                                                       BlockPos pos, BannerBlockEntity be) {
-        List<ClaimNode.PatternEntry> patterns = ClaimInteractions.readPatterns(be);
-        if (patterns.isEmpty()) return InteractionResult.PASS;
-        if (!ClaimInteractions.hasDirectionPatterns(patterns)) return InteractionResult.PASS;
+        // 延迟 1 tick 注册，确保 BannerBlockEntity 的图案已从物品 NBT 同步
+        final BlockPos regPos = pos;
+        level.getServer().executeIfPossible(() -> {
+            if (!(level.getBlockEntity(regPos) instanceof BannerBlockEntity be2)) return;
+            List<ClaimNode.PatternEntry> patterns = ClaimInteractions.readPatterns(be2);
+            if (patterns.isEmpty()) return;
+            if (!ClaimInteractions.hasDirectionPatterns(patterns)) return;
 
-        ChunkCoord chunkPos = new ChunkCoord(pos.getX() >> 4, pos.getZ() >> 4);
-        String facing = ClaimInteractions.getFacing(level, pos);
-        ClaimNode node = new ClaimNode(chunkPos, facing, patterns);
+            ChunkCoord chunkPos = new ChunkCoord(regPos.getX() >> 4, regPos.getZ() >> 4);
+            String facing = ClaimInteractions.getFacing(level, regPos);
+            ClaimNode node = new ClaimNode(chunkPos, facing, patterns);
 
-        String result = AreaService.getInstance().addNode(node);
-        sp.sendSystemMessage(Component.literal("[周目管理·圈地] " + result));
+            String result = AreaService.getInstance().addNode(node);
+            sp.sendSystemMessage(Component.literal("[周目管理·圈地] " + result));
+        });
         return InteractionResult.PASS;
     }
 }
