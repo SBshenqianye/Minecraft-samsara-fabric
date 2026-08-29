@@ -64,8 +64,9 @@ public class AreaService {
         ClaimNode existing = nodes.get(loc);
 
         if (existing != null) {
-            // 区块已注册：添加旗帜坐标（等幂性）
-            existing.addBanner(newNode.getBlockX(), newNode.getBannerY(), newNode.getBlockZ());
+            // 区块已注册：添加旗帜坐标（等幂性：同坐标+同方向+同类型才跳过）
+            existing.addBanner(newNode.getBlockX(), newNode.getBannerY(), newNode.getBlockZ(),
+                    newNode.getFacing(), newNode.getPatterns());
             save();
             if (com.shenqianye.samsara.DebugToggle.isDebugEnabled()) {
                 return "该区块已有圈地旗帜，添加坐标记录（区块 " + loc
@@ -210,6 +211,14 @@ public class AreaService {
                 be2.blockX = be.blockX();
                 be2.blockY = be.blockY();
                 be2.blockZ = be.blockZ();
+                be2.facing = be.facing();
+                be2.patterns = new ArrayList<>();
+                for (ClaimNode.PatternEntry pe : be.patterns()) {
+                    ClaimsData.PatternEntry pe2 = new ClaimsData.PatternEntry();
+                    pe2.id = pe.patternId();
+                    pe2.color = pe.color();
+                    be2.patterns.add(pe2);
+                }
                 ne.banners.add(be2);
             }
             data.nodes.add(ne);
@@ -258,7 +267,16 @@ public class AreaService {
                 if (ne.banners != null && ne.banners.size() > 1) {
                     for (int i = 1; i < ne.banners.size(); i++) {
                         ClaimsData.BannerEntry be = ne.banners.get(i);
-                        node.addBanner(be.blockX, be.blockY, be.blockZ);
+                        // 兼容旧数据：如果没有 facing/patterns，使用节点级默认值
+                        String beFacing = be.facing != null ? be.facing : ne.facing;
+                        List<ClaimNode.PatternEntry> bePatterns = pes; // 默认使用节点级图案
+                        if (be.patterns != null && !be.patterns.isEmpty()) {
+                            bePatterns = new ArrayList<>();
+                            for (ClaimsData.PatternEntry pe : be.patterns) {
+                                bePatterns.add(new ClaimNode.PatternEntry(pe.id, pe.color));
+                            }
+                        }
+                        node.addBanner(be.blockX, be.blockY, be.blockZ, beFacing, bePatterns);
                     }
                 }
                 nodes.put(node.getLocation(), node);
@@ -296,6 +314,8 @@ public class AreaService {
 
         static class BannerEntry {
             int blockX, blockY, blockZ;
+            String facing;
+            List<PatternEntry> patterns;
         }
     }
 }

@@ -36,7 +36,7 @@ public class ClaimNode {
         this.patterns = new ArrayList<>(patterns);
         this.ownerUUID = ownerUUID;
         this.ownerName = ownerName;
-        this.banners.add(new BannerEntry(blockX, bannerY, blockZ));
+        this.banners.add(new BannerEntry(blockX, bannerY, blockZ, facing, new ArrayList<>(patterns)));
     }
 
     /** 兼容旧构造 */
@@ -70,13 +70,17 @@ public class ClaimNode {
     /** 第一面旗帜的 Y 坐标（兼容旧接口） */
     public int getBannerY() { return banners.isEmpty() ? 0 : banners.get(0).blockY(); }
 
-    /** 添加一面旗帜到该区块（等幂性：多次放置同区块静默添加） */
-    public void addBanner(int blockX, int blockY, int blockZ) {
-        // 去重：同一坐标不重复添加
+    /** 添加一面旗帜到该区块（等幂性：同坐标+同方向+同类型才跳过） */
+    public void addBanner(int blockX, int blockY, int blockZ, String facing, List<PatternEntry> patterns) {
+        BannerEntry newEntry = new BannerEntry(blockX, blockY, blockZ, facing, new ArrayList<>(patterns));
+        // 去重：同坐标+同方向+同类型才跳过
         for (BannerEntry be : banners) {
-            if (be.blockX == blockX && be.blockY == blockY && be.blockZ == blockZ) return;
+            if (be.blockX == blockX && be.blockY == blockY && be.blockZ == blockZ
+                    && be.sameConfig(newEntry)) {
+                return;
+            }
         }
-        banners.add(new BannerEntry(blockX, blockY, blockZ));
+        banners.add(newEntry);
     }
 
     /**
@@ -128,6 +132,19 @@ public class ClaimNode {
     /** 旗帜图案记录（patternId + color） */
     public record PatternEntry(String patternId, int color) {}
 
-    /** 区块内单面旗帜的坐标记录 */
-    public record BannerEntry(int blockX, int blockY, int blockZ) {}
+    /** 区块内单面旗帜的记录（含方向和类型） */
+    public record BannerEntry(int blockX, int blockY, int blockZ,
+                               String facing, List<PatternEntry> patterns) {
+        /** 判断两面旗帜是否同方向同类型 */
+        public boolean sameConfig(BannerEntry other) {
+            if (!this.facing.equals(other.facing)) return false;
+            if (this.patterns.size() != other.patterns.size()) return false;
+            for (int i = 0; i < this.patterns.size(); i++) {
+                PatternEntry a = this.patterns.get(i);
+                PatternEntry b = other.patterns.get(i);
+                if (!a.patternId().equals(b.patternId()) || a.color() != b.color()) return false;
+            }
+            return true;
+        }
+    }
 }

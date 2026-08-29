@@ -163,8 +163,9 @@ public class ClaimCommand {
                     AreaService.getInstance().addNode(newNode);
                     autoRegistered[0]++;
                 } else {
-                    // 已注册 → 确保旗帜坐标在列表中
-                    existing.addBanner(pos.getX(), pos.getY(), pos.getZ());
+                    // 已注册 → 确保旗帜坐标+方向+类型在列表中
+                    String facing = ClaimInteractions.getFacing(level, pos);
+                    existing.addBanner(pos.getX(), pos.getY(), pos.getZ(), facing, patterns);
                 }
             }
         });
