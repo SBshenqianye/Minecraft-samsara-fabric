@@ -51,7 +51,8 @@ gradlew.bat build
 - 注册玩家来源：测试注入池 + 在线 + `usercache.json` + `world/dimensions/.../players/data/`（真实 start 自动清空测试注入池）
 - **档3 diff 快照语义（2026-08-17）**：记录**常开**写入 `diff/current/`；倒流启动时冻结为 `diff/s<赛季id>/` = 本次恢复源（窗口 = 上次删块完成之后至本次倒流开始）；完成时重置窗口。恢复只读恢复源 → 倒流期间新改动不会被本轮倒流恢复
 - 倒流档2+档3：未圈地块分配均匀倒流时刻（区块波浪退场）；档3 对加载区块按进度逐格恢复（懒加载 + 自适应预算，倒流结束后继续恢复到完成）
-- **物理删除（完成即删 + 文件级回收）**：已卸载区块后台备份+清零；**仍加载的入待删队列 `pending-delete.json`（卸载即删，启动/停服兜底）**；清零后**全空的 .mca 直接整文件删除**，停服窗口自动**压缩重写**残留文件（`compact`，也可 `/samsara debug rewind compact` 手动）→ 磁盘空间真正回收
+- **物理删除（完成即删 + 文件级回收 + M4d 批量优化）**：已卸载区块后台备份+清零；**仍加载的入待删队列 `pending-delete.json`（卸载即删，启动/停服兜底）**；清零后**全空的 .mca 直接整文件删除**，停服窗口自动**压缩重写**残留文件（`compact`，也可 `/samsara debug rewind compact` 手动）→ 磁盘空间真正回收
+- **M4d 安全删除增强**：`/samsara debug claim delete execute` 支持多维度 + 白名单索引快删 + drainNonLoaded 即时处理未加载区块；批量按维度/区域文件分组删除（设计规范 §18）
 - **rewind.json 归档**：倒流"走完"（传送完成 && 恢复完成）后归档至 `config/samsara/archive/`（不删除，供审计）；中止则清除且不删任何区块
 - 保护集：**仅圈地**（`whitelist.json` 配置区域，`/samsara debug claim` 维护；v0.8 起已去掉自动出生圈/周目中心/分组点保护）
 - **新出生中心**：与全部历史中心集合（世界初始点 + 每个已开始周目中心）的距离都 ≥ `newCenterMinDistance`（默认 15000，无上限）
@@ -83,10 +84,20 @@ src/main/java/com/shenqianye/samsara/
 │   ├── WhitelistData.java    # whitelist.json 结构
 │   ├── WhitelistStore.java   # 配置白名单单例
 │   └── ChunkProtector.java   # 倒流保护判定（仅圈地）
+├── claim/                     # M4b 旗帜圈地 + M4c/M4d 安全删除（23 个 Java 文件）
+│   ├── Extension.java        # 15 种图案→8 方向映射 + 旋转 + 颜色强度
+│   ├── ClaimNode.java        # 旗帜节点（含 ownerUUID/ownerName 归属权）
+│   ├── AreaService.java      # 圈地服务（单例，维度白名单索引，claims.json 持久化）
+│   ├── SafeDeletion.java     # 安全删除（多维度 + 白名单索引 + drainNonLoaded）
+│   └── ...                   # ClaimInteractions/Particles/ParticleConfig/Text/PlacementListener/BreakListener
+├── permission/                # 权限等级系统（CONFIG/OWNER/OP/USER）
+│   ├── PermissionLevel.java  # 等级枚举 + 比较
+│   ├── PermissionConfig.java # 加载/保存/查询 + owner 配置，permissions.json 持久化
+│   └── PermissionChecker.java # 玩家等级判定 + 命令检查
 └── rewind/
     ├── RewindData.java       # rewind.json 结构
-    ├── McaRegion.java        # MCA 区域文件扫描/槽位清零/备份（独立于 MC 内部类）
-    ├── RewindEngine.java     # 倒流调度器（档2/档3）+ 完成即自动物理删除 + 停服兜底 + dry-run
+    ├── McaRegion.java        # MCA 区域文件扫描/槽位清零/备份/批量删除（含白名单索引优化）
+    ├── RewindEngine.java     # 倒流调度器（档2/档3）+ PendingDeleteQueue + drainNonLoaded + 批量删除
     ├── Tier3Restore.java     # 档3 逐格恢复调度（懒加载 + 预算分摊）
     ├── DiffStore.java        # diff 差异库（内存缓存 + 批量落盘）
     └── DiffRecorder.java     # 记录器 + 5×5 点阵字库 + fakeDiff/fakeDiffText
@@ -111,6 +122,7 @@ src/main/java/com/shenqianye/samsara/
 | `/samsara debug diff text <pos> <文字> [stateId] [scale]` | 空中字画（5×5 点阵，倒流保持） |
 | `/samsara debug rewind preview\|status\|abort\|purge\|compact\|restore <pos>\|set <时长>` | 倒流：预览/状态/中止/立即删已到倒流时刻区块/区域文件瘦身(全空删+压缩重写)/强制恢复某区块/时长配置 |
 | `/samsara debug claim add\|addc <名> <p1> <p2>\|remove <名>\|list` | 圈地维护（whitelist.json） |
+| `/samsara debug claim delete dryrun\|backup\|execute\|report` | 安全删除（按白名单，多维度，M4d 批量优化） |
 | `/samsara debug config [键] [值]` | 配置查看/设置（groupdist/birthjitter/birthreset/rewind/groupmin/groupmax/spawnradius/centermin/centermax） |
 | `/samsara debug whitelist json\|reload` | 白名单查看/重载 |
 | `/samsara debug spawninfo` | 出生点信息 |

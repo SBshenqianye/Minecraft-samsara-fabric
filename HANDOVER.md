@@ -1,6 +1,6 @@
 # samsara（周目管理）模组 — 交接文档
 
-> 交接日期：2026-08-23 ｜ 版本：v0.8.9（命令重构 + 粒子配置增强 + 旗帜放置修复）
+> 交接日期：2026-08-26 ｜ 版本：v0.9.0（M4d 安全删除完成 + 批量优化 + 旗帜归属权 + 边界持久化）
 > 交接人：AI 开发助手 ｜ 接收人：项目维护者
 
 ---
@@ -9,8 +9,8 @@
 
 - **是什么**：Minecraft Fabric 服务端模组，实现"轮回周目"系统——每个周目（赛季）自动计算新出生中心、玩家分组出生、世界时间倒流（区块波浪退场 + 方块级恢复）、圈地保护。
 - **技术栈**：Minecraft **26.2**（去混淆 Mojang 官方映射，无 yarn）、Fabric Loader 0.19.3、fabric-api 0.157.0+26.2、fabric-loom 1.17、Java 25、Gradle 9.5.1。
-- **代码位置**：`mod/src/main/java/com/shenqianye/samsara/`（约 21 个 Java 文件）
-- **设计文档**：`docs/` 目录（含 §2b 坐标规范、§10 删区块时机决策、§12 档3 倒流设计）
+- **代码位置**：`mod/src/main/java/com/shenqianye/samsara/`（约 23 个 Java 文件）
+- **设计文档**：`docs/` 目录（含 §2b 坐标规范、§10 删区块时机决策、§12 档3 倒流设计、§18 批量优化模式）
 
 ---
 
@@ -28,6 +28,7 @@
 | **M4a 几何库** | 化线为面（rasterize→graph→face→scanline→union），16 个单测全绿 | ✅ |
 | **M4b 旗帜圈地** | 放置/破坏自动注册/移除，8 个 claim 子命令，双层粒子预览 | ✅ |
 | **M4c 安全删除** | dryrun/backup/execute/report，按白名单保护 | ✅ |
+| **M4d 批量优化** | 按维度/区域文件分组删除 + 白名单索引快删 + 旗帜归属权 + 边界持久化 | ✅ |
 | **中文名** | season/claim 名称用引号支持中文（`string()` 参数） | ✅ |
 | **坐标语法糖** | 所有坐标参数用原版类型支持 `~`/`~N`（BlockPosArgument/ColumnPosArgument/Vec2Argument） | ✅ |
 | **调试拆分** | `/samsara debug flow setup\|rewind\|teleport` 拆分 `/season start` | ✅ |
@@ -54,15 +55,15 @@ com/shenqianye/samsara/
 │   └── ChunkCoord.java       整数区块坐标 + 8 方向邻居 + 方向索引
 ├── claim/
 │   ├── Extension.java        15 种图案→8 方向映射 + 旋转 + 颜色强度
-│   ├── ClaimNode.java        旗帜节点（位置+朝向+图案→影响坐标）
-│   ├── AreaService.java      圈地服务（单例，白名单惰性重算，claims.json 持久化）
+│   ├── ClaimNode.java        旗帜节点（位置+朝向+图案→影响坐标，含 ownerUUID/ownerName）
+│   ├── AreaService.java      圈地服务（单例，白名单惰性重算，claims.json 持久化，维度白名单索引）
 │   ├── ClaimInteractions.java 右键交互 + 边界粒子预览 + 工具方法
-│   ├── ClaimParticles.java   手持旗帜粒子预览（双层 Y 轴，停服自动停止）
+│   ├── ClaimParticles.java   手持旗帜粒子预览（双层 Y 轴，边界线采样，停服自动停止）
 │   ├── ClaimParticleConfig.java 粒子配置（昼夜边界/字体/光束独立配置，持久化）
 │   ├── ClaimParticleText.java 粒子文字渲染（加粗笔画，billboard 效果）
-│   ├── ClaimPlacementListener.java 放置自动注册（1 tick 延迟确保 block entity 创建）
-│   ├── ClaimBreakListener.java    破坏自动移除
-│   └── SafeDeletion.java     安全删除（dryrun/backup/execute/report）
+│   ├── ClaimPlacementListener.java 放置自动注册（1 tick 延迟确保 block entity 创建，记录 owner）
+│   ├── ClaimBreakListener.java    破坏自动移除（检查 owner 或 OP 权限）
+│   └── SafeDeletion.java     安全删除（dryrun/backup/execute/report，支持多维度 + 白名单索引）
 └── permission/
     ├── PermissionLevel.java  等级枚举（CONFIG > OWNER > OP > USER）
     ├── PermissionConfig.java 命令→等级映射持久化 + owner 配置
@@ -93,8 +94,14 @@ com/shenqianye/samsara/
 ### 数据文件（config/samsara/）
 - `season.json` — 周目列表 + Settings 配置
 - `whitelist.json` — 圈地
+- `claims.json` — 旗帜圈地节点（含 ownerUUID/ownerName，多维度）
 - `rewind.json` — 进行中的倒流状态（完成后自动归档至 `config/samsara/archive/`，不删除；中止时清除）
+- `pending-delete.json` — 待删队列（卸载即删，启动/停服兜底）
+- `pending-teleports.json` — 离线玩家补传送
+- `permissions.json` — 命令权限等级配置
+- `boundary-toggles.json` — 边界显示开关持久化（boundaryToggle/showFixed/showDynamic）
 - `diff/s<赛季id>/` — 每区块 diff 记录（24 字节/条：stateId+x+y+z+timeMs）
+- `backups/` — 备份目录（purge_/compact_/delete_）
 
 ---
 
@@ -121,6 +128,7 @@ com/shenqianye/samsara/
 /samsara debug claim particle day|night|font|beam <name>  设置粒子类型（Tab 补全）
 /samsara debug claim particle list       查看粒子配置
 /samsara debug claim particle shared|global on|off  共享/全图显示开关
+/samsara debug claim delete dryrun|backup|execute|report  安全删除（按白名单）
 /samsara debug season|activity ...       周目/活跃度调试
 /samsara debug status|json|config|...    状态与配置
 /samsara debug fakeplayers|groups        测试数据注入与分组预览
@@ -264,14 +272,18 @@ com/shenqianye/samsara/
 
 ### M4c 安全删除
 
-- **文件**：`claim/SafeDeletion.java` — dryrun（扫描已加载区块，报告非白名单）、backup（复制 .mca 文件）、execute（仅报告，安全约束 §6.6）
-- **调试入口**：`/samsara debug delete dryrun|backup|execute|report`
+- **文件**：`claim/SafeDeletion.java` — dryrun（扫描已加载区块，报告非白名单）、backup（复制 .mca 文件）、execute（入队+立即 drainNonLoaded，安全约束 §6.6）、report
+- **调试入口**：`/samsara debug claim delete dryrun|backup|execute|report`
+- **execute 流程**：收集非白名单区块（白名单索引快路径）→ 入队 PendingDeleteQueue → drainNonLoaded 立即处理所有未加载区块 → 剩余已加载区块等卸载即删
 
-### 粒子修复（2026-08-22）
+### 粒子修复（2026-08-22 + 2026-08-26）
 
 - **Bug 1**：空手靠近也显示粒子 → 修复：`player.getMainHandItem().is(ItemTags.BANNERS)` 过滤
 - **Bug 2**：粒子在同格高度看不清 → 修复：Y = `player.getY() + player.getBbHeight() + 1.0`（头顶上方）
 - **Bug 3**：旗帜高度无粒子 → 修复：新增第二层 Y = `entry.getKey().getY() + 1.0`（两层差 ≤2 格时去重）
+- **Bug 4（M4d）**：边界粒子只在角点 → 修复：沿边界线每 4 格采样，不再只在角点
+- **Bug 5（M4d）**：粒子 Y 轴不跟随玩家视角 → 修复：所有粒子统一使用玩家高度
+- **Bug 6（M4d）**：右键无防抖 → 修复：20 tick 防抖间隔
 
 ### 优雅停服（2026-08-22）
 
@@ -339,3 +351,62 @@ com/shenqianye/samsara/
 
 - RCON 传输中文乱码（工具限制，游戏内正常）
 - `perm set` 的 `greedyString` 参数在 RCON 中无法正确处理空格，需游戏内执行
+
+---
+
+## 13. M4d 安全删除增强（2026-08-26 实现并验收）
+
+### 批量删除优化
+
+**性能问题**：旧实现逐块调用 `deleteOne` → 每块 3 次文件 I/O（chunkExists + backup + deleteChunks），5 万+ 区块需 50+ 分钟。
+
+**新实现**（设计规范 §18 批量优化模式）：
+
+| 优化 | 机制 | 效果 |
+|---|---|---|
+| **按维度分组** | `drainNonLoaded` 收集同 dimRoot 的所有坐标 → 一次 `McaRegion.deleteChunks(dimRoot, batch)` 调用 | 5 万区块从 50 分钟降到秒级 |
+| **白名单索引** | `AreaService.getWhitelistCountByRegionFile(dim)` 构建 `Map<文件名, 白名单区块数>` | 0-wl 文件整文件秒删（不读 header） |
+| **按区域文件分组** | `McaRegion.deleteChunks` 内部按 region 文件分组，每文件只读写一次 header | 减少文件 I/O 次数 |
+| **备份去重** | `backedUp` Set 按 RegionPos hash 去重 | 避免重复复制大文件 |
+| **Dimension-aware drain** | `drainNonLoaded(server)` 检查区块在所属维度中是否仍加载 | 支持多维度混合删除 |
+
+### 旗帜归属权（Owner）
+
+- `ClaimNode` 新增 `ownerUUID`/`ownerName` 字段，放置时记录玩家
+- 破坏检查：**主人或 OP** 可拆（`ClaimBreakListener`）
+- 持久化到 `claims.json`
+
+### 边界显示持久化
+
+- `boundaryToggle`/`showFixed`/`showDynamic` 持久化到 `config/samsara/boundary-toggles.json`
+- 重启后恢复上次的边界显示状态
+
+### 粒子沿边线采样
+
+- 旧实现：只在边界角点放置粒子 → 新实现：沿边界线每 4 格采样 → 视觉更连续
+- Y 轴统一跟随玩家高度（不随旗帜高度）
+- 右键防抖 20 tick
+
+### ResourceKey 解析修复
+
+MC 26.2 `ResourceKey.toString()` 返回 `"ResourceKey[minecraft:overworld]"` 格式，新增 `parseResourceKey()` 辅助方法提取 namespace 和 path。影响：`buildWhitelistIndex()`、`drainNonLoaded()`、`dimensionFromPath()`。
+
+### 文件变更
+
+| 文件 | 变更 |
+|---|---|
+| `claim/ClaimNode.java` | +ownerUUID/ownerName 字段 + 构造函数 + getter |
+| `claim/ClaimPlacementListener.java` | 放置时记录玩家 UUID/Name |
+| `claim/ClaimBreakListener.java` | 破坏时检查 owner 或 OP |
+| `claim/AreaService.java` | +getWhitelistCountByRegionFile(dim) 维度白名单索引 |
+| `claim/ClaimInteractions.java` | 边界粒子沿边线采样 + Y 轴跟随玩家 + 右键防抖 |
+| `claim/ClaimParticles.java` | 粒子 Y 轴统一玩家高度 |
+| `claim/SafeDeletion.java` | execute 支持多维度 + 白名单索引 + drainNonLoaded |
+| `rewind/RewindEngine.java` | +drainNonLoaded +enqueueClaimDelete +pendingQueueCount +parseResourceKey |
+| `rewind/McaRegion.java` | +deleteChunks(3参数索引版) +countOccupiedInHeader +zeroSlotsFromHeader |
+| `command/DebugCommand.java` | +claim delete 子命令树 |
+
+### 已知问题
+
+- **白名单/几何图形与实际删除的区块不一致**（用户已知，待后续修复）
+- `pending-delete.json` 跨重启累积（启动兜底清空）

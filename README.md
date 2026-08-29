@@ -15,7 +15,7 @@ samsara/
 └── docs/       # 设计文档
 ```
 
-## 当前状态：v0.8.9（命令重构 + 粒子配置增强 + 旗帜放置修复）
+## 当前状态：v0.9.0（M4d 安全删除完成 + 批量优化 + 旗帜归属权 + 边界持久化）
 
 > **服务端模组**：服务器只装本模组即得全部功能；客户端装了也可在单人存档使用（`environment: "*"` + `"server"` entrypoint，机制见 `mod/README.md`）。
 
@@ -25,6 +25,7 @@ samsara/
 - [x] **M2 分组出生 + 时间倒流**：出生中心计算 + 分组算法 + 全员传送 + 广播 + 倒流（区块波浪退场 + 方块级恢复）+ 倒流完成即自动物理删除
 - [x] **M3 活跃度**：activity.log 实时追加 + 统计聚合 + 玩家分类 + 死服判定 + `/samsara activity` 命令
 - [x] **M4 区块管理**：化线为面几何库 + 旗帜圈地（放置/破坏自动注册/移除）+ 安全删除 + 粒子预览
+- [x] **M4d 安全删除增强**：批量按维度/区域文件删除 + 白名单索引快删 + 旗帜归属权（owner）+ 边界显示持久化 + 粒子沿边界线采样
 - [x] **权限等级系统**：4 级权限（CONFIG/OWNER/OP/USER）+ 命令可配置等级 + owner 名单可配置
 - [x] **命令重构**：玩家命令 `/samsara claim info|boundary` + 管理命令 `/samsara debug claim ...` + ChatFormat 统一消息格式 + 粒子枚举建议 + 字体/光束粒子独立配置
 - [ ] M5 面板 → M6 玩偶影像 → M7 世界栈 → M8 里程碑/资格 → M9 身份同步
@@ -50,6 +51,7 @@ samsara/
 /samsara debug claim remove <x> <z>     移除圈地节点
 /samsara debug claim info <x> <z>       查看指定区块详情
 /samsara debug claim particle ...        粒子配置（day/night/font/beam/list/shared/global）
+/samsara debug claim delete dryrun|backup|execute|report  安全删除（按白名单）
 /samsara debug season|activity ...       周目/活跃度调试
 /samsara debug status|json|config|...    状态与配置
 /samsara debug fakeplayers|groups        测试数据注入与分组预览
@@ -134,4 +136,15 @@ test-server/
 > 旗帜放置→自动注册（修复1 tick延迟问题）
 > /samsara debug claim particle list → 字体/光束粒子配置生效
 > ChatFormat 统一消息格式 → 自动换行 + 前缀分隔
+```
+
+### M4d 验收（2026-08-26）
+```
+> 批量删除：按维度分组 → McaRegion.deleteChunks 一次调用处理整个维度
+> 白名单索引：0-wl 文件整文件秒删（不读 header），混合文件只读一次 header
+> 备份去重：RegionPos hash 去重，不重复复制
+> 旗帜归属权：ClaimNode ownerUUID/ownerName，主人或 OP 可拆
+> 边界显示持久化：boundaryToggle/showFixed/showDynamic → boundary-toggles.json
+> 粒子修复：边界粒子沿边线每4格采样、Y轴跟随玩家高度、右键防抖
+> ResourceKey 解析：修复 MC 26.2 "ResourceKey[minecraft:overworld]" 格式
 ```
