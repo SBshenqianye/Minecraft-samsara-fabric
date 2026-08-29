@@ -53,8 +53,11 @@ public class Samsara implements DedicatedServerModInitializer {
                 .getConfigDir().resolve("samsara"));
 
         // 时间倒流：调度器（内部 5s 节流：标记/恢复/传送/删除/归档）
-        ServerTickEvents.END_SERVER_TICK.register(server ->
-                RewindEngine.getInstance().tick(server));
+        ServerTickEvents.END_SERVER_TICK.register(server -> {
+            RewindEngine.getInstance().tick(server);
+            // MSPT 追踪：供 /samsara mspt|tps 命令使用
+            com.shenqianye.samsara.command.DebugCommand.onTick();
+        });
 
         // 待删队列兜底：启动时清空前次遗留（加载中的跳过，卸载即删）
         ServerLifecycleEvents.SERVER_STARTED.register(server ->

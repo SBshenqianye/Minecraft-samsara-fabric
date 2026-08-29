@@ -347,7 +347,7 @@ public class ActivityManager {
         return peak;
     }
 
-    /** 死服判定（建议阈值可配置 Settings.deadDays / deadActiveMax） */
+    /** 死服判定：直球状态 + 论据 */
     public String deadText() {
         var cfg = settings();
         long now = System.currentTimeMillis();
@@ -363,24 +363,23 @@ public class ActivityManager {
         int active30 = countActive(stats, now, 30);
         boolean c1 = daysSince >= cfg.deadDays;
         boolean c2 = active30 <= cfg.deadActiveMax;
+
         StringBuilder sb = new StringBuilder();
-        sb.append("死服判定（建议，阈值 ").append(cfg.deadDays).append(" 天无上线 + 近30天活跃 ≤ ").append(cfg.deadActiveMax).append("）：\n");
-        sb.append("  最近登录: ").append(fmtTs(lastJoin)).append("（").append(fmtAgo(lastJoin, now)).append("）")
-                .append(" · 近 30 天活跃 ").append(active30).append(" 人\n");
         if (c1 && c2) {
-            sb.append("  ⚠ 判定「周目已死」：已连续 ").append(daysSince).append(" 天无人上线且近 30 天活跃仅 ")
-                    .append(active30).append(" 人 → 建议开新周目（最终由管理员决定）");
-        } else if (!c1 && !c2) {
-            sb.append("  判定「周目存活」：近 ").append(daysSince).append(" 天仍有登录（< ").append(cfg.deadDays)
-                    .append(" 天连续无人上线），平均活跃 ").append(active30).append(" 人");
+            sb.append("⚠ 周目已死\n");
         } else if (c1) {
-            sb.append("  判定「接近死服」：已连续 ").append(daysSince).append(" 天无人上线，但近 30 天活跃仍有 ")
-                    .append(active30).append(" 人（> ").append(cfg.deadActiveMax).append("）");
+            sb.append("⚠ 接近死服\n");
+        } else if (c2) {
+            sb.append("⚠ 接近死服\n");
         } else {
-            sb.append("  判定「接近死服」：近 30 天活跃仅 ").append(active30).append(" 人，但最近一次登录在 ")
-                    .append(fmtAgo(lastJoin, now)).append("（连续无人上线 < ").append(cfg.deadDays).append(" 天）");
+            sb.append("✓ 周目存活\n");
         }
-        return sb.toString();
+        sb.append("————————————————\n");
+        sb.append("最近登录: ").append(fmtTs(lastJoin)).append("（").append(fmtAgo(lastJoin, now)).append("）\n");
+        sb.append("近 30 天活跃: ").append(active30).append(" 人\n");
+        sb.append("连续无人上线: ").append(daysSince).append(" 天\n");
+        sb.append("全部记录玩家: ").append(stats.size()).append(" 人\n");
+        return sb.toString().trim();
     }
 
     /** 紧凑单行（/samsara season status 附加用） */

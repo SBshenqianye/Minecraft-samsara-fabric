@@ -46,44 +46,56 @@ public class ClaimInteractions {
             if (!(level.getBlockEntity(pos) instanceof BannerBlockEntity be)) {
                 return InteractionResult.PASS;
             }
+            // 跳过墙挂旗帜（FACING 属性无法可靠识别朝向，只处理站立旗帜）
+            if (level.getBlockState(pos).hasProperty(BlockStateProperties.FACING)) {
+                return InteractionResult.PASS;
+            }
+            // 手持旗帜时跳过交互（避免放置墙挂旗帜时误触发已注册旗帜的交互）
+            if (player.getMainHandItem().is(net.minecraft.tags.ItemTags.BANNERS)) {
+                return InteractionResult.PASS;
+            }
             List<ClaimNode.PatternEntry> patterns = readPatterns(be);
             if (patterns.isEmpty()) return InteractionResult.PASS;
 
             ChunkCoord chunkPos = new ChunkCoord(pos.getX() >> 4, pos.getZ() >> 4);
             String facing = getFacing(level, pos);
-            ClaimNode node = new ClaimNode(chunkPos, facing, patterns);
+            ClaimNode node = new ClaimNode(chunkPos, facing, patterns, pos.getY());
             Extension ext = node.getExtension();
             if (!ext.hasAnyDirection()) return InteractionResult.PASS;
 
             // 显示详情
             List<ChunkCoord> influenced = node.getInfluencedCoords();
             boolean protected_ = AreaService.getInstance().isProtected(chunkPos.x, chunkPos.z);
+            // 查找已注册节点获取主人信息
+            ClaimNode registered = AreaService.getInstance().getNode(chunkPos);
+            String ownerName = registered != null ? registered.getOwnerName() : null;
             StringBuilder sb = new StringBuilder();
             sb.append("[圈地旗] ").append(chunkPos);
-            sb.append(" 朝向 ").append(facing);
+            sb.append(" 朝向 ").append(facingToDisplay(facing));
             sb.append(protected_ ? " ✓ 受保护" : " ✗ 未保护");
+            if (ownerName != null) sb.append(" · 主人: ").append(ownerName);
             sb.append("\n  影响区块: ").append(influenced.size()).append(" 个");
             sb.append(" · 方向: ");
-            if (ext.getUp() > 0) sb.append("北").append(ext.getUp()).append(" ");
-            if (ext.getDown() > 0) sb.append("南").append(ext.getDown()).append(" ");
-            if (ext.getLeft() > 0) sb.append("西").append(ext.getLeft()).append(" ");
-            if (ext.getRight() > 0) sb.append("东").append(ext.getRight()).append(" ");
-            if (ext.getLeftUp() > 0) sb.append("西北").append(ext.getLeftUp()).append(" ");
-            if (ext.getRightUp() > 0) sb.append("东北").append(ext.getRightUp()).append(" ");
-            if (ext.getLeftDown() > 0) sb.append("西南").append(ext.getLeftDown()).append(" ");
-            if (ext.getRightDown() > 0) sb.append("东南").append(ext.getRightDown()).append(" ");
+            if (ext.getUp() > 0) sb.append("前").append(ext.getUp()).append(" ");
+            if (ext.getDown() > 0) sb.append("后").append(ext.getDown()).append(" ");
+            if (ext.getLeft() > 0) sb.append("左").append(ext.getLeft()).append(" ");
+            if (ext.getRight() > 0) sb.append("右").append(ext.getRight()).append(" ");
             sp.sendSystemMessage(Component.literal("[周目管理] " + sb.toString().trim()));
 
-            // 立即发送粒子预览（§6.7：右键时即时反馈，Y 轴跟随玩家）
+            // 立即发送粒子预览（右键时即时反馈）
             if (level instanceof ServerLevel sl) {
                 double particleY = sp.getY() + 0.5;
+                double bannerY = pos.getY() + 1.0; // 旗帜方块上方
                 net.minecraft.core.particles.ParticleType<?> boundaryParticle =
                         ClaimParticleConfig.getInstance().getParticleForTime(sl.getOverworldClockTime() % 24000);
+                // 高度1：玩家附近
                 sendBoundaryParticles(sl, sp, chunkPos, influenced, particleY,
+                        (net.minecraft.core.particles.ParticleOptions) boundaryParticle);
+                // 高度2：旗帜高度
+                sendBoundaryParticles(sl, sp, chunkPos, influenced, bannerY,
                         (net.minecraft.core.particles.ParticleOptions) boundaryParticle);
                 // 记录右键时间，使边界持续显示 10 秒
                 ClaimParticles.notifyRightClick(sp.getUUID());
-                // 箭头和文字由 ClaimParticles 的 TextDisplay 持续处理
             }
             return InteractionResult.SUCCESS;
         });
@@ -128,16 +140,16 @@ public class ClaimInteractions {
                 }
             }
         }
-        // 沿每条边均匀放置 CRIT 粒子（每 4 格一个，生命周期短无重影）
+        // 沿每条边均匀放置粒子（每 0.5 格一个，更密集）
         for (String ek : edges) {
             String[] p = ek.split(",");
-            long x1 = Long.parseLong(p[0]), z1 = Long.parseLong(p[1]);
-            long x2 = Long.parseLong(p[2]), z2 = Long.parseLong(p[3]);
-            long len = Math.max(Math.abs(x2 - x1), Math.abs(z2 - z1));
+            double x1 = Long.parseLong(p[0]), z1 = Long.parseLong(p[1]);
+            double x2 = Long.parseLong(p[2]), z2 = Long.parseLong(p[3]);
+            double len = Math.max(Math.abs(x2 - x1), Math.abs(z2 - z1));
             if (len == 0) continue;
-            long sx = Long.signum(x2 - x1);
-            long sz = Long.signum(z2 - z1);
-            for (long d = 0; d <= len; d += 4) {
+            double sx = Math.signum(x2 - x1);
+            double sz = Math.signum(z2 - z1);
+            for (double d = 0; d <= len; d += 2.0) {
                 level.sendParticles(player, particleType,
                         true, false, x1 + sx * d, y, z1 + sz * d,
                         1, 0.0, 0.0, 0.0, 0.0);
@@ -164,13 +176,13 @@ public class ClaimInteractions {
         int sizeX = maxX - minX + 1;
         int sizeZ = maxZ - minZ + 1;
 
-        // 1) 尺寸文字：在旗帜所在区块中心上方 7~8 格，始终朝向玩家（billboard）
+        // 1) 尺寸文字：在旗帜所在区块中心上方，抬高4格避免嵌入地面
         double bcx = center.x * 16 + 8;
         double bcz = center.z * 16 + 8;
         String sizeText = sizeX + "X" + sizeZ;
-        ClaimParticleText.drawFacing(level, player,
-                bcx, y + 7.0, bcz,
-                sizeText, 6, ParticleTypes.ENCHANT);
+        ClaimParticleText.drawFacingScaled(level, player,
+                bcx, y + 11.0, bcz,
+                sizeText, 6, ParticleTypes.ENCHANT, 1.5);
 
         // 2) 方向光束：从旗帜位置向各方向延伸，长度=区块数（封顶 16），颜色区分方向，末端带箭头
         int extN = 0, extS = 0, extW = 0, extE = 0;
@@ -188,14 +200,16 @@ public class ClaimInteractions {
             else if (ddx < 0 && ddz > 0) extSW = Math.max(extSW, dist);
             else if (ddx > 0 && ddz > 0) extSE = Math.max(extSE, dist);
         }
-        spawnDirectionBeam(level, player, bcx, bcz, y, 0, -1, Math.min(extN, 16), ParticleTypes.ENCHANT);
-        spawnDirectionBeam(level, player, bcx, bcz, y, 0, 1, Math.min(extS, 16), ParticleTypes.ENCHANT);
-        spawnDirectionBeam(level, player, bcx, bcz, y, -1, 0, Math.min(extW, 16), ParticleTypes.ENCHANT);
-        spawnDirectionBeam(level, player, bcx, bcz, y, 1, 0, Math.min(extE, 16), ParticleTypes.ENCHANT);
-        spawnDirectionBeam(level, player, bcx, bcz, y, -1, -1, Math.min(extNW, 16), ParticleTypes.ENCHANT);
-        spawnDirectionBeam(level, player, bcx, bcz, y, 1, -1, Math.min(extNE, 16), ParticleTypes.ENCHANT);
-        spawnDirectionBeam(level, player, bcx, bcz, y, -1, 1, Math.min(extSW, 16), ParticleTypes.ENCHANT);
-        spawnDirectionBeam(level, player, bcx, bcz, y, 1, 1, Math.min(extSE, 16), ParticleTypes.ENCHANT);
+        // 抬高4格避免嵌入地面
+        double beamY = y + 4.0;
+        spawnDirectionBeam(level, player, bcx, bcz, beamY, 0, -1, Math.min(extN, 16), ParticleTypes.ENCHANT);
+        spawnDirectionBeam(level, player, bcx, bcz, beamY, 0, 1, Math.min(extS, 16), ParticleTypes.ENCHANT);
+        spawnDirectionBeam(level, player, bcx, bcz, beamY, -1, 0, Math.min(extW, 16), ParticleTypes.ENCHANT);
+        spawnDirectionBeam(level, player, bcx, bcz, beamY, 1, 0, Math.min(extE, 16), ParticleTypes.ENCHANT);
+        spawnDirectionBeam(level, player, bcx, bcz, beamY, -1, -1, Math.min(extNW, 16), ParticleTypes.ENCHANT);
+        spawnDirectionBeam(level, player, bcx, bcz, beamY, 1, -1, Math.min(extNE, 16), ParticleTypes.ENCHANT);
+        spawnDirectionBeam(level, player, bcx, bcz, beamY, -1, 1, Math.min(extSW, 16), ParticleTypes.ENCHANT);
+        spawnDirectionBeam(level, player, bcx, bcz, beamY, 1, 1, Math.min(extSE, 16), ParticleTypes.ENCHANT);
     }
 
     /**
@@ -308,29 +322,58 @@ public class ClaimInteractions {
         return node.getExtension().hasAnyDirection();
     }
 
-    /** 获取旗帜朝向（facing = 旗面朝向方向）
+    /**
+     * 获取站立旗帜朝向（facing = 旗面朝向方向）
      * <p>
-     * 站立旗帜：ROTATION_16 直接映射到 8 方向（0=south, 8=north, 12=east...）
-     * <p>
-     * 墙挂旗帜：FACING 属性指向贴墙方向（与旗面朝向相反），需要反转：
-     * FACING=EAST → 旗面朝 WEST，所以返回 "west"
+     * 仅处理站立旗帜（ROTATION_16 属性），墙挂旗帜在调用方已跳过。
+     * ROTATION_16 有 16 个值（0~15），每 22.5° 一个，从 south 顺时针递增：
+     * <pre>
+     *   0=south, 1=SSW, 2=SW, 3=WSW, 4=west, 5=WNW, 6=NW, 7=NNW,
+     *   8=north, 9=NNE, 10=NE, 11=ENE, 12=east, 13=ESE, 14=SE, 15=SSE
+     * </pre>
+     * 奇数 rotation 映射到最近的偶数方向（45° 精度）。
      */
-    static String getFacing(Level level, BlockPos pos) {
+    public static String getFacing(Level level, BlockPos pos) {
         var state = level.getBlockState(pos);
-        if (state.hasProperty(BlockStateProperties.FACING)) {
-            // 墙挂旗帜：FACING 指向贴墙方向，需反转得到旗面朝向
-            return state.getValue(BlockStateProperties.FACING).getOpposite().toString().toLowerCase();
-        }
         if (state.hasProperty(BlockStateProperties.ROTATION_16)) {
             int rot = state.getValue(BlockStateProperties.ROTATION_16);
-            return switch (rot % 16) {
-                case 0 -> "south"; case 2 -> "south_west";
-                case 4 -> "west"; case 6 -> "north_west";
-                case 8 -> "north"; case 10 -> "north_east";
-                case 12 -> "east"; case 14 -> "south_east";
+            // 奇数 rotation → 映射到最近的偶数方向（round to nearest even）
+            // (rot+1)/2 然后取模8：0=south,1=sw,2=west,3=nw,4=north,5=ne,6=east,7=se
+            int idx = ((rot + 1) / 2) % 8;
+            return switch (idx) {
+                case 0 -> "south";
+                case 1 -> "south_west";
+                case 2 -> "west";
+                case 3 -> "north_west";
+                case 4 -> "north";
+                case 5 -> "north_east";
+                case 6 -> "east";
+                case 7 -> "south_east";
                 default -> "south";
             };
         }
         return "north";
+    }
+
+    /** 将 Extension 方向名转换为 前后左右（4方向版） */
+    public static String extensionDirToDisplay(String extDir) {
+        return switch (extDir) {
+            case "up" -> "前";
+            case "down" -> "后";
+            case "left" -> "左";
+            case "right" -> "右";
+            default -> extDir;
+        };
+    }
+
+    /** 将旗帜世界朝向转换为显示文本（仅4个方向） */
+    public static String facingToDisplay(String facing) {
+        return switch (facing) {
+            case "north" -> "前（北）";
+            case "south" -> "后（南）";
+            case "west" -> "左（西）";
+            case "east" -> "右（东）";
+            default -> facing;
+        };
     }
 }

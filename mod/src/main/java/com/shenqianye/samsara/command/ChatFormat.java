@@ -61,7 +61,7 @@ public class ChatFormat {
     private static final String PREFIX_DEBUG_FIRST = HEADER_DEBUG + " " + BULLET + " ";
 
     /** 默认最大显示宽度（宽度单位：CJK=2, ASCII=1） */
-    public static final int DEFAULT_MAX_WIDTH = 34;
+    public static final int DEFAULT_MAX_WIDTH = 42;
 
     /** 首行前缀显示宽度（缓存，避免重复计算） */
     private static final int PREFIX_FIRST_WIDTH = displayWidth(PREFIX_FIRST);
@@ -188,8 +188,10 @@ public class ChatFormat {
     /**
      * 对单行文本进行自动换行（不含 {@code \n}）。
      * <p>
-     * 策略：按空格分词，逐词累加宽度，超出 {@code maxWidth} 时换行。
-     * 如果单个词（无空格）超过 {@code maxWidth}，则该词独占一行（不拆词）。
+     * 策略：优先保持完整句子（以句号/叹号/问号/冒号结尾的片段）不拆分。
+     * 如果整行不超过 {@code maxWidth}，直接返回不换行。
+     * 如果超过，先按句子边界拆分，每个句子尽量保持完整；
+     * 只有单个句子超出 {@code maxWidth} 时才按空格断行。
      *
      * @param line      单行文本（不含 {@code \n}）
      * @param maxWidth  最大显示宽度
@@ -198,11 +200,78 @@ public class ChatFormat {
     private static String wrapSingleLine(String line, int maxWidth) {
         if (line.isEmpty() || displayWidth(line) <= maxWidth) return line;
 
-        // 按空格分词，过滤连续空格产生的空串
-        String[] rawWords = line.split(" ");
+        // 按句子边界拆分（保持句号/叹号/问号/冒号在片段末尾）
+        List<String> sentences = splitSentences(line);
+
+        // 如果只有一个句子且超过宽度，按空格断行
+        if (sentences.size() == 1) {
+            return wrapByWords(line, maxWidth);
+        }
+
+        // 多个句子：逐句尝试拼接到当前行
+        StringBuilder result = new StringBuilder();
+        StringBuilder currentLine = new StringBuilder();
+        int currentWidth = 0;
+
+        for (String sentence : sentences) {
+            int sentenceWidth = displayWidth(sentence);
+
+            if (currentLine.length() == 0) {
+                // 空行，直接放入
+                currentLine.append(sentence);
+                currentWidth = sentenceWidth;
+            } else if (currentWidth + sentenceWidth <= maxWidth) {
+                // 当前行放得下，拼接
+                currentLine.append(sentence);
+                currentWidth += sentenceWidth;
+            } else {
+                // 当前行放不下，换行
+                result.append(currentLine).append("\n");
+                currentLine = new StringBuilder(sentence);
+                currentWidth = sentenceWidth;
+            }
+        }
+
+        if (currentLine.length() > 0) {
+            result.append(currentLine);
+        }
+        return result.toString();
+    }
+
+    /**
+     * 按句子边界拆分文本。
+     * 句子终止符：中文句号/叹号/问号/冒号（全角）
+     * 半角冒号 ":" 不作为断句符（避免时间格式 HH:mm:ss 被拆断）。
+     * 终止符保留在片段末尾。
+     */
+    private static List<String> splitSentences(String text) {
+        List<String> sentences = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            current.append(c);
+            if (c == '。' || c == '！' || c == '？' || c == '：') {
+                sentences.add(current.toString());
+                current = new StringBuilder();
+            }
+        }
+        if (current.length() > 0) {
+            sentences.add(current.toString());
+        }
+        return sentences;
+    }
+
+    /**
+     * 按空格断行（兜底方案，单句超宽时使用）。
+     * 智能处理：日期时间模式（yyyy-MM-dd HH:mm:ss）作为整体不拆分。
+     */
+    private static String wrapByWords(String line, int maxWidth) {
+        // 先把时间戳中的空格替换为临时占位符，避免被拆断
+        String processed = line.replaceAll("(\\d{4}-\\d{2}-\\d{2}) (\\d{2}:\\d{2}:\\d{2})", "$1\u00A0$2");
+        String[] rawWords = processed.split(" ");
         List<String> words = new ArrayList<>();
         for (String w : rawWords) {
-            if (!w.isEmpty()) words.add(w);
+            if (!w.isEmpty()) words.add(w.replace('\u00A0', ' '));
         }
         if (words.isEmpty()) return line;
 
@@ -215,11 +284,8 @@ public class ChatFormat {
             int wordWidth = displayWidth(word);
 
             if (currentLine.length() > 0) {
-                // 需要在当前行末尾加一个空格再接新词
                 if (currentWidth + 1 + wordWidth > maxWidth) {
-                    // 放不下，换行
-                    result.append(currentLine);
-                    result.append("\n");
+                    result.append(currentLine).append("\n");
                     currentLine = new StringBuilder();
                     currentWidth = 0;
                 } else {
@@ -326,11 +392,10 @@ public class ChatFormat {
      * @return 格式化后的字符串
      */
     private static String formatInternal(String message, String firstPrefix, int maxWidth) {
-        int firstContentWidth = maxWidth - PREFIX_FIRST_WIDTH;
-        int contContentWidth = maxWidth - PREFIX_CONTINUE_WIDTH;
-        // 保证最小内容宽度，避免负数或过窄
-        if (firstContentWidth < 8) firstContentWidth = 8;
-        if (contContentWidth < 8) contContentWidth = 8;
+        // 内容宽度直接用 maxWidth（前缀是视觉装饰，不计入内容宽度）
+        int contentWidth = maxWidth;
+        // 保证最小内容宽度
+        if (contentWidth < 10) contentWidth = 10;
 
         // 按 \n 分段
         String[] segments = message.split("\n", -1);
@@ -340,7 +405,6 @@ public class ChatFormat {
 
         for (String segment : segments) {
             // 每段独立换行
-            int contentWidth = firstPhysical ? firstContentWidth : contContentWidth;
             String[] wrapped = wrapSingleLine(segment, contentWidth).split("\n", -1);
 
             for (String line : wrapped) {
