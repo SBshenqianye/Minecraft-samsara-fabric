@@ -38,9 +38,15 @@ public class ClaimCommand {
                         .executes(ctx -> reply(ctx.getSource(), infoAtPlayer(ctx.getSource())))
                         .then(Commands.argument("x", IntegerArgumentType.integer())
                                 .then(Commands.argument("z", IntegerArgumentType.integer())
-                                        .executes(ctx -> reply(ctx.getSource(),
-                                                infoAt(IntegerArgumentType.getInteger(ctx, "x"),
-                                                      IntegerArgumentType.getInteger(ctx, "z")))))))
+                                        .executes(ctx -> {
+                                            ServerPlayer p;
+                                            try { p = ctx.getSource().getPlayerOrException(); }
+                                            catch (Exception e) { return reply(ctx.getSource(), "需要以玩家身份执行"); }
+                                            return reply(ctx.getSource(),
+                                                    infoAt(p.level().dimension(),
+                                                            IntegerArgumentType.getInteger(ctx, "x"),
+                                                            IntegerArgumentType.getInteger(ctx, "z")));
+                                        }))))
                 // claim boundary — 持续显示边界开关
                 .then(Commands.literal("boundary")
                         .executes(ctx -> reply(ctx.getSource(), toggleBoundary(ctx.getSource())))
@@ -61,15 +67,16 @@ public class ClaimCommand {
         }
         int cx = player.blockPosition().getX() >> 4;
         int cz = player.blockPosition().getZ() >> 4;
-        return infoAt(cx, cz);
+        return infoAt(player.level().dimension(), cx, cz);
     }
 
-    static String infoAt(int x, int z) {
+    static String infoAt(net.minecraft.resources.ResourceKey<Level> dim, int x, int z) {
         ChunkCoord loc = new ChunkCoord(x, z);
-        ClaimNode node = AreaService.getInstance().getNode(loc);
-        boolean protected_ = AreaService.getInstance().isProtected(x, z);
+        ClaimNode node = AreaService.getInstance().getNode(dim, loc);
+        boolean protected_ = AreaService.getInstance().isProtected(dim, x, z);
         StringBuilder sb = new StringBuilder();
         sb.append("区块 (").append(x).append(",").append(z).append(") ");
+        sb.append(dim.identifier()).append(" ");
         sb.append(protected_ ? "✓ 受保护" : "✗ 未保护");
         if (node != null) {
             sb.append("\n  旗帜朝向: ").append(ClaimInteractions.facingToDisplay(node.getFacing()));
@@ -154,11 +161,11 @@ public class ClaimCommand {
                 if (!ClaimInteractions.hasDirectionPatterns(patterns)) continue;
                 BlockPos pos = entry.getKey();
                 ChunkCoord chunkPos = new ChunkCoord(pos.getX() >> 4, pos.getZ() >> 4);
-                ClaimNode existing = AreaService.getInstance().getNode(chunkPos);
+                ClaimNode existing = AreaService.getInstance().getNode(level.dimension(), chunkPos);
                 if (existing == null) {
                     // 未注册 → 自动注册
                     String facing = ClaimInteractions.getFacing(level, pos);
-                    ClaimNode newNode = new ClaimNode(chunkPos, facing, patterns,
+                    ClaimNode newNode = new ClaimNode(chunkPos, level.dimension(), facing, patterns,
                             pos.getX(), pos.getZ(), pos.getY(), null, null);
                     AreaService.getInstance().addNode(newNode);
                     autoRegistered[0]++;
@@ -173,7 +180,7 @@ public class ClaimCommand {
         // Phase 2: 已注册节点 → 旗帜已不存在的自动移除
         // 先收集所有需要移除的操作，避免 ConcurrentModification
         List<Runnable> removals = new ArrayList<>();
-        Map<ChunkCoord, ClaimNode> nodes = AreaService.getInstance().getNodes();
+        Map<ChunkCoord, ClaimNode> nodes = AreaService.getInstance().getNodes(level.dimension());
         for (Map.Entry<ChunkCoord, ClaimNode> e : nodes.entrySet()) {
             ClaimNode node = e.getValue();
             List<ClaimNode.BannerEntry> toRemoveBanners = new ArrayList<>();
@@ -191,18 +198,18 @@ public class ClaimCommand {
             }
             if (node.getBanners().size() - toRemoveBanners.size() == 0) {
                 ChunkCoord chunk = e.getKey();
-                removals.add(() -> AreaService.getInstance().removeNode(chunk));
+                removals.add(() -> AreaService.getInstance().removeNode(level.dimension(), chunk));
             }
         }
         for (Runnable r : removals) r.run();
 
         // 保存变更
         if (autoRegistered[0] > 0 || autoRemoved[0] > 0) {
-            AreaService.getInstance().recompute();
+            AreaService.getInstance().recompute(level.dimension());
         }
 
-        int totalNodes = AreaService.getInstance().getNodes().size();
-        int totalChunks = AreaService.getInstance().getWhitelist().size();
+        int totalNodes = AreaService.getInstance().getNodes(level.dimension()).size();
+        int totalChunks = AreaService.getInstance().getWhitelist(level.dimension()).size();
         StringBuilder sb = new StringBuilder();
         sb.append("同步完成：");
         sb.append("世界中发现 ").append(worldBanners.size()).append(" 面有效旗帜\n");

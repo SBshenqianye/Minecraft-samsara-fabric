@@ -122,7 +122,7 @@ public class ClaimPlacementListener {
         }
 
         ChunkCoord chunkPos = new ChunkCoord(pos.getX() >> 4, pos.getZ() >> 4);
-        ClaimNode regNode = new ClaimNode(chunkPos, facing, patterns,
+        ClaimNode regNode = new ClaimNode(chunkPos, level.dimension(), facing, patterns,
                 pos.getX(), pos.getZ(), pos.getY(),
                 sp.getUUID(), sp.getName().getString());
 

@@ -65,9 +65,9 @@ public class ClaimInteractions {
 
             // 显示详情
             List<ChunkCoord> influenced = node.getInfluencedCoords();
-            boolean protected_ = AreaService.getInstance().isProtected(chunkPos.x, chunkPos.z);
+            boolean protected_ = AreaService.getInstance().isProtected(level.dimension(), chunkPos.x, chunkPos.z);
             // 查找已注册节点获取主人信息
-            ClaimNode registered = AreaService.getInstance().getNode(chunkPos);
+            ClaimNode registered = AreaService.getInstance().getNode(level.dimension(), chunkPos);
             String ownerName = registered != null ? registered.getOwnerName() : null;
             StringBuilder sb = new StringBuilder();
             sb.append("[圈地旗] ").append(chunkPos);

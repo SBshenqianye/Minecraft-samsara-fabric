@@ -232,7 +232,7 @@ public class ClaimParticles {
 
                 // 全图显示模式：跳过管理区域检查；否则要求玩家在管理区域内
                 boolean globalDisplay = ClaimParticleConfig.getInstance().isGlobalDisplay();
-                Set<ChunkCoord> whitelist = AreaService.getInstance().getWhitelist();
+                Set<ChunkCoord> whitelist = AreaService.getInstance().getWhitelist(level.dimension());
 
                 if (!globalDisplay) {
                     ChunkCoord playerChunk = new ChunkCoord(
@@ -284,7 +284,7 @@ public class ClaimParticles {
                             feetY + 2.0, boundaryOpts);
                 }
                 // 固定边界：canShow AND fixed开关开 AND bannerY有效
-                double bannerY = AreaService.getInstance().getAvgBannerY();
+                double bannerY = AreaService.getInstance().getAvgBannerY(level.dimension());
                 if (canShow && fixOn && bannerY > 1) {
                     sendBoundaryParticlesFromEdges(level, player, edges,
                             bannerY + 1.0, boundaryOpts);

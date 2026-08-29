@@ -1,6 +1,8 @@
 package com.shenqianye.samsara.claim;
 
 import com.shenqianye.samsara.geometry.ChunkCoord;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.level.Level;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -12,9 +14,12 @@ import java.util.UUID;
  * 一个节点 = 一个已注册的区块，可包含多面圈地旗。
  * 第一面旗帜决定区块的扩展方向（extension），后续旗帜仅记录坐标。
  * 区块注销条件：该区块内所有旗帜均被破坏。
+ * <p>
+ * 每个节点属于一个维度（overworld/nether/end），不同维度独立保护。
  */
 public class ClaimNode {
     private final ChunkCoord location;
+    private final ResourceKey<Level> dimension;
     private final String facing;
     private final List<PatternEntry> patterns;
     /** 旗帜主人 UUID（放置者） */
@@ -28,10 +33,11 @@ public class ClaimNode {
     /** 影响坐标集（延迟计算） */
     private List<ChunkCoord> influencedCoords;
 
-    public ClaimNode(ChunkCoord location, String facing, List<PatternEntry> patterns,
+    public ClaimNode(ChunkCoord location, ResourceKey<Level> dimension, String facing, List<PatternEntry> patterns,
                      int blockX, int blockZ, int bannerY,
                      UUID ownerUUID, String ownerName) {
         this.location = location;
+        this.dimension = dimension;
         this.facing = facing;
         this.patterns = new ArrayList<>(patterns);
         this.ownerUUID = ownerUUID;
@@ -39,24 +45,27 @@ public class ClaimNode {
         this.banners.add(new BannerEntry(blockX, bannerY, blockZ, facing, new ArrayList<>(patterns)));
     }
 
-    /** 兼容旧构造 */
+    /** 兼容旧构造（默认 overworld） */
     public ClaimNode(ChunkCoord location, String facing, List<PatternEntry> patterns, int bannerY,
                      UUID ownerUUID, String ownerName) {
-        this(location, facing, patterns, location.x * 16 + 8, location.z * 16 + 8, bannerY,
+        this(location, Level.OVERWORLD, facing, patterns, location.x * 16 + 8, location.z * 16 + 8, bannerY,
                 ownerUUID, ownerName);
     }
 
-    /** 兼容旧构造 */
+    /** 兼容旧构造（默认 overworld） */
     public ClaimNode(ChunkCoord location, String facing, List<PatternEntry> patterns, int bannerY) {
-        this(location, facing, patterns, bannerY, null, null);
+        this(location, Level.OVERWORLD, facing, patterns,
+                location.x * 16 + 8, location.z * 16 + 8, bannerY, null, null);
     }
 
-    /** 兼容旧构造 */
+    /** 兼容旧构造（默认 overworld） */
     public ClaimNode(ChunkCoord location, String facing, List<PatternEntry> patterns) {
-        this(location, facing, patterns, 0, null, null);
+        this(location, Level.OVERWORLD, facing, patterns,
+                location.x * 16 + 8, location.z * 16 + 8, 0, null, null);
     }
 
     public ChunkCoord getLocation() { return location; }
+    public ResourceKey<Level> getDimension() { return dimension; }
     public String getFacing() { return facing; }
     public List<PatternEntry> getPatterns() { return patterns; }
     public UUID getOwnerUUID() { return ownerUUID; }

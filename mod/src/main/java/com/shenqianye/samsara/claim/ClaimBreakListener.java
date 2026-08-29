@@ -41,7 +41,7 @@ public class ClaimBreakListener {
             if (!ClaimInteractions.hasDirectionPatterns(patterns)) return true;
 
             ChunkCoord chunkPos = new ChunkCoord(pos.getX() >> 4, pos.getZ() >> 4);
-            ClaimNode node = AreaService.getInstance().getNode(chunkPos);
+            ClaimNode node = AreaService.getInstance().getNode(level.dimension(), chunkPos);
 
             if (node == null) {
                 // 不是已注册的圈地旗，静默跳过（不显示任何消息）
@@ -61,7 +61,7 @@ public class ClaimBreakListener {
                 }
             }
 
-            String result = AreaService.getInstance().removeBanner(chunkPos,
+            String result = AreaService.getInstance().removeBanner(level.dimension(), chunkPos,
                     pos.getX(), pos.getY(), pos.getZ());
 
             if (result != null && player instanceof ServerPlayer sp) {
