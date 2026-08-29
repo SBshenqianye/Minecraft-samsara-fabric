@@ -4,7 +4,8 @@
   "package": "com.shenqianye.samsara.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
-    "ServerLevelMixin"
+    "ServerLevelMixin",
+    "ChunkMapAccessor"
   ],
   "injectors": {
     "defaultRequire": 1
