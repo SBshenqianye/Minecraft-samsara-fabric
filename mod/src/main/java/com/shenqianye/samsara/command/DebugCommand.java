@@ -272,10 +272,15 @@ public class DebugCommand {
                                 .then(Commands.literal("info")
                                         .then(Commands.argument("x", IntegerArgumentType.integer())
                                                 .then(Commands.argument("z", IntegerArgumentType.integer())
-                                                        .executes(ctx -> reply(ctx.getSource(),
-                                                                ClaimCommand.infoAt(
-                                                                        IntegerArgumentType.getInteger(ctx, "x"),
-                                                                        IntegerArgumentType.getInteger(ctx, "z")))))))
+                                                        .executes(ctx -> {
+                                                            net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> dim = net.minecraft.world.level.Level.OVERWORLD;
+                                                            try { dim = ctx.getSource().getPlayerOrException().level().dimension(); }
+                                                            catch (Exception ignored) {}
+                                                            return reply(ctx.getSource(),
+                                                                    ClaimCommand.infoAt(dim,
+                                                                            IntegerArgumentType.getInteger(ctx, "x"),
+                                                                            IntegerArgumentType.getInteger(ctx, "z")));
+                                                        }))))
                                 // debug claim particle ...
                                 .then(Commands.literal("particle")
                                         .then(Commands.literal("day")
@@ -671,21 +676,27 @@ public class DebugCommand {
 
     /** debug list：列出所有已注册的圈地旗帜 */
     private static String debugListNodes() {
-        java.util.Map<com.shenqianye.samsara.geometry.ChunkCoord, com.shenqianye.samsara.claim.ClaimNode> nodes =
-                com.shenqianye.samsara.claim.AreaService.getInstance().getNodes();
-        if (nodes.isEmpty()) {
+        var allNodes = com.shenqianye.samsara.claim.AreaService.getInstance().getAllNodes();
+        if (allNodes.isEmpty()) {
             return "当前无圈地旗帜";
         }
-        java.util.Set<com.shenqianye.samsara.geometry.ChunkCoord> wl =
-                com.shenqianye.samsara.claim.AreaService.getInstance().getWhitelist();
-        StringBuilder sb = new StringBuilder("圈地旗帜（" + nodes.size() + " 面）· 保护区块 " + wl.size() + " 个：\n");
-        for (var e : nodes.entrySet()) {
-            com.shenqianye.samsara.geometry.ChunkCoord loc = e.getKey();
-            com.shenqianye.samsara.claim.ClaimNode n = e.getValue();
-            sb.append("  ").append(loc).append(" 朝向").append(com.shenqianye.samsara.claim.ClaimInteractions.facingToDisplay(n.getFacing()))
-                    .append(" 图案").append(n.getPatterns().size()).append(" 个");
-            if (n.getOwnerName() != null) sb.append(" 主人:").append(n.getOwnerName());
-            sb.append("\n");
+        int totalNodes = allNodes.values().stream().mapToInt(java.util.Map::size).sum();
+        int totalChunks = 0;
+        for (var dimEntry : allNodes.keySet()) {
+            totalChunks += com.shenqianye.samsara.claim.AreaService.getInstance()
+                    .getWhitelist(dimEntry).size();
+        }
+        StringBuilder sb = new StringBuilder("圈地旗帜（" + totalNodes + " 面）· 保护区块 " + totalChunks + " 个：\n");
+        for (var dimEntry : allNodes.entrySet()) {
+            sb.append("  [").append(dimEntry.getKey().toString()).append("]\n");
+            for (var e : dimEntry.getValue().entrySet()) {
+                com.shenqianye.samsara.geometry.ChunkCoord loc = e.getKey();
+                com.shenqianye.samsara.claim.ClaimNode n = e.getValue();
+                sb.append("  ").append(loc).append(" 朝向").append(com.shenqianye.samsara.claim.ClaimInteractions.facingToDisplay(n.getFacing()))
+                        .append(" 图案").append(n.getPatterns().size()).append(" 个");
+                if (n.getOwnerName() != null) sb.append(" 主人:").append(n.getOwnerName());
+                sb.append("\n");
+            }
         }
         sb.append("数据文件: ").append(com.shenqianye.samsara.claim.AreaService.getInstance().configPath());
         return sb.toString().trim();
@@ -693,11 +704,20 @@ public class DebugCommand {
 
     /** debug rebuild：强制重算白名单 */
     private static String debugRebuild() {
-        com.shenqianye.samsara.claim.AreaService.getInstance().recompute();
-        java.util.Set<com.shenqianye.samsara.geometry.ChunkCoord> wl =
-                com.shenqianye.samsara.claim.AreaService.getInstance().getWhitelist();
-        return "白名单已重算：" + com.shenqianye.samsara.claim.AreaService.getInstance().getNodes().size()
-                + " 面旗帜 → " + wl.size() + " 个保护区块";
+        // 重建所有维度
+        for (var dimEntry : com.shenqianye.samsara.claim.AreaService.getInstance().getAllNodes().keySet()) {
+            com.shenqianye.samsara.claim.AreaService.getInstance().recompute(dimEntry);
+        }
+        int totalChunks = 0;
+        int totalNodes = 0;
+        for (var dimEntry : com.shenqianye.samsara.claim.AreaService.getInstance().getAllNodes().keySet()) {
+            totalChunks += com.shenqianye.samsara.claim.AreaService.getInstance()
+                    .getWhitelist(dimEntry).size();
+            totalNodes += com.shenqianye.samsara.claim.AreaService.getInstance()
+                    .getNodes(dimEntry).size();
+        }
+        return "白名单已重算：" + totalNodes
+                + " 面旗帜 → " + totalChunks + " 个保护区块";
     }
 
     /** debug scan：扫描世界中已放置的圈地旗帜 */
@@ -707,9 +727,10 @@ public class DebugCommand {
         return com.shenqianye.samsara.command.ClaimCommand.scanLevel(level);
     }
 
-    /** debug remove：移除指定位置的圈地旗帜 */
+    /** debug remove：移除指定位置的圈地旗帜（默认 overworld） */
     private static String debugRemoveNode(int x, int z) {
         return com.shenqianye.samsara.claim.AreaService.getInstance().removeNode(
+                net.minecraft.world.level.Level.OVERWORLD,
                 new com.shenqianye.samsara.geometry.ChunkCoord(x, z));
     }
 
@@ -720,36 +741,61 @@ public class DebugCommand {
 
     /** debug claim delete dryrun：预览将被删除的区块（不实际操作） */
     private static String debugDeleteDryRun(CommandSourceStack src) {
-        var level = src.getServer().getLevel(net.minecraft.world.level.Level.OVERWORLD);
-        if (level == null) return "主世界不可用";
-        return com.shenqianye.samsara.claim.SafeDeletion.dryRun(level);
+        try {
+            var level = src.getServer().getLevel(net.minecraft.world.level.Level.OVERWORLD);
+            if (level == null) return "主世界不可用";
+            return com.shenqianye.samsara.claim.SafeDeletion.dryRun(level);
+        } catch (Exception e) {
+            com.shenqianye.samsara.Samsara.LOGGER.error("[samsara] debugDeleteDryRun 异常", e);
+            return "执行出错: " + e.getClass().getSimpleName() + ": " + e.getMessage();
+        }
     }
 
     /** debug claim delete backup：备份受影响区域的 .mca 文件到 config/samsara/backups/ */
     private static String debugDeleteBackup(CommandSourceStack src) {
-        var level = src.getServer().getLevel(net.minecraft.world.level.Level.OVERWORLD);
-        if (level == null) return "主世界不可用";
-        return com.shenqianye.samsara.claim.SafeDeletion.backup(level);
+        try {
+            var level = src.getServer().getLevel(net.minecraft.world.level.Level.OVERWORLD);
+            if (level == null) return "主世界不可用";
+            return com.shenqianye.samsara.claim.SafeDeletion.backup(level);
+        } catch (Exception e) {
+            com.shenqianye.samsara.Samsara.LOGGER.error("[samsara] debugDeleteBackup 异常", e);
+            return "执行出错: " + e.getClass().getSimpleName() + ": " + e.getMessage();
+        }
     }
 
     /** debug claim delete execute：报告待删区块数（服务端运行时不直接删除） */
     private static String debugDeleteExecute(CommandSourceStack src) {
-        var level = src.getServer().getLevel(net.minecraft.world.level.Level.OVERWORLD);
-        if (level == null) return "主世界不可用";
-        return com.shenqianye.samsara.claim.SafeDeletion.execute(level);
+        try {
+            var level = src.getServer().getLevel(net.minecraft.world.level.Level.OVERWORLD);
+            if (level == null) return "主世界不可用";
+            return com.shenqianye.samsara.claim.SafeDeletion.execute(level);
+        } catch (Exception e) {
+            com.shenqianye.samsara.Samsara.LOGGER.error("[samsara] debugDeleteExecute 异常", e);
+            return "执行出错: " + e.getClass().getSimpleName() + ": " + e.getMessage();
+        }
     }
 
     /** debug claim delete report：生成删除报告（白名单数、待删数、示例坐标） */
     private static String debugDeleteReport(CommandSourceStack src) {
-        var level = src.getServer().getLevel(net.minecraft.world.level.Level.OVERWORLD);
-        if (level == null) return "主世界不可用";
-        return com.shenqianye.samsara.claim.SafeDeletion.report(level);
+        try {
+            var level = src.getServer().getLevel(net.minecraft.world.level.Level.OVERWORLD);
+            if (level == null) return "主世界不可用";
+            return com.shenqianye.samsara.claim.SafeDeletion.report(level);
+        } catch (Exception e) {
+            com.shenqianye.samsara.Samsara.LOGGER.error("[samsara] debugDeleteReport 异常", e);
+            return "执行出错: " + e.getClass().getSimpleName() + ": " + e.getMessage();
+        }
     }
 
     /** debug claim owner <x> <z>：查看指定区块的旗帜归属 */
     private static String debugClaimOwner(int x, int z) {
-        var node = com.shenqianye.samsara.claim.AreaService.getInstance().getNode(
-                new com.shenqianye.samsara.geometry.ChunkCoord(x, z));
+        // 搜索所有维度
+        com.shenqianye.samsara.claim.ClaimNode node = null;
+        net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> foundDim = null;
+        for (var dimEntry : com.shenqianye.samsara.claim.AreaService.getInstance().getAllNodes().entrySet()) {
+            var n = dimEntry.getValue().get(new com.shenqianye.samsara.geometry.ChunkCoord(x, z));
+            if (n != null) { node = n; foundDim = dimEntry.getKey(); break; }
+        }
         if (node == null) {
             return "区块 (" + x + "," + z + ") 无注册圈地旗";
         }

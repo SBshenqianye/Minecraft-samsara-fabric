@@ -63,8 +63,42 @@ public class McaRegion {
     }
 
     /**
+     * 零拷贝快速清零：直接 seek 到 slot 位置写 8 字节零（offset 4B + timestamp 4B），
+     * 不读 header。每个 MCA 文件只 open 一次。比 deleteSlots 快 ~2x。
+     * <p>
+     * 幂等：已清零的 slot 再写零无副作用。
+     *
+     * @return 实际清零的槽数（文件不存在返回 0）
+     */
+    public static int zeroSlots(Path file, List<Integer> slots) {
+        if (slots.isEmpty() || !Files.exists(file)) {
+            return 0;
+        }
+        try (RandomAccessFile raf = new RandomAccessFile(file.toFile(), "rw")) {
+            long len = raf.length();
+            if (len < HEADER_SIZE) return 0;
+            byte[] zeros = new byte[8]; // 4B offset + 4B timestamp
+            int deleted = 0;
+            for (int slot : slots) {
+                int off = slot * 4;
+                int toff = HEADER_SIZE / 2 + off;
+                // 直接写零，不读不检查
+                raf.seek(off);
+                raf.write(zeros, 0, 4);
+                raf.seek(toff);
+                raf.write(zeros, 0, 4);
+                deleted++;
+            }
+            return deleted;
+        } catch (IOException e) {
+            Samsara.LOGGER.error("[周目管理 samsara] 快速清零失败 {}: {}", file, e.getMessage());
+            return 0;
+        }
+    }
+
+    /**
      * 删除指定 slot 的区块（位置 + 时间戳清零）。返回实际清零的槽数。
-     * 仅在停服窗口调用（此时 MC 已停止写文件）。
+     * 保留用于需要检查 sectorOffset 的场景（如单块精确删除）。
      */
     public static int deleteSlots(Path file, List<Integer> slots) {
         if (slots.isEmpty() || !Files.exists(file)) {
@@ -103,8 +137,25 @@ public class McaRegion {
         return deleted;
     }
 
-    /** 同步一组区块坐标对应的主世界 region/entities/poi 三个区域文件的槽位；清零后若文件全空则整文件删除 */
+    /**
+     * 批量删除区块（无索引版本，向后兼容）。
+     */
     public static int deleteChunks(Path dimRoot, List<int[]> chunks) {
+        return deleteChunks(dimRoot, chunks, null);
+    }
+
+    /**
+     * 批量删除区块：按文件分组，利用白名单索引快速决策。
+     * <ul>
+     *   <li>索引显示该文件白名单数=0 → 整文件秒删（不读 header）</li>
+     *   <li>索引显示白名单数=N（混合文件）→ 读一次 header，只清零非白名单 slot</li>
+     *   <li>无索引 → 退化为读 header 统计</li>
+     * </ul>
+     *
+     * @param whitelistCounts 可选索引：region 文件名 → 白名单区块数（null=无索引）
+     * @return 实际处理的区块数
+     */
+    public static int deleteChunks(Path dimRoot, List<int[]> chunks, Map<String, Integer> whitelistCounts) {
         // 按 (目录, 区域文件) 分组
         Map<Path, List<Integer>> byFile = new HashMap<>();
         for (int[] c : chunks) {
@@ -119,15 +170,96 @@ public class McaRegion {
                 byFile.computeIfAbsent(dimRoot.resolve(dir).resolve(name), k -> new ArrayList<>()).add(slot);
             }
         }
+
         int total = 0;
         for (Map.Entry<Path, List<Integer>> e : byFile.entrySet()) {
-            total += deleteSlots(e.getKey(), e.getValue());
-        }
-        // 文件级回收：清零后 1024 槽全空（或本就全空）的文件直接删除（MC 视缺失=空，行为一致）
-        for (Path f : byFile.keySet()) {
-            deleteIfFullyEmpty(f);
+            Path file = e.getKey();
+            List<Integer> slots = e.getValue();
+            if (!Files.exists(file)) continue;
+
+            String fileName = file.getFileName().toString();
+            Integer wlCount = whitelistCounts != null ? whitelistCounts.getOrDefault(fileName, 0) : null;
+
+            if (wlCount != null && wlCount == 0) {
+                // ★ 索引命中：该文件 0 个白名单区块 → 整文件秒删
+                try {
+                    int estimated = countOccupiedSlots(file);
+                    Files.deleteIfExists(file);
+                    Samsara.LOGGER.info("[周目管理 samsara] 索引快删（{} 区块）: {}", estimated, fileName);
+                    total += estimated;
+                } catch (IOException ex) {
+                    Samsara.LOGGER.warn("[周目管理 samsara] 索引快删失败 {}: {}", fileName, ex.getMessage());
+                }
+            } else {
+                // 混合文件或无索引：读 header → 按情况处理
+                byte[] header = readHeader(file);
+                if (header == null) continue;
+
+                int totalSlots = countOccupiedInHeader(header);
+
+                if (totalSlots <= slots.size()) {
+                    // 所有区块都在删除列表 → 整文件删
+                    try {
+                        Files.deleteIfExists(file);
+                        Samsara.LOGGER.info("[周目管理 samsara] 全文件删除（{} 区块）: {}", totalSlots, fileName);
+                        total += totalSlots;
+                    } catch (IOException ex) {
+                        Samsara.LOGGER.warn("[周目管理 samsara] 全文件删除失败 {}: {}", fileName, ex.getMessage());
+                    }
+                } else {
+                    // 混合：只清零对应 slot
+                    int deleted = zeroSlotsFromHeader(header, file, slots);
+                    total += deleted;
+                }
+            }
         }
         return total;
+    }
+
+    /** 统计 header 中已占用的 slot 数（非零 offset） */
+    private static int countOccupiedInHeader(byte[] header) {
+        int count = 0;
+        for (int s = 0; s < 1024; s++) {
+            int off = s * 4;
+            if ((((header[off] & 0xFF) << 16) | ((header[off + 1] & 0xFF) << 8) | (header[off + 2] & 0xFF)) != 0) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /** 快速统计文件中已占用 slot 数（读一次 header） */
+    private static int countOccupiedSlots(Path file) {
+        byte[] header = readHeader(file);
+        return header != null ? countOccupiedInHeader(header) : 0;
+    }
+
+    /**
+     * 用已读取的 header 直接清零指定 slot（不重新读文件）。
+     * 比 deleteSlots 快：省掉 readHeader 的 4KB 读取。
+     */
+    private static int zeroSlotsFromHeader(byte[] header, Path file, List<Integer> slots) {
+        byte[] zeros = new byte[4];
+        int deleted = 0;
+        for (int slot : slots) {
+            int off = slot * 4;
+            int sectorOffset = ((header[off] & 0xFF) << 16) | ((header[off + 1] & 0xFF) << 8) | (header[off + 2] & 0xFF);
+            if (sectorOffset != 0) {
+                header[off] = 0; header[off + 1] = 0; header[off + 2] = 0; header[off + 3] = 0;
+                int toff = HEADER_SIZE / 2 + slot * 4;
+                header[toff] = 0; header[toff + 1] = 0; header[toff + 2] = 0; header[toff + 3] = 0;
+                deleted++;
+            }
+        }
+        if (deleted > 0) {
+            try (RandomAccessFile raf = new RandomAccessFile(file.toFile(), "rw")) {
+                raf.seek(0);
+                raf.write(header, 0, HEADER_SIZE);
+            } catch (IOException e) {
+                Samsara.LOGGER.error("[周目管理 samsara] 写回区域文件失败 {}: {}", file, e.getMessage());
+            }
+        }
+        return deleted;
     }
 
     /** 判断 .mca 是否已无任何有效区块（1024 个位置槽全部为 0） */
