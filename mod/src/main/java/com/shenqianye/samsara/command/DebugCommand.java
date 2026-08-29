@@ -112,15 +112,30 @@ public class DebugCommand {
                                                                                 StringArgumentType.getString(ctx, "text"),
                                                                                 IntegerArgumentType.getInteger(ctx, "stateId"),
                                                                                 IntegerArgumentType.getInteger(ctx, "scale")))))))));
-        dispatcher.register(Commands.literal("samsara")
+        var samsaraNode = Commands.literal("samsara")
                 .executes(ctx -> reply(ctx.getSource(), help()))
                 .then(Commands.literal("version")
                         .executes(ctx -> reply(ctx.getSource(), versionInfo())))
+                .then(Commands.literal("mspt")
+                        .executes(ctx -> reply(ctx.getSource(), mspt())))
+                .then(Commands.literal("tps")
+                        .executes(ctx -> reply(ctx.getSource(), tps())))
                 .then(SeasonCommand.seasonNode())
                 .then(ActivityCommand.activityNode())
                 .then(ClaimCommand.claimNode())
                 .then(Commands.literal("debug")
                         .requires(src -> isOwner(src))
+                        // debug info — 切换式
+                        .then(Commands.literal("info")
+                                .executes(ctx -> {
+                                    boolean now = com.shenqianye.samsara.DebugToggle.toggle();
+                                    return reply(ctx.getSource(), "调试信息已" + (now ? "开启" : "关闭"));
+                                })
+                                // debug info on|off — 指定式
+                                .then(Commands.literal("on")
+                                        .executes(ctx -> { com.shenqianye.samsara.DebugToggle.set(true); return reply(ctx.getSource(), "调试信息已开启"); }))
+                                .then(Commands.literal("off")
+                                        .executes(ctx -> { com.shenqianye.samsara.DebugToggle.set(false); return reply(ctx.getSource(), "调试信息已关闭"); })))
                         .then(Commands.literal("status")
                                 .executes(ctx -> reply(ctx.getSource(), debugStatus())))
                         .then(Commands.literal("spawninfo")
@@ -224,6 +239,13 @@ public class DebugCommand {
                                 // debug claim give <dir> <dist>
                                 .then(Commands.literal("give")
                                         .then(Commands.argument("dir", StringArgumentType.word())
+                                                .suggests((ctx, builder) -> {
+                                                    for (String d : new String[]{
+                                                            "f", "b", "l", "r", "a"}) {
+                                                        builder.suggest(d);
+                                                    }
+                                                    return builder.buildFuture();
+                                                })
                                                 .then(Commands.argument("dist", IntegerArgumentType.integer(1, 16))
                                                         .executes(ctx -> reply(ctx.getSource(), debugGiveBanner(
                                                                 ctx.getSource(),
@@ -305,7 +327,29 @@ public class DebugCommand {
                                         .then(Commands.literal("global")
                                                 .then(Commands.argument("on_off", StringArgumentType.word())
                                                         .executes(ctx -> reply(ctx.getSource(),
-                                                                debugSetGlobalDisplay(StringArgumentType.getString(ctx, "on_off"))))))))
+                                                                debugSetGlobalDisplay(StringArgumentType.getString(ctx, "on_off")))))))
+                                // debug claim delete dryrun|backup|execute|report
+                                // dryrun: 列出将被删除的区块（不实际操作）
+                                // backup: 备份受影响区域的 .mca 文件到 config/samsara/backups/
+                                // execute: 报告待删除区块数（服务端运行时不直接删除，需停服手动操作）
+                                // report: 生成删除报告（白名单数、待删数、示例坐标）
+                                .then(Commands.literal("delete")
+                                        .then(Commands.literal("dryrun")
+                                                .executes(ctx -> reply(ctx.getSource(), debugDeleteDryRun(ctx.getSource()))))
+                                        .then(Commands.literal("backup")
+                                                .executes(ctx -> reply(ctx.getSource(), debugDeleteBackup(ctx.getSource()))))
+                                        .then(Commands.literal("execute")
+                                                .executes(ctx -> reply(ctx.getSource(), debugDeleteExecute(ctx.getSource()))))
+                                        .then(Commands.literal("report")
+                                                .executes(ctx -> reply(ctx.getSource(), debugDeleteReport(ctx.getSource())))))
+                                // debug claim owner <x> <z> — 查看指定区块的旗帜归属
+                                .then(Commands.literal("owner")
+                                        .then(Commands.argument("x", IntegerArgumentType.integer())
+                                                .then(Commands.argument("z", IntegerArgumentType.integer())
+                                                        .executes(ctx -> reply(ctx.getSource(),
+                                                                debugClaimOwner(
+                                                                        IntegerArgumentType.getInteger(ctx, "x"),
+                                                                        IntegerArgumentType.getInteger(ctx, "z"))))))))
                         .then(Commands.literal("activity")
                                 .then(Commands.literal("recent")
                                         .executes(ctx -> reply(ctx.getSource(),
@@ -321,47 +365,29 @@ public class DebugCommand {
                                 .then(Commands.literal("dead")
                                         .executes(ctx -> reply(ctx.getSource(),
                                                 com.shenqianye.samsara.activity.ActivityManager.getInstance().deadText())))
-                                .then(Commands.literal("simulate")
-                                        .then(Commands.argument("daysAgo", IntegerArgumentType.integer(0, 5000))
-                                                .executes(ctx -> reply(ctx.getSource(),
-                                                        com.shenqianye.samsara.activity.ActivityManager.getInstance().simulateText(
-                                                                IntegerArgumentType.getInteger(ctx, "daysAgo"),
-                                                                com.shenqianye.samsara.activity.ActivityManager.getInstance().active30Count())))
-                                                .then(Commands.argument("active30", IntegerArgumentType.integer(0, 100000))
-                                                        .executes(ctx -> reply(ctx.getSource(),
-                                                                com.shenqianye.samsara.activity.ActivityManager.getInstance().simulateText(
-                                                                        IntegerArgumentType.getInteger(ctx, "daysAgo"),
-                                                                        IntegerArgumentType.getInteger(ctx, "active30")))))))
                                 .then(Commands.literal("clear")
                                         .executes(ctx -> reply(ctx.getSource(), clearActivity()))))
-                        .then(Commands.literal("delete")
-                                .then(Commands.literal("dryrun")
-                                        .executes(ctx -> reply(ctx.getSource(),
-                                                com.shenqianye.samsara.claim.SafeDeletion.dryRun(
-                                                        ctx.getSource().getServer().getLevel(
-                                                                net.minecraft.world.level.Level.OVERWORLD)))))
-                                .then(Commands.literal("backup")
-                                        .executes(ctx -> reply(ctx.getSource(),
-                                                com.shenqianye.samsara.claim.SafeDeletion.backup(
-                                                        ctx.getSource().getServer().getLevel(
-                                                                net.minecraft.world.level.Level.OVERWORLD)))))
-                                .then(Commands.literal("execute")
-                                        .executes(ctx -> reply(ctx.getSource(),
-                                                com.shenqianye.samsara.claim.SafeDeletion.execute(
-                                                        ctx.getSource().getServer().getLevel(
-                                                                net.minecraft.world.level.Level.OVERWORLD)))))
-                                .then(Commands.literal("report")
-                                        .executes(ctx -> reply(ctx.getSource(),
-                                                com.shenqianye.samsara.claim.SafeDeletion.report(
-                                                        ctx.getSource().getServer().getLevel(
-                                                                net.minecraft.world.level.Level.OVERWORLD))))))
                         .then(Commands.literal("whitelist")
                                 .then(Commands.literal("json")
                                         .executes(ctx -> reply(ctx.getSource(), WhitelistStore.getInstance().rawJson()
                                                 + "\n\n↑ whitelist.json 位置: " + WhitelistStore.getInstance().configPath())))
                                 .then(Commands.literal("reload")
                                         .executes(ctx -> reply(ctx.getSource(), WhitelistStore.getInstance().reload()))))
-                        .then(permNode())));
+                        .then(permNode()));
+
+        dispatcher.register(samsaraNode);
+
+        // 条件别名：/mspt 和 /tps（仅当其他模组未注册时）
+        boolean hasMspt = dispatcher.getRoot().getChild("mspt") != null;
+        boolean hasTps = dispatcher.getRoot().getChild("tps") != null;
+        if (!hasMspt) {
+            dispatcher.register(Commands.literal("mspt")
+                    .executes(ctx -> reply(ctx.getSource(), mspt())));
+        }
+        if (!hasTps) {
+            dispatcher.register(Commands.literal("tps")
+                    .executes(ctx -> reply(ctx.getSource(), tps())));
+        }
     }
 
     /** 构建 /samsara perm 子命令树 */
@@ -606,24 +632,17 @@ public class DebugCommand {
 
     // ---- debug claim 命令实现 ----
 
-    /** debug give：给予玩家圈地旗帜 */
+    /** debug give：给予玩家圈地旗帜（f=前, b=后, l=左, r=右, a=全部） */
     private static String debugGiveBanner(CommandSourceStack src, String dir, int dist) {
         String patternId = switch (dir.toLowerCase()) {
-            case "n"  -> "stripe_top"; case "s"  -> "stripe_bottom";
-            case "w"  -> "stripe_left"; case "e"  -> "stripe_right";
-            case "nw" -> "square_top_left"; case "sw" -> "square_bottom_left";
-            case "ne" -> "square_top_right"; case "se" -> "square_bottom_right";
-            case "all"-> "border";
+            case "f" -> "stripe_top";     case "b" -> "stripe_bottom";
+            case "l" -> "stripe_left";    case "r" -> "stripe_right";
+            case "a" -> "border";
             default -> null;
         };
         if (patternId == null) {
-            return "方向无效（n/ne/e/se/s/sw/w/nw/all）";
+            return "方向无效（f=前/b=后/l=左/r=右/a=全部）";
         }
-        String dirName = switch (dir.toLowerCase()) {
-            case "n" -> "北"; case "s" -> "南"; case "w" -> "西"; case "e" -> "东";
-            case "nw" -> "西北"; case "sw" -> "西南"; case "ne" -> "东北"; case "se" -> "东南";
-            case "all" -> "全方向"; default -> dir;
-        };
         net.minecraft.server.level.ServerPlayer player;
         try {
             player = src.getPlayerOrException();
@@ -647,7 +666,7 @@ public class DebugCommand {
         banner.setCount(1);
         player.getInventory().add(banner);
 
-        return "已给予圈地旗：" + dirName + " " + dist + " 区块";
+        return "已给予圈地旗：" + dir + " " + dist + " 区块";
     }
 
     /** debug list：列出所有已注册的圈地旗帜 */
@@ -663,8 +682,10 @@ public class DebugCommand {
         for (var e : nodes.entrySet()) {
             com.shenqianye.samsara.geometry.ChunkCoord loc = e.getKey();
             com.shenqianye.samsara.claim.ClaimNode n = e.getValue();
-            sb.append("  ").append(loc).append(" 朝向").append(n.getFacing())
-                    .append(" 图案").append(n.getPatterns().size()).append(" 个\n");
+            sb.append("  ").append(loc).append(" 朝向").append(com.shenqianye.samsara.claim.ClaimInteractions.facingToDisplay(n.getFacing()))
+                    .append(" 图案").append(n.getPatterns().size()).append(" 个");
+            if (n.getOwnerName() != null) sb.append(" 主人:").append(n.getOwnerName());
+            sb.append("\n");
         }
         sb.append("数据文件: ").append(com.shenqianye.samsara.claim.AreaService.getInstance().configPath());
         return sb.toString().trim();
@@ -690,6 +711,62 @@ public class DebugCommand {
     private static String debugRemoveNode(int x, int z) {
         return com.shenqianye.samsara.claim.AreaService.getInstance().removeNode(
                 new com.shenqianye.samsara.geometry.ChunkCoord(x, z));
+    }
+
+    // ---- debug claim delete（生命周期说明） ----
+    // 所有删除操作仅针对已加载区块中不在白名单内的区块。
+    // 生命周期：dryrun → backup → execute（停服后手动删 .mca）→ report
+    // 服务端运行时不会直接删除文件（安全约束 §6.6），需停服后手动操作区域文件。
+
+    /** debug claim delete dryrun：预览将被删除的区块（不实际操作） */
+    private static String debugDeleteDryRun(CommandSourceStack src) {
+        var level = src.getServer().getLevel(net.minecraft.world.level.Level.OVERWORLD);
+        if (level == null) return "主世界不可用";
+        return com.shenqianye.samsara.claim.SafeDeletion.dryRun(level);
+    }
+
+    /** debug claim delete backup：备份受影响区域的 .mca 文件到 config/samsara/backups/ */
+    private static String debugDeleteBackup(CommandSourceStack src) {
+        var level = src.getServer().getLevel(net.minecraft.world.level.Level.OVERWORLD);
+        if (level == null) return "主世界不可用";
+        return com.shenqianye.samsara.claim.SafeDeletion.backup(level);
+    }
+
+    /** debug claim delete execute：报告待删区块数（服务端运行时不直接删除） */
+    private static String debugDeleteExecute(CommandSourceStack src) {
+        var level = src.getServer().getLevel(net.minecraft.world.level.Level.OVERWORLD);
+        if (level == null) return "主世界不可用";
+        return com.shenqianye.samsara.claim.SafeDeletion.execute(level);
+    }
+
+    /** debug claim delete report：生成删除报告（白名单数、待删数、示例坐标） */
+    private static String debugDeleteReport(CommandSourceStack src) {
+        var level = src.getServer().getLevel(net.minecraft.world.level.Level.OVERWORLD);
+        if (level == null) return "主世界不可用";
+        return com.shenqianye.samsara.claim.SafeDeletion.report(level);
+    }
+
+    /** debug claim owner <x> <z>：查看指定区块的旗帜归属 */
+    private static String debugClaimOwner(int x, int z) {
+        var node = com.shenqianye.samsara.claim.AreaService.getInstance().getNode(
+                new com.shenqianye.samsara.geometry.ChunkCoord(x, z));
+        if (node == null) {
+            return "区块 (" + x + "," + z + ") 无注册圈地旗";
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("区块 (").append(x).append(",").append(z).append(") 圈地旗归属：\n");
+        sb.append("  朝向: ").append(com.shenqianye.samsara.claim.ClaimInteractions.facingToDisplay(node.getFacing())).append("\n");
+        if (node.getOwnerUUID() != null) {
+            sb.append("  主人 UUID: ").append(node.getOwnerUUID()).append("\n");
+            sb.append("  主人名称: ").append(node.getOwnerName() != null ? node.getOwnerName() : "未知").append("\n");
+        } else {
+            sb.append("  主人: 无（命令创建或旧版数据）\n");
+        }
+        sb.append("  图案: ");
+        for (var pe : node.getPatterns()) {
+            sb.append(pe.patternId()).append("(色").append(pe.color()).append(") ");
+        }
+        return sb.toString().trim();
     }
 
     /** debug particle：设置粒子类型 */
@@ -740,14 +817,18 @@ public class DebugCommand {
                 + "  /samsara claim boundary —— 切换边界持续显示\n"
                 + "  /samsara season —— 周目业务（status/info/create/start/end/skip/respawn-groups）\n"
                 + "  /samsara activity —— 活跃度（recent [天数]|stats|dead）\n"
+                + "  /samsara mspt|tps —— 服务器性能（别名 /mspt /tps）\n"
                 + "  /samsara version —— 模组版本号\n"
                 + "管理员命令（/samsara debug ...）：\n"
-                + "  debug claim give|list|rebuild|scan|remove|info|particle —— 圈地管理\n"
+                + "  debug info [on|off] —— 调试信息开关（不带参数=切换）\n"
+                + "  debug claim give|list|rebuild|scan|remove|info|particle|delete|owner —— 圈地管理\n"
+                + "    delete dryrun|backup|execute|report —— 删除未保留区块生命周期\n"
+                + "    owner <x> <z> —— 查看区域归属（旗帜放置者）\n"
                 + "  debug season|activity —— 周目/活跃度调试\n"
                 + "  debug status|json|reload|reset|config|settings —— 状态与配置\n"
                 + "  debug fakeplayers|groups —— 测试数据注入与分组预览\n"
                 + "  debug rewind|diff|flow —— 倒流与差异控制\n"
-                + "  debug delete|whitelist|perm —— 安全删除/白名单/权限管理";
+                + "  debug whitelist|perm —— 白名单/权限管理";
     }
 
     /** /samsara version：从 FabricLoader 取模组版本 + 显示名 + 简略配置 */
@@ -765,6 +846,32 @@ public class DebugCommand {
         }
         return "周目管理（" + name + "） · 版本 " + version
                 + " · MC 26.2 / Fabric —— 空间/时间/逆熵";
+    }
+
+    /** MSPT 追踪：由 Samsara.onTick() 每 tick 调用 */
+    private static long lastTickNanos = System.nanoTime();
+    private static double cachedMspt = 50.0;
+
+    /** 由服务端 tick 事件调用，更新 MSPT */
+    public static void onTick() {
+        long now = System.nanoTime();
+        cachedMspt = (now - lastTickNanos) / 1_000_000.0;
+        lastTickNanos = now;
+    }
+
+    /** /samsara mspt */
+    private static String mspt() {
+        String color = cachedMspt < 40 ? "§a" : cachedMspt < 50 ? "§e" : "§c";
+        return "MSPT: " + color + String.format("%.1f", cachedMspt) + "ms§r"
+                + "（目标 50ms = 20 TPS）";
+    }
+
+    /** /samsara tps */
+    private static String tps() {
+        double tps = Math.min(20.0, 1000.0 / Math.max(cachedMspt, 0.1));
+        String color = tps >= 19.5 ? "§a" : tps >= 15.0 ? "§e" : "§c";
+        return "TPS: " + color + String.format("%.1f", tps) + "§r"
+                + "（MSPT=" + String.format("%.1f", cachedMspt) + "ms）";
     }
 
     private static boolean isOwner(CommandSourceStack src) {
