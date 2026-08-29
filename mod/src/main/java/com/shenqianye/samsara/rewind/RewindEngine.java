@@ -439,22 +439,46 @@ public class RewindEngine {
         }
     }
 
-    /** 区块卸载事件：在待删队列中的区块 → 立即删除（后台线程），不再等待停服 */
-    public void onChunkUnload(ServerLevel overworld, LevelChunk chunk) {
+    /** 卸载区块缓冲区：攒够一批后批量删除（避免逐个读写 MCA header） */
+    private final List<QueuedChunk> unloadBuffer = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    /** 区块卸载事件：攒到缓冲区，由 tick 定时批量处理 */
+    public void onChunkUnload(ServerLevel level, LevelChunk chunk) {
         if (pendingQueue.isEmpty()) {
             return;
         }
         int cx = chunk.getPos().x();
         int cz = chunk.getPos().z();
-        if (!pendingQueue.contains(cx, cz)) {
+        // 根据 ServerLevel 计算 dimRoot 路径
+        Path dimRoot = null;
+        String[] nsDim = parseResourceKey(level.dimension().toString());
+        if (nsDim != null) {
+            Path worldRoot = level.getServer().getWorldPath(LevelResource.ROOT).toAbsolutePath().normalize();
+            dimRoot = worldRoot.resolve("dimensions").resolve(nsDim[0]).resolve(nsDim[1]);
+        }
+        if (!pendingQueue.contains(cx, cz, dimRoot)) {
             return;
         }
-        submitDeletion(() -> {
-            int n = pendingQueue.deleteChunkIfQueued(cx, cz);
-            if (n >= 0) {
-                Samsara.LOGGER.info("[周目管理 samsara] 待删队列：区块 ({},{}) 已卸载，立即删除", cx, cz);
-            }
-        });
+        // 从队列移除并加入缓冲区（避免重复处理）
+        QueuedChunk removed = pendingQueue.removeChunk(cx, cz, dimRoot);
+        if (removed != null) {
+            unloadBuffer.add(removed);
+        }
+    }
+
+    /**
+     * 处理卸载缓冲区：按 dimRoot 分组批量删除。
+     * 由 tick() 每 20 tick（1秒）调用一次。
+     */
+    public void flushUnloadBuffer(MinecraftServer server) {
+        if (unloadBuffer.isEmpty()) return;
+        // 取出所有缓冲项
+        List<QueuedChunk> batch = new ArrayList<>(unloadBuffer);
+        unloadBuffer.clear();
+        // 按 dimRoot 分组批量删除
+        var wlIndex = pendingQueue.buildWhitelistIndex();
+        pendingQueue.batchDeleteByDimRoot(batch, wlIndex);
+        com.shenqianye.samsara.claim.SafeDeletion.dbg("[flushUnloadBuffer] 批量删除 " + batch.size() + " 个卸载区块");
     }
 
     /**
@@ -496,7 +520,7 @@ public class RewindEngine {
         Path worldRoot = server.getWorldPath(LevelResource.ROOT);
         Path dimRoot = McaRegion.overworldDimensionRoot(worldRoot);
         pendingQueue.beginCycle(dimRoot, configDir.resolve("backups"), pendingQueue.seasonIdOr(-1));
-        int removed = pendingQueue.drain(server.getLevel(Level.OVERWORLD), true);
+        int removed = pendingQueue.drainNonLoaded(server);
         if (removed > 0) {
             Samsara.LOGGER.info("[周目管理 samsara] 启动兜底：待删队列清空 {} 个已卸载区块", removed);
         }
@@ -510,11 +534,14 @@ public class RewindEngine {
                 if (data.teleportPhaseDone && Tier3Restore.isFinished(server, data)) {
                     archivePersistence();
                 } else {
-                    save(); // 未完成（或恢复未完）→ 保留 rewind.json，重启后继续
+                    save();
                 }
             }
+            // 先处理卸载缓冲区（可能有未 flush 的区块）
+            flushUnloadBuffer(server);
+            // 再处理队列中剩余的区块（停服时所有区块已卸载，可以安全删除）
             if (!pendingQueue.isEmpty()) {
-                int removed = pendingQueue.drain(server.getLevel(Level.OVERWORLD), false);
+                int removed = pendingQueue.drainNonLoaded(server);
                 if (removed > 0) {
                     Samsara.LOGGER.info("[周目管理 samsara] 停服兜底：待删队列清空 {} 个区块", removed);
                 }
@@ -701,7 +728,7 @@ public class RewindEngine {
         /** 本周期已备份过的区域文件（相对 dimRoot），避免重复复制 */
         private final Set<String> backedUp = ConcurrentHashMap.newKeySet();
         /** 待删区块 key → (坐标 + 维度路径) — ConcurrentHashMap 保证读操作不阻塞服务器线程 */
-        private final ConcurrentHashMap<Long, QueuedChunk> chunks = new ConcurrentHashMap<>();
+        private final ConcurrentHashMap<String, QueuedChunk> chunks = new ConcurrentHashMap<>();
         /** 脏标记：入队/删队后置 true，攒够 SAVE_BATCH 个再落盘 */
         private volatile int dirtyCount = 0;
 
@@ -750,7 +777,7 @@ public class RewindEngine {
                                 if (pair.size() >= 3 && it[2] instanceof String s) {
                                     chunkDimRoot = Path.of(s);
                                 }
-                                chunks.put(key(x, z), new QueuedChunk(x, z, chunkDimRoot));
+                                chunks.put(key(x, z, chunkDimRoot), new QueuedChunk(x, z, chunkDimRoot));
                             }
                         }
                     }
@@ -783,8 +810,14 @@ public class RewindEngine {
             }
         }
 
-        private static long key(int x, int z) {
-            return ((long) x << 32) | (z & 0xFFFFFFFFL);
+        private static String key(int x, int z, Path dimRoot) {
+            String dim = dimRoot != null ? dimRoot.getFileName().toString() : "default";
+            return dim + ":" + x + ":" + z;
+        }
+
+        /** 兼容旧调用（无维度参数） */
+        private static String key(int x, int z) {
+            return "default:" + x + ":" + z;
         }
 
         boolean isEmpty() {
@@ -795,8 +828,19 @@ public class RewindEngine {
             return chunks.size();
         }
 
-        boolean contains(int x, int z) {
-            return chunks.containsKey(key(x, z));
+        boolean contains(int x, int z, Path dimRoot) {
+            return chunks.containsKey(key(x, z, dimRoot));
+        }
+
+        /** 移除并返回指定区块（供 onChunkUnload 缓冲用） */
+        QueuedChunk removeChunk(int x, int z, Path dimRoot) {
+            return chunks.remove(key(x, z, dimRoot));
+        }
+
+        /** 兼容旧调用：检查任意维度是否有该坐标 */
+        boolean containsAny(int x, int z) {
+            String prefix = ":" + x + ":" + z;
+            return chunks.keySet().stream().anyMatch(k -> k.endsWith(prefix));
         }
 
         synchronized Path defaultDimRoot() {
@@ -826,7 +870,7 @@ public class RewindEngine {
                     changed = true;
                     continue;
                 }
-                long k = key(c[0], c[1]);
+                String k = key(c[0], c[1], defaultDimRoot);
                 if (!chunks.containsKey(k)) {
                     chunks.put(k, new QueuedChunk(c[0], c[1], defaultDimRoot));
                     changed = true;
@@ -842,7 +886,8 @@ public class RewindEngine {
         synchronized int enqueueNoCheck(List<QueuedChunk> items) {
             boolean changed = false;
             for (QueuedChunk qc : items) {
-                long k = key(qc.x(), qc.z());
+                Path dr = qc.dimRoot() != null ? qc.dimRoot() : defaultDimRoot;
+                String k = key(qc.x(), qc.z(), dr);
                 if (!chunks.containsKey(k)) {
                     chunks.put(k, qc);
                     changed = true;
@@ -880,16 +925,19 @@ public class RewindEngine {
          * 若区块仍在队列则删除；返回删除格数或 -1（不在队列）。
          * 使用该区块自己的 dimRoot（从 QueuedChunk 取），不依赖全局 dimRoot。
          */
-        int deleteChunkIfQueued(int cx, int cz) {
-            long k = key(cx, cz);
+        int deleteChunkIfQueued(int cx, int cz, Path dimRoot) {
+            String k = key(cx, cz, dimRoot);
             // ① 快速检查+移除（ConcurrentHashMap，几乎不阻塞）
             QueuedChunk qc = chunks.remove(k);
             if (qc == null) {
+                com.shenqianye.samsara.claim.SafeDeletion.dbg("[deleteChunkIfQueued] (" + cx + "," + cz + ") 不在队列中");
                 return -1;
             }
             Path dr = qc.dimRoot() != null ? qc.dimRoot() : defaultDimRoot;
+            com.shenqianye.samsara.claim.SafeDeletion.dbg("[deleteChunkIfQueued] (" + cx + "," + cz + ") dimRoot=" + dr);
             // ② 文件 I/O 在锁外执行（不阻塞服务器线程）
             int n = doDeleteOne(dr, cx, cz);
+            com.shenqianye.samsara.claim.SafeDeletion.dbg("[deleteChunkIfQueued] (" + cx + "," + cz + ") doDeleteOne 返回=" + n);
             // ③ 落盘（批量）
             synchronized (this) {
                 dirtyCount++;
@@ -904,27 +952,41 @@ public class RewindEngine {
 
         /** 逐块删除（需在 synchronized 内调用）：备份（去重）→ 清零槽位。0=已不存在。 */
         private int deleteOne(int cx, int cz) {
-            QueuedChunk qc = chunks.get(key(cx, cz));
-            Path dr = (qc != null && qc.dimRoot() != null) ? qc.dimRoot() : defaultDimRoot;
-            if (dr == null || !McaRegion.chunkExists(dr, cx, cz)) {
-                chunks.remove(key(cx, cz)); // 已不存在，直接剔除
-                return 0;
+            // 尝试所有维度查找
+            for (var entry : chunks.entrySet()) {
+                QueuedChunk qc = entry.getValue();
+                if (qc.x() == cx && qc.z() == cz) {
+                    Path dr = qc.dimRoot() != null ? qc.dimRoot() : defaultDimRoot;
+                    chunks.remove(entry.getKey());
+                    if (dr == null || !McaRegion.chunkExists(dr, cx, cz)) {
+                        return 0;
+                    }
+                    backupRegionFiles(dr, cx, cz);
+                    List<int[]> one = List.of(new int[]{cx, cz});
+                    return McaRegion.deleteChunks(dr, one);
+                }
             }
-            backupRegionFiles(dr, cx, cz);
-            List<int[]> one = List.of(new int[]{cx, cz});
-            return McaRegion.deleteChunks(dr, one);
+            return 0;
         }
 
         /**
          * 纯 I/O 删除（不操作 chunks map，无需持锁）：检查是否存在 → 备份 → 清零。
          */
         private int doDeleteOne(Path dimRoot, int cx, int cz) {
-            if (dimRoot == null || !McaRegion.chunkExists(dimRoot, cx, cz)) {
+            if (dimRoot == null) {
+                com.shenqianye.samsara.claim.SafeDeletion.dbg("[doDeleteOne] (" + cx + "," + cz + ") dimRoot=null");
+                return 0;
+            }
+            boolean exists = McaRegion.chunkExists(dimRoot, cx, cz);
+            if (!exists) {
+                com.shenqianye.samsara.claim.SafeDeletion.dbg("[doDeleteOne] (" + cx + "," + cz + ") 区块不存在于磁盘");
                 return 0;
             }
             backupRegionFiles(dimRoot, cx, cz);
             List<int[]> one = List.of(new int[]{cx, cz});
-            return McaRegion.deleteChunks(dimRoot, one);
+            int n = McaRegion.deleteChunks(dimRoot, one);
+            com.shenqianye.samsara.claim.SafeDeletion.dbg("[doDeleteOne] (" + cx + "," + cz + ") deleteChunks=" + n);
+            return n;
         }
 
         private void backupRegionFiles(Path dimRoot, int cx, int cz) {
@@ -1018,6 +1080,7 @@ public class RewindEngine {
          * @return 删除的区块数
          */
         synchronized int drainNonLoaded(MinecraftServer server) {
+            com.shenqianye.samsara.claim.SafeDeletion.dbg("[drainNonLoaded] 开始, 队列大小=" + chunks.size());
             // 构建 dimRoot 绝对路径 → ServerLevel 映射
             java.util.Map<String, ServerLevel> dimMap = new java.util.HashMap<>();
             Path worldRoot = server.getWorldPath(LevelResource.ROOT).toAbsolutePath().normalize();
@@ -1025,29 +1088,44 @@ public class RewindEngine {
                 ServerLevel sl = server.getLevel(dimKey);
                 if (sl != null) {
                     String[] nsDim = parseResourceKey(dimKey.toString());
-                    if (nsDim == null) continue;
+                    if (nsDim == null) { com.shenqianye.samsara.claim.SafeDeletion.dbg("[drainNonLoaded] parseResourceKey 失败: " + dimKey.toString()); continue; }
                     Path dimRoot = worldRoot.resolve("dimensions").resolve(nsDim[0]).resolve(nsDim[1]);
-                    dimMap.put(dimRoot.toAbsolutePath().normalize().toString(), sl);
+                    String key = dimRoot.toAbsolutePath().normalize().toString();
+                    dimMap.put(key, sl);
+                    com.shenqianye.samsara.claim.SafeDeletion.dbg("[drainNonLoaded] dimMap: " + nsDim[0] + "/" + nsDim[1] + " → " + key);
                 }
             }
 
             // 第一轮：分类 — 可删 vs 保留（加载中）
             List<QueuedChunk> toDelete = new ArrayList<>();
+            int loadedCount = 0;
+            int unloadedCount = 0;
+            int noDimLevel = 0;
             var it = chunks.entrySet().iterator();
             while (it.hasNext()) {
                 QueuedChunk qc = it.next().getValue();
                 Path qcDimRoot = qc.dimRoot() != null ? qc.dimRoot() : defaultDimRoot;
-                ServerLevel dimLevel = dimMap.get(qcDimRoot.toAbsolutePath().normalize().toString());
+                String qcKey = qcDimRoot.toAbsolutePath().normalize().toString();
+                ServerLevel dimLevel = dimMap.get(qcKey);
                 if (dimLevel != null && dimLevel.getChunkSource().getChunkNow(qc.x(), qc.z()) != null) {
+                    loadedCount++;
                     continue; // 仍在内存，保持队列
                 }
+                if (dimLevel == null) {
+                    noDimLevel++;
+                    com.shenqianye.samsara.claim.SafeDeletion.dbg("[drainNonLoaded] dimLevel=null for (" + qc.x() + "," + qc.z() + ") dimRoot=" + qcKey);
+                }
+                unloadedCount++;
                 toDelete.add(qc);
                 it.remove();
             }
+            com.shenqianye.samsara.claim.SafeDeletion.dbg("[drainNonLoaded] 分类: 已加载=" + loadedCount + " 未加载=" + unloadedCount + " dimLevel=null=" + noDimLevel);
 
             // 第二轮：按 dimRoot 分组 → 批量删除
             var wlIndex = buildWhitelistIndex();
+            com.shenqianye.samsara.claim.SafeDeletion.dbg("[drainNonLoaded] 白名单索引: " + wlIndex.size() + " 个 dimRoot");
             int removed = batchDeleteByDimRoot(toDelete, wlIndex);
+            com.shenqianye.samsara.claim.SafeDeletion.dbg("[drainNonLoaded] 批量删除完成: " + removed + " 区块");
 
             if (chunks.isEmpty()) {
                 dropLocked();
@@ -1062,7 +1140,7 @@ public class RewindEngine {
          * 构建白名单索引：dimRoot 绝对路径 → (region 文件名 → 白名单区块数)。
          * 由 GeometryStore 的白名单数据按 region 文件聚合得到。
          */
-        private java.util.Map<Path, java.util.Map<String, Integer>> buildWhitelistIndex() {
+        java.util.Map<Path, java.util.Map<String, Integer>> buildWhitelistIndex() {
             java.util.Map<Path, java.util.Map<String, Integer>> result = new java.util.HashMap<>();
             for (var dimKey : com.shenqianye.samsara.claim.AreaService.getInstance().getAllNodes().keySet()) {
                 java.util.Map<String, Integer> perRegion =
@@ -1085,7 +1163,7 @@ public class RewindEngine {
          *
          * @param whitelistIndex 可选索引：dimRoot → (region 文件名 → 白名单区块数)
          */
-        private int batchDeleteByDimRoot(List<QueuedChunk> toDelete,
+        int batchDeleteByDimRoot(List<QueuedChunk> toDelete,
                                          java.util.Map<Path, java.util.Map<String, Integer>> whitelistIndex) {
             if (toDelete.isEmpty()) return 0;
 
@@ -1100,6 +1178,7 @@ public class RewindEngine {
             for (var entry : byDimRoot.entrySet()) {
                 Path dimRoot = entry.getKey();
                 List<int[]> coords = entry.getValue();
+                com.shenqianye.samsara.claim.SafeDeletion.dbg("[batchDelete] dimRoot=" + dimRoot + " 待删=" + coords.size() + " 区块");
 
                 // 备份：按 region 文件去重（每个文件只备份一次，不 per-chunk）
                 java.util.Set<String> backedUpFiles = new java.util.HashSet<>();

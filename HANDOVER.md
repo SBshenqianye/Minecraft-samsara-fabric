@@ -1,6 +1,6 @@
 # samsara（周目管理）模组 — 交接文档
 
-> 交接日期：2026-08-26 ｜ 版本：v0.9.0（M4d 安全删除完成 + 批量优化 + 旗帜归属权 + 边界持久化）
+> 交接日期：2026-08-30 ｜ 版本：v0.9.1（M4d 安全删除修复：多维度删除 + 队列 key 去重 + 卸载批量处理）
 > 交接人：AI 开发助手 ｜ 接收人：项目维护者
 
 ---
@@ -29,6 +29,7 @@
 | **M4b 旗帜圈地** | 放置/破坏自动注册/移除，8 个 claim 子命令，双层粒子预览 | ✅ |
 | **M4c 安全删除** | dryrun/backup/execute/report，按白名单保护 | ✅ |
 | **M4d 批量优化** | 按维度/区域文件分组删除 + 白名单索引快删 + 旗帜归属权 + 边界持久化 | ✅ |
+| **M4d v0.9.1 修复** | dimensionFromPath 键格式修复 + 队列 key 含维度 + onChunkUnload 批量缓冲 + 停服兜底 drainNonLoaded | ✅ |
 | **中文名** | season/claim 名称用引号支持中文（`string()` 参数） | ✅ |
 | **坐标语法糖** | 所有坐标参数用原版类型支持 `~`/`~N`（BlockPosArgument/ColumnPosArgument/Vec2Argument） | ✅ |
 | **调试拆分** | `/samsara debug flow setup\|rewind\|teleport` 拆分 `/season start` | ✅ |
