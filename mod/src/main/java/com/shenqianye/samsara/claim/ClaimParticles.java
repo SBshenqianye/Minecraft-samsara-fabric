@@ -1,8 +1,12 @@
 package com.shenqianye.samsara.claim;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.mojang.math.Transformation;
+import com.shenqianye.samsara.Samsara;
 import com.shenqianye.samsara.geometry.ChunkCoord;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.ParticleOptions;
@@ -20,6 +24,10 @@ import net.minecraft.world.level.block.entity.BannerBlockEntity;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.*;
 
 /**
@@ -44,11 +52,21 @@ public class ClaimParticles {
     /** 持久显示边界开关：玩家 UUID → 是否开启 */
     private static final Set<UUID> boundaryToggle = new HashSet<>();
 
+    /** 固定边界开关（旗帜高度）：玩家 UUID → 是否显示 */
+    private static final Set<UUID> showFixed = new HashSet<>();
+    /** 跟随边界开关（玩家高度）：玩家 UUID → 是否显示 */
+    private static final Set<UUID> showDynamic = new HashSet<>();
+
     /** 右键旗帜时间：玩家 UUID → 最近右键时间（毫秒） */
     private static final Map<UUID, Long> rightClickTime = new HashMap<>();
 
     /** 右键旗帜后持续显示时长（毫秒） */
     private static final long RIGHT_CLICK_DURATION_MS = 10_000L;
+
+    /** 持久化配置文件路径 */
+    private static final Path TOGGLES_PATH = FabricLoader.getInstance().getConfigDir()
+            .resolve("samsara").resolve("boundary-toggles.json");
+    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
     private static final String[] ARROWS = {"↑", "↗", "→", "↘", "↓", "↙", "←", "↖"};
 
@@ -68,7 +86,8 @@ public class ClaimParticles {
             if (d != null && d.isAlive()) d.discard();
         }
         infoDisplays.clear();
-        boundaryToggle.clear();
+        // 注意：boundaryToggle/showFixed/showDynamic 不在这里 clear，
+        // 因为它们已持久化到 boundary-toggles.json，重启后需要恢复
         rightClickTime.clear();
     }
 
@@ -76,11 +95,43 @@ public class ClaimParticles {
     public static boolean toggleBoundary(UUID playerUUID) {
         if (boundaryToggle.contains(playerUUID)) {
             boundaryToggle.remove(playerUUID);
-            return false;
         } else {
             boundaryToggle.add(playerUUID);
-            return true;
         }
+        saveToggles();
+        return boundaryToggle.contains(playerUUID);
+    }
+
+    /** 切换固定边界显示（旗帜高度），返回切换后的状态 */
+    public static boolean toggleFixed(UUID playerUUID) {
+        if (showFixed.contains(playerUUID)) {
+            showFixed.remove(playerUUID);
+        } else {
+            showFixed.add(playerUUID);
+        }
+        saveToggles();
+        return showFixed.contains(playerUUID);
+    }
+
+    /** 切换跟随边界显示（玩家高度），返回切换后的状态 */
+    public static boolean toggleDynamic(UUID playerUUID) {
+        if (showDynamic.contains(playerUUID)) {
+            showDynamic.remove(playerUUID);
+        } else {
+            showDynamic.add(playerUUID);
+        }
+        saveToggles();
+        return showDynamic.contains(playerUUID);
+    }
+
+    /** 获取固定边界是否开启 */
+    public static boolean isFixedOn(UUID playerUUID) {
+        return showFixed.contains(playerUUID);
+    }
+
+    /** 获取跟随边界是否开启 */
+    public static boolean isDynamicOn(UUID playerUUID) {
+        return showDynamic.contains(playerUUID);
     }
 
     /** 玩家右键旗帜时调用，记录时间戳以持续显示 10 秒 */
@@ -108,7 +159,61 @@ public class ClaimParticles {
         return cachedTextDisplayType;
     }
 
+    // ---- 持久化 toggle 状态 ----
+
+    private static void saveToggles() {
+        try {
+            TogglesData data = new TogglesData();
+            data.boundary = new ArrayList<>(boundaryToggle.stream().map(UUID::toString).toList());
+            data.fixed = new ArrayList<>(showFixed.stream().map(UUID::toString).toList());
+            data.dynamic = new ArrayList<>(showDynamic.stream().map(UUID::toString).toList());
+            Files.createDirectories(TOGGLES_PATH.getParent());
+            Files.writeString(TOGGLES_PATH, GSON.toJson(data), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            Samsara.LOGGER.warn("[samsara] boundary-toggles.json 写入失败: {}", e.getMessage());
+        }
+    }
+
+    private static void loadToggles() {
+        if (!Files.exists(TOGGLES_PATH)) return;
+        try {
+            TogglesData data = GSON.fromJson(
+                    Files.readString(TOGGLES_PATH, StandardCharsets.UTF_8), TogglesData.class);
+            if (data == null) return;
+            boundaryToggle.clear();
+            showFixed.clear();
+            showDynamic.clear();
+            if (data.boundary != null) {
+                for (String s : data.boundary) {
+                    try { boundaryToggle.add(UUID.fromString(s)); } catch (Exception ignored) {}
+                }
+            }
+            if (data.fixed != null) {
+                for (String s : data.fixed) {
+                    try { showFixed.add(UUID.fromString(s)); } catch (Exception ignored) {}
+                }
+            }
+            if (data.dynamic != null) {
+                for (String s : data.dynamic) {
+                    try { showDynamic.add(UUID.fromString(s)); } catch (Exception ignored) {}
+                }
+            }
+            Samsara.LOGGER.info("[samsara] 加载 boundary toggle: boundary={}, fixed={}, dynamic={}",
+                    boundaryToggle.size(), showFixed.size(), showDynamic.size());
+        } catch (Exception e) {
+            Samsara.LOGGER.warn("[samsara] boundary-toggles.json 解析失败: {}", e.getMessage());
+        }
+    }
+
+    /** 持久化数据模型 */
+    static class TogglesData {
+        List<String> boundary = new ArrayList<>();
+        List<String> fixed = new ArrayList<>();
+        List<String> dynamic = new ArrayList<>();
+    }
+
     public static void init() {
+        loadToggles();
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             if (shuttingDown) return;
 
@@ -139,6 +244,12 @@ public class ClaimParticles {
                     }
                 }
 
+                // 白名单为空时清除所有显示并跳过
+                if (whitelist.isEmpty()) {
+                    removeDisplays(player);
+                    continue;
+                }
+
                 activePlayers.add(player.getUUID());
 
                 // 计算管理区域边界
@@ -148,20 +259,57 @@ public class ClaimParticles {
                 long dayTime = level.getOverworldClockTime() % 24000;
                 ParticleType<?> boundaryParticle = ClaimParticleConfig.getInstance()
                         .getParticleForTime(dayTime);
-                sendBoundaryParticlesFromEdges(level, player, edges,
-                        player.getEyeY(),
-                        (ParticleOptions) boundaryParticle);
+                ParticleOptions boundaryOpts = (ParticleOptions) boundaryParticle;
 
-                // 区块信息核心：管理区域几何中心（化线为面后的区域中心）
+                UUID pid = player.getUUID();
+                boolean dynOn = showDynamic.contains(pid);
+                boolean fixOn = showFixed.contains(pid);
+                boolean rightClicked = rightClickTime.containsKey(pid)
+                        && System.currentTimeMillis() - rightClickTime.get(pid) < RIGHT_CLICK_DURATION_MS;
+
+                // canShow = 常显开关 OR 手持旗帜 OR 右键后10秒内
+                boolean canShow = boundaryToggle.contains(pid)
+                        || player.getMainHandItem().is(ItemTags.BANNERS)
+                        || rightClicked;
+
+                // 跟随边界：canShow AND dynamic开关开
+                if (canShow && dynOn) {
+                    double feetY = player.getY();
+                    sendBoundaryParticlesFromEdges(level, player, edges,
+                            feetY + 2.0, boundaryOpts);
+                    sendBoundaryParticlesFromEdges(level, player, edges,
+                            feetY + 4.0, boundaryOpts);
+                    // 化线为面：在保护区域内填充网格粒子
+                    sendFillParticles(level, player, whitelist,
+                            feetY + 2.0, boundaryOpts);
+                }
+                // 固定边界：canShow AND fixed开关开 AND bannerY有效
+                double bannerY = AreaService.getInstance().getAvgBannerY();
+                if (canShow && fixOn && bannerY > 1) {
+                    sendBoundaryParticlesFromEdges(level, player, edges,
+                            bannerY + 1.0, boundaryOpts);
+                    sendBoundaryParticlesFromEdges(level, player, edges,
+                            bannerY + 2.0, boundaryOpts);
+                    // 化线为面：固定高度填充
+                    sendFillParticles(level, player, whitelist,
+                            bannerY + 1.0, boundaryOpts);
+                }
+
+                // 区块信息核心：管理区域几何中心
                 double coreX = calcAreaCenterX(whitelist);
                 double coreZ = calcAreaCenterZ(whitelist);
 
+                // 文字位置：跟随边界开→跟随玩家；仅固定边界开→固定在旗帜高度
+                boolean textFollowPlayer = canShow && dynOn;
+
                 if (sharedDisplay) {
                     updateTextDisplayArrow(level, player, coreX, coreZ);
-                    updateTextDisplayInfo(level, player, coreX, coreZ, whitelist);
                 } else {
-                    sendParticleBeam(level, player, coreX, coreZ);
-                    sendParticleText(level, player, coreX, coreZ, whitelist);
+                    // 光束目标Y：跟随模式→玩家高度；固定模式→旗帜高度
+                    double beamTargetY = textFollowPlayer
+                            ? player.getY() + 4.0
+                            : (bannerY > 1 ? bannerY + 4.0 : player.getY() + 4.0);
+                    sendParticleBeam(level, player, coreX, coreZ, beamTargetY);
                 }
             }
 
@@ -172,8 +320,14 @@ public class ClaimParticles {
                     if (!activePlayers.contains(id)) {
                         Display.TextDisplay d = arrowDisplays.remove(id);
                         if (d != null && d.isAlive()) d.discard();
-                        Display.TextDisplay d2 = infoDisplays.remove(id);
-                        if (d2 != null && d2.isAlive()) d2.discard();
+                    }
+                }
+                Iterator<UUID> it2 = infoDisplays.keySet().iterator();
+                while (it2.hasNext()) {
+                    UUID id = it2.next();
+                    if (!activePlayers.contains(id)) {
+                        Display.TextDisplay d = infoDisplays.remove(id);
+                        if (d != null && d.isAlive()) d.discard();
                     }
                 }
             }
@@ -213,18 +367,101 @@ public class ClaimParticles {
                                                         ParticleOptions particleType) {
         for (String ek : edges) {
             String[] p = ek.split(",");
-            long x1 = Long.parseLong(p[0]), z1 = Long.parseLong(p[1]);
-            long x2 = Long.parseLong(p[2]), z2 = Long.parseLong(p[3]);
-            long len = Math.max(Math.abs(x2 - x1), Math.abs(z2 - z1));
+            double x1 = Long.parseLong(p[0]), z1 = Long.parseLong(p[1]);
+            double x2 = Long.parseLong(p[2]), z2 = Long.parseLong(p[3]);
+            double len = Math.max(Math.abs(x2 - x1), Math.abs(z2 - z1));
             if (len == 0) continue;
-            long sx = Long.signum(x2 - x1);
-            long sz = Long.signum(z2 - z1);
-            for (long d = 0; d <= len; d += 4) {
+            double sx = Math.signum(x2 - x1);
+            double sz = Math.signum(z2 - z1);
+            // 2格一个粒子（减少粒子数量避免卡顿）
+            for (double d = 0; d <= len; d += 2.0) {
                 level.sendParticles(player, particleType,
                         true, true, x1 + sx * d, y, z1 + sz * d,
                         1, 0.0, 0.0, 0.0, 0.0);
             }
         }
+    }
+
+    /**
+     * 化线为面：检测边界是否闭合，闭合则在内部填充网格粒子。
+     * <p>
+     * 闭合判定：每条边界边恰好连接2条其他边，形成单一环路。
+     * 填充方式：包围盒内每个区块中心，用射线法判断是否在闭合区域内。
+     */
+    private static void sendFillParticles(ServerLevel level, ServerPlayer player,
+                                           Set<ChunkCoord> whitelist, double y,
+                                           ParticleOptions particleType) {
+        // 1. 计算边界边
+        Set<String> edges = calcBoundaryEdges(whitelist);
+
+        // 2. 检测是否闭合：每条边的端点恰好连接2条边
+        if (!isClosedLoop(edges)) return;
+
+        // 3. 包围盒
+        int minX = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE;
+        int minZ = Integer.MAX_VALUE, maxZ = Integer.MIN_VALUE;
+        for (ChunkCoord c : whitelist) {
+            minX = Math.min(minX, c.x); maxX = Math.max(maxX, c.x);
+            minZ = Math.min(minZ, c.z); maxZ = Math.max(maxZ, c.z);
+        }
+
+        // 4. 射线法：包围盒内每4个区块采样，判断区块中心是否在闭合区域内
+        for (int cx = minX; cx <= maxX; cx += 4) {
+            for (int cz = minZ; cz <= maxZ; cz += 4) {
+                double px = cx * 16.0 + 8.0;
+                double pz = cz * 16.0 + 8.0;
+                if (isPointInEdges(px, pz, edges)) {
+                    level.sendParticles(player, particleType,
+                            true, true, px, y, pz,
+                            1, 0.0, 0.0, 0.0, 0.0);
+                }
+            }
+        }
+    }
+
+    /**
+     * 检测边界边集是否形成闭合环路。
+     * 每条边用端点坐标表示，统计每个端点连接的边数，全部为2则闭合。
+     */
+    private static boolean isClosedLoop(Set<String> edges) {
+        if (edges.isEmpty()) return false;
+        // 端点 → 连接边数
+        Map<String, Integer> vertexCount = new HashMap<>();
+        for (String ek : edges) {
+            String[] p = ek.split(",");
+            // 边的两个端点
+            String v1 = p[0] + "," + p[1];
+            String v2 = p[2] + "," + p[3];
+            vertexCount.merge(v1, 1, Integer::sum);
+            vertexCount.merge(v2, 1, Integer::sum);
+        }
+        // 闭合环路：每个端点恰好连接2条边
+        for (int count : vertexCount.values()) {
+            if (count != 2) return false;
+        }
+        return true;
+    }
+
+    /**
+     * 射线法判断点 (px, pz) 是否在边界边围成的闭合区域内。
+     * 从点向右发射水平射线，计算与边的交点数，奇数=内部。
+     */
+    private static boolean isPointInEdges(double px, double pz, Set<String> edges) {
+        int intersections = 0;
+        for (String ek : edges) {
+            String[] p = ek.split(",");
+            double x1 = Long.parseLong(p[0]), z1 = Long.parseLong(p[1]);
+            double x2 = Long.parseLong(p[2]), z2 = Long.parseLong(p[3]);
+            // 仅处理水平线段（z1 == z2）用于射线交叉
+            if (z1 == z2) continue;
+            // 射线是 z = pz 的水平线，检查线段是否跨越 pz
+            if ((z1 <= pz && z2 > pz) || (z2 <= pz && z1 > pz)) {
+                // 计算交点的 x 坐标
+                double xIntersect = x1 + (pz - z1) / (z2 - z1) * (x2 - x1);
+                if (xIntersect > px) intersections++;
+            }
+        }
+        return (intersections & 1) == 1; // 奇数 = 内部
     }
 
     private static double calcAreaCenterX(Set<ChunkCoord> area) {
@@ -244,14 +481,11 @@ public class ClaimParticles {
     // ========================================================================
 
     /**
-     * 粒子光束：从玩家右手到管理区域核心。
-     * 使用 getViewVector 获取实际视线方向（而非身体朝向）。
-     * 光束粒子类型可通过配置独立设置。
+     * 粒子光束：从玩家右手到目标点（targetY 随模式变化）。
      */
     private static void sendParticleBeam(ServerLevel level, ServerPlayer player,
-                                          double targetX, double targetZ) {
+                                          double targetX, double targetZ, double targetY) {
         ParticleOptions beamType = (ParticleOptions) ClaimParticleConfig.getInstance().getBeamParticle();
-        // 使用视线方向向量（包含头部旋转，不仅仅是身体朝向）
         var look = player.getViewVector(1.0f);
         double lookX = look.x;
         double lookZ = look.z;
@@ -260,36 +494,37 @@ public class ClaimParticles {
         lookX /= lookLen;
         lookZ /= lookLen;
 
-        // 右手方向 = 视线方向顺时针旋转90度
-        double rightX = lookZ;   // 顺时针90度
+        double rightX = lookZ;
         double rightZ = -lookX;
 
-        // 手部位置：右手侧 0.4 格 + 前方 0.15 格，Y = 腰部高度
+        // 手部位置
         double hx = player.getX() + rightX * 0.4 + lookX * 0.15;
         double hy = player.getY() + 0.6;
         double hz = player.getZ() + rightZ * 0.4 + lookZ * 0.15;
 
         double dx = targetX - hx;
+        double dy = targetY - hy;
         double dz = targetZ - hz;
-        double dist = Math.sqrt(dx * dx + dz * dz);
+        double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
         if (dist < 1.0) return;
 
-        int particles = (int) (dist / 1.5) + 1;
+        int particles = (int) (dist / 1.0) + 1;
         for (int i = 2; i <= particles + 2; i++) {
             double t = (double) i / (particles + 4);
             level.sendParticles(player, beamType,
-                    true, true, hx + dx * t, hy, hz + dz * t,
+                    true, true, hx + dx * t, hy + dy * t, hz + dz * t,
                     1, 0.0, 0.0, 0.0, 0.0);
         }
     }
 
     /**
      * 粒子文字：在管理区域中心上方用粒子写出区块尺寸。
-     * 字体粒子类型可通过配置独立设置。
+     * textFollowPlayer=true → 跟随玩家高度；false → 固定在旗帜高度
      */
     private static void sendParticleText(ServerLevel level, ServerPlayer player,
                                           double centerX, double centerZ,
-                                          Set<ChunkCoord> whitelist) {
+                                          Set<ChunkCoord> whitelist,
+                                          boolean textFollowPlayer, double bannerY) {
         int minX = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE;
         int minZ = Integer.MAX_VALUE, maxZ = Integer.MIN_VALUE;
         for (ChunkCoord c : whitelist) {
@@ -299,8 +534,20 @@ public class ClaimParticles {
         String text = (maxX - minX + 1) + "X" + (maxZ - minZ + 1);
 
         ParticleOptions fontType = (ParticleOptions) ClaimParticleConfig.getInstance().getFontParticle();
-        double eyeY = player.getY() + player.getBbHeight() + 1.0;
-        ClaimParticleText.drawFacing(level, player, centerX, eyeY, centerZ, text, 6, fontType);
+        double textY;
+        if (textFollowPlayer) {
+            // 跟随玩家：脚底 +4 + 身高 +1
+            textY = player.getY() + 4.0 + player.getBbHeight() + 1.0;
+        } else {
+            // 固定在旗帜高度
+            textY = (bannerY > 1 ? bannerY : player.getY()) + 5.0;
+        }
+        // 根据距离动态调整文字缩放：近距离 1.5（大字），远距离缩小使粒子更紧凑易读
+        double textDist = Math.sqrt(
+                (centerX - player.getX()) * (centerX - player.getX())
+                        + (centerZ - player.getZ()) * (centerZ - player.getZ()));
+        double dynamicScale = Math.max(0.8, 1.5 - Math.min(textDist / 120.0, 0.7));
+        ClaimParticleText.drawFacingScaled(level, player, centerX, textY, centerZ, text, 6, fontType, dynamicScale);
     }
 
     // ========================================================================
