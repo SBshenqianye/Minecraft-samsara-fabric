@@ -64,7 +64,6 @@ public class PermissionConfig {
         DEFAULTS.put("debug delete", PermissionLevel.OWNER);
         DEFAULTS.put("debug activity", PermissionLevel.OWNER);
         DEFAULTS.put("debug config", PermissionLevel.OWNER);
-        DEFAULTS.put("debug whitelist", PermissionLevel.OWNER);
         DEFAULTS.put("debug fakeplayers", PermissionLevel.OWNER);
         DEFAULTS.put("debug groups", PermissionLevel.OWNER);
         DEFAULTS.put("debug create", PermissionLevel.OWNER);

@@ -8,14 +8,11 @@ import com.shenqianye.samsara.rewind.RewindEngine;
 import com.shenqianye.samsara.season.PlayerRegistry;
 import com.shenqianye.samsara.season.Season;
 import com.shenqianye.samsara.season.SeasonManager;
-import com.shenqianye.samsara.whitelist.WhitelistStore;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.commands.CommandBuildContext;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
-import net.minecraft.commands.arguments.coordinates.Vec2Argument;
 import net.minecraft.server.permissions.Permissions;
-import net.minecraft.world.phys.Vec2;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -41,8 +38,6 @@ import java.util.UUID;
  * /samsara debug rewind abort       —— 中止进行中的倒流
  * /samsara debug rewind set &lt;时长&gt;  —— 设置倒流时长（支持 1h/30m/3600s/1d/0.5d）
  * /samsara debug config [键] [值]   —— 查看/设置配置（无键=全部；键=当前值；键+值=设置并回显）
- * /samsara debug whitelist json     —— 打印 whitelist.json 内容
- * /samsara debug whitelist reload   —— 重新加载 whitelist.json
  * </pre>
  */
 public class DebugCommand {
@@ -372,12 +367,6 @@ public class DebugCommand {
                                                 com.shenqianye.samsara.activity.ActivityManager.getInstance().deadText())))
                                 .then(Commands.literal("clear")
                                         .executes(ctx -> reply(ctx.getSource(), clearActivity()))))
-                        .then(Commands.literal("whitelist")
-                                .then(Commands.literal("json")
-                                        .executes(ctx -> reply(ctx.getSource(), WhitelistStore.getInstance().rawJson()
-                                                + "\n\n↑ whitelist.json 位置: " + WhitelistStore.getInstance().configPath())))
-                                .then(Commands.literal("reload")
-                                        .executes(ctx -> reply(ctx.getSource(), WhitelistStore.getInstance().reload()))))
                         .then(permNode()));
 
         dispatcher.register(samsaraNode);
@@ -421,25 +410,6 @@ public class DebugCommand {
                                         .executes(ctx -> reply(ctx.getSource(),
                                                 permOwner(StringArgumentType.getString(ctx, "sub"),
                                                         StringArgumentType.getString(ctx, "name")))))));
-    }
-
-    /** claim add/addc：从 Vec2 参数解析坐标（支持 ~ 相对偏移 / 数字），chunkMode=true 时按区块坐标×16 */
-    private static int claimAddFromVec2(CommandContext<CommandSourceStack> ctx, String nameArg,
-                                        String p1Arg, String p2Arg, boolean chunkMode) {
-        String name = StringArgumentType.getString(ctx, nameArg);
-        Vec2 p1 = Vec2Argument.getVec2(ctx, p1Arg);
-        Vec2 p2 = Vec2Argument.getVec2(ctx, p2Arg);
-        int x1 = (int) Math.round(p1.x);
-        int z1 = (int) Math.round(p1.y);
-        int x2 = (int) Math.round(p2.x);
-        int z2 = (int) Math.round(p2.y);
-        if (chunkMode) {
-            x1 *= 16;
-            z1 *= 16;
-            x2 *= 16;
-            z2 *= 16;
-        }
-        return reply(ctx.getSource(), WhitelistStore.getInstance().claimAdd(name, x1, z1, x2, z2));
     }
 
     // ---- 坐标语法糖辅助（坐标参数一律用原版参数类型支持 ~ / ~N）----
@@ -874,7 +844,7 @@ public class DebugCommand {
                 + "  debug status|json|reload|reset|config|settings —— 状态与配置\n"
                 + "  debug fakeplayers|groups —— 测试数据注入与分组预览\n"
                 + "  debug rewind|diff|flow —— 倒流与差异控制\n"
-                + "  debug whitelist|perm —— 白名单/权限管理";
+                + "  debug perm —— 权限管理";
     }
 
     /** /samsara version：从 FabricLoader 取模组版本 + 显示名 + 简略配置 */

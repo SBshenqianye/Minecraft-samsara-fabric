@@ -3,9 +3,6 @@ package com.shenqianye.samsara.rewind;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.shenqianye.samsara.Samsara;
-import com.shenqianye.samsara.whitelist.ChunkProtector;
-import com.shenqianye.samsara.whitelist.WhitelistData;
-import com.shenqianye.samsara.whitelist.WhitelistStore;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
@@ -41,8 +38,8 @@ import java.util.concurrent.TimeUnit;
  * 机制（遵守设计规范 §10/§11/§12 快照语义与先备份）：
  * <ol>
  *   <li>{@code /season start}（same-world 且 settings.rewindDurationMs &gt; 0）时启动：
- *       扫描主世界 region/ 下已存在区块，除去保护集（仅圈地 whitelist.json，见
- *       {@link ChunkProtector}）；每个未圈地块分配均匀分布在时长内的「倒流时刻」，
+ *       扫描主世界 region/ 下已存在区块，除去保护集（旗帜圈地白名单）；
+ *       每个未圈地块分配均匀分布在时长内的「倒流时刻」，
  *       持久化 rewind.json；同时把记录窗口冻结为本次倒流的恢复源（§11 快照语义）；</li>
  *   <li>运行期 tick：到「倒流时刻」的区块打标（待退场）并公告进度；档3 对加载区块
  *       按进度逐格恢复（懒加载 + 预算分摊，恢复读冻结恢复源，倒流期间新改动不受影响）；</li>
@@ -309,7 +306,7 @@ public class RewindEngine {
             }
             sb.append(String.join(" ", parts)).append('\n');
         }
-        sb.append("保护集说明: 仅圈地区域(whitelist.json regions，/samsara debug claim 维护)受保护；未圈地全部视为未保留可删");
+        sb.append("保护集说明: 旗帜圈地白名单保护；未圈地全部视为未保留可删");
         return sb.toString();
     }
 
@@ -863,10 +860,13 @@ public class RewindEngine {
 
         synchronized void enqueue(List<int[]> coords, ServerLevel overworld) {
             boolean changed = false;
-            WhitelistData wl = WhitelistStore.getInstance().data();
+            // 使用 AreaService 的旗帜圈地白名单
+            var whitelist = overworld != null
+                    ? com.shenqianye.samsara.claim.AreaService.getInstance().getWhitelist(overworld.dimension())
+                    : java.util.Collections.<com.shenqianye.samsara.claim.ChunkCoord>emptySet();
             for (int[] c : coords) {
                 // 入队时复查保护：已被圈地的区块不再删除
-                if (overworld != null && ChunkProtector.isProtected(overworld, wl, c[0], c[1])) {
+                if (overworld != null && whitelist.contains(new com.shenqianye.samsara.claim.ChunkCoord(c[0], c[1]))) {
                     changed = true;
                     continue;
                 }
@@ -1042,7 +1042,10 @@ public class RewindEngine {
          * @return 删除的区块数
          */
         synchronized int drain(ServerLevel overworld, boolean skipLoaded) {
-            WhitelistData wl = WhitelistStore.getInstance().data();
+            // 使用 AreaService 的旗帜圈地白名单
+            var whitelist = overworld != null
+                    ? com.shenqianye.samsara.claim.AreaService.getInstance().getWhitelist(overworld.dimension())
+                    : java.util.Collections.<com.shenqianye.samsara.claim.ChunkCoord>emptySet();
 
             // 第一轮：分类 — 可删 vs 保留（加载中/已保护）
             List<QueuedChunk> toDelete = new ArrayList<>();
@@ -1051,7 +1054,7 @@ public class RewindEngine {
                 QueuedChunk qc = it.next().getValue();
                 boolean loaded = overworld != null && overworld.getChunkSource().getChunkNow(qc.x(), qc.z()) != null;
                 if (skipLoaded && loaded) continue; // 仍在内存，保持队列
-                if (overworld != null && ChunkProtector.isProtected(overworld, wl, qc.x(), qc.z())) {
+                if (overworld != null && whitelist.contains(new com.shenqianye.samsara.claim.ChunkCoord(qc.x(), qc.z()))) {
                     it.remove(); // 已被圈地 → 保留不删
                     continue;
                 }
@@ -1206,8 +1209,11 @@ public class RewindEngine {
     }
 
     private ScanResult scan(MinecraftServer server) {
-        WhitelistData wl = WhitelistStore.getInstance().data();
         ServerLevel overworld = server.getLevel(Level.OVERWORLD);
+        // 使用 AreaService 的旗帜圈地白名单
+        var whitelist = overworld != null
+                ? com.shenqianye.samsara.claim.AreaService.getInstance().getWhitelist(overworld.dimension())
+                : java.util.Collections.<com.shenqianye.samsara.claim.ChunkCoord>emptySet();
         Path dimRoot = McaRegion.overworldDimensionRoot(server.getWorldPath(LevelResource.ROOT));
         Path regionDir = dimRoot.resolve("region");
         List<int[]> toRewind = new ArrayList<>();
@@ -1217,7 +1223,7 @@ public class RewindEngine {
             List<int[]> exist = McaRegion.scanExisting(f);
             for (int[] c : exist) {
                 total++;
-                if (overworld != null && ChunkProtector.isProtected(overworld, wl, c[0], c[1])) {
+                if (overworld != null && whitelist.contains(new com.shenqianye.samsara.claim.ChunkCoord(c[0], c[1]))) {
                     protectedCount++;
                 } else {
                     toRewind.add(c);
