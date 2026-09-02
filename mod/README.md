@@ -14,7 +14,7 @@ fabric.mod.json 采用 `environment: "*"` + `"server"` entrypoint（`Samsara` �
 > ⚠️ 不要改成 `environment: "server"`：那会让模组在客户端进程（含单人）中被过滤不加载，单人存档将不可用。
 > 依据：fabric-loader 0.19.3 的 `ModResolver` 按物理进程 EnvType 过滤模组；`EntrypointPatch` 负责单人时调用 server entrypoint。
 
-## 版本锁定（已完成，M1；已升级 26.1 → 26.2）
+## 版本锁定（已完成；已升级 26.1 → 26.2）
 
 **MC 26.2 是"去混淆"版本：yarn 映射已停止维护（2025 年 Fabric 宣布弃用），使用 Mojang 官方映射，构建脚本里没有 `yarn_mappings`，loom 1.17 起自动处理，`build.gradle` 不再写 `mappings` 行。**
 
@@ -43,7 +43,7 @@ gradlew.bat build
 
 产物：`build/libs/samsara-<version>.jar`，放入服务器 `mods/`。
 
-## M2 分组出生 + 时间倒流（档2+档3）
+## 分组出生 + 时间倒流
 
 `/samsara season start`（same-world 且 settings.rewindDurationMs&gt;0 时）执行完整流程：
 `新出生中心 → 分组（3~5人/组，角度均分+抖动，组距默认 1000）→ 持久化 groupSpawns → 启动倒流（默认 1 天可配置）→ 倒流到期 → 全员传送 + 广播；离线玩家上线补传送（持久化，重启不丢）`。
@@ -51,8 +51,8 @@ gradlew.bat build
 - 注册玩家来源：测试注入池 + 在线 + `usercache.json` + `world/dimensions/.../players/data/`（真实 start 自动清空测试注入池）
 - **档3 diff 快照语义（2026-08-17）**：记录**常开**写入 `diff/current/`；倒流启动时冻结为 `diff/s<赛季id>/` = 本次恢复源（窗口 = 上次删块完成之后至本次倒流开始）；完成时重置窗口。恢复只读恢复源 → 倒流期间新改动不会被本轮倒流恢复
 - 倒流档2+档3：未圈地块分配均匀倒流时刻（区块波浪退场）；档3 对加载区块按进度逐格恢复（懒加载 + 自适应预算，倒流结束后继续恢复到完成）
-- **物理删除（完成即删 + 文件级回收 + M4d 批量优化）**：已卸载区块后台备份+清零；**仍加载的入待删队列 `pending-delete.json`（卸载即删，启动/停服兜底）**；清零后**全空的 .mca 直接整文件删除**，停服窗口自动**压缩重写**残留文件（`compact`，也可 `/samsara debug rewind compact` 手动）→ 磁盘空间真正回收
-- **M4d 安全删除增强**：`/samsara debug claim delete execute` 支持多维度 + 白名单索引快删 + drainNonLoaded 即时处理未加载区块；批量按维度/区域文件分组删除（设计规范 §18）
+- **物理删除（完成即删 + 文件级回收 + 批量优化）**：已卸载区块后台备份+清零；**仍加载的入待删队列 `pending-delete.json`（卸载即删，启动/停服兜底）**；清零后**全空的 .mca 直接整文件删除**，停服窗口自动**压缩重写**残留文件（`compact`，也可 `/samsara debug rewind compact` 手动）→ 磁盘空间真正回收
+- **安全删除增强**：`/samsara debug claim delete execute` 支持多维度 + 白名单索引快删 + drainNonLoaded 即时处理未加载区块；批量按维度/区域文件分组删除（设计规范 §18）
 - **rewind.json 归档**：倒流"走完"（传送完成 && 恢复完成）后归档至 `config/samsara/archive/`（不删除，供审计）；中止则清除且不删任何区块
 - 保护集：**仅圈地**（`whitelist.json` 配置区域，`/samsara debug claim` 维护；v0.8 起已去掉自动出生圈/周目中心/分组点保护）
 - **新出生中心**：与全部历史中心集合（世界初始点 + 每个已开始周目中心）的距离都 ≥ `newCenterMinDistance`（默认 15000，无上限）
@@ -75,7 +75,7 @@ src/main/java/com/shenqianye/samsara/
 ├── season/
 │   ├── Season.java           # 周目模型（§3.3，含 spawnCenter/groupSpawns）
 │   ├── SeasonData.java       # season.json 根结构（含 settings）
-│   ├── SeasonManager.java    # 状态机 + 分组/传送/广播 + 调试支持（M1+M2）
+│   ├── SeasonManager.java    # 状态机 + 分组/传送/广播 + 调试支持
 │   ├── GroupPlanner.java     # 分组算法（纯逻辑，可单测）
 │   ├── PlayerRegistry.java   # 注册玩家列表（来源合并 + 测试注入池）
 │   ├── SpawnCenterCalculator.java # 出生中心计算（纯逻辑）
@@ -84,7 +84,7 @@ src/main/java/com/shenqianye/samsara/
 │   ├── WhitelistData.java    # whitelist.json 结构
 │   ├── WhitelistStore.java   # 配置白名单单例
 │   └── ChunkProtector.java   # 倒流保护判定（仅圈地）
-├── claim/                     # M4b 旗帜圈地 + M4c/M4d 安全删除（23 个 Java 文件）
+├── claim/                     # 旗帜圈地 + 安全删除（23 个 Java 文件）
 │   ├── Extension.java        # 15 种图案→8 方向映射 + 旋转 + 颜色强度
 │   ├── ClaimNode.java        # 旗帜节点（含 ownerUUID/ownerName 归属权）
 │   ├── AreaService.java      # 圈地服务（单例，维度白名单索引，claims.json 持久化）
@@ -114,7 +114,7 @@ src/main/java/com/shenqianye/samsara/
 | `/samsara debug reset` | 清空全部周目数据（危险操作） |
 | `/samsara debug create <名> [模式] [数量]` | 批量创建历史周目 |
 | `/samsara debug settime <id> <start\|end> <now\|epoch毫秒>` | 设置时间戳 |
-| `/samsara debug fakeplayers <clear\|数字\|前缀 数量\|名字,名字...>` | 注入测试玩家（M2 分组测试数据；真实 start 时自动清空） |
+| `/samsara debug fakeplayers <clear\|数字\|前缀 数量\|名字,名字...>` | 注入测试玩家（分组测试数据；真实 start 时自动清空） |
 | `/samsara debug groups [名单]` | 分组 dry-run（不落盘；缺省用注册玩家） |
 | `/samsara debug flow setup\|rewind <true\|false>\|teleport` | 拆分 `/samsara season start`：只准备 / 只倒流 / 只传送 |
 | `/samsara debug diff` | diff 差异库状态（记录窗口 / 恢复源） |
@@ -122,7 +122,7 @@ src/main/java/com/shenqianye/samsara/
 | `/samsara debug diff text <pos> <文字> [stateId] [scale]` | 空中字画（5×5 点阵，倒流保持） |
 | `/samsara debug rewind preview\|status\|abort\|purge\|compact\|restore <pos>\|set <时长>` | 倒流：预览/状态/中止/立即删已到倒流时刻区块/区域文件瘦身(全空删+压缩重写)/强制恢复某区块/时长配置 |
 | `/samsara debug claim add\|addc <名> <p1> <p2>\|remove <名>\|list` | 圈地维护（whitelist.json） |
-| `/samsara debug claim delete dryrun\|backup\|execute\|report` | 安全删除（按白名单，多维度，M4d 批量优化） |
+| `/samsara debug claim delete dryrun\|backup\|execute\|report` | 安全删除（按白名单，多维度，批量优化） |
 | `/samsara debug config [键] [值]` | 配置查看/设置（groupdist/birthjitter/birthreset/rewind/groupmin/groupmax/spawnradius/centermin/centermax） |
 | `/samsara debug whitelist json\|reload` | 白名单查看/重载 |
 | `/samsara debug spawninfo` | 出生点信息 |
