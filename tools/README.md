@@ -13,4 +13,4 @@ python analyze.py "C:\Games\0-minecraft\server\saves\玩家背包" --json report
 
 > 注意：1.19 起 `lastPlayed`/`firstPlayed` 已从玩家 .dat 移除，仅提供 .dat 目录时无法推断登录时间（脚本会给出提示）；建议提供 `usercache.json` + `logs/` 目录，或等待活跃度模块的 `activity.log`。
 
-规划中：身份迁移工具（§16 正版/离线 UUID 映射）。
+规划中：身份迁移工具（§9 正版/离线 UUID 映射）。
