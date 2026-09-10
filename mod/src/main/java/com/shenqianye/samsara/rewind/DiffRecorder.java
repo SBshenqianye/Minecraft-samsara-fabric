@@ -286,7 +286,13 @@ public class DiffRecorder {
                 + "，scale=" + scale + "）· 起点 (" + x0 + "," + y0 + "," + z0 + ") · 倒流时逐格浮现";
     }
 
-    /** 5x5 点阵字体（行优先）：下标 = char - ' '（32），每字符 5 行，每行低 5 位 = 5 列（bit0=最左列，行0=顶部） */
+    /**
+     * 点阵字体（行优先）：下标 = char - ' '（32），每字符 5 行，每行低 5 位 = 5 列（bit0=最左列，行0=顶部）。
+     * <p>
+     * <b>点阵尺寸为 5 宽 × 5 高</b>（每个字形 {int[5]}，渲染端也按 5 行 5 列采样，见
+     * {@code ClaimParticleText.drawScaled}）。字段名 {@code FONT_5X7} 是历史遗留的误名
+     * （"7" 并非点阵高度），为兼容既有引用保留未改名。
+     */
     public static final int[][] FONT_5X7 = new int[95][];
     static {
         // 空格
