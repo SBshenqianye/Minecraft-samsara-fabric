@@ -49,8 +49,8 @@ gradlew.bat build
 `新出生中心 → 分组（3~5人/组，角度均分+抖动，组距默认 1000）→ 持久化 groupSpawns → 启动倒流（默认 1 天可配置）→ 倒流到期 → 全员传送 + 广播；离线玩家上线补传送（持久化，重启不丢）`。
 
 - 注册玩家来源：测试注入池 + 在线 + `usercache.json` + `world/dimensions/.../players/data/`（真实 start 自动清空测试注入池）
-- **档3 diff 快照语义（2026-08-17）**：记录**常开**写入 `diff/current/`；倒流启动时冻结为 `diff/s<赛季id>/` = 本次恢复源（窗口 = 上次删块完成之后至本次倒流开始）；完成时重置窗口。恢复只读恢复源 → 倒流期间新改动不会被本轮倒流恢复
-- 倒流档2+档3：未圈地块分配均匀倒流时刻（区块波浪退场）；档3 对加载区块按进度逐格恢复（懒加载 + 自适应预算，倒流结束后继续恢复到完成）
+- **diff 快照语义（2026-08-17）**：记录**常开**写入 `diff/current/`；倒流启动时冻结为 `diff/s<赛季id>/` = 本次恢复源（窗口 = 上次删块完成之后至本次倒流开始）；完成时重置窗口。恢复只读恢复源 → 倒流期间新改动不会被本轮倒流恢复
+- **时间倒流**：未圈地块分配均匀倒流时刻（区块波浪退场）；对加载区块按进度逐格恢复（懒加载 + 自适应预算，倒流结束后继续恢复到完成）
 - **物理删除（完成即删 + 文件级回收 + 批量优化）**：已卸载区块后台备份+清零；**仍加载的入待删队列 `pending-delete.json`（卸载即删，启动/停服兜底）**；清零后**全空的 .mca 直接整文件删除**，停服窗口自动**压缩重写**残留文件（`compact`，也可 `/samsara debug rewind compact` 手动）→ 磁盘空间真正回收
 - **安全删除增强**：`/samsara debug claim delete execute` 支持多维度 + 白名单索引快删 + drainNonLoaded 即时处理未加载区块；批量按维度/区域文件分组删除（设计规范 §18）
 - **rewind.json 归档**：倒流"走完"（传送完成 && 恢复完成）后归档至 `config/samsara/archive/`（不删除，供审计）；中止则清除且不删任何区块
@@ -62,7 +62,7 @@ gradlew.bat build
 - **倒流时长单位**：`config rewind <时长>` 支持 `d/h/m/s` 和纯数字=秒，如 `1h`、`30m`、`3600s`、`1d`、`0.5d`；亦可 `/samsara debug rewind set <时长>`
 - **倒流中 `/samsara season end`**：中止倒流（所有区块保持现状、不删除），再置周目 ENDED
 - **禁止双 ACTIVE**：已有进行中的周目时 create/start 会被拒绝；世界无可倒流区块时 `/samsara season start` 自动回退为直接传送
-- **档3 方块级倒流**：`/samsara debug diff` 查看记录窗口/恢复源状态；mixin 记录方块变化（`ServerLevelMixin` HEAD 注入），恢复读冻结恢复源（懒加载，`Tier3Restore` 预算分摊）；未记录区域走删除兜底
+- **方块级倒流**：`/samsara debug diff` 查看记录窗口/恢复源状态；mixin 记录方块变化（`ServerLevelMixin` HEAD 注入），恢复读冻结恢复源（懒加载，`DiffRestore` 预算分摊）；未记录区域走删除兜底
 
 ## 结构
 
@@ -97,8 +97,8 @@ src/main/java/com/shenqianye/samsara/
 └── rewind/
     ├── RewindData.java       # rewind.json 结构
     ├── McaRegion.java        # MCA 区域文件扫描/槽位清零/备份/批量删除（含白名单索引优化）
-    ├── RewindEngine.java     # 倒流调度器（档2/档3）+ PendingDeleteQueue + drainNonLoaded + 批量删除
-    ├── Tier3Restore.java     # 档3 逐格恢复调度（懒加载 + 预算分摊）
+    ├── RewindEngine.java     # 倒流调度器 + PendingDeleteQueue + drainNonLoaded + 批量删除
+    ├── DiffRestore.java      # 逐格恢复调度（懒加载 + 预算分摊）
     ├── DiffStore.java        # diff 差异库（内存缓存 + 批量落盘）
     └── DiffRecorder.java     # 记录器 + 5×5 点阵字库 + fakeDiff/fakeDiffText
 ```
