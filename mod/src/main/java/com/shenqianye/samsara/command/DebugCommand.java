@@ -42,10 +42,8 @@ import java.util.UUID;
  */
 public class DebugCommand {
     private static final SeasonManager MANAGER = SeasonManager.getInstance();
-    /** reset 二次确认标记：首次置位提示，再次执行才真正清空 */
-    private static boolean resetArmed = false;
-    /** activity clear 二次确认标记：首次置位提示，再次执行才真正清空 activity.log */
-    private static boolean activityClearArmed = false;
+    // 破坏性操作的二次确认统一由 ConfirmGuard 管理（按操作 key 隔离 + 30 秒有效期），
+    // 不再使用各命令自己的 boolean 待确认标记。
 
     public static void register() {
         CommandRegistrationCallback.EVENT.register(DebugCommand::registerCommands);
@@ -192,7 +190,7 @@ public class DebugCommand {
                                         .executes(ctx -> reply(ctx.getSource(), RewindEngine.getInstance().abort())))
                                 .then(Commands.literal("purge")
                                         .executes(ctx -> reply(ctx.getSource(),
-                                                RewindEngine.getInstance().purgeNow(ctx.getSource().getServer()))))
+                                                debugRewindPurge(ctx.getSource()))))
                                 .then(Commands.literal("compact")
                                         .executes(ctx -> reply(ctx.getSource(),
                                                 RewindEngine.getInstance().compactNow(ctx.getSource().getServer()))))
@@ -469,22 +467,36 @@ public class DebugCommand {
 
     /** reset：需二次确认（首次置位提示，再次输入才真正清空） */
     private static String doReset() {
-        if (!resetArmed) {
-            resetArmed = true;
-            return "⚠ 危险操作确认：清空全部周目数据。\n再次输入 /samsara debug reset 才会真正执行。";
+        if (!ConfirmGuard.confirm("debug.reset")) {
+            return "⚠ 危险操作确认：清空全部周目数据。\n"
+                    + "再次输入 /samsara debug reset（" + ConfirmGuard.ttlSeconds() + " 秒内）才会真正执行。";
         }
-        resetArmed = false;
         return MANAGER.reset();
     }
 
     /** activity clear：需二次确认（首次置位提示，再次输入才真正清空活动日志） */
     private static String clearActivity() {
-        if (!activityClearArmed) {
-            activityClearArmed = true;
-            return "⚠ 确认：清空 activity.log（活跃度历史将丢失，重新累计）。\n再次输入 /samsara debug activity clear 才会真正执行。";
+        if (!ConfirmGuard.confirm("activity.clear")) {
+            return "⚠ 确认：清空 activity.log（活跃度历史将丢失，重新累计）。\n"
+                    + "再次输入 /samsara debug activity clear（" + ConfirmGuard.ttlSeconds() + " 秒内）才会真正执行。";
         }
-        activityClearArmed = false;
         return com.shenqianye.samsara.activity.ActivityManager.getInstance().clear();
+    }
+
+    /**
+     * debug rewind purge：立即物理删除「已到倒流时刻」的未保留区块（备份 + 清零，不可逆）
+     * ——需二次确认（《设计规范》〈破坏性操作：二次确认〉/ 需求 `F-63`）。
+     */
+    private static String debugRewindPurge(CommandSourceStack src) {
+        if (!ConfirmGuard.confirm("rewind.purge")) {
+            return "⚠ 危险操作确认：立即删除已到倒流时刻的未保留区块\n"
+                    + "· 备份 + 清零，不可逆（重启后按当前版本重新生成）\n"
+                    + "· 仍加载的区块入待删队列，卸载即删\n"
+                    + "· 圈地（旗帜白名单）区块不在删除范围内\n"
+                    + "再次输入 /samsara debug rewind purge（" + ConfirmGuard.ttlSeconds()
+                    + " 秒内）才会真正执行。";
+        }
+        return RewindEngine.getInstance().purgeNow(src.getServer());
     }
 
     // ---- perm 权限管理 ----
@@ -705,9 +717,8 @@ public class DebugCommand {
     }
 
     // ---- debug claim delete（生命周期说明） ----
-    // 所有删除操作仅针对已加载区块中不在白名单内的区块。
-    // 生命周期：dryrun → backup → execute（停服后手动删 .mca）→ report
-    // 服务端运行时不会直接删除文件（安全约束 §6.6），需停服后手动操作区域文件。
+    // 生命周期：dryrun（预览）→ backup（备份）→ execute（入队 + 立即删除未加载区块）→ report（报告）
+    // execute 会真正删除区块（不可逆），因此带二次确认；删除动作在后台线程执行备份 + 清零。
 
     /** debug claim delete dryrun：预览将被删除的区块（不实际操作） */
     private static String debugDeleteDryRun(CommandSourceStack src) {
@@ -733,8 +744,23 @@ public class DebugCommand {
         }
     }
 
-    /** debug claim delete execute：报告待删区块数（服务端运行时不直接删除） */
+    /**
+     * debug claim delete execute：把全部非白名单区块加入待删队列，并立即删除其中<b>未加载</b>的区块
+     * （备份 + 清零，不可逆）——因此需二次确认（《设计规范》〈破坏性操作：二次确认〉/ 需求 `F-63`）。
+     * <p>
+     * <b>修正历史注释</b>：旧注释写作"execute（停服后手动删 .mca）/ 服务端运行时不会直接删除文件"，
+     * 与实际实现不符——{@code SafeDeletion.execute()} 会入队 {@code PendingDeleteQueue} 并
+     * <b>立即删除所有未加载区块</b>，无需停服手动操作。
+     */
     private static String debugDeleteExecute(CommandSourceStack src) {
+        if (!ConfirmGuard.confirm("claim.delete.execute")) {
+            return "⚠ 危险操作确认：删除全部未圈地（非白名单）区块\n"
+                    + "· 立即删除【未加载】区块（备份 + 清零，不可逆）；仍加载的区块入待删队列、卸载即删\n"
+                    + "· 备份只作人工恢复用，不能自动回滚\n"
+                    + "· 建议先执行 dryrun 预览、backup 备份\n"
+                    + "再次输入 /samsara debug claim delete execute（" + ConfirmGuard.ttlSeconds()
+                    + " 秒内）才会真正执行。";
+        }
         try {
             var level = src.getServer().getLevel(net.minecraft.world.level.Level.OVERWORLD);
             if (level == null) return "主世界不可用";

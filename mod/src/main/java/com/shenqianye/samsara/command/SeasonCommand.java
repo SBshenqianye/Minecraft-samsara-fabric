@@ -50,7 +50,7 @@ public class SeasonCommand {
                                                 StringArgumentType.getString(ctx, "mode")))))))
                 .then(Commands.literal("start")
                         .requires(src -> isAdmin(src))
-                        .executes(ctx -> reply(ctx.getSource(), MANAGER.start(ctx.getSource().getServer()))))
+                        .executes(ctx -> reply(ctx.getSource(), confirmStart(ctx.getSource()))))
                 .then(Commands.literal("end")
                         .requires(src -> isAdmin(src))
                         .executes(ctx -> reply(ctx.getSource(), MANAGER.end())))
@@ -65,6 +65,35 @@ public class SeasonCommand {
 
     private static boolean isAdmin(CommandSourceStack src) {
         return src.permissions().hasPermission(Permissions.COMMANDS_ADMIN);
+    }
+
+    /**
+     * {@code /samsara season start} —— 不可逆操作，需二次确认
+     * （实现《设计规范》〈破坏性操作：二次确认〉与需求 `F-63`）。
+     * <p>
+     * 一条命令会连锁触发：时间倒流 → <b>物理删除未圈地区块</b> → 全员传送。
+     * 误触代价极高，因此首次输入只返回"将要发生什么"，再次输入（30 秒内）才真正执行。
+     * <p>
+     * 无待开始周目时直接返回错误且<b>不进入待确认状态</b>，避免留下半武装状态。
+     */
+    private static String confirmStart(CommandSourceStack src) {
+        com.shenqianye.samsara.season.Season pending = MANAGER.currentPending();
+        if (pending == null) {
+            return MANAGER.start(src.getServer()); // 无 PENDING 周目：交给 MANAGER 回错误文案
+        }
+        if (!ConfirmGuard.confirm("season.start")) {
+            long rewindMs = MANAGER.settings().rewindDurationMs;
+            String rewind = rewindMs > 0
+                    ? "时间倒流 " + com.shenqianye.samsara.season.DurationUtil.formatMs(rewindMs)
+                    : "不倒流（配置为 0，直接传送）";
+            return "⚠ 危险操作确认：开启周目 #" + pending.id + "「" + pending.name + "」（" + pending.mode + "）\n"
+                    + "· " + rewind + "：未圈地区块会被逐格恢复到变化前状态，并在倒流完成后【物理删除】（重启后按当前版本重新生成）\n"
+                    + "· 倒流完成后【全员传送】至新出生区\n"
+                    + "· 圈地（旗帜白名单）区域受保护，不参与倒流与删除\n"
+                    + "· 箱子/潜影盒内容随区块文件一同删除；背包/末影箱/进度安全\n"
+                    + "再次输入 /samsara season start（" + ConfirmGuard.ttlSeconds() + " 秒内）才会真正执行。";
+        }
+        return MANAGER.start(src.getServer());
     }
 
     /** /season info：模组说明 + 当前世界种子与出生点（测试便利：种子可查地图工具熟悉地形） */
