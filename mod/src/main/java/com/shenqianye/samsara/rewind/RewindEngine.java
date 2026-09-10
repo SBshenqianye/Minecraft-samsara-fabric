@@ -33,7 +33,7 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 
 /**
- * M2 时间倒流引擎 —— 档2「区块级波浪」+ 档3「方块级恢复」（提前自 M4d）。
+ * M2 时间倒流引擎 —— 「区块级波浪退场」+ 「方块级逐格恢复」（提前自 M4d）。
  * <p>
  * 机制（遵守设计规范 §10/§11/§12 快照语义与先备份）：
  * <ol>
@@ -41,7 +41,7 @@ import java.util.concurrent.TimeUnit;
  *       扫描主世界 region/ 下已存在区块，除去保护集（旗帜圈地白名单）；
  *       每个未圈地块分配均匀分布在时长内的「倒流时刻」，
  *       持久化 rewind.json；同时把记录窗口冻结为本次倒流的恢复源（§11 快照语义）；</li>
- *   <li>运行期 tick：到「倒流时刻」的区块打标（待退场）并公告进度；档3 对加载区块
+ *   <li>运行期 tick：到「倒流时刻」的区块打标（待退场）并公告进度；对加载区块
  *       按进度逐格恢复（懒加载 + 预算分摊，恢复读冻结恢复源，倒流期间新改动不受影响）；</li>
  *   <li>时长到期 → 传送全员 + 广播；随后物理删除未圈地区块：</li>
  *   <li><b>待删队列兜底（设计规范 §12.6）</b>：删除时仍<b>加载中</b>的区块不强制卸载、
@@ -50,7 +50,7 @@ import java.util.concurrent.TimeUnit;
  *       备份先于删除（region/entities/poi，去重，备份至 {@code config/samsara/backups/}，
  *       不落存档目录，设计规范 §15）；删除在后台线程执行，避免主线程
  *       复制数 GB 区域文件卡服；</li>
- *   <li>档3 恢复在倒流结束后继续（预算内推进），直到该批 diff 全部应用后再
+ *   <li>逐格恢复在倒流结束后继续（预算内推进），直到该批 diff 全部应用后再
  *       <b>归档</b> rewind.json 至 {@code archive/}（保留记录，不删除）。</li>
  * </ol>
  * 单例（设计规范 §6）。
@@ -167,7 +167,7 @@ public class RewindEngine {
         }
         data = null;
         onComplete = null;
-        Tier3Restore.reset();
+        DiffRestore.reset();
     }
 
     // ---- 后台删除线程 ----
@@ -348,12 +348,12 @@ public class RewindEngine {
                         data.markedCount(), data.chunks.size(), newlyMarked);
             }
         }
-        // ② 档3：对已加载区块逐格恢复（懒加载 + 预算分摊）。倒流期间与完成后都持续，
+        // ② 对已加载区块逐格恢复（懒加载 + 预算分摊）。倒流期间与完成后都持续，
         //    直到恢复完毕（isFinished 见归档条件）——恢复读冻结的恢复源，倒流期间新改动不会自噬。
         try {
-            Tier3Restore.restoreRound(server, data);
+            DiffRestore.restoreRound(server, data);
         } catch (Exception e) {
-            Samsara.LOGGER.error("[周目管理 samsara] 档3 恢复异常: {}", e.getMessage());
+            Samsara.LOGGER.error("[周目管理 samsara] 逐格恢复异常: {}", e.getMessage());
         }
         // ③ 时长到期 → 传送 + 物理删除（完成后新记录窗口同时开启）
         if (now >= data.startMs + data.durationMs && !data.teleportPhaseDone) {
@@ -377,7 +377,7 @@ public class RewindEngine {
             }
         }
         // ④ 归档兜底：传送完成 && 恢复完成 → 尝试再删已卸载的排队区块 → 归档
-        if (data != null && data.teleportPhaseDone && Tier3Restore.isFinished(server, data)) {
+        if (data != null && data.teleportPhaseDone && DiffRestore.isFinished(server, data)) {
             try {
                 applyPhysicalDeletion(server);
             } catch (Exception e) {
@@ -528,7 +528,7 @@ public class RewindEngine {
         try {
             if (data != null) {
                 applyPhysicalDeletion(server);
-                if (data.teleportPhaseDone && Tier3Restore.isFinished(server, data)) {
+                if (data.teleportPhaseDone && DiffRestore.isFinished(server, data)) {
                     archivePersistence();
                 } else {
                     save();
@@ -611,7 +611,7 @@ public class RewindEngine {
         }
         int seasonId = data.seasonId;
         clearPersistence();
-        Tier3Restore.reset();
+        DiffRestore.reset();
         pendingQueue.drop(); // 中止 = 一切保留；尚未删除的区块不再删除
         return "已中止倒流（周目 #" + seasonId + "）。所有区块保持原样，不会删除任何区块"
                 + "（包括已到倒流时刻、已打退场标记但尚未删除的区块）"
@@ -645,14 +645,14 @@ public class RewindEngine {
     }
 
     /**
-     * 立即对指定区块执行一次档3 恢复（读恢复源并按其时间进度恢复）。
+     * 立即对指定区块执行一次逐格恢复（读恢复源并按其时间进度恢复）。
      * 用于验证/懒加载补恢复：强制恢复某个区块，不依赖玩家站位。
      */
     public synchronized String restoreChunkNow(MinecraftServer server, int cx, int cz) {
         if (data == null) {
             return "当前没有进行中的倒流";
         }
-        DiffStore store = Tier3Restore.restoreStore(configDir, data.seasonId);
+        DiffStore store = DiffRestore.restoreStore(configDir, data.seasonId);
         ServerLevel overworld = server.getLevel(Level.OVERWORLD);
         if (overworld == null) {
             return "主世界不可用";
@@ -863,10 +863,10 @@ public class RewindEngine {
             // 使用 AreaService 的旗帜圈地白名单
             var whitelist = overworld != null
                     ? com.shenqianye.samsara.claim.AreaService.getInstance().getWhitelist(overworld.dimension())
-                    : java.util.Collections.<com.shenqianye.samsara.claim.ChunkCoord>emptySet();
+                    : java.util.Collections.<com.shenqianye.samsara.geometry.ChunkCoord>emptySet();
             for (int[] c : coords) {
                 // 入队时复查保护：已被圈地的区块不再删除
-                if (overworld != null && whitelist.contains(new com.shenqianye.samsara.claim.ChunkCoord(c[0], c[1]))) {
+                if (overworld != null && whitelist.contains(new com.shenqianye.samsara.geometry.ChunkCoord(c[0], c[1]))) {
                     changed = true;
                     continue;
                 }
@@ -1045,7 +1045,7 @@ public class RewindEngine {
             // 使用 AreaService 的旗帜圈地白名单
             var whitelist = overworld != null
                     ? com.shenqianye.samsara.claim.AreaService.getInstance().getWhitelist(overworld.dimension())
-                    : java.util.Collections.<com.shenqianye.samsara.claim.ChunkCoord>emptySet();
+                    : java.util.Collections.<com.shenqianye.samsara.geometry.ChunkCoord>emptySet();
 
             // 第一轮：分类 — 可删 vs 保留（加载中/已保护）
             List<QueuedChunk> toDelete = new ArrayList<>();
@@ -1054,7 +1054,7 @@ public class RewindEngine {
                 QueuedChunk qc = it.next().getValue();
                 boolean loaded = overworld != null && overworld.getChunkSource().getChunkNow(qc.x(), qc.z()) != null;
                 if (skipLoaded && loaded) continue; // 仍在内存，保持队列
-                if (overworld != null && whitelist.contains(new com.shenqianye.samsara.claim.ChunkCoord(qc.x(), qc.z()))) {
+                if (overworld != null && whitelist.contains(new com.shenqianye.samsara.geometry.ChunkCoord(qc.x(), qc.z()))) {
                     it.remove(); // 已被圈地 → 保留不删
                     continue;
                 }
@@ -1213,7 +1213,7 @@ public class RewindEngine {
         // 使用 AreaService 的旗帜圈地白名单
         var whitelist = overworld != null
                 ? com.shenqianye.samsara.claim.AreaService.getInstance().getWhitelist(overworld.dimension())
-                : java.util.Collections.<com.shenqianye.samsara.claim.ChunkCoord>emptySet();
+                : java.util.Collections.<com.shenqianye.samsara.geometry.ChunkCoord>emptySet();
         Path dimRoot = McaRegion.overworldDimensionRoot(server.getWorldPath(LevelResource.ROOT));
         Path regionDir = dimRoot.resolve("region");
         List<int[]> toRewind = new ArrayList<>();
@@ -1223,7 +1223,7 @@ public class RewindEngine {
             List<int[]> exist = McaRegion.scanExisting(f);
             for (int[] c : exist) {
                 total++;
-                if (overworld != null && whitelist.contains(new com.shenqianye.samsara.claim.ChunkCoord(c[0], c[1]))) {
+                if (overworld != null && whitelist.contains(new com.shenqianye.samsara.geometry.ChunkCoord(c[0], c[1]))) {
                     protectedCount++;
                 } else {
                     toRewind.add(c);

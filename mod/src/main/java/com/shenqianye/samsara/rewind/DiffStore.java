@@ -13,7 +13,7 @@ import java.util.Map;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
- * 档3 差异库：按区块记录方块变化（变化前状态），用于倒流时逐格恢复。
+ * 差异库：按区块记录方块变化（变化前状态），用于倒流时逐格恢复。
  * <p>
  * 存储：每区块一个二进制补丁文件 {@code diff/s<season>/r.<区域>/<cx>_<cz>.dat}，零依赖。
  * <p>

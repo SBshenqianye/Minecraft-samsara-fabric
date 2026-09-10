@@ -18,7 +18,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 档3 倒流逐格恢复调度（懒加载 + 按进度均匀 + 预算分摊）。
+ * 倒流逐格恢复调度（懒加载 + 按进度均匀 + 预算分摊）。
  * <p>
  * 每次 tick（节流，如每 2 秒）：
  *  1. 按已过时间算进度 p = (now - startMs) / durationMs；
@@ -31,14 +31,14 @@ import java.util.Set;
  *  5. 倒流结束后继续恢复（预算内）直到全部应用（归档由 RewindEngine 依据
  *     {@link #isFinished} 触发）。
  */
-public class Tier3Restore {
+public class DiffRestore {
     private static final Path CONFIG_DIR = FabricLoader.getInstance().getConfigDir().resolve("samsara");
     /** 每 tick 全局最大恢复格数上限 */
     public static final int MAX_PER_TICK = 2000;
     /** 每 tick 最低保底恢复格数（保证有进度） */
     private static final int MIN_PER_TICK = 200;
 
-    private Tier3Restore() {
+    private DiffRestore() {
     }
 
     private static final Map<Long, Integer> perChunkRestored = new HashMap<>();
@@ -56,7 +56,7 @@ public class Tier3Restore {
     }
 
     /**
-     * 执行一次档3恢复。返回本轮恢复格数。
+     * 执行一次逐格恢复。返回本轮恢复格数。
      */
     public static int restoreRound(MinecraftServer server, RewindData data) {
         long now = System.currentTimeMillis();
@@ -160,7 +160,7 @@ public class Tier3Restore {
             perChunkRestored.put(key, Math.max(i, 0));
         }
         if (applied > 0) {
-            Samsara.LOGGER.info(String.format("[周目管理 samsara] 档3倒流：本轮恢复 %d 格（进度 %.1f%%）", applied, p * 100));
+            Samsara.LOGGER.info(String.format("[周目管理 samsara] 倒流恢复：本轮恢复 %d 格（进度 %.1f%%）", applied, p * 100));
         }
         return applied;
     }

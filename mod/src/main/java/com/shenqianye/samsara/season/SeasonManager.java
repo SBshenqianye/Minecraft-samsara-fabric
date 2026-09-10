@@ -40,7 +40,7 @@ import java.util.UUID;
  * M2 的 /season start 流程（§4，same-world 带倒流时）：
  * 校验 → 新出生中心（距旧中心 15000~40000 随机方向，避开已用方向）→ 分组
  * （3~5 人/组、角度均分+抖动、组距≥300，来源 = 在线 + usercache + playerdata）
- * → 持久化 spawnCenter/groupSpawns → 启动倒流（档2，默认 1 天可配置）
+ * → 持久化 spawnCenter/groupSpawns → 启动倒流（默认 1 天可配置）
  * → 倒流到期 → 全员传送 + 广播；离线玩家上线后自动传送。
  * <p>
  * 单例：所有命令/功能共享同一实例与内存状态，避免多实例不同步
@@ -190,7 +190,7 @@ public class SeasonManager {
      * <p>
      * same-world：新出生中心与全部历史中心集合都 ≥ newCenterMinDistance；
      * new-world：使用世界出生点。随后分组并持久化；same-world 且 settings.rewindDurationMs &gt; 0
-     * 时启动时间倒流（档3/档2），倒流到期后自动传送；否则立即传送 + 广播。
+     * 时启动时间倒流，倒流到期后自动传送；否则立即传送 + 广播。
      */
     public String start(MinecraftServer server) {
         // 拆分：setup（准备）→ 倒流或传送，见 flow 系列命令

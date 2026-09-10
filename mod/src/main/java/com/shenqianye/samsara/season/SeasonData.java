@@ -27,7 +27,7 @@ public class SeasonData {
         public int spreadMaxRadius = 2000;
         public int newCenterMinDistance = 15000;
         public int newCenterMaxDistance = 40000;
-        /** M2 时间倒流（档3/档2）时长，单位毫秒；&lt;=0 表示不开倒流、start 后立即传送 */
+        /** M2 时间倒流时长，单位毫秒；&lt;=0 表示不开倒流、start 后立即传送 */
         public long rewindDurationMs = 86_400_000L;   // 默认 1 天
 
         /** 旧字段（已弃用）：天为单位，仅用于读取旧 season.json 后迁移到 rewindDurationMs */

@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * MCA 区域文件读写（M2 档2 倒流用；仅主世界 region/、entities/、poi/，格式与 MC
+ * MCA 区域文件读写（M2 倒流用；仅主世界 region/、entities/、poi/，格式与 MC
  * 1.14+ 一致，26.2 无变化）。
  * <p>
  * MCA 格式要点：文件头 8192 字节 = 4096（区块位置 4B×1024，3B 扇区偏移 + 1B 扇区数）

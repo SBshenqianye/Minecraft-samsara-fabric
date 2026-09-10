@@ -11,7 +11,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
- * 档3 差异记录：mixin 到 {@code Level.setBlock}，记录方块类型变化前的状态。
+ * 差异记录：mixin 到 {@code Level.setBlock}，记录方块类型变化前的状态。
  * <p>
  * 说明：{@code setBlock} 是游戏内所有方块变化（破坏/放置/TNT/红石/流体/作物）的统一入口。
  * 在 HEAD 处记录——此时 {@code getBlockState(pos)} 仍是「变化前」状态。是否记录由
