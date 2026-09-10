@@ -114,16 +114,76 @@ public class ClaimNode {
         return rotatedExtension;
     }
 
-    /** 计算影响坐标集（从节点位置沿4个正方向延伸） */
+    /** 计算影响坐标集（从节点位置沿 8 个方向延伸出的全部格点，用于展示/粒子预览） */
     public List<ChunkCoord> getInfluencedCoords() {
         if (influencedCoords != null) return influencedCoords;
         influencedCoords = new ArrayList<>();
-        Extension ext = getExtension();
-        addLine(location, 0, -ext.getUp(), influencedCoords);        // 前
-        addLine(location, 0, ext.getDown(), influencedCoords);        // 后
-        addLine(location, -ext.getLeft(), 0, influencedCoords);       // 左
-        addLine(location, ext.getRight(), 0, influencedCoords);       // 右
+        for (int[] s : getExtensionSegments()) {
+            addLine(location, s[2] - s[0], s[3] - s[1], influencedCoords);
+        }
         return influencedCoords;
+    }
+
+    /**
+     * 8 个方向的延伸射线线段：{@code {x1,z1,x2,z2}}，起点均为节点所在区块。
+     * <p>
+     * 顺序固定为 北→东北→东→东南→南→西南→西→西北；距离为 0 的方向不产生线段。
+     */
+    public List<int[]> getExtensionSegments() {
+        Extension e = getExtension();
+        List<int[]> out = new ArrayList<>(8);
+        addSeg(out, 0, -e.getUp());                        // 北
+        addSeg(out, e.getUpRight(), -e.getUpRight());      // 东北
+        addSeg(out, e.getRight(), 0);                      // 东
+        addSeg(out, e.getDownRight(), e.getDownRight());   // 东南
+        addSeg(out, 0, e.getDown());                       // 南
+        addSeg(out, -e.getDownLeft(), e.getDownLeft());    // 西南
+        addSeg(out, -e.getLeft(), 0);                      // 西
+        addSeg(out, -e.getUpLeft(), -e.getUpLeft());       // 西北
+        return out;
+    }
+
+    /**
+     * 按角度顺序（北→东北→东→东南→南→西南→西→西北）排列的延伸末端格点。
+     * <p>
+     * 交给 {@link com.shenqianye.samsara.geometry.Geometry#ringSegments} 连成闭合环后，
+     * 图形才有"内部"可填——这是"化线为面"能产出面的前提。
+     */
+    public List<ChunkCoord> getExtensionEndpoints() {
+        Extension e = getExtension();
+        List<ChunkCoord> out = new ArrayList<>(8);
+        addEnd(out, 0, -e.getUp());
+        addEnd(out, e.getUpRight(), -e.getUpRight());
+        addEnd(out, e.getRight(), 0);
+        addEnd(out, e.getDownRight(), e.getDownRight());
+        addEnd(out, 0, e.getDown());
+        addEnd(out, -e.getDownLeft(), e.getDownLeft());
+        addEnd(out, -e.getLeft(), 0);
+        addEnd(out, -e.getUpLeft(), -e.getUpLeft());
+        return out;
+    }
+
+    /**
+     * 该节点贡献给「化线为面」的完整线段集 = **8 条射线 + 末端环**。
+     * <p>
+     * 只给射线是不够的：射线都从同一节点出发，构成星形图（无环），
+     * 面遍历找不到有界面 → 保护区域只会有"线"、没有"面"。
+     * 补上末端环后图形闭合，才能被填充出内部。
+     */
+    public List<int[]> getShapeSegments() {
+        List<int[]> segs = new ArrayList<>(getExtensionSegments());
+        segs.addAll(com.shenqianye.samsara.geometry.Geometry.ringSegments(getExtensionEndpoints()));
+        return segs;
+    }
+
+    private void addSeg(List<int[]> out, int dx, int dz) {
+        if (dx == 0 && dz == 0) return;
+        out.add(new int[]{location.x, location.z, location.x + dx, location.z + dz});
+    }
+
+    private void addEnd(List<ChunkCoord> out, int dx, int dz) {
+        if (dx == 0 && dz == 0) return;
+        out.add(new ChunkCoord(location.x + dx, location.z + dz));
     }
 
     /** 从起点沿方向延伸 N 格，生成所有中间格点 */

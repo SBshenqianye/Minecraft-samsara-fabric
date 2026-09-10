@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.shenqianye.samsara.Samsara;
 import com.shenqianye.samsara.geometry.ChunkCoord;
+import com.shenqianye.samsara.geometry.Geometry;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.Identifier;
@@ -206,15 +207,30 @@ public class AreaService {
 
     // ---- 内部方法 ----
 
-    /** 从指定维度的所有节点重建几何图形 */
+    /**
+     * 从指定维度的所有节点重建几何图形（白名单）。
+     * <p>
+     * <b>2026-09-10 修复</b>：此前只把 {@code node.getInfluencedCoords()} 的射线格点交给
+     * {@link GeometryStore} 做 4 邻接连通合并，<b>从不调用「化线为面」算法</b>——
+     * 于是保护区域只有"线"、永远没有"面"（border 旗也只能得到十字/米字，而非实心正方形）。
+     * 现改为把所有节点的线段（8 条射线 + 末端环）汇总交给
+     * {@link Geometry#compute}，由它算出「边界 + 内部 ∪ 开放折线 ∪ 孤立点」。
+     * <p>
+     * 全维度一次汇总（而非逐个节点单独算）是有意为之：不同旗帜的线段可以互相接续成
+     * 更大的封闭图形——这正是"最终白名单 = 所有旗帜区域的并集"的语义来源。
+     */
     private void rebuildGeometry(ResourceKey<Level> dim) {
         GeometryStore geo = GeometryStore.getInstance();
         geo.clear(dim);
+        Set<ChunkCoord> nodes = new HashSet<>();
+        List<int[]> segments = new ArrayList<>();
         for (ClaimNode node : dimNodes(dim).values()) {
-            for (ChunkCoord inf : node.getInfluencedCoords()) {
-                geo.addChunk(dim, inf);
-            }
-            geo.addChunk(dim, node.getLocation());
+            nodes.add(node.getLocation());
+            segments.addAll(node.getShapeSegments());
+        }
+        Set<ChunkCoord> whitelist = Geometry.compute(nodes, segments);
+        for (ChunkCoord c : whitelist) {
+            geo.addChunk(dim, c);
         }
         geo.flush();
     }
@@ -344,18 +360,34 @@ public class AreaService {
         DIMENSION_MAP.put(Level.OVERWORLD.toString(), Level.OVERWORLD);
         // MC 26.2 Mojang 映射中 Level 没有 NETHER/END 静态字段，通过反射扫描所有 ResourceKey 字段
         try {
-            for (var field : Level.class.getDeclaredFields()) {
-                if (field.getType() == ResourceKey.class) {
-                    try {
-                        var val = field.get(null);
-                        if (val instanceof ResourceKey<?> rk) {
-                            DIMENSION_MAP.put(rk.toString(), (ResourceKey<Level>) rk);
-                        }
-                    } catch (Exception ignored) {}
-                }
-            }
+            scanLevelDimensionKeys();
         } catch (Exception e) {
             Samsara.LOGGER.debug("[周目管理 samsara] 反射扫描 Level ResourceKey 字段失败: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * 反射扫描 {@code Level} 的所有 {@code ResourceKey} 静态字段并登记进 {@link #DIMENSION_MAP}。
+     * <p>
+     * 抽成方法是为了把 {@code @SuppressWarnings("unchecked")} 的作用域收窄到这一处：
+     * {@code field.get(null)} 只能拿到 {@code ResourceKey<?>}，无法在运行期验证类型参数，
+     * 因此强转必然被 javac 判为未检查转换。**该强转是安全的**：扫描对象限定为
+     * {@code Level} 自身的字段，其声明的 {@code ResourceKey} 字段都是 {@code ResourceKey<Level>}。
+     */
+    @SuppressWarnings("unchecked")
+    private static void scanLevelDimensionKeys() {
+        for (var field : Level.class.getDeclaredFields()) {
+            if (field.getType() != ResourceKey.class) {
+                continue;
+            }
+            try {
+                var val = field.get(null);
+                if (val instanceof ResourceKey<?> rk) {
+                    DIMENSION_MAP.put(rk.toString(), (ResourceKey<Level>) rk);
+                }
+            } catch (Exception ignored) {
+                // 单个字段取不到（如非静态）不影响其它字段
+            }
         }
     }
 

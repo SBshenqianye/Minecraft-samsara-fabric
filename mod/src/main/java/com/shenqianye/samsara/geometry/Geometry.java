@@ -106,6 +106,39 @@ public final class Geometry {
         return Collections.unmodifiableSet(result);
     }
 
+    /**
+     * 把「按角度顺序排列的延伸末端」依次连成闭合环，返回环上的线段集合。
+     * <p>
+     * <b>为什么需要它</b>：单面旗帜的 N 条延伸射线是**从同一个节点出发的星形图（无环）**，
+     * 半边缘遍历找不到任何有界面，因此永远填不出内部。把末端按角度顺序连成环后，
+     * 图形闭合，才能被 {@link #findFaces} 识别为面并交给 {@link #scanlineFill} 填充。
+     * <p>
+     * 形状由末端分布决定（设延伸距离同为 d）：
+     * <ul>
+     *   <li>仅 4 正方向（`straight_cross`）→ 末端为四边中点 → **菱形**（|dx|+|dz| ≤ d）</li>
+     *   <li>仅 4 斜方向（`cross`）→ 末端为四角 → **正方形**（边长 2d）</li>
+     *   <li>8 方向（`border`）→ 末端 = 四角 + 四边中点 → 仍是**正方形**（中点落在边上，把菱形"撑平"）</li>
+     * </ul>
+     * <b>少于 3 个末端不成环</b>：1 个末端是孤立方向；2 个末端只能连成一条线（与射线重合），
+     * 围不出面积——两种情况都按开放折线处理，返回空列表。
+     *
+     * @param endpointsInAngularOrder 按角度顺序（顺时针或逆时针均可，但必须连贯）排列的末端格点
+     * @return 环线段集合，每条为 {@code {x1,z1,x2,z2}}；末端少于 3 个时返回空列表
+     */
+    public static List<int[]> ringSegments(List<ChunkCoord> endpointsInAngularOrder) {
+        List<int[]> segs = new ArrayList<>();
+        if (endpointsInAngularOrder == null || endpointsInAngularOrder.size() < 3) {
+            return segs;
+        }
+        int n = endpointsInAngularOrder.size();
+        for (int i = 0; i < n; i++) {
+            ChunkCoord a = endpointsInAngularOrder.get(i);
+            ChunkCoord b = endpointsInAngularOrder.get((i + 1) % n);
+            segs.add(new int[]{a.x, a.z, b.x, b.z});
+        }
+        return segs;
+    }
+
     // ========================================================================
     // 线段光栅化
     // ========================================================================

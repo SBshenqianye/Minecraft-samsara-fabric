@@ -32,6 +32,8 @@ processResources {
 tasks.withType(JavaCompile).configureEach {
     options.encoding = "UTF-8"
     options.release = Integer.parseInt(project.java_version)
+    // 把"未经检查的操作"警告的**具体位置**打出来（默认只给一句汇总注记，无法定位）
+    options.compilerArgs << "-Xlint:unchecked"
 }
 
 java {
