@@ -84,19 +84,28 @@ public class ClaimPlacementListener {
             for (ClaimNode.PatternEntry pe : patterns) {
                 dbg.append(pe.patternId()).append("(color=").append(pe.color()).append(") ");
             }
-            dbg.append("\n原始扩展(朝北): 前=").append(ext.getUp())
-               .append(" 后=").append(ext.getDown())
-               .append(" 左=").append(ext.getLeft())
-               .append(" 右=").append(ext.getRight()).append("\n");
+            dbg.append("\n原始扩展(朝北): 北=").append(ext.getUp())
+               .append(" 东北=").append(ext.getUpRight())
+               .append(" 东=").append(ext.getRight())
+               .append(" 东南=").append(ext.getDownRight())
+               .append(" 南=").append(ext.getDown())
+               .append(" 西南=").append(ext.getDownLeft())
+               .append(" 西=").append(ext.getLeft())
+               .append(" 西北=").append(ext.getUpLeft())
+               .append("（").append(ext.directionCount()).append(" 方向）\n");
 
             if (cardinal) {
                 ClaimNode realNode = new ClaimNode(new ChunkCoord(0, 0), facing, patterns, pos.getY(),
                         sp.getUUID(), sp.getName().getString());
                 Extension rotated = realNode.getExtension();
-                dbg.append("旋转后(朝").append(facing).append("): 前=").append(rotated.getUp())
-                   .append(" 后=").append(rotated.getDown())
-                   .append(" 左=").append(rotated.getLeft())
-                   .append(" 右=").append(rotated.getRight()).append("\n");
+                dbg.append("旋转后(朝").append(facing).append("): 北=").append(rotated.getUp())
+                   .append(" 东北=").append(rotated.getUpRight())
+                   .append(" 东=").append(rotated.getRight())
+                   .append(" 东南=").append(rotated.getDownRight())
+                   .append(" 南=").append(rotated.getDown())
+                   .append(" 西南=").append(rotated.getDownLeft())
+                   .append(" 西=").append(rotated.getLeft())
+                   .append(" 西北=").append(rotated.getUpLeft()).append("\n");
 
                 List<ChunkCoord> influenced = realNode.getInfluencedCoords();
                 dbg.append("影响区块: ").append(influenced.size()).append(" 个");

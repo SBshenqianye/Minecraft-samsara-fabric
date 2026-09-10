@@ -74,12 +74,8 @@ public class ClaimInteractions {
             sb.append(" 朝向 ").append(facingToDisplay(facing));
             sb.append(protected_ ? " ✓ 受保护" : " ✗ 未保护");
             if (ownerName != null) sb.append(" · 主人: ").append(ownerName);
-            sb.append("\n  影响区块: ").append(influenced.size()).append(" 个");
-            sb.append(" · 方向: ");
-            if (ext.getUp() > 0) sb.append("前").append(ext.getUp()).append(" ");
-            if (ext.getDown() > 0) sb.append("后").append(ext.getDown()).append(" ");
-            if (ext.getLeft() > 0) sb.append("左").append(ext.getLeft()).append(" ");
-            if (ext.getRight() > 0) sb.append("右").append(ext.getRight()).append(" ");
+            sb.append("\n  延伸: ").append(directionSummary(ext));
+            sb.append(" · 影响区块 ").append(influenced.size()).append(" 个");
             sp.sendSystemMessage(Component.literal("[周目管理] " + sb.toString().trim()));
 
             // 立即发送粒子预览（右键时即时反馈）
@@ -355,15 +351,52 @@ public class ClaimInteractions {
         return "north";
     }
 
-    /** 将 Extension 方向名转换为 前后左右（4方向版） */
+    /** 将 Extension 方向名转换为 前后左右（8 方向版，纹章学视角） */
     public static String extensionDirToDisplay(String extDir) {
         return switch (extDir) {
             case "up" -> "前";
-            case "down" -> "后";
-            case "left" -> "左";
+            case "upRight" -> "前右";
             case "right" -> "右";
+            case "downRight" -> "后右";
+            case "down" -> "后";
+            case "downLeft" -> "后左";
+            case "left" -> "左";
+            case "upLeft" -> "前左";
             default -> extDir;
         };
+    }
+
+    /**
+     * 延伸方向摘要（8 方向，给出**世界方向** + 距离，玩家最直观）。
+     * <p>
+     * 例：{@code 北3 · 东北3 · 东3 · 东南3 · 南3 · 西南3 · 西3 · 西北3（8 方向，围成面含内部）}
+     * <p>
+     * 末尾括注会说明**是否围成面**：末端 ≥ 3 个时环闭合，「化线为面」会填出内部；
+     * 只有 1~2 个方向时是不闭合的折线，只有线本身受保护。这给玩家一个当场可验证的反馈。
+     */
+    public static String directionSummary(Extension ext) {
+        StringBuilder d = new StringBuilder();
+        appendDir(d, ext.getUp(), "北");
+        appendDir(d, ext.getUpRight(), "东北");
+        appendDir(d, ext.getRight(), "东");
+        appendDir(d, ext.getDownRight(), "东南");
+        appendDir(d, ext.getDown(), "南");
+        appendDir(d, ext.getDownLeft(), "西南");
+        appendDir(d, ext.getLeft(), "西");
+        appendDir(d, ext.getUpLeft(), "西北");
+        if (d.length() == 0) {
+            return "无";
+        }
+        String body = d.toString().trim();
+        body = body.endsWith("·") ? body.substring(0, body.length() - 1).trim() : body;
+        return body + "（" + ext.directionCount() + " 方向，"
+                + (ext.directionCount() >= 3 ? "围成面含内部" : "仅线无内部") + "）";
+    }
+
+    private static void appendDir(StringBuilder sb, int dist, String name) {
+        if (dist > 0) {
+            sb.append(name).append(dist).append(" · ");
+        }
     }
 
     /** 将旗帜世界朝向转换为显示文本（仅4个方向） */

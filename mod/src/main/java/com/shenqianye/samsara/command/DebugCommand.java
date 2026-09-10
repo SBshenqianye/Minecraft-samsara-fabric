@@ -234,7 +234,10 @@ public class DebugCommand {
                                         .then(Commands.argument("dir", StringArgumentType.word())
                                                 .suggests((ctx, builder) -> {
                                                     for (String d : new String[]{
-                                                            "f", "b", "l", "r", "a"}) {
+                                                            "f", "b", "l", "r",
+                                                            "fl", "fr", "bl", "br",
+                                                            "dl", "dr", "c", "m",
+                                                            "sc", "x", "a"}) {
                                                         builder.suggest(d);
                                                     }
                                                     return builder.buildFuture();
@@ -619,16 +622,45 @@ public class DebugCommand {
 
     // ---- debug claim 命令实现 ----
 
-    /** debug give：给予玩家圈地旗帜（f=前, b=后, l=左, r=右, a=全部） */
+    /**
+     * debug give：给予玩家圈地旗帜。
+     * <p>
+     * 方向字母按**图案在旗帜上的位置**命名（观看者视角，与 MC 图案 id 同一视角）：
+     * <pre>
+     *   f 前   → stripe_top          b 后   → stripe_bottom
+     *   l 左   → stripe_left         r 右   → stripe_right
+     *   fl 前左 → square_top_left     fr 前右 → square_top_right
+     *   bl 后左 → square_bottom_left  br 后右 → square_bottom_right
+     *   dl 斜左下 → stripe_downleft  dr 斜右下 → stripe_downright
+     *   c 竖条 → stripe_center        m 横条 → stripe_middle
+     *   sc 四正 → straight_cross      x 四斜 → cross        a 全部8方向 → border
+     * </pre>
+     * 形状提示（延伸距离同为 d）：`a`/`x` 围成**正方形**、`sc` 围成**菱形**、
+     * 单条条纹只有**线**；放好旗帜后右键可看到实际世界方向与"是否围成面"。
+     */
     private static String debugGiveBanner(CommandSourceStack src, String dir, int dist) {
-        String patternId = switch (dir.toLowerCase()) {
-            case "f" -> "stripe_top";     case "b" -> "stripe_bottom";
-            case "l" -> "stripe_left";    case "r" -> "stripe_right";
-            case "a" -> "border";
+        String key = dir.toLowerCase();
+        String patternId = switch (key) {
+            case "f"  -> "stripe_top";
+            case "b"  -> "stripe_bottom";
+            case "l"  -> "stripe_left";
+            case "r"  -> "stripe_right";
+            case "fl" -> "square_top_left";
+            case "fr" -> "square_top_right";
+            case "bl" -> "square_bottom_left";
+            case "br" -> "square_bottom_right";
+            case "dl" -> "stripe_downleft";
+            case "dr" -> "stripe_downright";
+            case "c"  -> "stripe_center";
+            case "m"  -> "stripe_middle";
+            case "sc" -> "straight_cross";
+            case "x"  -> "cross";
+            case "a"  -> "border";
             default -> null;
         };
         if (patternId == null) {
-            return "方向无效（f=前/b=后/l=左/r=右/a=全部）";
+            return "方向无效。可用：f/b/l/r（单条纹）· fl/fr/bl/br（角）· dl/dr（斜条纹）· "
+                    + "c/m（竖条/横条）· sc（四正）· x（四斜）· a（全部8方向）";
         }
         net.minecraft.server.level.ServerPlayer player;
         try {
