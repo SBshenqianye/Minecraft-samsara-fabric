@@ -657,6 +657,13 @@ public class RewindEngine {
         if (overworld == null) {
             return "主世界不可用";
         }
+        // 保护集一致性（2026-09-10 修复）：强制恢复同样不得越过圈地保护，
+        // 否则 debug 命令会把生产路径刚堵上的"保护区块被逐格抹除"重新打开。
+        if (com.shenqianye.samsara.claim.AreaService.getInstance()
+                .isProtected(overworld.dimension(), cx, cz)) {
+            return "区块 (" + cx + "," + cz + ") 受圈地保护，拒绝强制恢复"
+                    + "（保护集不参与倒流）。如需恢复请先拆除该区域旗帜。";
+        }
         store.flush();
         double p = (double) (System.currentTimeMillis() - data.startMs) / data.durationMs;
         p = Math.max(0, Math.min(1, p));
