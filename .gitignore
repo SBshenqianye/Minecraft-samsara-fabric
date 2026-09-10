@@ -36,6 +36,7 @@ __pycache__/
 
 # DSH
 .dsh/
+.dsh-trash/
 
 META-INF/
 
