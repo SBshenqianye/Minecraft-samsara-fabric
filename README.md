@@ -5,7 +5,7 @@
 
 ## 当前版本
 
-**v0.10.0** · Minecraft **26.2** · Fabric Loader **0.19.3** · Java **25**
+**v0.11.0** · Minecraft **26.3** · Fabric Loader **0.20.1** · Java **25**
 
 ## 能做什么
 
@@ -52,13 +52,13 @@ Linux/macOS 用 `./gradlew build`。产物是 `mod/build/libs/samsara-<版本>.j
 
 | 组件 | 版本 |
 |---|---|
-| Minecraft | 26.2 |
-| Fabric Loader | 0.19.3 |
-| Fabric API | 0.157.0+26.2 |
+| Minecraft | 26.3 |
+| Fabric Loader | 0.20.1 |
+| Fabric API | 0.165.0+26.3 |
 | Java | 25 |
 | Gradle / Loom | 9.5.1 / 1.17 |
 
-> 26.2 使用 Mojang 官方映射，构建脚本不需要 yarn 映射。
+> 26.2 起使用 Mojang 官方映射，构建脚本不需要 yarn 映射；26.3 沿用同一套构建链。
 
 ## 加载方式
 
@@ -75,6 +75,8 @@ Linux/macOS 用 `./gradlew build`。产物是 `mod/build/libs/samsara-<版本>.j
 所有模组数据都在 `config/samsara/`，**不写入存档目录 `world/`，也不在服务端根目录散落文件**。包括周目、圈地、倒流、备份、权限与活动记录。
 
 活动记录按天保存，只写不读：登录、在线时长，以及本次会话的移动、挖掘、使用、击杀、交易等原版统计增量。没有 tick 轮询，也不提供游戏内查询命令；字段与开销见[《设计规范》](docs/设计规范.md)的〈活动记录：静默采集约定〉。
+
+倒流记录按维度分目录保存（主世界、下界、末地互不混写），旧版记录会在启动时自动迁移到主世界；记录在运行中与停服时落盘，服务器重启不会丢掉最近一段改动。
 
 ## 仓库结构
 
