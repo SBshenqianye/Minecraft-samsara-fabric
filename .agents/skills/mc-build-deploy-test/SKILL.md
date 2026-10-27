@@ -17,12 +17,16 @@ whenToUse: "when fixing compilation errors, building the mod, deploying to test 
 ## 环境自检（新会话第一件事）
 
 ```powershell
-# JDK：优先 25，缺失时退到 26（--release 25 产物一致，class 69.0）
-$jdk = Get-ChildItem "C:\Program Files\Java\jdk-*" -Directory -ErrorAction SilentlyContinue |
+# JDK：优先 Minecraft 启动器自带的正版 Java 25（生产服用它跑 26.3），
+# 其次 Program Files 下的 jdk-25/26（--release 25 产物一致，class 69.0）
+$candidates = @(
+    "$env:APPDATA\.minecraft\runtime\java-runtime-epsilon\bin\java.exe"
+)
+$candidates += Get-ChildItem "C:\Program Files\Java\jdk-*" -Directory -ErrorAction SilentlyContinue |
     Where-Object { $_.Name -match 'jdk-(25|26)' } | Sort-Object Name |
-    ForEach-Object { Join-Path $_.FullName 'bin\java.exe' } |
-    Where-Object { Test-Path $_ } | Select-Object -First 1
-if (-not $jdk) { throw "未找到 JDK 25/26；先安装再继续" }
+    ForEach-Object { Join-Path $_.FullName 'bin\java.exe' }
+$jdk = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+if (-not $jdk) { throw "未找到 Java 25/26；先安装再继续" }
 
 # Gradle：用 ~/.gradle 里已缓存的 9.5.1 发行版（不要用 gradlew.bat）
 $gradle = Get-ChildItem "$env:USERPROFILE\.gradle\wrapper\dists" -Recurse -Filter 'gradle.bat' -ErrorAction SilentlyContinue |
@@ -32,12 +36,14 @@ if (-not $gradle) { throw "未找到缓存的 Gradle 9.5.1" }
 $env:JAVA_HOME = Split-Path (Split-Path $jdk)
 "JAVA=$jdk"
 "GRADLE=$gradle"
+& $jdk -version 2>&1 | Select-Object -First 1
 ```
 
 **期望输出**（2026-10-27 实测）：
 ```
-JAVA=C:\Program Files\Java\jdk-26.0.2.1\bin\java.exe
+JAVA=C:\Users\Administrator\AppData\Roaming\.minecraft\runtime\java-runtime-epsilon\bin\java.exe
 GRADLE=C:\Users\Administrator\.gradle\wrapper\dists\gradle-9.5.1-bin\iq79hdu3mqx29lgffhp8bfmx\gradle-9.5.1\bin\gradle.bat
+openjdk version "25.0.1" 2025-10-21 LTS
 ```
 
 ---
@@ -46,11 +52,11 @@ GRADLE=C:\Users\Administrator\.gradle\wrapper\dists\gradle-9.5.1-bin\iq79hdu3mqx
 
 | 变量 | 值 | 说明 |
 |---|---|---|
-| `JAVA_HOME` | 由〈环境自检〉解析 → 当前 `C:\Program Files\Java\jdk-26.0.2.1` | 系统**没有装 JDK 25**；jdk-26 用 `--release 25` 编译出 class 69.0，满足 MC 26.3。⚠ 本机 `JAVA_HOME` 默认指向 `jdk-8`，**必须显式覆盖**，否则 `UnsupportedClassVersionError` |
+| `JAVA_HOME` | 由〈环境自检〉解析 → 当前 `%APPDATA%\.minecraft\runtime\java-runtime-epsilon`（Java 25.0.1） | 生产服就是用它跑 26.3；`Program Files` 下只有 jdk-17/21/24/26，**没有 jdk-25**，jdk-26 配 `--release 25` 也能编译。⚠ 本机 `JAVA_HOME` 默认指向 `jdk-8`，**必须显式覆盖**，否则 `UnsupportedClassVersionError` |
 | `GRADLE_BIN` | `C:\Users\Administrator\.gradle\wrapper\dists\gradle-9.5.1-bin\iq79hdu3mqx29lgffhp8bfmx\gradle-9.5.1\bin\gradle.bat` | 缓存中的发行版；`gradlew.bat` 会尝试联网下载 |
 | `GRADLE_USER_HOME` | `C:\Users\Administrator\.gradle`（默认值，勿覆盖） | 依赖、loom 缓存、wrapper 发行版都在这里；指到临时目录会重新下载 |
 | `PROJECT_DIR` | `E:\workspace\deepseek harness\mc-mod-samsara\mod` | 模组源码目录 |
-| `TEST_SERVER` | `E:\workspace\deepseek harness\mc-mod-samsara\test-server` | 测试服（**当前 MC 26.2**，见 Step 2） |
+| `TEST_SERVER` | `E:\workspace\deepseek harness\mc-mod-samsara\test-server` | 测试服（**2026-10-27 起已是 MC 26.3**，端口 **25566**） |
 | `RCON_CLIENT_SRC` | `tools\RconClient.java` | 单文件无依赖 RCON 客户端（退出码 0/1/2/3），**随仓库提交**，与 `tools/README.md` 一并维护 |
 | `RCON_CP` | `.tmp\rcon` | `javac -d` 输出目录（`.class` 已被 `.gitignore` 忽略） |
 | `RCON_HOST` / `RCON_PORT` / `RCON_PASS` | `127.0.0.1` / `25575` / `samsara-m1-test` | 只对 test-server 有效（生产服 RCON 关闭） |
@@ -88,8 +94,8 @@ jdk-21/24 会直接失败（`release 25` 不被支持）。JDK 26 + `options.rel
 
 | 目标 | 路径 | 版本现状 | 备注 |
 |---|---|---|---|
-| 测试服 | `E:\workspace\deepseek harness\mc-mod-samsara\test-server\mods\` | MC **26.2** · fabric-api 0.157.0+26.2 · 现存 samsara 0.9.1 | RCON 已开（25575）。**0.10.0 起本 mod 要求 `~26.3`**，装上会因版本约束加载失败 → 先升级测试服再验证 |
-| 生产服 Vanilia 26.3 | `C:\Games\0-minecraft\server\servers\Vanilia 26.3\mods\` | MC **26.3** · loader 0.20.1 · fabric-api 0.165.0+26.3 | 与 0.11.0 契约一致。RCON 关闭（`enable-rcon=false`），只能看日志；换 jar 后需重启 |
+| 测试服 | `E:\workspace\deepseek harness\mc-mod-samsara\test-server\mods\` | MC **26.3** · loader 0.20.1 · fabric-api 0.165.0+26.3 · 现存 samsara 0.11.0 | 2026-10-27 已升级；**端口 25566**（生产服占用 25565）；RCON 开在 25575，可直接验证 |
+| 生产服 Vanilia 26.3 | `C:\Games\0-minecraft\server\servers\Vanilia 26.3\mods\` | MC **26.3** · loader 0.20.1 · fabric-api 0.165.0+26.3 | RCON 关闭（`enable-rcon=false`），只能看日志；换 jar 后需重启；**它可能在运行**，动它之前先确认 |
 
 ### 2b. 复制 + 校验
 
@@ -154,15 +160,21 @@ Start-Sleep -Seconds 3
 ### 3c. 启动服务器（如需）
 
 ```powershell
-# $jdk 来自〈环境自检〉
-Start-Process -FilePath $jdk `
-  -ArgumentList "-server -Xmx4096M -Xms1024M -XX:+UseG1GC -Dfile.encoding=UTF-8 -jar fabric-server-launch.jar nogui" `
-  -WorkingDirectory "E:\workspace\deepseek harness\mc-mod-samsara\test-server" -NoNewWindow -PassThru | Select-Object Id
+# $jdk 来自〈环境自检〉。⚠ -D 开头的 JVM 参数必须加引号，
+# 否则 PowerShell 会把它拆成两段（JVM 报 ClassNotFoundException /encoding=UTF-8）
+Set-Location "E:\workspace\deepseek harness\mc-mod-samsara\test-server"
+& $jdk -server -Xmx2048M -Xms1024M -XX:+UseG1GC `
+  "-Dfile.encoding=UTF-8" "-Dstdout.encoding=UTF-8" "-Dstderr.encoding=UTF-8" `
+  -jar fabric-server-launch.jar nogui *> "logs\console-26.3.log"
 ```
 
-> `test-server\start-server.bat` 也能起服，但它的 JDK 探测正则只认 `version .25`，
-> **JDK 26 不会被它选中**；本机没装 JDK 25 时它会报 “JDK 25 not found”。
-> 要么先跑 `install-jdk25.bat`（装到 `test-server\jdk25\`），要么用上面的命令手动起。
+> **端口**：测试服是 `25566`（`server.properties`）。生产服用 25565，两个可以同时开。
+> 若日志出现 `FAILED TO BIND TO PORT ... Address already in use`，先查 25565/25566 的占用者，
+> **不要**为了让测试服起来而去停生产服。
+
+> `test-server\start-server.bat` 也能起服，但它的 JDK 探测正则只认 `version .25`；
+> 它会在 `jdk25\`、`Program Files\Java\jdk-25`、`JAVA_HOME` 等位置找 Java，
+> 找不到就报 “JDK 25 not found”——此时用上面的命令手动起，或先跑 `install-jdk25.bat`。
 
 **等待 RCON 就绪**（最多 90 秒）：
 ```powershell
@@ -179,6 +191,7 @@ while ($elapsed -lt $timeout) {
 Fabric mod jar 在 `mods/` 目录被替换后，下次 `/reload` 或重启才生效。
 - 如果改动不涉及 mixin/注册表：执行 `reload` 即可
 - 如果涉及 mixin/注册表变更：必须重启服务器（kill + start）
+- 自己的测试服优先用 RCON `stop` 优雅停服，再重启
 
 ---
 
@@ -191,36 +204,46 @@ RconClient <host> <port> <password> "<command>"
 ```
 
 **注意**：命令必须用引号包裹为**单个参数**（漏引号会被拆成多个参数，客户端会把多余参数用空格拼回去）。
+中文回包要在 PowerShell 里正确显示，先 `[Console]::OutputEncoding = [Text.Encoding]::UTF8`，
+并给客户端加 `"-Dstdout.encoding=UTF-8"`。
 
-### 常用测试命令
+### 常用测试命令（2026-10-27 在测试服实测通过）
 
 | 用途 | RCON 命令 |
 |---|---|
 | 检查在线玩家 | `list` |
-| 查看服务端日志 | `tail` 或 `logs` |
-| 查看 mod 加载状态 | `samsara status` |
-| 查看圈地旗帜列表 | `samsara claim list` |
-| 查看指定区块信息 | `samsara claim info <x> <z>` |
-| 重建白名单 | `samsara claim rebuild` |
-| 扫描世界中的圈地旗 | `samsara claim scan` |
-| 预览保护区域 | `samsara claim preview` |
-| 给予旗帜（需玩家在线） | `execute as @p at @s run samsara claim give <dir> <dist>` |
-| 查看活跃度 | `samsara activity stats` |
-| 查看最近登录 | `samsara activity recent` |
-| 调试子命令 | `debug activity stats` / `debug claim info` / `debug delete dryrun` |
+| 查看 mod 版本与游戏版本 | `samsara version` |
+| 查看服务器性能 | `samsara mspt` / `samsara tps` |
+| 查看周目列表 | `samsara season status [页码]` |
+| 查看周目详情 | `samsara season info` |
+| 查看命令树 | `help samsara` 或直接发 `samsara` |
+| 查看圈地旗帜列表 | `samsara debug claim list` |
+| 查看指定区块归属 | `samsara debug claim info <x> <z>` |
+| 重建白名单 | `samsara debug claim rebuild` |
+| 扫描世界中的圈地旗 | `samsara debug claim scan` |
+| 圈地粒子预览 | `samsara debug claim particle …` |
+| 删除未保留区块（预演） | `samsara debug delete dryrun` |
+| 查看差异库状态 | `samsara debug diff` |
+| 查看调试总览 | `samsara debug status` |
+| 给予旗帜（需玩家在线） | `execute as @p at @s run samsara debug claim give <dir> <dist>` |
 | 重载（仅 datapack） | `reload` |
 | 停服 | `stop` |
+
+> ⚠ 不存在 `samsara status` / `samsara claim list` / `samsara activity stats` 这类写法：
+> 圈地与管理类命令都在 `samsara debug …` 下，周目类在 `samsara season …` 下；
+> 活跃度系统已在 0.10.0 移除。用 `help samsara` 查真实命令树。
 
 ### 批量测试模板
 
 ```powershell
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
 $rc = "E:\workspace\deepseek harness\mc-mod-samsara\.tmp\rcon"
 $java = "$env:JAVA_HOME\bin\java.exe"
 
 # 逐条执行（每条单独调用 RconClient）
-& $java -cp $rc RconClient 127.0.0.1 25575 samsara-m1-test "samsara claim list"
-& $java -cp $rc RconClient 127.0.0.1 25575 samsara-m1-test "samsara claim info 0 0"
-& $java -cp $rc RconClient 127.0.0.1 25575 samsara-m1-test "samsara claim preview"
+& $java "-Dstdout.encoding=UTF-8" -cp $rc RconClient 127.0.0.1 25575 samsara-m1-test "samsara version"
+& $java "-Dstdout.encoding=UTF-8" -cp $rc RconClient 127.0.0.1 25575 samsara-m1-test "samsara debug claim list"
+& $java "-Dstdout.encoding=UTF-8" -cp $rc RconClient 127.0.0.1 25575 samsara-m1-test "samsara debug claim info 0 0"
 ```
 
 ---
@@ -252,6 +275,8 @@ Get-Content "C:\Games\0-minecraft\server\servers\Vanilia 26.3\logs\latest.log" -
 | RCON `Connection refused` | 服务端未启动 / 端口不通 / 生产服 RCON 未开 | 查端口监听与 `server.properties` 的 `enable-rcon` |
 | `auth failed: wrong password` | RCON 密码错误 | 核对 `server.properties` 的 `rcon.password` |
 | `Expected whitespace to end one argument` | RCON 命令没用引号包裹 | 命令作为单个带引号字符串传入 |
+| `ClassNotFoundException: /encoding=UTF-8` | `-Dfile.encoding=…` 没加引号，被 PowerShell 拆成两段 | 给所有 `-D` 参数加引号 |
+| `FAILED TO BIND TO PORT … Address already in use` | 25565 被生产服占用（测试服应是 25566） | 改测试服 `server-port`，不要停生产服 |
 | mod 加载失败 `requires minecraft ~26.3` | 目标服版本低于 jar 契约 | 升级目标服，或改回与服务器匹配的 mod 版本 |
 | `BUILD FAILED` | Java 编译错误 | 读取错误行号 → 修复 → 重新 build |
 
@@ -272,9 +297,11 @@ $jar  = Get-ChildItem "$libs\samsara-*.jar" -Exclude '*-sources.jar' | Sort-Obje
 Copy-Item $jar.FullName "E:\workspace\deepseek harness\mc-mod-samsara\test-server\mods\" -Force
 
 # 3. RCON verify（假设服务器已运行，客户端已编译到 .tmp\rcon）
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
 $rc = "E:\workspace\deepseek harness\mc-mod-samsara\.tmp\rcon"
-& "$env:JAVA_HOME\bin\java.exe" -cp $rc RconClient 127.0.0.1 25575 samsara-m1-test "list"
-& "$env:JAVA_HOME\bin\java.exe" -cp $rc RconClient 127.0.0.1 25575 samsara-m1-test "samsara claim list"
+& "$env:JAVA_HOME\bin\java.exe" "-Dstdout.encoding=UTF-8" -cp $rc RconClient 127.0.0.1 25575 samsara-m1-test "list"
+& "$env:JAVA_HOME\bin\java.exe" "-Dstdout.encoding=UTF-8" -cp $rc RconClient 127.0.0.1 25575 samsara-m1-test "samsara version"
+& "$env:JAVA_HOME\bin\java.exe" "-Dstdout.encoding=UTF-8" -cp $rc RconClient 127.0.0.1 25575 samsara-m1-test "samsara debug claim list"
 ```
 
 ---
@@ -282,13 +309,15 @@ $rc = "E:\workspace\deepseek harness\mc-mod-samsara\.tmp\rcon"
 ## 注意事项
 
 1. **不要硬编码 Temp 路径** — `Temp\dsh-*` 会话间会被清理；JDK/Gradle/RCON 客户端一律用〈环境自检〉解析，或放在仓库内。
-2. **JAVA_HOME 必须显式设置** — 本机默认指向 jdk-8；用 jdk-25/26 编译（`--release 25`）。
-3. **RCON 每条命令必须单独调用** — 参数顺序 `host port password command`，命令用引号包裹。
-4. **RCON `give` 类命令需要玩家在线** — 用 `execute as @p at @s run ...` 包装。
-5. **jar 文件名含版本号** — 部署时用通配符匹配，并排除 `-sources.jar`。
-6. **Fabric mod 替换 jar 后需要重启** — 仅 `/reload` 不足以加载新的 mixin 或事件注册。
-7. **部署前核对 `fabric.mod.json` 的 minecraft 约束** — 测试服仍是 26.2，与 `~26.3` 的 jar 不兼容。
-8. **生产服 RCON 关闭** — 部署后只能靠 `logs\latest.log` 验证，且必须由用户重启服务端。
+2. **JAVA_HOME 必须显式设置** — 本机默认指向 jdk-8；用正版启动器自带 Java 25 或 jdk-26（`--release 25`）。
+3. **`-D` 开头的 JVM 参数必须加引号** — 否则 PowerShell 拆包，JVM 报 `ClassNotFoundException: /encoding=UTF-8`，服务器根本起不来。
+4. **RCON 每条命令必须单独调用** — 参数顺序 `host port password command`，命令用引号包裹。
+5. **RCON `give` 类命令需要玩家在线** — 用 `execute as @p at @s run ...` 包装。
+6. **jar 文件名含版本号** — 部署时用通配符匹配，并排除 `-sources.jar`。
+7. **Fabric mod 替换 jar 后需要重启** — 仅 `/reload` 不足以加载新的 mixin 或事件注册。
+8. **部署前核对 `fabric.mod.json` 的 minecraft 约束** — 测试服与生产服现在都是 26.3，jar 必须是 `~26.3`。
+9. **生产服 RCON 关闭** — 部署后只能靠 `logs\latest.log` 验证，且必须由用户重启服务端。
+10. **测试服端口是 25566，生产服 25565** — 两者可并存；`FAILED TO BIND` 先查占用者，别停生产服。
 
 ---
 
