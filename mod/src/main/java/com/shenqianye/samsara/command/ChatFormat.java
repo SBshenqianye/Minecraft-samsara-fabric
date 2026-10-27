@@ -29,7 +29,6 @@ import java.util.concurrent.ConcurrentHashMap;
  * <table border="1" cellpadding="4">
  *   <tr><th>命令路径</th><th>格式类型</th></tr>
  *   <tr><td>/samsara season status|info|create|start|end|skip|respawn-groups</td><td>常规</td></tr>
- *   <tr><td>/samsara activity [recent|stats|dead]</td><td>常规</td></tr>
  *   <tr><td>/samsara claim give|list|info|rebuild|scan|preview|remove|export|boundary|particle</td><td>常规</td></tr>
  *   <tr><td>/samsara version</td><td>常规</td></tr>
  *   <tr><td>/samsara debug *（所有调试命令）</td><td>调试</td></tr>

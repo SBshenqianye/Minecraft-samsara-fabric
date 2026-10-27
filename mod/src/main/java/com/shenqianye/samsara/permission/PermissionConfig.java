@@ -51,18 +51,12 @@ public class PermissionConfig {
         DEFAULTS.put("claim remove", PermissionLevel.OP);
         DEFAULTS.put("claim export", PermissionLevel.OP);
 
-        // activity 命令
-        DEFAULTS.put("activity recent", PermissionLevel.USER);
-        DEFAULTS.put("activity stats", PermissionLevel.USER);
-        DEFAULTS.put("activity dead", PermissionLevel.USER);
-
         // debug 命令（全部 OWNER）
         DEFAULTS.put("debug flow", PermissionLevel.OWNER);
         DEFAULTS.put("debug diff", PermissionLevel.OWNER);
         DEFAULTS.put("debug rewind", PermissionLevel.OWNER);
         DEFAULTS.put("debug claim", PermissionLevel.OWNER);
         DEFAULTS.put("debug delete", PermissionLevel.OWNER);
-        DEFAULTS.put("debug activity", PermissionLevel.OWNER);
         DEFAULTS.put("debug config", PermissionLevel.OWNER);
         DEFAULTS.put("debug fakeplayers", PermissionLevel.OWNER);
         DEFAULTS.put("debug groups", PermissionLevel.OWNER);
@@ -208,6 +202,13 @@ public class PermissionConfig {
             }
             if (data.owners != null) {
                 for (String o : data.owners) ownerNames.add(o.toLowerCase());
+            }
+            // v0.10.0：活跃度系统已删除，清理旧 permissions.json 中遗留的 activity 规则
+            boolean removed = entries.keySet().removeIf(k -> k.equals("activity") || k.startsWith("activity ")
+                    || k.equals("debug activity") || k.startsWith("debug activity "));
+            if (removed) {
+                save();
+                Samsara.LOGGER.info("[周目管理 samsara] 已清理 permissions.json 中已删除的 activity 规则");
             }
             Samsara.LOGGER.info("[周目管理 samsara] 加载权限配置：{} 条命令规则，{} 个 owner",
                     entries.size(), ownerNames.size());

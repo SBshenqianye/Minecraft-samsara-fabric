@@ -114,7 +114,6 @@ public class DebugCommand {
                 .then(Commands.literal("tps")
                         .executes(ctx -> reply(ctx.getSource(), tps())))
                 .then(SeasonCommand.seasonNode())
-                .then(ActivityCommand.activityNode())
                 .then(ClaimCommand.claimNode())
                 .then(Commands.literal("debug")
                         .requires(src -> isOwner(src))
@@ -351,23 +350,6 @@ public class DebugCommand {
                                                                 debugClaimOwner(
                                                                         IntegerArgumentType.getInteger(ctx, "x"),
                                                                         IntegerArgumentType.getInteger(ctx, "z"))))))))
-                        .then(Commands.literal("activity")
-                                .then(Commands.literal("recent")
-                                        .executes(ctx -> reply(ctx.getSource(),
-                                                com.shenqianye.samsara.activity.ActivityManager.getInstance().recentText(
-                                                        com.shenqianye.samsara.activity.ActivityManager.DEFAULT_RECENT_DAYS)))
-                                        .then(Commands.argument("days", IntegerArgumentType.integer(1, 365))
-                                                .executes(ctx -> reply(ctx.getSource(),
-                                                        com.shenqianye.samsara.activity.ActivityManager.getInstance().recentText(
-                                                                IntegerArgumentType.getInteger(ctx, "days"))))))
-                                .then(Commands.literal("stats")
-                                        .executes(ctx -> reply(ctx.getSource(),
-                                                com.shenqianye.samsara.activity.ActivityManager.getInstance().statsText())))
-                                .then(Commands.literal("dead")
-                                        .executes(ctx -> reply(ctx.getSource(),
-                                                com.shenqianye.samsara.activity.ActivityManager.getInstance().deadText())))
-                                .then(Commands.literal("clear")
-                                        .executes(ctx -> reply(ctx.getSource(), clearActivity()))))
                         .then(permNode()));
 
         dispatcher.register(samsaraNode);
@@ -475,15 +457,6 @@ public class DebugCommand {
                     + "再次输入 /samsara debug reset（" + ConfirmGuard.ttlSeconds() + " 秒内）才会真正执行。";
         }
         return MANAGER.reset();
-    }
-
-    /** activity clear：需二次确认（首次置位提示，再次输入才真正清空活动日志） */
-    private static String clearActivity() {
-        if (!ConfirmGuard.confirm("activity.clear")) {
-            return "⚠ 确认：清空 activity.log（活跃度历史将丢失，重新累计）。\n"
-                    + "再次输入 /samsara debug activity clear（" + ConfirmGuard.ttlSeconds() + " 秒内）才会真正执行。";
-        }
-        return com.shenqianye.samsara.activity.ActivityManager.getInstance().clear();
     }
 
     /**
@@ -890,7 +863,6 @@ public class DebugCommand {
                 + "  /samsara claim info [x] [z] —— 查看区块圈地信息\n"
                 + "  /samsara claim boundary —— 切换边界持续显示\n"
                 + "  /samsara season —— 周目业务（status/info/create/start/end/skip/respawn-groups）\n"
-                + "  /samsara activity —— 活跃度（recent [天数]|stats|dead）\n"
                 + "  /samsara mspt|tps —— 服务器性能（别名 /mspt /tps）\n"
                 + "  /samsara version —— 模组版本号\n"
                 + "管理员命令（/samsara debug ...）：\n"
@@ -898,7 +870,7 @@ public class DebugCommand {
                 + "  debug claim give|list|rebuild|scan|remove|info|particle|delete|owner —— 圈地管理\n"
                 + "    delete dryrun|backup|execute|report —— 删除未保留区块生命周期\n"
                 + "    owner <x> <z> —— 查看区域归属（旗帜放置者）\n"
-                + "  debug season|activity —— 周目/活跃度调试\n"
+                + "  debug create|settime|setup|teleport —— 周目数据注入与测试\n"
                 + "  debug status|json|reload|reset|config|settings —— 状态与配置\n"
                 + "  debug fakeplayers|groups —— 测试数据注入与分组预览\n"
                 + "  debug rewind|diff|flow —— 倒流与差异控制\n"

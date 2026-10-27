@@ -7,7 +7,8 @@ samsara（轮回）· 活跃度分析 v0 —— 不开服读存档，回答"多�
     python analyze.py <世界目录> [--json <报告路径>]
 
 数据来源（按优先级推断玩家最后登录时间）:
-  1. activity.log        —— 本模组记录的上下线日志（M3 起存在，最可靠）
+  1. config/samsara/activity/*.jsonl —— 本模组静默活动记录（v0.10.0 起，最可靠）
+     （兼容旧版 config/samsara/activity.log，v0.9 及以前）
   2. logs/*.log(.gz)     —— 服务端日志中 "joined the game" 行（文件名日期 + 行内时间）
   3. usercache.json      —— expiresOn ≈ 最后登录 + 3 个月（估算级）
   4. 旧版 player .dat    —— lastPlayed（⚠️ 1.19 起已从玩家数据移除，仅旧世界有）
@@ -265,23 +266,57 @@ def parse_logs(world):
     return last_by_name
 
 
-def read_activity_log(world):
-    """本模组 activity.log（M3 起）：每行 `<epoch_ms> <name> [JOIN|LEAVE]`，模组实时追加。
-    只取 JOIN（上线）作为"最后登录"。列缺省/未知事件按 JOIN 兼容旧格式。
-    兼容两种位置：`<world>/config/samsara/`（久路径）与 `<world>/../config/samsara/`（服务端根配置目录）；
-    滚动档 activity.1.log 一并读取。"""
+def read_activity_records(world):
+    """本模组活动记录：优先读 `config/samsara/activity/YYYY-MM-DD.jsonl`（v0.10.0 起，
+    每行一个 JSON 事件，取 ev=join 的 t/name），并兼容旧版 `activity.log`（`epoch_ms name JOIN`）。
+
+    兼容两种位置：`<world>/config/samsara/`（久路径）与 `<world>/../config/samsara/`（服务端根配置目录）。
+    返回 {玩家名: (epoch_ms, 来源标签)}，同一玩家取最晚上线时间。"""
     candidates = [
         os.path.join(world, "config", "samsara"),
         os.path.normpath(os.path.join(world, "..", "config", "samsara")),
     ]
     by_name = {}
     seen_dirs = set()
+
+    def remember(name, ms, label):
+        if not name or not isinstance(ms, int) or ms <= 0:
+            return
+        old = by_name.get(name)
+        if old is None or ms > old[0]:
+            by_name[name] = (ms, label)
+
     for cfg_dir in candidates:
         cfg_dir = os.path.normpath(cfg_dir)
         if cfg_dir in seen_dirs:
             continue
         seen_dirs.add(cfg_dir)
-        for fn in ("activity.1.log", "activity.log"):  # 滚动档先（更旧），当前档后（更新）
+
+        # 新格式：activity/*.jsonl（按日期文件名升序；只取 join 事件）
+        act_dir = os.path.join(cfg_dir, "activity")
+        if os.path.isdir(act_dir):
+            for fn in sorted(os.listdir(act_dir)):
+                if not fn.endswith(".jsonl"):
+                    continue
+                path = os.path.join(act_dir, fn)
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        for line in f:
+                            line = line.strip()
+                            if not line:
+                                continue
+                            try:
+                                ev = json.loads(line)
+                            except ValueError:
+                                continue  # 追加写入时的残行
+                            if ev.get("ev") != "join":
+                                continue
+                            remember(ev.get("name"), ev.get("t"), "activity.jsonl")
+                except Exception as e:
+                    print("[警告] %s 读取失败: %s" % (path, e))
+
+        # 旧格式：activity.log（滚动档先，当前档后）
+        for fn in ("activity.1.log", "activity.log"):
             path = os.path.join(cfg_dir, fn)
             if not os.path.isfile(path):
                 continue
@@ -293,10 +328,8 @@ def read_activity_log(world):
                             continue
                         ev = parts[2] if len(parts) >= 3 else "JOIN"
                         if ev != "JOIN":
-                            continue  # 只取上线事件；LEAVE 不算"最后登录"
-                        ms = int(parts[0])
-                        if parts[1] not in by_name or ms > by_name[parts[1]]:
-                            by_name[parts[1]] = ms
+                            continue
+                        remember(parts[1], int(parts[0]), "activity.log(旧)")
             except Exception as e:
                 print("[警告] %s 读取失败: %s" % (path, e))
     return by_name
@@ -318,7 +351,7 @@ def main():
         dat_dir = world  # 兼容"直接是玩家数据目录"的用法
     player_dats = scan_player_dats(dat_dir) if os.path.isdir(dat_dir) else {}
     log_joins = parse_logs(world)
-    act_log = read_activity_log(world)
+    act_records = read_activity_records(world)
 
     # 玩家集合 = usercache ∪ playerdata
     uuids = sorted(set(list(uc_by_uuid.keys()) + list(player_dats.keys())))
@@ -333,9 +366,10 @@ def main():
         name = uc.get("name") or pd.get("bukkitName") or uuid
         exp_dt = parse_expires_on(uc.get("expiresOn", ""))
         sources = {}
-        # 1. activity.log（按名）
-        if name in act_log:
-            sources["activity.log"] = act_log[name]
+        # 1. 活动记录（JSONL / 旧 activity.log，按名）
+        if name in act_records:
+            ms, label = act_records[name]
+            sources[label] = ms
         # 2. 日志 joined the game（按名）
         if name in log_joins:
             sources["日志"] = ts_to_ms(log_joins[name])
@@ -387,9 +421,9 @@ def main():
         print("  世界最后写入(level.dat LastPlayed): %s（%.1f 天前）"
               % (fmt_ts(level_last), days_ago(level_last, now) or 0))
     print("=" * 66)
-    if not (log_joins or act_log or uc_by_uuid or level_last):
+    if not (log_joins or act_records or uc_by_uuid or level_last):
         print("提示：本目录仅有 player .dat。1.19 起 lastPlayed 已从玩家数据移除，")
-        print("      建议提供 usercache.json / logs/ 目录，或等待 M3 的 activity.log。")
+        print("      建议提供 usercache.json / logs/ 目录，或 config/samsara/activity/（模组 v0.10.0+ 自动写入）。")
 
     report = {
         "schema": "samsara-activity-v0.1",

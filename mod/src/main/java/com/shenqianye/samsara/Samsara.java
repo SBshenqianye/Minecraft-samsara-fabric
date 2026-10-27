@@ -1,6 +1,6 @@
 package com.shenqianye.samsara;
 
-import com.shenqianye.samsara.activity.ActivityManager;
+import com.shenqianye.samsara.activity.ActivityRecorder;
 import com.shenqianye.samsara.command.DebugCommand;
 import com.shenqianye.samsara.command.SeasonCommand;
 import com.shenqianye.samsara.rewind.DiffRecorder;
@@ -48,6 +48,9 @@ public class Samsara implements DedicatedServerModInitializer {
         com.shenqianye.samsara.claim.ClaimPlacementListener.init();
         com.shenqianye.samsara.claim.ClaimBreakListener.init();
 
+        // 活动记录：静默写 JSONL（登录/退出 + 原版统计增量），无命令、无 tick 开销
+        ActivityRecorder.init();
+
         // 差异记录：常开（diff/current 窗口；倒流开始冻结为恢复源）
         DiffRecorder.init(net.fabricmc.loader.api.FabricLoader.getInstance()
                 .getConfigDir().resolve("samsara"));
@@ -75,14 +78,8 @@ public class Samsara implements DedicatedServerModInitializer {
                 RewindEngine.getInstance().onServerStopped(server));
 
         // 分组出生：倒流完成后的离线玩家上线补传送
-        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
-            SeasonManager.getInstance().onPlayerJoin(server, handler.getPlayer());
-            // 活跃度：上线事件实时追加 activity.log
-            ActivityManager.getInstance().onJoin(handler.getPlayer().getGameProfile().name());
-        });
-        // 活跃度：下线事件实时追加 activity.log
-        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) ->
-                ActivityManager.getInstance().onLeave(handler.getPlayer().getGameProfile().name()));
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
+                SeasonManager.getInstance().onPlayerJoin(server, handler.getPlayer()));
 
         // 优雅停服：停止发送粒子包，发告别消息（减少客户端断连时的渲染压力）
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
