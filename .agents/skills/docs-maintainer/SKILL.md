@@ -24,6 +24,7 @@ python tools/docs_sync.py --check
 python tools/docs_sync.py --apply
 ```
 
+- **版本维护策略**：见 `version-policy` skill——**只维护最新稳定版**；低版本兼容排在 Web 面板之后，不默认做多版本兼容。
 - **项目版本唯一来源**：`mod/gradle.properties` 的 `mod_version`
 - README 的“当前版本”、CHANGELOG 的最新条目必须与它一致
 - 各文档头部的“状态：vX（日期）”是**文档修订号**，不是项目版本；内容有实质变化时手动 bump
