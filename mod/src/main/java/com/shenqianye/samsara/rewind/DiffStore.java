@@ -3,41 +3,63 @@ package com.shenqianye.samsara.rewind;
 import com.shenqianye.samsara.Samsara;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.io.RandomAccessFile;
+import java.nio.file.DirectoryNotEmptyException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 /**
- * 差异库：按区块记录方块变化（变化前状态），用于倒流时逐格恢复。
+ * 差异库：按维度、按区块记录方块变化（变化前状态），用于倒流时逐格恢复。
  * <p>
- * 存储：每区块一个二进制补丁文件 {@code diff/s<season>/r.<区域>/<cx>_<cz>.dat}，零依赖。
+ * 存储：{@code diff/<窗口>/<命名空间>/<维度路径>/r.<区域>/<cx>_<cz>.dat}，
+ * 例如 {@code diff/current/minecraft/overworld/r.0.0/0_0.dat}。
+ * 维度目录由调用方（{@link DiffRecorder}/{@link DiffRestore}）提供，本类只负责一个维度根目录；
+ * 这样下界/末地的记录不会与主世界同坐标碰撞。
  * <p>
  * 单条记录定长 24 字节：4B blockStateId + 4B x + 4B y + 4B z + 8B timeMs。
  * <p>
- * 并发安全：写入用每区块锁。
+ * 兼容旧布局：v0.10.0 及以前所有维度写在 {@code diff/<窗口>/r.<rx>.<rz>/} 下，没有维度层。
+ * {@link #migrateLegacy(Path)} 会把这些数据迁入 {@code minecraft/overworld/}，可重复执行。
+ * <p>
+ * 并发安全：写入用全局锁；记录先进入内存缓冲，达到阈值或显式 {@link #flush()} 才批量落盘。
  */
 public class DiffStore {
     private static final int RECORD_SIZE = 24; // 4 + 4 + 4 + 4 + 8
     /** 内存缓冲阈值：超过后自动落盘（避免每条一次磁盘 IO 卡死主线程） */
     private static final int FLUSH_THRESHOLD = 4096;
-    private static DiffStore instance;
+    /** 旧布局迁移目标维度：旧版本没有维度层，只能确定这些记录属于主世界 */
+    public static final String OVERWORLD_DIM = "minecraft/overworld";
+    /** 旧布局的区块目录名：r.<regionX>.<regionZ> */
+    private static final Pattern LEGACY_REGION = Pattern.compile("r\\.-?\\d+\\.-?\\d+");
 
     private final Path root;
-    private final Map<Long, ReentrantLock> perChunkLocks = new HashMap<>();
+    /**
+     * 是否把新写入的记录同步放进内存缓存。
+     * <p>
+     * 只有“恢复源”库需要缓存（restoreRound 反复读同一批区块）；常开的 current 库在生产路径
+     * 从不读缓存，若也缓存，所有历史改动会一直留在堆里直到重启/重置窗口。
+     */
+    private final boolean cacheWrites;
     private final ReentrantLock globalLock = new ReentrantLock();
     /** 每区块内存缓冲（尚未落盘的记录，按区块 key 分组） */
     private final Map<Long, java.io.ByteArrayOutputStream> pending = new HashMap<>();
     private int pendingCount;
-    /** 每区块内存缓存（已读入/已记录的 Edit，restoreRound 只读内存，不再反复读磁盘） */
+    /** 每区块内存缓存（仅恢复源使用；首次读盘后入缓存，后续零磁盘 IO） */
     private final Map<Long, List<Edit>> cache = new HashMap<>();
 
-    private DiffStore(Path root) {
+    private DiffStore(Path root, boolean cacheWrites) {
         this.root = root;
+        this.cacheWrites = cacheWrites;
         try {
             Files.createDirectories(root);
         } catch (IOException e) {
@@ -45,18 +67,26 @@ public class DiffStore {
         }
     }
 
-    /** 打开/新建一个差异库（非单例：记录库 diff/current 与恢复库 diff/s<N> 可并存） */
+    /** 打开/新建一个差异库（默认缓存新写入，兼容旧调用） */
     public static DiffStore open(Path root) {
-        return new DiffStore(root);
+        return new DiffStore(root, true);
     }
 
-    /** 兼容入口：按赛季目录打开（恢复库用）；等价于 {@link #open(Path)} */
-    public static synchronized DiffStore forSeason(Path configDir, int seasonId) {
-        return new DiffStore(configDir.resolve("diff").resolve("s" + seasonId));
+    /** 打开/新建一个差异库；{@code cacheWrites=false} 用于常开的 current 窗口，避免内存无界增长 */
+    public static DiffStore open(Path root, boolean cacheWrites) {
+        return new DiffStore(root, cacheWrites);
     }
 
-    public static DiffStore current() {
-        return instance;
+    /** 恢复库：按赛季 + 维度打开（会自动迁移该赛季目录的旧布局） */
+    public static DiffStore forSeason(Path configDir, int seasonId, String dimKey) {
+        Path seasonRoot = configDir.resolve("diff").resolve("s" + seasonId);
+        migrateLegacy(seasonRoot);
+        return new DiffStore(seasonRoot.resolve(dimKey), true);
+    }
+
+    /** 兼容入口：按赛季目录打开主世界恢复库 */
+    public static DiffStore forSeason(Path configDir, int seasonId) {
+        return forSeason(configDir, seasonId, OVERWORLD_DIM);
     }
 
     public Path root() {
@@ -69,13 +99,94 @@ public class DiffStore {
         return root.resolve("r." + rx + "." + rz).resolve(cx + "_" + cz + ".dat");
     }
 
-    private ReentrantLock lockFor(int cx, int cz) {
-        long key = ((long) cx << 32) | (cz & 0xFFFFFFFFL);
-        globalLock.lock();
-        try {
-            return perChunkLocks.computeIfAbsent(key, k -> new ReentrantLock());
-        } finally {
-            globalLock.unlock();
+    /**
+     * 把旧布局（{@code <窗口>/r.<rx>.<rz>/*.dat}）迁移到
+     * {@code <窗口>/minecraft/overworld/r.<rx>.<rz>/*.dat}。
+     * <p>
+     * 可重复执行：目标文件已存在时按追加合并（记录按时间戳排序，追加顺序不影响恢复结果）。
+     * 只迁移 {@code r.<数字>.<数字>} 目录，不会误碰新的维度目录。
+     */
+    public static void migrateLegacy(Path windowRoot) {
+        if (windowRoot == null || !Files.isDirectory(windowRoot)) {
+            return;
+        }
+        Path targetDim = windowRoot.resolve(OVERWORLD_DIM);
+        int moved = 0;
+        try (var dirs = Files.newDirectoryStream(windowRoot)) {
+            for (Path dir : dirs) {
+                if (!Files.isDirectory(dir)
+                        || !LEGACY_REGION.matcher(dir.getFileName().toString()).matches()) {
+                    continue;
+                }
+                Path targetDir = targetDim.resolve(dir.getFileName());
+                try (var files = Files.newDirectoryStream(dir, "*.dat")) {
+                    for (Path f : files) {
+                        Path target = targetDir.resolve(f.getFileName());
+                        Files.createDirectories(target.getParent());
+                        if (Files.exists(target)) {
+                            appendFile(f, target);
+                            Files.deleteIfExists(f);
+                        } else {
+                            Files.move(f, target);
+                        }
+                        moved++;
+                    }
+                }
+                try {
+                    Files.deleteIfExists(dir);
+                } catch (DirectoryNotEmptyException ignored) {
+                    // 目录里还有非 .dat 文件：保留，避免误删
+                }
+            }
+        } catch (IOException e) {
+            Samsara.LOGGER.warn("[周目管理 samsara] diff 旧布局迁移失败（保留原数据，下次再试）: {}",
+                    e.getMessage());
+            return;
+        }
+        if (moved > 0) {
+            Samsara.LOGGER.info("[周目管理 samsara] diff 旧布局已迁移: {} 个区块文件 → {}", moved,
+                    targetDim.toAbsolutePath().normalize());
+        }
+    }
+
+    /**
+     * 把 {@code src} 窗口的全部记录合并进 {@code dst}（同路径文件追加，目标不存在则移动）。
+     * 用于“中止后重新倒流”把冻结窗口并回 current，以及冻结时目标库已存在的兜底。
+     * <p>
+     * 只处理 {@code .dat} 文件；调用方负责在成功后删除 {@code src} 目录。
+     */
+    public static void mergeWindows(Path src, Path dst) throws IOException {
+        if (src == null || dst == null || !Files.isDirectory(src)) {
+            return;
+        }
+        migrateLegacy(src);
+        migrateLegacy(dst);
+        Files.createDirectories(dst);
+        List<Path> files;
+        try (Stream<Path> walk = Files.walk(src)) {
+            files = walk.filter(Files::isRegularFile)
+                    .filter(p -> p.getFileName().toString().endsWith(".dat"))
+                    .toList();
+        } catch (java.io.UncheckedIOException e) {
+            throw e.getCause();
+        }
+        for (Path f : files) {
+            Path target = dst.resolve(src.relativize(f));
+            Files.createDirectories(target.getParent());
+            if (Files.exists(target)) {
+                appendFile(f, target);
+                Files.delete(f);
+            } else {
+                Files.move(f, target);
+            }
+        }
+    }
+
+    private static void appendFile(Path src, Path dst) throws IOException {
+        try (InputStream in = Files.newInputStream(src);
+             OutputStream out = Files.newOutputStream(dst,
+                     StandardOpenOption.CREATE, StandardOpenOption.APPEND)) {
+            in.transferTo(out);
         }
     }
 
@@ -112,8 +223,10 @@ public class DiffStore {
             java.io.ByteArrayOutputStream buf = pending.computeIfAbsent(key, k -> new java.io.ByteArrayOutputStream());
             buf.write(rec, 0, RECORD_SIZE);
             pendingCount++;
-            // 同步更新内存缓存（restoreRound 只读缓存，不反复读磁盘）
-            cache.computeIfAbsent(key, k -> new ArrayList<>()).add(new Edit(x, y, z, stateId, timeMs));
+            // 只有恢复源需要缓存；current 窗口的缓存永远没人读，缓存它等于内存泄漏
+            if (cacheWrites) {
+                cache.computeIfAbsent(key, k -> new ArrayList<>()).add(new Edit(x, y, z, stateId, timeMs));
+            }
             if (pendingCount >= FLUSH_THRESHOLD) {
                 flushLocked();
             }
@@ -122,11 +235,21 @@ public class DiffStore {
         }
     }
 
-    /** 把内存缓冲一次性落盘（fake 注入/倒流开始前调用，确保数据立即可读） */
+    /** 把内存缓冲一次性落盘（停服/倒流开始/定期 flush 调用，确保数据可读） */
     public void flush() {
         globalLock.lock();
         try {
             flushLocked();
+        } finally {
+            globalLock.unlock();
+        }
+    }
+
+    /** 尚未落盘的记录数（供状态展示；落盘后归零） */
+    public int pendingCount() {
+        globalLock.lock();
+        try {
+            return pendingCount;
         } finally {
             globalLock.unlock();
         }
@@ -149,8 +272,8 @@ public class DiffStore {
             Path f = fileFor(cx, cz);
             try {
                 Files.createDirectories(f.getParent());
-                Files.write(f, e.getValue(), java.nio.file.StandardOpenOption.CREATE,
-                        java.nio.file.StandardOpenOption.APPEND);
+                Files.write(f, e.getValue(), StandardOpenOption.CREATE,
+                        StandardOpenOption.APPEND);
             } catch (IOException ex) {
                 Samsara.LOGGER.error("[周目管理 samsara] diff 落盘失败 {}: {}", f, ex.getMessage());
             }
@@ -216,21 +339,26 @@ public class DiffStore {
         }
     }
 
-    /** 统计记录总数（遍历所有区块文件） */
+    /** 统计本维度记录总数（含尚未落盘的缓冲） */
     public long count() {
-        if (!Files.isDirectory(root)) {
+        return countAll(root) + pendingCount();
+    }
+
+    /** 统计一个窗口下全部维度（含所有维度目录）的磁盘记录数；不含内存缓冲 */
+    public static long countAll(Path root) {
+        if (root == null || !Files.isDirectory(root)) {
             return 0;
         }
         final long[] total = {0};
-        try (var walk = Files.walk(root)) {
-            var s = walk.filter(p -> p.getFileName().toString().endsWith(".dat"));
-            s.forEach(p -> {
-                try {
-                    total[0] += Files.size(p) / RECORD_SIZE;
-                } catch (IOException ignore) {
-                }
-            });
-        } catch (IOException e) {
+        try (Stream<Path> walk = Files.walk(root)) {
+            walk.filter(p -> p.getFileName().toString().endsWith(".dat"))
+                    .forEach(p -> {
+                        try {
+                            total[0] += Files.size(p) / RECORD_SIZE;
+                        } catch (IOException ignore) {
+                        }
+                    });
+        } catch (IOException | java.io.UncheckedIOException e) {
             Samsara.LOGGER.error("diff 统计失败: {}", e.getMessage());
         }
         return total[0];

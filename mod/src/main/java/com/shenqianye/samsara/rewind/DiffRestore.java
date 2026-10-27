@@ -25,7 +25,7 @@ import java.util.Set;
  *  1. 按已过时间算进度 p = (now - startMs) / durationMs；
  *  2. 遍历玩家视距内<b>已加载</b>区块（懒加载：未加载区块不处理，加载时自然跟上）；
  *  3. <b>跳过受圈地保护的区块</b>（保护集 = 当前圈地并集，动态判定，见 {@link #isProtected}）；
- *  4. 恢复源 = 本次倒流的<b>冻结恢复库</b>（diff/s&lt;赛季id&gt;，倒流开始时由
+ *  4. 恢复源 = 本次倒流的<b>冻结恢复库</b>（diff/s&lt;赛季id&gt;/minecraft/overworld，倒流开始时由
  *     {@link DiffRecorder#freezeCurrent} 冻结；窗口 = 上次删块完成后至本次倒流开始）；
  *     对每区块取 diff 记录（倒序=较新改动优先退场），恢复「进度点之前该恢复的格」
  *     为变化前状态（Block.stateById）；
@@ -53,10 +53,10 @@ public class DiffRestore {
     private static DiffStore restoreStore;
     private static int restoreSeasonId = -1;
 
-    /** 恢复源差异库（缓存同一赛季的库实例，避免每次重建内存缓存） */
+    /** 恢复源差异库（缓存同一赛季的库实例，避免每次重建内存缓存；仅主世界参与本轮倒流） */
     public static DiffStore restoreStore(Path configDir, int seasonId) {
         if (restoreStore == null || restoreSeasonId != seasonId) {
-            restoreStore = DiffStore.open(configDir.resolve("diff").resolve("s" + seasonId));
+            restoreStore = DiffStore.forSeason(configDir, seasonId, DiffStore.OVERWORLD_DIM);
             restoreSeasonId = seasonId;
         }
         return restoreStore;

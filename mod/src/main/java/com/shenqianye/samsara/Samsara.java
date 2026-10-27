@@ -58,12 +58,20 @@ public class Samsara implements DedicatedServerModInitializer {
         // 时间倒流：调度器（内部 5s 节流：标记/恢复/传送/删除/归档）
         // 卸载缓冲区：每 20 tick（1秒）批量处理卸载的待删区块
         final int[] unloadFlushCounter = {0};
+        final int[] diffFlushCounter = {0};
         ServerTickEvents.END_SERVER_TICK.register(server -> {
+            // 防御：玩家操作/爆炸的上下文若因异常未配对，下一 tick 清掉，避免误记世界模拟
+            DiffRecorder.clearEditContext();
             RewindEngine.getInstance().tick(server);
             com.shenqianye.samsara.command.DebugCommand.onTick();
             if (++unloadFlushCounter[0] >= 20) {
                 unloadFlushCounter[0] = 0;
                 RewindEngine.getInstance().flushUnloadBuffer(server);
+            }
+            // 常开窗口每 30 秒落盘一次：崩溃/强杀最多丢 30 秒的方块变化，而不是整个缓冲
+            if (++diffFlushCounter[0] >= 600) {
+                diffFlushCounter[0] = 0;
+                DiffRecorder.flush();
             }
         });
 
@@ -83,6 +91,8 @@ public class Samsara implements DedicatedServerModInitializer {
 
         // 优雅停服：停止发送粒子包，发告别消息（减少客户端断连时的渲染压力）
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
+            DiffRecorder.flush(); // 停服前把常开窗口的缓冲落盘（不依赖后续 SERVER_STOPPED 的时序）
+            DiffRecorder.clearEditContext();
             com.shenqianye.samsara.claim.ClaimParticles.shutdown();
             for (var player : server.getPlayerList().getPlayers()) {
                 player.sendSystemMessage(

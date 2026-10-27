@@ -919,14 +919,14 @@ public class SeasonManager {
     /** 差异库状态（记录窗口 / 恢复源 / 记录数） */
     public String diffStatus() {
         String sb = "差异库（常开记录）：记录 " + (com.shenqianye.samsara.rewind.DiffRecorder.recording() ? "开" : "关");
-        com.shenqianye.samsara.rewind.DiffStore w = com.shenqianye.samsara.rewind.DiffRecorder.store();
-        if (w == null) {
+        if (com.shenqianye.samsara.rewind.DiffRecorder.currentRoot() == null) {
             return sb + "\n记录窗口未初始化（需重启，DiffRecorder.init 未执行）";
         }
-        sb += "\n记录窗口: " + w.root().getFileName() + " · current 记录数 " + w.count();
+        sb += "\n记录窗口: diff/current（按维度分目录）· 当前记录数 "
+                + com.shenqianye.samsara.rewind.DiffRecorder.countCurrent();
         if (com.shenqianye.samsara.rewind.RewindEngine.getInstance().running()) {
             int sid = com.shenqianye.samsara.rewind.RewindEngine.getInstance().currentSeasonId();
-            sb += "\n恢复源: diff/s" + sid + "（本次倒流用，含上次删块后至今的全部改动）";
+            sb += "\n恢复源: diff/s" + sid + "/minecraft/overworld（本次倒流用，含上次删块后至今的全部改动）";
         }
         return sb;
     }

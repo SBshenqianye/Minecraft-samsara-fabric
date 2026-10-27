@@ -142,6 +142,7 @@ public class RewindEngine {
         if (data == null) {
             return;
         }
+        int seasonId = data.seasonId;
         save(); // 先落盘，保证归档的是最新进度（含待删队列标记）
         String ts = LocalDateTime.now(ZoneId.systemDefault())
                 .format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
@@ -168,6 +169,8 @@ public class RewindEngine {
         data = null;
         onComplete = null;
         DiffRestore.reset();
+        // 倒流已走完：恢复源不再需要，删除 diff/s<id>，避免按赛季无限累积
+        DiffRecorder.deleteRecovery(seasonId);
     }
 
     // ---- 后台删除线程 ----
@@ -525,6 +528,7 @@ public class RewindEngine {
 
     /** 服务器停止：兜底删除待删队列 + 未删完区块；按恢复完成情况归档或保留；停服窗口区域文件瘦身 */
     public synchronized void onServerStopped(MinecraftServer server) {
+        DiffRecorder.flush(); // 常开窗口的最后一次落盘（Samsara 的 SERVER_STOPPING 也会调用，双保险）
         try {
             if (data != null) {
                 applyPhysicalDeletion(server);
@@ -613,6 +617,8 @@ public class RewindEngine {
         clearPersistence();
         DiffRestore.reset();
         pendingQueue.drop(); // 中止 = 一切保留；尚未删除的区块不再删除
+        // 中止不重置记录窗口：把冻结恢复源并回 current，下次倒流仍能看到中止前的改动
+        DiffRecorder.mergeFrozenBack(seasonId);
         return "已中止倒流（周目 #" + seasonId + "）。所有区块保持原样，不会删除任何区块"
                 + "（包括已到倒流时刻、已打退场标记但尚未删除的区块）"
                 + "。世界维持当前状态；如需重新倒流请再次 /season start";

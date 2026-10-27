@@ -2,73 +2,91 @@ package com.shenqianye.samsara.rewind;
 
 import com.shenqianye.samsara.Samsara;
 import net.minecraft.core.BlockPos;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.Level;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 方块变化记录器（DiffRecorder）。
  * <p>
  * 由 {@link com.shenqianye.samsara.mixin.ServerLevelMixin} 在 {@code ServerLevel.setBlock}
- * 处调用：当方块<b>类型</b>实际变化（如破坏→空气、放置、TNT 爆破）时，把该格「变化前的状态」
- * 记入当前记录窗口的 DiffStore，供倒流时逐格恢复。
+ * 处调用，但只记录<b>玩家操作</b>与<b>爆炸</b>上下文内的方块类型变化
+ * （{@code mixin/ServerPlayerGameModeMixin}、{@code mixin/ServerExplosionMixin} 负责压栈/出栈），
+ * 从而过滤红石、作物、流体扩散、树叶腐烂等世界模拟噪声。
  * <p>
  * <b>记录窗口</b>：记录<b>常开</b>——服务器启动即写入 {@code diff/current/}；
  * 倒流真正启动时（扫描成功后）把 current <b>冻结</b> 为 {@code diff/s<赛季id>/}
- * （=本次倒流的恢复源，窗口 = 上次删块完成之后到本次倒流开始），
- * 并开启新的 current；倒流完成（物理删除执行）时<b>重置</b>窗口（丢弃倒流期间的改动，
- * 它们属于倒流开始之前的世界状态）。中止倒流不重置（窗口继续累计）。
+ * （=本次倒流的恢复源），并开启新的 current；倒流完成（物理删除执行）时<b>重置</b>窗口
+ * （丢弃倒流期间的改动）。中止倒流时把冻结库<b>并回</b> current，下次倒流仍能看到完整窗口。
  * <p>
- * 过滤：仅记录 block 类型变化（before.block != after.block）——自动过滤红石刻状态/流体/作物等
- * 只换状态不变类型的"世界模拟噪声"。
+ * <b>维度隔离</b>：每个维度写入 {@code <窗口>/<命名空间>/<维度路径>/}，恢复侧只读主世界
+ * {@code minecraft/overworld/}，下界/末地的改动不会与主世界同坐标碰撞。
  */
 public class DiffRecorder {
-    private static DiffStore store;
-    private static boolean enabled;
     private static Path configDir;
+    private static volatile Path currentRoot;
+    /** 每个维度一个 current 库；current 库不缓存新写入（避免常开窗口内存无界增长） */
+    private static final Map<String, DiffStore> stores = new ConcurrentHashMap<>();
+    private static volatile boolean enabled;
+    /** 记录上下文深度：>0 表示当前 setBlock 由玩家操作或爆炸触发 */
+    private static final ThreadLocal<Integer> EDIT_CONTEXT = ThreadLocal.withInitial(() -> 0);
 
     private DiffRecorder() {
     }
 
-    /** 服务器启动时初始化：开启常开记录窗口（diff/current） */
-    public static void init(Path samsaraConfigDir) {
+    /** 服务器启动时初始化：开启常开记录窗口（diff/current），并迁移旧的无维度布局 */
+    public static synchronized void init(Path samsaraConfigDir) {
+        if (currentRoot != null) {
+            flush(); // 内置服务器重启：先把上一个窗口的缓冲落盘
+        }
         configDir = samsaraConfigDir;
-        store = DiffStore.open(configDir.resolve("diff").resolve("current"));
+        currentRoot = configDir.resolve("diff").resolve("current");
+        DiffStore.migrateLegacy(currentRoot);
+        stores.clear();
+        storeFor(DiffStore.OVERWORLD_DIM);
         enabled = true;
-        Samsara.LOGGER.info("[samsara] 差异记录已开启（常开窗口 diff/current）");
+        clearEditContext(); // 内置服务器重启/异常残留：新会话从干净上下文开始
+        Samsara.LOGGER.info("[samsara] 差异记录已开启（常开窗口 diff/current，按维度分目录）");
     }
 
     /**
      * 冻结当前记录窗口为 {@code diff/s<seasonId>/} 并开启新窗口（倒流启动时调用）。
-     * 冻结后的 s<seasonId> 即本次倒流的恢复源。失败（如目录已被占用）时保留 current 并告警。
+     * 冻结后的 s<seasonId> 即本次倒流的恢复源；若目标已存在（中止后重开/上次冻结残留），
+     * 把 current 合并进目标而不是丢弃旧数据。
      */
     public static synchronized void freezeCurrent(int seasonId) {
-        if (configDir == null || store == null) {
+        if (configDir == null || currentRoot == null) {
             return;
         }
-        try {
-            store.flush(); // 先落盘，再移动目录
-        } catch (Exception e) {
-            Samsara.LOGGER.warn("[周目管理 samsara] 冻结前 flush 失败: {}", e.getMessage());
-        }
-        Path current = configDir.resolve("diff").resolve("current");
+        flush();
         Path dst = configDir.resolve("diff").resolve("s" + seasonId);
         try {
-            if (Files.exists(current)) {
+            DiffStore.migrateLegacy(currentRoot);
+            if (Files.exists(currentRoot)) {
                 if (Files.exists(dst)) {
-                    Samsara.LOGGER.warn("[周目管理 samsara] 冻结覆盖已有恢复库 {}（旧数据作废）", dst);
-                    deleteRecursively(dst);
+                    DiffStore.mergeWindows(currentRoot, dst);
+                    deleteRecursively(currentRoot);
+                    Samsara.LOGGER.warn("[周目管理 samsara] 冻结时目标恢复库已存在，已合并 current（不丢弃旧窗口）");
+                } else {
+                    Files.createDirectories(currentRoot.getParent());
+                    Files.move(currentRoot, dst);
                 }
-                Files.createDirectories(current.getParent());
-                Files.move(current, dst);
             }
+            Files.createDirectories(currentRoot);
+            stores.clear();
+            storeFor(DiffStore.OVERWORLD_DIM);
             Samsara.LOGGER.info("[周目管理 samsara] 差异库冻结: diff/current → diff/s{}（本次倒流恢复源，窗口=上次删块后至今）", seasonId);
         } catch (IOException e) {
             Samsara.LOGGER.error("[周目管理 samsara] 差异库冻结失败（保留 current 继续记录）: {}", e.getMessage());
+            stores.clear();
+            storeFor(DiffStore.OVERWORLD_DIM);
         }
-        store = DiffStore.open(current);
     }
 
     /**
@@ -76,20 +94,74 @@ public class DiffRecorder {
      * 开启新窗口（下次倒流的恢复源将从此刻起累计）。
      */
     public static synchronized void resetWindow() {
-        if (configDir == null) {
+        if (configDir == null || currentRoot == null) {
             return;
         }
-        Path current = configDir.resolve("diff").resolve("current");
+        flush();
         try {
-            store.flush();
-            deleteRecursively(current);
-            Files.createDirectories(current);
+            deleteRecursively(currentRoot);
+            Files.createDirectories(currentRoot);
         } catch (IOException e) {
             Samsara.LOGGER.warn("[周目管理 samsara] 重置记录窗口失败: {}", e.getMessage());
         }
-        store = DiffStore.open(current);
+        stores.clear();
         enabled = true;
+        storeFor(DiffStore.OVERWORLD_DIM);
         Samsara.LOGGER.info("[周目管理 samsara] 差异记录窗口已重置（丢弃倒流期间改动，重新累计）");
+    }
+
+    /**
+     * 中止倒流：把冻结库 {@code diff/s<seasonId>/} 并回 current，保证“中止不重置”
+     * （《设计规范》〈diff 记录窗口与恢复源〉）：下次倒流仍能看到中止前的全部改动。
+     * 合并失败时保留 s<seasonId>，由下次冻结再次合并。
+     */
+    public static synchronized void mergeFrozenBack(int seasonId) {
+        if (configDir == null || currentRoot == null || seasonId <= 0) {
+            return;
+        }
+        Path frozen = configDir.resolve("diff").resolve("s" + seasonId);
+        if (!Files.exists(frozen)) {
+            return;
+        }
+        flush();
+        try {
+            Files.createDirectories(currentRoot);
+            DiffStore.mergeWindows(frozen, currentRoot);
+            deleteRecursively(frozen);
+            stores.clear();
+            storeFor(DiffStore.OVERWORLD_DIM);
+            Samsara.LOGGER.info("[周目管理 samsara] 中止倒流：恢复库 diff/s{} 已并回记录窗口（下次倒流仍可见）", seasonId);
+        } catch (IOException e) {
+            Samsara.LOGGER.error("[周目管理 samsara] 中止倒流：恢复库并回失败（保留 diff/s{} 供下次冻结合并）: {}",
+                    seasonId, e.getMessage());
+            stores.clear();
+            storeFor(DiffStore.OVERWORLD_DIM);
+        }
+    }
+
+    /** 倒流成功归档后删除恢复源，避免 diff/s<N> 按赛季无限累积 */
+    public static synchronized void deleteRecovery(int seasonId) {
+        if (configDir == null || seasonId <= 0) {
+            return;
+        }
+        Path frozen = configDir.resolve("diff").resolve("s" + seasonId);
+        try {
+            deleteRecursively(frozen);
+            Samsara.LOGGER.info("[周目管理 samsara] 恢复源已清理: diff/s{}", seasonId);
+        } catch (IOException e) {
+            Samsara.LOGGER.warn("[周目管理 samsara] 恢复源清理失败 diff/s{}: {}", seasonId, e.getMessage());
+        }
+    }
+
+    /** 把当前窗口所有维度的缓冲区落盘（停服/定期 flush 调用） */
+    public static synchronized void flush() {
+        for (DiffStore s : stores.values()) {
+            try {
+                s.flush();
+            } catch (Exception e) {
+                Samsara.LOGGER.warn("[周目管理 samsara] diff flush 失败: {}", e.getMessage());
+            }
+        }
     }
 
     private static void deleteRecursively(Path p) throws IOException {
@@ -100,10 +172,12 @@ public class DiffRecorder {
             for (Path f : (Iterable<Path>) walk.sorted(java.util.Comparator.reverseOrder())::iterator) {
                 Files.deleteIfExists(f);
             }
+        } catch (java.io.UncheckedIOException e) {
+            throw e.getCause();
         }
     }
 
-    /** 临时开关记录（倒流恢复自身 setBlock 时暂停，避免"恢复→被记录→再被恢复成空气"自噬） */
+    /** 临时开关记录（倒流恢复自身 setBlock 时暂停，避免“恢复→被记录→再被恢复成空气”自噬） */
     public static void setEnabled(boolean on) {
         enabled = on;
     }
@@ -112,34 +186,90 @@ public class DiffRecorder {
         return enabled;
     }
 
-    /** 当前记录窗口的库 */
-    public static DiffStore store() {
-        return store;
+    /**
+     * 记录上下文压栈：由玩家操作/爆炸的 mixin 在方法 HEAD 调用。
+     * 与 {@link #endEditContext()} 必须成对；异常路径由服务端 tick 兜底清理。
+     */
+    public static void beginEditContext() {
+        EDIT_CONTEXT.set(EDIT_CONTEXT.get() + 1);
     }
 
-    /**
-     * fake 注入目标库：倒流进行中注入到<b>恢复源</b>（diff/s&lt;N&gt;，倒流可见）；
-     * 无倒流时注入当前记录窗口（current，下次倒流可见）。
-     */
-    public static DiffStore fakeTarget() {
-        RewindEngine re = RewindEngine.getInstance();
-        if (re.running() && re.currentSeasonId() > 0) {
-            return DiffStore.forSeason(configDir, re.currentSeasonId());
+    /** 记录上下文出栈（方法 RETURN） */
+    public static void endEditContext() {
+        int depth = EDIT_CONTEXT.get() - 1;
+        if (depth <= 0) {
+            EDIT_CONTEXT.remove();
+        } else {
+            EDIT_CONTEXT.set(depth);
         }
-        return store;
+    }
+
+    /** 防御性清理：异常导致上下文未配对时，下一 tick 清掉，避免误记世界模拟 */
+    public static void clearEditContext() {
+        EDIT_CONTEXT.remove();
+    }
+
+    private static boolean inEditContext() {
+        return EDIT_CONTEXT.get() > 0;
+    }
+
+    /** 当前窗口根目录（diff/current） */
+    public static Path currentRoot() {
+        return currentRoot;
+    }
+
+    /** 当前窗口全部维度的记录数（磁盘 + 尚未落盘的缓冲） */
+    public static long countCurrent() {
+        if (currentRoot == null) {
+            return 0;
+        }
+        long total = DiffStore.countAll(currentRoot);
+        for (DiffStore s : stores.values()) {
+            total += s.pendingCount();
+        }
+        return total;
+    }
+
+    /** 当前窗口的主世界库（状态展示/兼容入口） */
+    public static DiffStore store() {
+        return storeFor(DiffStore.OVERWORLD_DIM);
+    }
+
+    private static DiffStore storeFor(String dimKey) {
+        if (currentRoot == null) {
+            return null;
+        }
+        return stores.computeIfAbsent(dimKey, k -> DiffStore.open(currentRoot.resolve(k), false));
+    }
+
+    private static String dimensionKey(ResourceKey<Level> key) {
+        // 26.2 起 ResourceLocation 更名为 Identifier，ResourceKey#location() 改为 identifier()
+        return key.identifier().getNamespace() + "/" + key.identifier().getPath();
     }
 
     /**
      * 由 mixin 调用的记录入口。
-     * 若开启且 block 类型真实变化，记录 before 状态。
+     * <p>
+     * 只有满足以下条件才记录：
+     * <ul>
+     *   <li>记录开启（非倒流恢复自身）；</li>
+     *   <li>处于玩家操作/爆炸上下文（{@link #beginEditContext()}）；</li>
+     *   <li>方块<b>类型</b>真实变化（过滤同类型状态噪声）。</li>
+     * </ul>
+     * 世界模拟（红石/作物/流体/树叶腐烂等）没有上下文，因此不会被记录。
      */
     public static void record(ServerLevel level, BlockPos pos, net.minecraft.world.level.block.state.BlockState before,
                               net.minecraft.world.level.block.state.BlockState after) {
-        if (!enabled || store == null) {
+        if (!enabled || currentRoot == null) {
             return;
         }
+        // 先做便宜的“类型是否变化”判断：同类型状态变化（红石/作物/流体水位）占多数，
+        // 可避免为纯世界模拟去碰 ThreadLocal 与维度路径
         if (before.getBlock() == after.getBlock()) {
-            return; // 仅类型变化才记（过滤红石/流体/作物等）
+            return;
+        }
+        if (!inEditContext()) {
+            return;
         }
         // 忽略世界生成/越界
         if (!level.hasChunkAt(pos)) {
@@ -149,13 +279,44 @@ public class DiffRecorder {
         if (stateId < 0) {
             return;
         }
-        store.record(pos.getX(), pos.getY(), pos.getZ(), stateId, System.currentTimeMillis());
+        DiffStore s = storeFor(dimensionKey(level.dimension()));
+        if (s != null) {
+            s.record(pos.getX(), pos.getY(), pos.getZ(), stateId, System.currentTimeMillis());
+        }
     }
 
     /** 石头方块的状态 id（动态获取，26.2 注册表顺序不能硬编码 1） */
     public static int stoneStateId() {
         return net.minecraft.world.level.block.Block.getId(
                 net.minecraft.world.level.block.Blocks.STONE.defaultBlockState());
+    }
+
+    /**
+     * fake 注入目标库：倒流进行中注入到<b>恢复源</b>（diff/s&lt;N&gt;，倒流可见）；
+     * 无倒流时注入当前记录窗口（current，下次倒流可见）。默认主世界。
+     */
+    public static DiffStore fakeTarget() {
+        return fakeTarget(null);
+    }
+
+    /** 指定维度的 fake 注入目标；{@code level=null} 等价主世界 */
+    public static DiffStore fakeTarget(ServerLevel level) {
+        if (configDir == null) {
+            return null;
+        }
+        RewindEngine re = RewindEngine.getInstance();
+        String dim = level == null ? DiffStore.OVERWORLD_DIM : dimensionKey(level.dimension());
+        if (re.running() && re.currentSeasonId() > 0) {
+            return DiffStore.forSeason(configDir, re.currentSeasonId(), dim);
+        }
+        return storeFor(dim);
+    }
+
+    /** fake 写盘后让恢复侧重新读盘（否则已缓存的区块看不到新注入/索引会错位） */
+    private static void refreshRestoreAfterFake() {
+        if (RewindEngine.getInstance().running()) {
+            DiffRestore.reset();
+        }
     }
 
     /**
@@ -185,6 +346,7 @@ public class DiffRecorder {
             target.record(x, y, z, stateId, now - i); // 时间递减：i=0 最新
         }
         target.flush(); // 批量落盘，确保立即可读
+        refreshRestoreAfterFake();
         return "已注入 " + count + " 条虚假 diff 到区块 (" + cx + "," + cz + ")（stateId=" + stateId
                 + "，y=64~159 随机）· " + (RewindEngine.getInstance().running()
                 ? "倒流恢复源" : "记录窗口（下次倒流）") + " 生效";
@@ -210,7 +372,7 @@ public class DiffRecorder {
     /** 同 {@link #fakeDiffText(int, int, int, String, int, int)}，但 level 非空时立即放置字画方块 */
     public static String fakeDiffText(ServerLevel level, int x0, int y0, int z0, String text,
                                       int stateId, int scale) {
-        DiffStore target = fakeTarget();
+        DiffStore target = fakeTarget(level);
         if (target == null) {
             return "差异库未初始化（先 /samsara debug flow setup + flow rewind）";
         }
@@ -279,6 +441,7 @@ public class DiffRecorder {
         if (idx == 0) {
             return "文字不含可绘制字符（仅支持 A-Z/0-9/部分符号）";
         }
+        refreshRestoreAfterFake();
         String skipNote = skipped > 0
                 ? "（已跳过 " + skipped + " 个不支持字符「" + skippedChars + "」，仅支持 A-Z/0-9/部分符号）"
                 : "";
