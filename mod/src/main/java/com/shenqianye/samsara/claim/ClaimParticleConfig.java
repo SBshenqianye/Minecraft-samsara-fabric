@@ -2,6 +2,9 @@ package com.shenqianye.samsara.claim;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.shenqianye.samsara.Samsara;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.core.particles.ParticleType;
@@ -79,12 +82,13 @@ public class ClaimParticleConfig {
             .resolve("samsara").resolve("claim-particles.json");
 
     private ClaimParticleConfig() {
-        load();
+        // 构造器不读文件：load() 里若再触发反序列化会递归构造自己
     }
 
     public static synchronized ClaimParticleConfig getInstance() {
         if (instance == null) {
             instance = new ClaimParticleConfig();
+            instance.load();
         }
         return instance;
     }
@@ -170,18 +174,34 @@ public class ClaimParticleConfig {
     private void load() {
         if (!Files.exists(configPath)) return;
         try {
-            ClaimParticleConfig loaded = GSON.fromJson(
-                    Files.readString(configPath, StandardCharsets.UTF_8), ClaimParticleConfig.class);
-            if (loaded != null) {
-                this.dayParticle = loaded.dayParticle;
-                this.nightParticle = loaded.nightParticle;
-                this.fontParticle = loaded.fontParticle;
-                this.beamParticle = loaded.beamParticle;
-                this.sharedDisplay = loaded.sharedDisplay;
-                this.globalDisplay = loaded.globalDisplay;
-            }
+            // 直接读 JsonObject 而不 GSON.fromJson(..., ClaimParticleConfig.class)：
+            // 该类只有私有构造器，Gson 反射实例化在 Java 25+ 上会失败。
+            JsonObject json = JsonParser.parseString(Files.readString(configPath, StandardCharsets.UTF_8))
+                    .getAsJsonObject();
+            this.dayParticle = readString(json, "dayParticle", this.dayParticle);
+            this.nightParticle = readString(json, "nightParticle", this.nightParticle);
+            this.fontParticle = readString(json, "fontParticle", this.fontParticle);
+            this.beamParticle = readString(json, "beamParticle", this.beamParticle);
+            this.sharedDisplay = readBoolean(json, "sharedDisplay", this.sharedDisplay);
+            this.globalDisplay = readBoolean(json, "globalDisplay", this.globalDisplay);
         } catch (Exception e) {
             Samsara.LOGGER.warn("[samsara] claim-particles.json 解析失败: {}", e.getMessage());
         }
+    }
+
+    /** 读取字符串字段；缺失或类型不符时保留默认值 */
+    private static String readString(JsonObject json, String key, String fallback) {
+        JsonElement value = json.get(key);
+        return value != null && value.isJsonPrimitive() && value.getAsJsonPrimitive().isString()
+                ? value.getAsString().toLowerCase()
+                : fallback;
+    }
+
+    /** 读取布尔字段；缺失或类型不符时保留默认值 */
+    private static boolean readBoolean(JsonObject json, String key, boolean fallback) {
+        JsonElement value = json.get(key);
+        return value != null && value.isJsonPrimitive() && value.getAsJsonPrimitive().isBoolean()
+                ? value.getAsBoolean()
+                : fallback;
     }
 }

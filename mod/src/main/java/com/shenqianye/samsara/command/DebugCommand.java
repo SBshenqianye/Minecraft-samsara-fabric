@@ -877,21 +877,28 @@ public class DebugCommand {
                 + "  debug perm —— 权限管理";
     }
 
-    /** /samsara version：从 FabricLoader 取模组版本 + 显示名 + 简略配置 */
+    /** /samsara version：从 FabricLoader 取模组版本 + 显示名 + 游戏版本 */
     private static String versionInfo() {
         String version = "unknown";
         String name = "samsara";
+        String gameVersion = "unknown";
         try {
-            var container = net.fabricmc.loader.api.FabricLoader.getInstance().getModContainer("samsara");
+            var loader = net.fabricmc.loader.api.FabricLoader.getInstance();
+            var container = loader.getModContainer("samsara");
             if (container.isPresent()) {
                 version = container.get().getMetadata().getVersion().getFriendlyString();
                 name = container.get().getMetadata().getName();
+            }
+            // 游戏版本从 minecraft 容器读取，升级 MC 时这里不会再漏改
+            var minecraft = loader.getModContainer("minecraft");
+            if (minecraft.isPresent()) {
+                gameVersion = minecraft.get().getMetadata().getVersion().getFriendlyString();
             }
         } catch (Exception e) {
             // 取不到版本就用 unknown
         }
         return "周目管理（" + name + "） · 版本 " + version
-                + " · MC 26.2 / Fabric —— 空间/时间/逆熵";
+                + " · MC " + gameVersion + " / Fabric —— 空间/时间/逆熵";
     }
 
     /** MSPT 追踪：由 Samsara.onTick() 每 tick 调用 */
