@@ -75,6 +75,37 @@ class DiffStoreTest {
     }
 
     @Test
+    void migrateWorldLayerFromV011Layout() throws Exception {
+        Path window = tmp.resolve("current");
+        DiffStore old = DiffStore.open(window.resolve(DiffStore.OVERWORLD_DIM), false);
+        old.record(1, 70, 2, 11, 5L);
+        old.flush();
+
+        DiffStore.migrateWorldLayer(window, "world_s1");
+
+        assertFalse(Files.exists(window.resolve("minecraft")));
+        Path target = window.resolve("world_s1").resolve(DiffStore.OVERWORLD_DIM);
+        List<DiffStore.Edit> edits = DiffStore.open(target, false).readChunk(0, 0);
+        assertEquals(1, edits.size());
+        assertEquals(11, edits.get(0).stateId);
+    }
+
+    @Test
+    void migrateWorldLayerChainsV010Layout() {
+        Path window = tmp.resolve("current");
+        DiffStore legacy = DiffStore.open(window, false);
+        legacy.record(0, 64, 0, 9, 1L);
+        legacy.flush();
+
+        DiffStore.migrateWorldLayer(window, "world_s2");
+
+        assertFalse(Files.exists(window.resolve("r.0.0")));
+        Path target = window.resolve("world_s2")
+                .resolve(DiffStore.OVERWORLD_DIM).resolve("r.0.0").resolve("0_0.dat");
+        assertTrue(Files.exists(target));
+    }
+
+    @Test
     void mergeWindowsAppendsToExistingChunkFile() throws Exception {
         Path current = tmp.resolve("current");
         Path frozen = tmp.resolve("frozen");
@@ -123,5 +154,84 @@ class DiffStoreTest {
         Files.writeString(current.resolve("notes.txt"), "not a diff");
 
         assertEquals(1, DiffStore.countAll(current));
+    }
+
+    @Test
+    void migrateWindowNamesCurrentToLiveAndSuffixToCycle() throws Exception {
+        Path diff = tmp.resolve("diff");
+        DiffStore live = DiffStore.open(
+                diff.resolve("current").resolve("world").resolve(DiffStore.OVERWORLD_DIM), false);
+        live.record(0, 64, 0, 21, 10L);
+        live.flush();
+        DiffStore cycle = DiffStore.open(
+                diff.resolve("s3").resolve("world").resolve(DiffStore.OVERWORLD_DIM), false);
+        cycle.record(1, 70, 2, 22, 20L);
+        cycle.flush();
+
+        DiffStore.migrateWindowNames(diff);
+
+        assertFalse(Files.exists(diff.resolve("current")));
+        assertFalse(Files.exists(diff.resolve("s3")));
+        assertTrue(Files.exists(DiffStore.liveWorldRoot(tmp, "world")
+                .resolve(DiffStore.OVERWORLD_DIM).resolve("r.0.0").resolve("0_0.dat")));
+        assertTrue(Files.exists(DiffStore.cycleWorldRoot(tmp, 3, "world")
+                .resolve(DiffStore.OVERWORLD_DIM).resolve("r.0.0").resolve("0_0.dat")));
+
+        // 数据不丢：迁移后可正常读取
+        assertEquals(21, DiffStore.open(DiffStore.liveWorldRoot(tmp, "world")
+                .resolve(DiffStore.OVERWORLD_DIM), false).readChunk(0, 0).get(0).stateId);
+        assertEquals(22, DiffStore.open(DiffStore.cycleWorldRoot(tmp, 3, "world")
+                .resolve(DiffStore.OVERWORLD_DIM), false).readChunk(0, 0).get(0).stateId);
+
+        // 幂等：再跑一次不改数据
+        DiffStore.migrateWindowNames(diff);
+        assertEquals(1, DiffStore.open(DiffStore.liveWorldRoot(tmp, "world")
+                .resolve(DiffStore.OVERWORLD_DIM), false).readChunk(0, 0).size());
+        assertEquals(1, DiffStore.open(DiffStore.cycleWorldRoot(tmp, 3, "world")
+                .resolve(DiffStore.OVERWORLD_DIM), false).readChunk(0, 0).size());
+    }
+
+    @Test
+    void migrateWindowNamesMergesWhenTargetExists() throws Exception {
+        Path diff = tmp.resolve("diff");
+        DiffStore old = DiffStore.open(
+                diff.resolve("current").resolve("world").resolve(DiffStore.OVERWORLD_DIM), false);
+        DiffStore existing = DiffStore.open(
+                diff.resolve("live").resolve("world").resolve(DiffStore.OVERWORLD_DIM), false);
+        old.record(0, 64, 0, 1, 2L);
+        existing.record(0, 64, 0, 2, 1L);
+        old.flush();
+        existing.flush();
+
+        DiffStore.migrateWindowNames(diff);
+
+        assertFalse(Files.exists(diff.resolve("current")));
+        List<DiffStore.Edit> merged = DiffStore.open(DiffStore.liveWorldRoot(tmp, "world")
+                .resolve(DiffStore.OVERWORLD_DIM), false).readChunk(0, 0);
+        assertEquals(2, merged.size(), "合并而不是覆盖：两条记录都要保留");
+    }
+
+    @Test
+    void migrateLayoutChainsWindowAndWorldLayers() throws Exception {
+        Path diff = tmp.resolve("diff");
+        // v0.11 布局：diff/current/minecraft/overworld/…
+        DiffStore old = DiffStore.open(
+                diff.resolve("current").resolve(DiffStore.OVERWORLD_DIM), false);
+        old.record(0, 64, 0, 31, 1L);
+        old.flush();
+
+        DiffStore.migrateLayout(diff, "world_s1");
+
+        assertFalse(Files.exists(diff.resolve("current")));
+        assertFalse(Files.exists(diff.resolve("live").resolve("minecraft")),
+                "旧维度层应全部并入世界层");
+        List<DiffStore.Edit> edits = DiffStore.open(DiffStore.liveWorldRoot(tmp, "world_s1")
+                .resolve(DiffStore.OVERWORLD_DIM), false).readChunk(0, 0);
+        assertEquals(1, edits.size());
+        assertEquals(31, edits.get(0).stateId);
+        // 幂等
+        DiffStore.migrateLayout(diff, "world_s1");
+        assertEquals(1, DiffStore.open(DiffStore.liveWorldRoot(tmp, "world_s1")
+                .resolve(DiffStore.OVERWORLD_DIM), false).readChunk(0, 0).size());
     }
 }

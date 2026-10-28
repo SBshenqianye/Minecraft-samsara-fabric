@@ -3,6 +3,7 @@ package com.shenqianye.samsara.rewind;
 import com.shenqianye.samsara.Samsara;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
 
@@ -20,18 +21,23 @@ import java.util.concurrent.ConcurrentHashMap;
  * （{@code mixin/ServerPlayerGameModeMixin}、{@code mixin/ServerExplosionMixin} 负责压栈/出栈），
  * 从而过滤红石、作物、流体扩散、树叶腐烂等世界模拟噪声。
  * <p>
- * <b>记录窗口</b>：记录<b>常开</b>——服务器启动即写入 {@code diff/current/}；
- * 倒流真正启动时（扫描成功后）把 current <b>冻结</b> 为 {@code diff/s<赛季id>/}
- * （=本次倒流的恢复源），并开启新的 current；倒流完成（物理删除执行）时<b>重置</b>窗口
- * （丢弃倒流期间的改动）。中止倒流时把冻结库<b>并回</b> current，下次倒流仍能看到完整窗口。
+ * <b>记录窗口</b>：记录<b>常开</b>——服务器启动即写入 {@code diff/live/<世界>/}；
+ * 倒流真正启动时（扫描成功后）把当前世界层 <b>冻结</b> 为 {@code diff/cycle<周目id>/<世界>/}
+ * （=本次倒流的恢复源），并开启新的 live；倒流完成（物理删除执行）时<b>重置</b>窗口
+ * （丢弃倒流期间的改动）。中止倒流时把冻结库<b>并回</b> live，下次倒流仍能看到完整窗口。
  * <p>
- * <b>维度隔离</b>：每个维度写入 {@code <窗口>/<命名空间>/<维度路径>/}，恢复侧只读主世界
+ * <b>世界隔离</b>：世界栈中的每个世界有独立目录，栈里各世界的 {@code minecraft:overworld}
+ * 不会互相覆盖。
+ * <p>
+ * <b>维度隔离</b>：每个维度写入 {@code <窗口>/<世界>/<命名空间>/<维度路径>/}，恢复侧只读主世界
  * {@code minecraft/overworld/}，下界/末地的改动不会与主世界同坐标碰撞。
  */
 public class DiffRecorder {
     private static Path configDir;
     private static volatile Path currentRoot;
-    /** 每个维度一个 current 库；current 库不缓存新写入（避免常开窗口内存无界增长） */
+    /** 当前世界键（世界栈中的世界目录名）；服务器启动前为 null */
+    private static volatile String worldKey;
+    /** 每个维度一个常开窗口库；常开窗口不缓存新写入（避免常开窗口内存无界增长） */
     private static final Map<String, DiffStore> stores = new ConcurrentHashMap<>();
     private static volatile boolean enabled;
     /** 记录上下文深度：>0 表示当前 setBlock 由玩家操作或爆炸触发 */
@@ -40,50 +46,83 @@ public class DiffRecorder {
     private DiffRecorder() {
     }
 
-    /** 服务器启动时初始化：开启常开记录窗口（diff/current），并迁移旧的无维度布局 */
+    /** 服务器启动时初始化：开启常开记录窗口（diff/live），并迁移旧的无维度/无世界布局 */
     public static synchronized void init(Path samsaraConfigDir) {
         if (currentRoot != null) {
             flush(); // 内置服务器重启：先把上一个窗口的缓冲落盘
         }
         configDir = samsaraConfigDir;
-        currentRoot = configDir.resolve("diff").resolve("current");
-        DiffStore.migrateLegacy(currentRoot);
+        // 世界层要等服务器起来才知道世界目录名（world / world_s1 / 单人存档名），
+        // 由 initWorld(server) 在 SERVER_STARTED 补齐；此前不打开任何库。
+        currentRoot = null;
+        worldKey = null;
         stores.clear();
-        storeFor(DiffStore.OVERWORLD_DIM);
         enabled = true;
         clearEditContext(); // 内置服务器重启/异常残留：新会话从干净上下文开始
-        Samsara.LOGGER.info("[samsara] 差异记录已开启（常开窗口 diff/current，按维度分目录）");
+        Samsara.LOGGER.info("[samsara] 差异记录已初始化（等待服务器启动后确定世界层）");
     }
 
     /**
-     * 冻结当前记录窗口为 {@code diff/s<seasonId>/} 并开启新窗口（倒流启动时调用）。
-     * 冻结后的 s<seasonId> 即本次倒流的恢复源；若目标已存在（中止后重开/上次冻结残留），
-     * 把 current 合并进目标而不是丢弃旧数据。
+     * 服务器启动：确定当前世界目录名，把窗口根切到 {@code diff/live/<世界>}，
+     * 并把旧窗口名（current→live、s&lt;id&gt;→cycle&lt;id&gt;）与旧世界层迁入新布局。
+     */
+    public static synchronized void initWorld(MinecraftServer server) {
+        if (configDir == null) {
+            return;
+        }
+        String key = DiffStore.sanitizeWorldKey(
+                server.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT)
+                        .getFileName().toString());
+        if (key.equals(worldKey) && currentRoot != null) {
+            return;
+        }
+        flush();
+        worldKey = key;
+        currentRoot = DiffStore.liveWorldRoot(configDir, key);
+        // 旧窗口名 + 所有窗口的旧布局一次性迁移（幂等、不丢数据）
+        Path diffRoot = configDir.resolve("diff");
+        DiffStore.migrateLayout(diffRoot, key);
+        stores.clear();
+        storeFor(DiffStore.OVERWORLD_DIM);
+        clearEditContext();
+        Samsara.LOGGER.info("[samsara] 差异记录已开启（常开窗口 diff/live/{}，按维度分目录）", key);
+    }
+
+    /** 当前世界键（世界栈中的世界目录名；服务器启动前为 null） */
+    public static String worldKey() {
+        return worldKey;
+    }
+
+    /**
+     * 冻结当前记录窗口为 {@code diff/cycle<seasonId>/<世界>} 并开启新窗口（倒流启动时调用）。
+     * 冻结后的 cycle<seasonId>/<世界> 即本次倒流的恢复源；若目标已存在（中止后重开/上次冻结残留），
+     * 把 live 合并进目标而不是丢弃旧数据。其他世界的数据留在 live，不受影响。
      */
     public static synchronized void freezeCurrent(int seasonId) {
         if (configDir == null || currentRoot == null) {
             return;
         }
         flush();
-        Path dst = configDir.resolve("diff").resolve("s" + seasonId);
+        Path dst = DiffStore.cycleWorldRoot(configDir, seasonId, worldKey);
         try {
-            DiffStore.migrateLegacy(currentRoot);
             if (Files.exists(currentRoot)) {
                 if (Files.exists(dst)) {
                     DiffStore.mergeWindows(currentRoot, dst);
                     deleteRecursively(currentRoot);
-                    Samsara.LOGGER.warn("[周目管理 samsara] 冻结时目标恢复库已存在，已合并 current（不丢弃旧窗口）");
+                    Samsara.LOGGER.warn("[周目管理 samsara] 冻结时目标恢复库已存在，已合并 live（不丢弃旧窗口）");
                 } else {
                     Files.createDirectories(currentRoot.getParent());
+                    Files.createDirectories(dst.getParent());
                     Files.move(currentRoot, dst);
                 }
             }
             Files.createDirectories(currentRoot);
             stores.clear();
             storeFor(DiffStore.OVERWORLD_DIM);
-            Samsara.LOGGER.info("[周目管理 samsara] 差异库冻结: diff/current → diff/s{}（本次倒流恢复源，窗口=上次删块后至今）", seasonId);
+            Samsara.LOGGER.info("[周目管理 samsara] 差异库冻结: diff/live/{} → diff/cycle{}/{}（本次倒流恢复源，窗口=上次删块后至今）",
+                    worldKey, seasonId, worldKey);
         } catch (IOException e) {
-            Samsara.LOGGER.error("[周目管理 samsara] 差异库冻结失败（保留 current 继续记录）: {}", e.getMessage());
+            Samsara.LOGGER.error("[周目管理 samsara] 差异库冻结失败（保留 live 继续记录）: {}", e.getMessage());
             stores.clear();
             storeFor(DiffStore.OVERWORLD_DIM);
         }
@@ -111,45 +150,79 @@ public class DiffRecorder {
     }
 
     /**
-     * 中止倒流：把冻结库 {@code diff/s<seasonId>/} 并回 current，保证“中止不重置”
+     * 中止倒流：把冻结库 {@code diff/cycle<seasonId>/<世界>} 并回 live，保证“中止不重置”
      * （《设计规范》〈diff 记录窗口与恢复源〉）：下次倒流仍能看到中止前的全部改动。
-     * 合并失败时保留 s<seasonId>，由下次冻结再次合并。
+     * 合并失败时保留 cycle<seasonId>，由下次冻结再次合并。
      */
     public static synchronized void mergeFrozenBack(int seasonId) {
+        mergeFrozenBack(seasonId, worldKey);
+    }
+
+    /** 指定世界的中止合并（重启后 rewind.json 的世界可能与当前世界不同时用） */
+    public static synchronized void mergeFrozenBack(int seasonId, String wk) {
         if (configDir == null || currentRoot == null || seasonId <= 0) {
             return;
         }
-        Path frozen = configDir.resolve("diff").resolve("s" + seasonId);
+        String key = wk == null || wk.isBlank() ? worldKey : wk;
+        if (key == null) {
+            key = "world";
+        }
+        Path frozen = DiffStore.cycleWorldRoot(configDir, seasonId, key);
         if (!Files.exists(frozen)) {
             return;
         }
         flush();
         try {
-            Files.createDirectories(currentRoot);
-            DiffStore.mergeWindows(frozen, currentRoot);
+            Path current = DiffStore.liveWorldRoot(configDir, key);
+            Files.createDirectories(current);
+            DiffStore.mergeWindows(frozen, current);
             deleteRecursively(frozen);
+            deleteEmptyCycleDir(seasonId);
             stores.clear();
             storeFor(DiffStore.OVERWORLD_DIM);
-            Samsara.LOGGER.info("[周目管理 samsara] 中止倒流：恢复库 diff/s{} 已并回记录窗口（下次倒流仍可见）", seasonId);
+            Samsara.LOGGER.info("[周目管理 samsara] 中止倒流：恢复库 diff/cycle{}/{} 已并回记录窗口（下次倒流仍可见）",
+                    seasonId, key);
         } catch (IOException e) {
-            Samsara.LOGGER.error("[周目管理 samsara] 中止倒流：恢复库并回失败（保留 diff/s{} 供下次冻结合并）: {}",
+            Samsara.LOGGER.error("[周目管理 samsara] 中止倒流：恢复库并回失败（保留 diff/cycle{} 供下次冻结合并）: {}",
                     seasonId, e.getMessage());
             stores.clear();
             storeFor(DiffStore.OVERWORLD_DIM);
         }
     }
 
-    /** 倒流成功归档后删除恢复源，避免 diff/s<N> 按赛季无限累积 */
+    /** 倒流成功归档后删除恢复源（只删指定世界层），避免 diff/cycle<N> 按周目无限累积 */
     public static synchronized void deleteRecovery(int seasonId) {
+        deleteRecovery(seasonId, worldKey);
+    }
+
+    /** 指定世界的恢复源清理（重启后 rewind.json 的世界可能与当前世界不同时用） */
+    public static synchronized void deleteRecovery(int seasonId, String wk) {
         if (configDir == null || seasonId <= 0) {
             return;
         }
-        Path frozen = configDir.resolve("diff").resolve("s" + seasonId);
+        String key = wk == null || wk.isBlank() ? worldKey : wk;
+        if (key == null) {
+            key = "world";
+        }
+        Path frozen = DiffStore.cycleWorldRoot(configDir, seasonId, key);
         try {
             deleteRecursively(frozen);
-            Samsara.LOGGER.info("[周目管理 samsara] 恢复源已清理: diff/s{}", seasonId);
+            deleteEmptyCycleDir(seasonId);
+            Samsara.LOGGER.info("[周目管理 samsara] 恢复源已清理: diff/cycle{}/{}", seasonId, key);
         } catch (IOException e) {
-            Samsara.LOGGER.warn("[周目管理 samsara] 恢复源清理失败 diff/s{}: {}", seasonId, e.getMessage());
+            Samsara.LOGGER.warn("[周目管理 samsara] 恢复源清理失败 diff/cycle{}: {}", seasonId, e.getMessage());
+        }
+    }
+
+    /** 周目目录下已无任何世界数据时删除空目录（世界栈下其他世界可能还在用） */
+    private static void deleteEmptyCycleDir(int seasonId) {
+        Path seasonDir = DiffStore.cycleRoot(configDir, seasonId);
+        try (var entries = Files.newDirectoryStream(seasonDir)) {
+            if (!entries.iterator().hasNext()) {
+                Files.deleteIfExists(seasonDir);
+            }
+        } catch (IOException ignored) {
+            // 目录不存在或有数据：保留
         }
     }
 
@@ -213,7 +286,7 @@ public class DiffRecorder {
         return EDIT_CONTEXT.get() > 0;
     }
 
-    /** 当前窗口根目录（diff/current） */
+    /** 当前窗口根目录（diff/live/<世界>） */
     public static Path currentRoot() {
         return currentRoot;
     }
@@ -292,8 +365,8 @@ public class DiffRecorder {
     }
 
     /**
-     * fake 注入目标库：倒流进行中注入到<b>恢复源</b>（diff/s&lt;N&gt;，倒流可见）；
-     * 无倒流时注入当前记录窗口（current，下次倒流可见）。默认主世界。
+     * fake 注入目标库：倒流进行中注入到<b>恢复源</b>（diff/cycle&lt;N&gt;，倒流可见）；
+     * 无倒流时注入常开记录窗口（live，下次倒流可见）。默认主世界。
      */
     public static DiffStore fakeTarget() {
         return fakeTarget(null);
@@ -307,7 +380,11 @@ public class DiffRecorder {
         RewindEngine re = RewindEngine.getInstance();
         String dim = level == null ? DiffStore.OVERWORLD_DIM : dimensionKey(level.dimension());
         if (re.running() && re.currentSeasonId() > 0) {
-            return DiffStore.forSeason(configDir, re.currentSeasonId(), dim);
+            String wk = re.currentWorldKey();
+            if (wk == null || wk.isBlank()) {
+                wk = worldKey == null ? "world" : worldKey;
+            }
+            return DiffStore.forSeason(configDir, wk, re.currentSeasonId(), dim);
         }
         return storeFor(dim);
     }

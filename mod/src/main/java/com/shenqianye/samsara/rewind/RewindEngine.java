@@ -24,7 +24,6 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -33,16 +32,15 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 
 /**
- * M2 时间倒流引擎 —— 「区块级波浪退场」+ 「方块级逐格恢复」（提前自 M4d）。
+ * M2 时间倒流引擎 —— 「逐格恢复（双光标分档）」+「终点物理删除」。
  * <p>
  * 机制（遵守设计规范 §10/§11/§12 快照语义与先备份）：
  * <ol>
  *   <li>{@code /season start}（same-world 且 settings.rewindDurationMs &gt; 0）时启动：
  *       扫描主世界 region/ 下已存在区块，除去保护集（旗帜圈地白名单）；
- *       每个未圈地块分配均匀分布在时长内的「倒流时刻」，
  *       持久化 rewind.json；同时把记录窗口冻结为本次倒流的恢复源（§11 快照语义）；</li>
- *   <li>运行期 tick：到「倒流时刻」的区块打标（待退场）并公告进度；对加载区块
- *       按进度逐格恢复（懒加载 + 预算分摊，恢复读冻结恢复源，倒流期间新改动不受影响）；</li>
+ *   <li>运行期 tick：按 2 秒一轮对加载区块逐格恢复（摄入冻结恢复源；近档慢放、远档跟权威曲线，
+ *       懒加载 + 预算分摊）；</li>
  *   <li>时长到期 → 传送全员 + 广播；随后物理删除未圈地区块：</li>
  *   <li><b>待删队列兜底（设计规范 §12.6）</b>：删除时仍<b>加载中</b>的区块不强制卸载、
  *       不删除，记入 {@code pending-delete.json} 队列 —— <b>卸载立即删除</b>；
@@ -76,6 +74,9 @@ public class RewindEngine {
     private ExecutorService worker;
     /** 待删队列：完成时仍加载的区块，卸载即删；启动/停服兜底 */
     private final PendingDeleteQueue pendingQueue;
+    /** 倒流期间临时关闭「空服自动暂停」：否则无人值守时服务器停 tick，倒流永远走不完 */
+    private Integer priorPauseSeconds;
+    private MinecraftServer pauseServer;
 
     private RewindEngine() {
         configDir = FabricLoader.getInstance().getConfigDir().resolve("samsara");
@@ -105,6 +106,7 @@ public class RewindEngine {
                     data = null;
                     return;
                 }
+                data.normalize();
             } catch (Exception e) {
                 Samsara.LOGGER.warn("[周目管理 samsara] rewind.json 解析失败，倒流状态重置: {}", e.getMessage());
                 data = null;
@@ -143,6 +145,7 @@ public class RewindEngine {
             return;
         }
         int seasonId = data.seasonId;
+        String worldKey = data.worldKey;
         save(); // 先落盘，保证归档的是最新进度（含待删队列标记）
         String ts = LocalDateTime.now(ZoneId.systemDefault())
                 .format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
@@ -169,8 +172,44 @@ public class RewindEngine {
         data = null;
         onComplete = null;
         DiffRestore.reset();
-        // 倒流已走完：恢复源不再需要，删除 diff/s<id>，避免按赛季无限累积
-        DiffRecorder.deleteRecovery(seasonId);
+        restorePauseSetting();
+        // 倒流已走完：恢复源不再需要，删除 diff/cycle<id>/<世界>，避免按周目无限累积
+        DiffRecorder.deleteRecovery(seasonId, worldKey);
+    }
+
+    // ---- 空服暂停控制（倒流必须按墙钟走完） ----
+
+    /**
+     * 倒流期间把专用服务器的「空服自动暂停」设为 0，结束时恢复。
+     * <p>
+     * 26.3 的专用服务器在无人在线 60 秒后会暂停 tick；倒流是按墙钟推进的，
+     * 一旦暂停就永远不会到期传送/删块（设计 §5.6 的"无人值守完成倒流"会失效）。
+     */
+    private void ensureTicking(MinecraftServer server) {
+        pauseServer = server;
+        if (!(server instanceof net.minecraft.server.dedicated.DedicatedServer ds)) {
+            return;
+        }
+        if (priorPauseSeconds == null) {
+            priorPauseSeconds = ds.pauseWhenEmptySeconds();
+        }
+        if (ds.pauseWhenEmptySeconds() > 0) {
+            ds.setPauseWhenEmptySeconds(0);
+            Samsara.LOGGER.info("[周目管理 samsara] 倒流进行中：临时关闭空服自动暂停（原值 {}s）",
+                    priorPauseSeconds);
+        }
+    }
+
+    /** 恢复倒流前的空服暂停设置（没有改过则什么都不做） */
+    private void restorePauseSetting() {
+        if (priorPauseSeconds == null) {
+            return;
+        }
+        if (pauseServer instanceof net.minecraft.server.dedicated.DedicatedServer ds) {
+            ds.setPauseWhenEmptySeconds(priorPauseSeconds);
+            Samsara.LOGGER.info("[周目管理 samsara] 倒流结束：恢复空服自动暂停 {}s", priorPauseSeconds);
+        }
+        priorPauseSeconds = null;
     }
 
     // ---- 后台删除线程 ----
@@ -262,23 +301,39 @@ public class RewindEngine {
         if (durationMs <= 0) {
             return "倒流时长必须 &gt; 0";
         }
+        ensureTicking(server);
         ScanResult scan = scan(server);
         if (scan.toRewind.isEmpty()) {
+            restorePauseSetting();
             return NO_REWINDABLE_MSG;
         }
-        // 冻结记录窗口为本次倒流的恢复源（设计规范 §11：窗口 = 上次删块完成后至本次倒流开始）
+        if (DiffRecorder.worldKey() == null) {
+            DiffRecorder.initWorld(server);
+        }
+        // 冻结当前记录窗口为本次倒流的恢复源（设计规范 §11：窗口 = 上次删块完成后至本次倒流开始）
         DiffRecorder.freezeCurrent(seasonId);
-        Random rnd = new Random();
         long now = System.currentTimeMillis();
         RewindData d = new RewindData();
         d.seasonId = seasonId;
+        d.worldKey = currentWorldKey(server);
         d.startMs = now;
         d.durationMs = durationMs;
         d.totalCount = scan.total;
         d.protectedCount = scan.protectedCount;
+        // 节奏参数随本次倒流持久化（重启后仍按同一组参数播完）
+        com.shenqianye.samsara.season.SeasonData.Settings cfg =
+                com.shenqianye.samsara.season.SeasonManager.getInstance().settings();
+        d.curveK = cfg.rewindCurveK;
+        d.nearRatio = cfg.rewindNearRatio;
+        d.nearRadius = cfg.rewindNearRadius;
+        d.exitRadius = cfg.rewindExitRadius;
+        d.nearDwellMs = cfg.rewindNearDwellMs;
+        d.rampMs = cfg.rewindRampMs;
+        d.normalize();
         for (int[] c : scan.toRewind) {
-            long at = now + (long) (rnd.nextDouble() * durationMs);
-            d.chunks.add(new RewindData.Chunk(c[0], c[1], at));
+            // 物理删除只能在倒流结束时执行（加载中的区块不能强删），
+            // 因此"退场时刻"统一设在 A 光标走完的终点；运行时按双光标逐格恢复。
+            d.chunks.add(new RewindData.Chunk(c[0], c[1], now + durationMs));
         }
         data = d;
         this.onComplete = onComplete;
@@ -313,20 +368,27 @@ public class RewindEngine {
         return sb.toString();
     }
 
-    /** 服务端 tick（由 Samsara 注册的 END_SERVER_TICK 驱动；内部 5 秒节流） */
+    /** 服务端 tick（由 Samsara 注册的 END_SERVER_TICK 驱动；恢复轮 2s、其余状态 5s 节流） */
     public synchronized void tick(MinecraftServer server) {
         if (data == null) {
             return;
         }
         long now = System.currentTimeMillis();
+        if (now < data.startMs) {
+            return;
+        }
+        // ① 逐格恢复：每 2 秒一轮（DiffRestore 自节流），不受下面 5 秒状态节流影响，
+        //    保证"预算按 2s 轮数计算"与"实际执行频率"一致。
+        try {
+            DiffRestore.restoreRound(server, data);
+        } catch (Exception e) {
+            Samsara.LOGGER.error("[周目管理 samsara] 逐格恢复异常: {}", e.getMessage());
+        }
         if (now - lastTickMs < 5000) {
             return;
         }
         lastTickMs = now;
-        if (now < data.startMs) {
-            return;
-        }
-        // ① 到「倒流时刻」的区块打标（待退场）
+        // ② 到「倒流时刻」的区块打标（待退场）
         boolean changed = false;
         int newlyMarked = 0;
         for (RewindData.Chunk c : data.chunks) {
@@ -350,13 +412,6 @@ public class RewindEngine {
                 Samsara.LOGGER.info("[周目管理 samsara] 倒流进度: {}/{} 区块到倒流时刻（本次 +{}）",
                         data.markedCount(), data.chunks.size(), newlyMarked);
             }
-        }
-        // ② 对已加载区块逐格恢复（懒加载 + 预算分摊）。倒流期间与完成后都持续，
-        //    直到恢复完毕（isFinished 见归档条件）——恢复读冻结的恢复源，倒流期间新改动不会自噬。
-        try {
-            DiffRestore.restoreRound(server, data);
-        } catch (Exception e) {
-            Samsara.LOGGER.error("[周目管理 samsara] 逐格恢复异常: {}", e.getMessage());
         }
         // ③ 时长到期 → 传送 + 物理删除（完成后新记录窗口同时开启）
         if (now >= data.startMs + data.durationMs && !data.teleportPhaseDone) {
@@ -410,9 +465,13 @@ public class RewindEngine {
             }
         }
         if (marked.isEmpty()) {
+            Samsara.LOGGER.info("[周目管理 samsara] 物理删除：无可删区块（已标记 {} 个，维度根 {}）",
+                    data.markedCount(), dimRoot.toAbsolutePath().normalize());
             return;
         }
         pendingQueue.beginCycle(dimRoot, configDir.resolve("backups"), data.seasonId);
+        Samsara.LOGGER.info("[周目管理 samsara] 物理删除：已标记 {} 个，磁盘存在 {} 个（维度根 {}）",
+                data.markedCount(), marked.size(), dimRoot.toAbsolutePath().normalize());
         pruneBackupDirs(configDir.resolve("backups"), "purge_", KEEP_PURGE_BACKUPS);
         ServerLevel overworld = server.getLevel(Level.OVERWORLD);
         List<int[]> toQueue = new ArrayList<>();
@@ -514,6 +573,16 @@ public class RewindEngine {
 
     /** 服务器启动：初始化待删队列的删除上下文并兜底清空（加载中的跳过，遇卸载即删） */
     public synchronized void onServerStarted(MinecraftServer server) {
+        // 旧 rewind.json 没有 worldKey：按当前世界补齐，重启后恢复源/归档才不会找错世界层
+        if (data != null) {
+            ensureTicking(server); // 重启时仍在倒流：继续关闭空服暂停
+        }
+        if (data != null && (data.worldKey == null || data.worldKey.isBlank())) {
+            data.worldKey = currentWorldKey(server);
+            data.normalize();
+            save();
+            DiffRestore.reset();
+        }
         if (pendingQueue.isEmpty()) {
             return;
         }
@@ -602,7 +671,9 @@ public class RewindEngine {
         long now = System.currentTimeMillis();
         long remain = data.startMs + data.durationMs - now;
         return "倒流进行中 · 周目 #" + data.seasonId
+                + " · 世界 " + data.worldKey
                 + " · 总区块 " + data.chunks.size()
+                + " · 权威进度 " + String.format("%.1f%%", DiffRestore.authoritativeProgress(now, data) * 100)
                 + " · 已到倒流时刻 " + data.markedCount() + " · 保护 " + data.protectedCount
                 + " · 剩余 " + (remain > 0 ? fmtDuration(remain) : "0（等待传送）")
                 + " · 传送阶段" + (data.teleportPhaseDone ? "已完成" : "未开始")
@@ -614,11 +685,13 @@ public class RewindEngine {
             return "当前没有进行中的时间倒流";
         }
         int seasonId = data.seasonId;
+        String worldKey = data.worldKey;
         clearPersistence();
         DiffRestore.reset();
         pendingQueue.drop(); // 中止 = 一切保留；尚未删除的区块不再删除
+        restorePauseSetting();
         // 中止不重置记录窗口：把冻结恢复源并回 current，下次倒流仍能看到中止前的改动
-        DiffRecorder.mergeFrozenBack(seasonId);
+        DiffRecorder.mergeFrozenBack(seasonId, worldKey);
         return "已中止倒流（周目 #" + seasonId + "）。所有区块保持原样，不会删除任何区块"
                 + "（包括已到倒流时刻、已打退场标记但尚未删除的区块）"
                 + "。世界维持当前状态；如需重新倒流请再次 /season start";
@@ -628,9 +701,20 @@ public class RewindEngine {
         return data != null;
     }
 
-    /** 当前进行中倒流的赛季 id（无则 -1）；供 fake 注入选择恢复源 */
+    /** 当前进行中倒流的周目 id（无则 -1）；供 fake 注入选择恢复源 */
     public synchronized int currentSeasonId() {
         return data != null ? data.seasonId : -1;
+    }
+
+    /** 当前进行中倒流所属世界（无则 null） */
+    public synchronized String currentWorldKey() {
+        return data != null ? data.worldKey : null;
+    }
+
+    /** 从服务器世界路径推导世界键（世界栈中的世界目录名） */
+    public static String currentWorldKey(MinecraftServer server) {
+        return DiffStore.sanitizeWorldKey(
+                server.getWorldPath(LevelResource.ROOT).getFileName().toString());
     }
 
     /**
@@ -658,7 +742,7 @@ public class RewindEngine {
         if (data == null) {
             return "当前没有进行中的倒流";
         }
-        DiffStore store = DiffRestore.restoreStore(configDir, data.seasonId);
+        DiffStore store = DiffRestore.restoreStore(configDir, data.worldKey, data.seasonId);
         ServerLevel overworld = server.getLevel(Level.OVERWORLD);
         if (overworld == null) {
             return "主世界不可用";
@@ -671,12 +755,11 @@ public class RewindEngine {
                     + "（保护集不参与倒流）。如需恢复请先拆除该区域旗帜。";
         }
         store.flush();
-        double p = (double) (System.currentTimeMillis() - data.startMs) / data.durationMs;
-        p = Math.max(0, Math.min(1, p));
+        double p = DiffRestore.authoritativeProgress(System.currentTimeMillis(), data);
         java.util.List<DiffStore.Edit> edits = store.readChunk(cx, cz);
         if (edits.isEmpty()) {
-            return "区块 (" + cx + "," + cz + ") 无 diff 记录（恢复源 diff/s" + data.seasonId
-                    + " 无此区块记录）";
+            return "区块 (" + cx + "," + cz + ") 无 diff 记录（恢复源 diff/cycle" + data.seasonId
+                    + "/" + data.worldKey + " 无此区块记录）";
         }
         edits.sort((a, b) -> Long.compare(b.timeMs, a.timeMs)); // 新改动优先
         int target = (int) Math.ceil(edits.size() * p);
@@ -925,7 +1008,8 @@ public class RewindEngine {
         synchronized int deleteAndBackup(List<int[]> coords) {
             int deleted = 0;
             for (int[] c : coords) {
-                deleted += deleteOne(c[0], c[1]);
+                // 这批区块是"完成时未加载"的，不在待删队列里；直接按默认维度根做 I/O
+                deleted += doDeleteOne(defaultDimRoot, c[0], c[1]);
             }
             if (deleted > 0) {
                 save();
@@ -961,25 +1045,6 @@ public class RewindEngine {
                 }
             }
             return n;
-        }
-
-        /** 逐块删除（需在 synchronized 内调用）：备份（去重）→ 清零槽位。0=已不存在。 */
-        private int deleteOne(int cx, int cz) {
-            // 尝试所有维度查找
-            for (var entry : chunks.entrySet()) {
-                QueuedChunk qc = entry.getValue();
-                if (qc.x() == cx && qc.z() == cz) {
-                    Path dr = qc.dimRoot() != null ? qc.dimRoot() : defaultDimRoot;
-                    chunks.remove(entry.getKey());
-                    if (dr == null || !McaRegion.chunkExists(dr, cx, cz)) {
-                        return 0;
-                    }
-                    backupRegionFiles(dr, cx, cz);
-                    List<int[]> one = List.of(new int[]{cx, cz});
-                    return McaRegion.deleteChunks(dr, one);
-                }
-            }
-            return 0;
         }
 
         /**

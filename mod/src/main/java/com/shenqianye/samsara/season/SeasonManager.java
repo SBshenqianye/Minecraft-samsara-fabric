@@ -102,6 +102,10 @@ public class SeasonManager {
         } else {
             data = new SeasonData();
         }
+        if (data.settings == null) {
+            data.settings = new SeasonData.Settings();
+        }
+        data.settings.normalize();
     }
 
     private void save() {
@@ -481,6 +485,42 @@ public class SeasonManager {
         return data.seasons.isEmpty() ? null : data.seasons.get(data.seasons.size() - 1);
     }
 
+    /**
+     * 某个墙钟时刻所属的周目 id（用于轨迹按周目分目录/回放反查）。
+     * <p>
+     * 规则：{@code startTime <= t <= endTime}（未结束则上界为 +∞），多个命中取开始最晚的；
+     * 若 t 落在周目之间的空隙，取 t 之前最近开始的周目；t 早于所有周目或没有周目 → {@code 0}
+     * （对应 {@code cycle0}）。
+     */
+    public int cycleIdAt(long timeMs) {
+        return cycleIdAt(data.seasons, timeMs);
+    }
+
+    /** 纯函数版本（单测覆盖；不依赖 season.json / FabricLoader） */
+    public static int cycleIdAt(List<Season> seasons, long timeMs) {
+        Season best = null;
+        for (Season s : seasons) {
+            if (s.startTime == null) {
+                continue;
+            }
+            long end = s.endTime != null ? s.endTime : Long.MAX_VALUE;
+            if (s.startTime <= timeMs && timeMs <= end
+                    && (best == null || s.startTime > best.startTime)) {
+                best = s;
+            }
+        }
+        if (best != null) {
+            return best.id;
+        }
+        for (Season s : seasons) {
+            if (s.startTime != null && s.startTime <= timeMs
+                    && (best == null || s.startTime > best.startTime)) {
+                best = s;
+            }
+        }
+        return best == null ? 0 : best.id;
+    }
+
     /** 上一个已开始的周目（startTime 非空且非 PENDING；用于 same-world 旧中心） */
     public Season lastStarted() {
         Season found = null;
@@ -752,7 +792,11 @@ public class SeasonManager {
                     + "每个玩家出生点独立抖动 " + s.birthpointJitter + " 格 (0=同组共用)\n"
                     + "系统出生点重置 " + (s.resetIndividualBirthpoint ? "开" : "关")
                     + " · 出生区半径 " + s.spawnRadius
-                    + " · 倒流时长 " + DurationUtil.formatMs(s.rewindDurationMs) + "（可配 如 1h / 30m / 3600s / 1d / 0.5d）";
+                    + " · 倒流时长 " + DurationUtil.formatMs(s.rewindDurationMs) + "（可配 如 1h / 30m / 3600s / 1d / 0.5d）\n"
+                    + "倒流节奏：曲线 k=" + s.rewindCurveK + " · 近档速率 r=" + s.rewindNearRatio
+                    + " · 近档 ≤" + s.rewindNearRadius + " 区块 / 出档 >" + s.rewindExitRadius
+                    + " · 驻留 " + (s.rewindNearDwellMs / 1000) + "s · 斜坡 " + (s.rewindRampMs / 1000) + "s\n"
+                    + "玩家轨迹：" + s.trackSampleHz + "Hz · 骨架下限 " + s.trackSkeletonPerDay + " 点/天";
         } catch (Exception e) {
             com.shenqianye.samsara.Samsara.LOGGER.error("[周目管理 samsara] settingsText 异常: ", e);
             return "settingsText 异常: " + e;
@@ -778,6 +822,14 @@ public class SeasonManager {
                     + "  spawnradius · 整数(>=0) · " + s.spawnRadius + "\n"
                     + "  centermin · 整数(>=0) · " + s.newCenterMinDistance + "（新中心距每个历史中心都≥此值）\n"
                     + "  centermax · 整数(>=centermin) · " + s.newCenterMaxDistance + "\n"
+                    + "  curve · 小数(1~8) · " + s.rewindCurveK + "（A 光标曲线 p=1-(1-t)^k）\n"
+                    + "  nearratio · 小数(0.1~1) · " + s.rewindNearRatio + "（近档 B 速率 = A×r）\n"
+                    + "  nearradius · 整数(1~16) · " + s.rewindNearRadius + "（进近档区块距离）\n"
+                    + "  exitradius · 整数(>nearradius) · " + s.rewindExitRadius + "（出近档区块距离）\n"
+                    + "  neardwell · 秒(>=0) · " + (s.rewindNearDwellMs / 1000) + "（最短驻留）\n"
+                    + "  ramp · 秒(>=0) · " + (s.rewindRampMs / 1000) + "（出档追平 A 的斜坡）\n"
+                    + "  trackhz · 小数(2~20) · " + s.trackSampleHz + "（轨迹采样率）\n"
+                    + "  trackskeleton · 整数(>=100) · " + s.trackSkeletonPerDay + "（每天骨架保留点数）\n"
                     + "用法：/samsara debug config <键> 查看当前值；config <键> <值> 设置并回显";
         }
         // 读取当前值 helper（lambda 内不可直接改局部，用 switch）
@@ -836,6 +888,54 @@ public class SeasonManager {
                 }
                 return "centermax = " + s.newCenterMaxDistance;
             }
+            case "curve" -> {
+                if (value != null) {
+                    return setRewindCurve(parseDouble(value));
+                }
+                return "curve = " + s.rewindCurveK;
+            }
+            case "nearratio" -> {
+                if (value != null) {
+                    return setRewindNearRatio(parseDouble(value));
+                }
+                return "nearratio = " + s.rewindNearRatio;
+            }
+            case "nearradius" -> {
+                if (value != null) {
+                    return setRewindNearRadius(parseInt(value));
+                }
+                return "nearradius = " + s.rewindNearRadius;
+            }
+            case "exitradius" -> {
+                if (value != null) {
+                    return setRewindExitRadius(parseInt(value));
+                }
+                return "exitradius = " + s.rewindExitRadius;
+            }
+            case "neardwell" -> {
+                if (value != null) {
+                    return setRewindNearDwell(parseInt(value));
+                }
+                return "neardwell = " + (s.rewindNearDwellMs / 1000) + "s";
+            }
+            case "ramp" -> {
+                if (value != null) {
+                    return setRewindRamp(parseInt(value));
+                }
+                return "ramp = " + (s.rewindRampMs / 1000) + "s";
+            }
+            case "trackhz" -> {
+                if (value != null) {
+                    return setTrackSampleHz(parseDouble(value));
+                }
+                return "trackhz = " + s.trackSampleHz;
+            }
+            case "trackskeleton" -> {
+                if (value != null) {
+                    return setTrackSkeleton(parseInt(value));
+                }
+                return "trackskeleton = " + s.trackSkeletonPerDay;
+            }
             default -> {
                 return null; // 未知配置项
             }
@@ -848,6 +948,92 @@ public class SeasonManager {
         } catch (Exception e) {
             return 0;
         }
+    }
+
+    private static double parseDouble(String v) {
+        try {
+            return Double.parseDouble(v.trim());
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    // ---- 倒流节奏 / 轨迹配置 ----
+
+    public String setRewindCurve(double k) {
+        if (k < 1 || k > 8) {
+            return "curve 须在 [1, 8] 内（越大开场越快、尾段越平）";
+        }
+        data.settings.rewindCurveK = k;
+        save();
+        return "已设置倒流权威光标曲线 k = " + k + "（下一次 /season start 生效）";
+    }
+
+    public String setRewindNearRatio(double r) {
+        if (r < 0.1 || r > 1) {
+            return "nearratio 须在 [0.1, 1] 内（1 = 近档与远档同速）";
+        }
+        data.settings.rewindNearRatio = r;
+        save();
+        return "已设置近档速率 r = " + r + "（近档 B 速率 = A × r）";
+    }
+
+    public String setRewindNearRadius(int r) {
+        if (r < 1 || r > 16) {
+            return "nearradius 须在 [1, 16] 区块内";
+        }
+        data.settings.rewindNearRadius = r;
+        if (data.settings.rewindExitRadius <= r) {
+            data.settings.rewindExitRadius = r + 1;
+        }
+        save();
+        return "已设置近档半径 " + r + " 区块（出档 > " + data.settings.rewindExitRadius + "）";
+    }
+
+    public String setRewindExitRadius(int r) {
+        if (r <= data.settings.rewindNearRadius) {
+            return "exitradius 须 > nearradius(" + data.settings.rewindNearRadius + ")";
+        }
+        data.settings.rewindExitRadius = r;
+        save();
+        return "已设置出近档半径 " + r + " 区块（保持带 "
+                + data.settings.rewindNearRadius + "~" + r + "）";
+    }
+
+    public String setRewindNearDwell(int seconds) {
+        if (seconds < 0) {
+            return "neardwell 须 >= 0 秒";
+        }
+        data.settings.rewindNearDwellMs = seconds * 1000L;
+        save();
+        return "已设置近档最短驻留 " + seconds + " 秒";
+    }
+
+    public String setRewindRamp(int seconds) {
+        if (seconds < 0) {
+            return "ramp 须 >= 0 秒";
+        }
+        data.settings.rewindRampMs = seconds * 1000L;
+        save();
+        return "已设置出档斜坡 " + seconds + " 秒";
+    }
+
+    public String setTrackSampleHz(double hz) {
+        if (hz < 2 || hz > 20) {
+            return "trackhz 须在 [2, 20] 内";
+        }
+        data.settings.trackSampleHz = hz;
+        save();
+        return "已设置轨迹采样率 " + hz + "Hz（下一次采样生效）";
+    }
+
+    public String setTrackSkeleton(int points) {
+        if (points < 100) {
+            return "trackskeleton 须 >= 100 点/天";
+        }
+        data.settings.trackSkeletonPerDay = points;
+        save();
+        return "已设置轨迹骨架下限 " + points + " 点/天";
     }
 
     /** 设置组间距（方块；0 = 所有组共用中心） */
@@ -922,11 +1108,14 @@ public class SeasonManager {
         if (com.shenqianye.samsara.rewind.DiffRecorder.currentRoot() == null) {
             return sb + "\n记录窗口未初始化（需重启，DiffRecorder.init 未执行）";
         }
-        sb += "\n记录窗口: diff/current（按维度分目录）· 当前记录数 "
+        sb += "\n记录窗口: diff/live/" + com.shenqianye.samsara.rewind.DiffRecorder.worldKey()
+                + "（世界/维度分目录）· 当前记录数 "
                 + com.shenqianye.samsara.rewind.DiffRecorder.countCurrent();
         if (com.shenqianye.samsara.rewind.RewindEngine.getInstance().running()) {
             int sid = com.shenqianye.samsara.rewind.RewindEngine.getInstance().currentSeasonId();
-            sb += "\n恢复源: diff/s" + sid + "/minecraft/overworld（本次倒流用，含上次删块后至今的全部改动）";
+            sb += "\n恢复源: diff/cycle" + sid + "/"
+                    + com.shenqianye.samsara.rewind.RewindEngine.getInstance().currentWorldKey()
+                    + "/minecraft/overworld（本次倒流用，含上次删块后至今的全部改动）";
         }
         return sb;
     }

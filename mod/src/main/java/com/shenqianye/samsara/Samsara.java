@@ -51,11 +51,14 @@ public class Samsara implements DedicatedServerModInitializer {
         // 活动记录：静默写 JSONL（登录/退出 + 原版统计增量），无命令、无 tick 开销
         ActivityRecorder.init();
 
-        // 差异记录：常开（diff/current 窗口；倒流开始冻结为恢复源）
+        // 玩家轨迹：5Hz 采样 + 按天轮转 + 几何衰减保留（设计文档 §5.4/§5.5）
+        com.shenqianye.samsara.track.TrackRecorder.init();
+
+        // 差异记录：常开（diff/live/<世界>；服务器启动后确定世界层）
         DiffRecorder.init(net.fabricmc.loader.api.FabricLoader.getInstance()
                 .getConfigDir().resolve("samsara"));
 
-        // 时间倒流：调度器（内部 5s 节流：标记/恢复/传送/删除/归档）
+        // 时间倒流：调度器（恢复轮 2s；标记/传送/删除/归档 5s 节流）
         // 卸载缓冲区：每 20 tick（1秒）批量处理卸载的待删区块
         final int[] unloadFlushCounter = {0};
         final int[] diffFlushCounter = {0};
@@ -63,6 +66,7 @@ public class Samsara implements DedicatedServerModInitializer {
             // 防御：玩家操作/爆炸的上下文若因异常未配对，下一 tick 清掉，避免误记世界模拟
             DiffRecorder.clearEditContext();
             RewindEngine.getInstance().tick(server);
+            com.shenqianye.samsara.track.TrackReplay.tick(server);
             com.shenqianye.samsara.command.DebugCommand.onTick();
             if (++unloadFlushCounter[0] >= 20) {
                 unloadFlushCounter[0] = 0;
@@ -76,14 +80,19 @@ public class Samsara implements DedicatedServerModInitializer {
         });
 
         // 待删队列兜底：启动时清空前次遗留（加载中的跳过，卸载即删）
-        ServerLifecycleEvents.SERVER_STARTED.register(server ->
-                RewindEngine.getInstance().onServerStarted(server));
+        // 差异记录世界层：服务器起来后才知道世界目录名，先初始化世界层再处理删除队列
+        ServerLifecycleEvents.SERVER_STARTED.register(server -> {
+            DiffRecorder.initWorld(server);
+            RewindEngine.getInstance().onServerStarted(server);
+        });
 
         // 待删队列：区块卸载即删（不再等停服）；停服窗口兜底清空 + 归档/保留判定
         ServerChunkEvents.CHUNK_UNLOAD.register((level, chunk) ->
                 RewindEngine.getInstance().onChunkUnload(level, chunk));
-        ServerLifecycleEvents.SERVER_STOPPED.register(server ->
-                RewindEngine.getInstance().onServerStopped(server));
+        ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
+            com.shenqianye.samsara.track.TrackReplay.shutdown();
+            RewindEngine.getInstance().onServerStopped(server);
+        });
 
         // 分组出生：倒流完成后的离线玩家上线补传送
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
@@ -91,6 +100,7 @@ public class Samsara implements DedicatedServerModInitializer {
 
         // 优雅停服：停止发送粒子包，发告别消息（减少客户端断连时的渲染压力）
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
+            com.shenqianye.samsara.track.TrackReplay.shutdown(); // 先移除回放人偶，避免写进存档
             DiffRecorder.flush(); // 停服前把常开窗口的缓冲落盘（不依赖后续 SERVER_STOPPED 的时序）
             DiffRecorder.clearEditContext();
             com.shenqianye.samsara.claim.ClaimParticles.shutdown();

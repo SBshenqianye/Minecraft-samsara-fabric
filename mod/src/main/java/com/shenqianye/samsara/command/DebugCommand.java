@@ -204,6 +204,37 @@ public class DebugCommand {
                                         .then(Commands.argument("dur", StringArgumentType.greedyString())
                                                 .executes(ctx -> reply(ctx.getSource(), MANAGER.setRewindDuration(
                                                         StringArgumentType.getString(ctx, "dur")))))))
+                        .then(Commands.literal("track")
+                                .then(Commands.literal("replay")
+                                        .then(Commands.argument("player", StringArgumentType.word())
+                                                .then(Commands.argument("start", StringArgumentType.word())
+                                                        .executes(ctx -> reply(ctx.getSource(),
+                                                                debugTrackReplay(ctx, 1.0)))
+                                                        .then(Commands.argument("speed", StringArgumentType.word())
+                                                                .executes(ctx -> reply(ctx.getSource(),
+                                                                        debugTrackReplay(ctx,
+                                                                                parseDoubleArg(ctx, "speed"))))
+                                                                .then(Commands.argument("cycle", StringArgumentType.word())
+                                                                        .executes(ctx -> reply(ctx.getSource(),
+                                                                                debugTrackReplay(ctx,
+                                                                                        parseDoubleArg(ctx, "speed")))))))))
+                                .then(Commands.literal("stop")
+                                        .executes(ctx -> reply(ctx.getSource(),
+                                                com.shenqianye.samsara.track.TrackReplay.stop()))
+                                        .then(Commands.argument("player", StringArgumentType.word())
+                                                .executes(ctx -> reply(ctx.getSource(),
+                                                        com.shenqianye.samsara.track.TrackReplay.stop(
+                                                                StringArgumentType.getString(ctx, "player"))))))
+                                .then(Commands.literal("status")
+                                        .executes(ctx -> reply(ctx.getSource(), debugTrackStatus(ctx.getSource(), null)))
+                                        .then(Commands.argument("player", StringArgumentType.word())
+                                                .executes(ctx -> reply(ctx.getSource(), debugTrackStatus(ctx.getSource(),
+                                                        StringArgumentType.getString(ctx, "player"))))))
+                                .then(Commands.literal("sweep")
+                                        .executes(ctx -> {
+                                            com.shenqianye.samsara.track.TrackRecorder.getInstance().sweepAsync();
+                                            return reply(ctx.getSource(), "已在后台启动轨迹保留扫描（降采样）");
+                                        })))
                         .then(Commands.literal("config")
                                 .executes(ctx -> reply(ctx.getSource(), MANAGER.config(null, null)))
                                 .then(Commands.argument("key", StringArgumentType.word())
@@ -776,6 +807,63 @@ public class DebugCommand {
         }
     }
 
+    /** debug track replay <player> <start> [speed] [cycle] */
+    private static String debugTrackReplay(CommandContext<CommandSourceStack> ctx, double speed) {
+        String name = StringArgumentType.getString(ctx, "player");
+        String start = StringArgumentType.getString(ctx, "start");
+        String cycle = null;
+        try {
+            cycle = StringArgumentType.getString(ctx, "cycle");
+        } catch (IllegalArgumentException ignored) {
+            // 未指定周目：按开始时刻反查
+        }
+        var server = ctx.getSource().getServer();
+        UUID uuid = com.shenqianye.samsara.track.TrackRecorder.resolveUuid(server, name);
+        if (uuid == null) {
+            return "找不到玩家 " + name + "（需在线或出现在 usercache.json）";
+        }
+        return com.shenqianye.samsara.track.TrackReplay.start(server, uuid, name, start, speed, cycle);
+    }
+
+    private static double parseDoubleArg(CommandContext<CommandSourceStack> ctx, String name) {
+        try {
+            return Double.parseDouble(StringArgumentType.getString(ctx, name));
+        } catch (Exception e) {
+            return 1.0;
+        }
+    }
+
+    /** debug track status [player] */
+    private static String debugTrackStatus(CommandSourceStack src, String name) {
+        StringBuilder sb = new StringBuilder(com.shenqianye.samsara.track.TrackReplay.status());
+        if (name == null) {
+            return sb.toString();
+        }
+        UUID uuid = com.shenqianye.samsara.track.TrackRecorder.resolveUuid(src.getServer(), name);
+        if (uuid == null) {
+            return sb.append("\n找不到玩家 ").append(name).toString();
+        }
+        var files = com.shenqianye.samsara.track.TrackRecorder.getInstance().recentFiles(uuid, 3);
+        if (files.isEmpty()) {
+            return sb.append("\n").append(name).append(" 最近 7 天没有轨迹文件").toString();
+        }
+        sb.append("\n").append(name).append(" 最近轨迹（最多 3 个文件）：");
+        for (var f : files) {
+            long size;
+            try {
+                size = java.nio.file.Files.size(f);
+            } catch (java.io.IOException e) {
+                size = -1;
+            }
+            var parent = f.getParent();
+            String where = parent == null ? f.getFileName().toString()
+                    : parent.getParent().getFileName() + "/" + parent.getFileName() + "/" + f.getFileName();
+            sb.append("\n  ").append(where).append(" · ").append(size / 1024).append(" KB · ")
+                    .append(com.shenqianye.samsara.track.TrackStore.countSamples(f)).append(" 点");
+        }
+        return sb.toString();
+    }
+
     /** debug claim delete report：生成删除报告（白名单数、待删数、示例坐标） */
     private static String debugDeleteReport(CommandSourceStack src) {
         try {
@@ -874,6 +962,7 @@ public class DebugCommand {
                 + "  debug status|json|reload|reset|config|settings —— 状态与配置\n"
                 + "  debug fakeplayers|groups —— 测试数据注入与分组预览\n"
                 + "  debug rewind|diff|flow —— 倒流与差异控制\n"
+                + "  debug track replay <玩家> <开始时刻> [倍速] [周目] | stop [玩家|all] | status | sweep —— 轨迹回放\n"
                 + "  debug perm —— 权限管理";
     }
 

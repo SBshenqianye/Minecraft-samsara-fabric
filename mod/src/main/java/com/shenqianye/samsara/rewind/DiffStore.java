@@ -21,15 +21,20 @@ import java.util.stream.Stream;
 /**
  * 差异库：按维度、按区块记录方块变化（变化前状态），用于倒流时逐格恢复。
  * <p>
- * 存储：{@code diff/<窗口>/<命名空间>/<维度路径>/r.<区域>/<cx>_<cz>.dat}，
- * 例如 {@code diff/current/minecraft/overworld/r.0.0/0_0.dat}。
- * 维度目录由调用方（{@link DiffRecorder}/{@link DiffRestore}）提供，本类只负责一个维度根目录；
- * 这样下界/末地的记录不会与主世界同坐标碰撞。
+ * 存储：{@code diff/<窗口>/<世界>/<命名空间>/<维度路径>/r.<区域>/<cx>_<cz>.dat}，
+ * 例如 {@code diff/live/world/minecraft/overworld/r.0.0/0_0.dat}。窗口有两种：
+ * 常开记录窗口 {@code live}、按周目冻结的恢复源 {@code cycle<周目id>}。
+ * <b>世界层</b>为世界栈预留：栈里每个世界都有自己的 {@code minecraft:overworld}，
+ * 没有这一层时 {@code world} 与 {@code world_s1} 的同坐标记录会碰撞。
+ * 维度目录由调用方（{@link DiffRecorder}/{@link DiffRestore}）提供，本类只负责一个维度根目录。
  * <p>
  * 单条记录定长 24 字节：4B blockStateId + 4B x + 4B y + 4B z + 8B timeMs。
  * <p>
- * 兼容旧布局：v0.10.0 及以前所有维度写在 {@code diff/<窗口>/r.<rx>.<rz>/} 下，没有维度层。
- * {@link #migrateLegacy(Path)} 会把这些数据迁入 {@code minecraft/overworld/}，可重复执行。
+ * 兼容旧布局：v0.10.0 及以前所有维度写在 {@code diff/<窗口>/r.<rx>.<rz>/} 下（无维度层）；
+ * v0.11.0 写在 {@code diff/<窗口>/minecraft/overworld/} 下（无世界层）；
+ * v0.12.0 及以前窗口名为 {@code current} / {@code s<周目id>}。
+ * {@link #migrateLayout(Path, String)} 会把旧窗口名、旧维度层、旧世界层依次迁入
+ * {@code diff/live/<世界>/…} 与 {@code diff/cycle<id>/<世界>/…}，可重复执行、不丢数据。
  * <p>
  * 并发安全：写入用全局锁；记录先进入内存缓冲，达到阈值或显式 {@link #flush()} 才批量落盘。
  */
@@ -41,6 +46,12 @@ public class DiffStore {
     public static final String OVERWORLD_DIM = "minecraft/overworld";
     /** 旧布局的区块目录名：r.<regionX>.<regionZ> */
     private static final Pattern LEGACY_REGION = Pattern.compile("r\\.-?\\d+\\.-?\\d+");
+    /** 常开记录窗口（"常开记录窗口"，不是"当前世界"） */
+    public static final String LIVE = "live";
+    /** 冻结恢复源窗口前缀：cycle<周目id> */
+    public static final String CYCLE_PREFIX = "cycle";
+    /** 旧常开窗口名（v0.12.0 及以前） */
+    public static final String LEGACY_LIVE = "current";
 
     private final Path root;
     /**
@@ -77,16 +88,180 @@ public class DiffStore {
         return new DiffStore(root, cacheWrites);
     }
 
-    /** 恢复库：按赛季 + 维度打开（会自动迁移该赛季目录的旧布局） */
-    public static DiffStore forSeason(Path configDir, int seasonId, String dimKey) {
-        Path seasonRoot = configDir.resolve("diff").resolve("s" + seasonId);
-        migrateLegacy(seasonRoot);
-        return new DiffStore(seasonRoot.resolve(dimKey), true);
+    /**
+     * 恢复库：按「世界 → 周目 → 维度」打开（会自动迁移旧窗口名与该周目目录的旧布局）。
+     * <p>
+     * 世界层是为世界栈预留的：栈中的每个世界都有自己的 {@code minecraft:overworld}，
+     * 若只按维度分层，{@code world} 与 {@code world_s1} 的同坐标记录会混在一起。
+     * <p>
+     * 旧数据兼容：若仍存在 v0.12.0 的 {@code diff/s<id>}，先就地改名为 {@code diff/cycle<id>}，
+     * 避免在新目录里另起一份空恢复源。
+     */
+    public static DiffStore forSeason(Path configDir, String worldKey, int seasonId, String dimKey) {
+        Path diffRoot = configDir.resolve("diff");
+        migrateWindowNames(diffRoot);
+        Path seasonRoot = cycleRoot(configDir, seasonId);
+        migrateWorldLayer(seasonRoot, worldKey);
+        return new DiffStore(seasonRoot.resolve(sanitizeWorldKey(worldKey)).resolve(dimKey), true);
     }
 
-    /** 兼容入口：按赛季目录打开主世界恢复库 */
-    public static DiffStore forSeason(Path configDir, int seasonId) {
-        return forSeason(configDir, seasonId, OVERWORLD_DIM);
+    /** 兼容入口：主世界恢复库（必须显式给出世界，避免世界栈下串数据） */
+    public static DiffStore forSeason(Path configDir, String worldKey, int seasonId) {
+        return forSeason(configDir, worldKey, seasonId, OVERWORLD_DIM);
+    }
+
+    // ---- 世界层布局（世界栈预留）----
+
+    /** 世界目录名清洗：只允许文件系统安全字符，防止把路径分隔符写进世界键 */
+    public static String sanitizeWorldKey(String worldKey) {
+        if (worldKey == null || worldKey.isBlank()) {
+            return "world";
+        }
+        String s = worldKey.replaceAll("[^A-Za-z0-9._-]", "_");
+        return s.isBlank() || ".".equals(s) || "..".equals(s) ? "world" : s;
+    }
+
+    /** 一个记录窗口下某世界的根：diff/&lt;窗口&gt;/&lt;世界&gt; */
+    public static Path windowRoot(Path configDir, String window, String worldKey) {
+        return configDir.resolve("diff").resolve(window).resolve(sanitizeWorldKey(worldKey));
+    }
+
+    /** 常开记录窗口下某世界的根：diff/live/&lt;世界&gt; */
+    public static Path liveWorldRoot(Path configDir, String worldKey) {
+        return windowRoot(configDir, LIVE, worldKey);
+    }
+
+    /** 周目恢复源根：diff/cycle&lt;id&gt; */
+    public static Path cycleRoot(Path configDir, int seasonId) {
+        return configDir.resolve("diff").resolve(CYCLE_PREFIX + seasonId);
+    }
+
+    /** 周目恢复源下某世界的根：diff/cycle&lt;id&gt;/&lt;世界&gt; */
+    public static Path cycleWorldRoot(Path configDir, int seasonId, String worldKey) {
+        return windowRoot(configDir, CYCLE_PREFIX + seasonId, worldKey);
+    }
+
+    /**
+     * 把旧窗口名迁移到新布局（幂等、不丢数据）：
+     * <ul>
+     *   <li>{@code diff/current} → {@code diff/live}；</li>
+     *   <li>{@code diff/s<id>} → {@code diff/cycle<id>}。</li>
+     * </ul>
+     * 目标已存在时按文件合并（{@link #mergeWindows}），不会覆盖或丢弃任何 {@code .dat}。
+     */
+    public static synchronized void migrateWindowNames(Path diffRoot) {
+        if (diffRoot == null || !Files.isDirectory(diffRoot)) {
+            return;
+        }
+        migrateWindow(diffRoot, LEGACY_LIVE, LIVE);
+        List<Path> windows;
+        try (Stream<Path> list = Files.list(diffRoot)) {
+            windows = list.filter(Files::isDirectory).toList();
+        } catch (IOException e) {
+            Samsara.LOGGER.warn("[周目管理 samsara] diff 窗口名迁移扫描失败: {}", e.getMessage());
+            return;
+        }
+        for (Path w : windows) {
+            String name = w.getFileName().toString();
+            if (name.matches("s\\d+")) {
+                migrateWindow(diffRoot, name, CYCLE_PREFIX + name.substring(1));
+            }
+        }
+    }
+
+    /**
+     * 完整布局迁移：窗口名（current→live、s&lt;id&gt;→cycle&lt;id&gt;）+ 各窗口的世界层。
+     * 启动时调用一次即可；所有步骤幂等，重复执行不会动已迁移的数据。
+     */
+    public static synchronized void migrateLayout(Path diffRoot, String worldKey) {
+        migrateWindowNames(diffRoot);
+        if (diffRoot == null || !Files.isDirectory(diffRoot)) {
+            return;
+        }
+        migrateWorldLayer(diffRoot.resolve(LIVE), worldKey);
+        try (Stream<Path> list = Files.list(diffRoot)) {
+            for (Path w : (Iterable<Path>) list::iterator) {
+                if (Files.isDirectory(w) && w.getFileName().toString().startsWith(CYCLE_PREFIX)) {
+                    migrateWorldLayer(w, worldKey);
+                }
+            }
+        } catch (IOException e) {
+            Samsara.LOGGER.warn("[周目管理 samsara] diff 周目窗口迁移扫描失败: {}", e.getMessage());
+        }
+    }
+
+    /** 单个窗口改名；目标已存在则合并。 */
+    private static void migrateWindow(Path diffRoot, String from, String to) {
+        Path src = diffRoot.resolve(from);
+        Path dst = diffRoot.resolve(to);
+        if (!Files.isDirectory(src)) {
+            return;
+        }
+        try {
+            if (Files.exists(dst)) {
+                mergeWindows(src, dst);
+                deleteRecursively(src);
+                Samsara.LOGGER.info("[周目管理 samsara] diff 旧窗口已合并: {} → {}（保留全部记录）", from, to);
+            } else {
+                Files.move(src, dst);
+                Samsara.LOGGER.info("[周目管理 samsara] diff 窗口已迁移: {} → {}", from, to);
+            }
+        } catch (IOException e) {
+            Samsara.LOGGER.warn("[周目管理 samsara] diff 窗口迁移失败 {} → {}（保留原数据，下次再试）: {}",
+                    from, to, e.getMessage());
+        }
+    }
+
+    /**
+     * 把旧版「窗口/minecraft/...」迁移到「窗口/&lt;世界&gt;/minecraft/...」。
+     * <p>
+     * 可重复执行：只处理窗口下直接存在的 {@code minecraft} 目录（新版布局不会出现），
+     * 因此不会把已经分好世界的数据再搬一次。旧版没有世界层，所有记录都属于当时唯一的世界。
+     */
+    public static void migrateWorldLayer(Path windowRoot, String worldKey) {
+        if (windowRoot == null || !Files.isDirectory(windowRoot)) {
+            return;
+        }
+        // 更早的 v0.10 布局：窗口/r.<rx>.<rz>/ → 窗口/minecraft/overworld/
+        migrateLegacy(windowRoot);
+        Path legacyDims = windowRoot.resolve("minecraft");
+        if (!Files.isDirectory(legacyDims)) {
+            return;
+        }
+        Path target = windowRoot.resolve(sanitizeWorldKey(worldKey)).resolve("minecraft");
+        int moved = 0;
+        try {
+            if (Files.exists(target)) {
+                mergeWindows(legacyDims, target);
+                deleteRecursively(legacyDims);
+            } else {
+                Files.createDirectories(target.getParent());
+                Files.move(legacyDims, target);
+            }
+            moved = 1;
+        } catch (IOException e) {
+            Samsara.LOGGER.warn("[周目管理 samsara] diff 世界层迁移失败（保留原数据，下次再试）: {}",
+                    e.getMessage());
+            return;
+        }
+        if (moved > 0) {
+            Samsara.LOGGER.info("[周目管理 samsara] diff 世界层已迁移: {} → {}", legacyDims.getFileName(),
+                    target.toAbsolutePath().normalize());
+        }
+    }
+
+    /** 递归删除目录（世界层迁移/清理用；失败抛出便于调用方决定是否保留） */
+    public static void deleteRecursively(Path p) throws IOException {
+        if (p == null || !Files.exists(p)) {
+            return;
+        }
+        try (Stream<Path> walk = Files.walk(p)) {
+            for (Path f : (Iterable<Path>) walk.sorted(java.util.Comparator.reverseOrder())::iterator) {
+                Files.deleteIfExists(f);
+            }
+        } catch (java.io.UncheckedIOException e) {
+            throw e.getCause();
+        }
     }
 
     public Path root() {
