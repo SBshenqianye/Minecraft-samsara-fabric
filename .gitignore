@@ -40,6 +40,9 @@ __pycache__/
 .dsh/
 .dsh-trash/
 
+# 临时分析脚本与中间产物（thrown-away scratch）
+.tmp/
+
 META-INF/
 
 net/
