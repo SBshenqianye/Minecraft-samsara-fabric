@@ -49,7 +49,8 @@ public final class CommandConfig {
                 "crossDimension": false
               },
               "view": {
-                "protectViewer": true
+                "protectViewer": true,
+                "freeRoamRadius": 32
               }
             }
             """;
@@ -69,6 +70,7 @@ public final class CommandConfig {
     private boolean tpaCrossDimension = false;
 
     private boolean viewProtectViewer = true;
+    private int viewFreeRoamRadius = 32;
 
     private CommandConfig() {
         Path dir = FabricLoader.getInstance().getConfigDir().resolve("samsara");
@@ -146,6 +148,11 @@ public final class CommandConfig {
         return viewProtectViewer;
     }
 
+    /** 回看时允许自由活动的半径（格）；超出后自动跟随人偶 */
+    public int viewFreeRoamRadius() {
+        return viewFreeRoamRadius;
+    }
+
     /** 配置文件绝对路径 */
     public String configPath() {
         return file.toAbsolutePath().normalize().toString();
@@ -173,6 +180,7 @@ public final class CommandConfig {
 
         JsonObject view = new JsonObject();
         view.addProperty("protectViewer", viewProtectViewer);
+        view.addProperty("freeRoamRadius", viewFreeRoamRadius);
         root.add("view", view);
         try {
             Files.writeString(file, GSON.toJson(root), StandardCharsets.UTF_8);
@@ -220,6 +228,7 @@ public final class CommandConfig {
                     ? viewElement.getAsJsonObject()
                     : new JsonObject();
             viewProtectViewer = readBoolean(view, "protectViewer", viewProtectViewer);
+            viewFreeRoamRadius = readInt(view, "freeRoamRadius", viewFreeRoamRadius, 8, 256);
         } catch (Exception e) {
             Samsara.LOGGER.warn("[周目管理 samsara] commands.json 解析失败，使用默认值: {}", e.getMessage());
         }

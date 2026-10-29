@@ -9,7 +9,11 @@ import com.shenqianye.samsara.track.TrackLayout;
 import com.shenqianye.samsara.track.TrackRecorder;
 import com.shenqianye.samsara.track.TrackReplay;
 import net.minecraft.core.BlockPos;
+import net.minecraft.ChatFormatting;
+import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.HoverEvent;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -226,8 +230,12 @@ public final class ViewManager {
             }
             if (s.state == ViewSession.State.PLAYING) {
                 long trackTime = s.trackTime(now);
-                if (trackTime >= s.endTrackMs) {
+                if (s.direction() > 0 && trackTime >= s.endTrackMs) {
                     restore(s, "播放完毕");
+                    continue;
+                }
+                if (s.direction() < 0 && trackTime <= s.cursor.startMs()) {
+                    restore(s, "倒放到起点");
                     continue;
                 }
                 if (!updateMannequin(server, s, trackTime)) {
@@ -240,7 +248,7 @@ public final class ViewManager {
                 if (s.display != null) {
                     s.display.update("[回看] " + s.targetName + " · "
                                     + Math.round(s.progress(now) * 100) + "% · "
-                                    + String.format("%.1f", s.options.speed()) + "×",
+                                    + String.format("%.1f", s.speed()) + "×",
                             s.progress(now));
                 }
             } else if (s.state == ViewSession.State.PAUSED && s.display != null) {
@@ -354,9 +362,8 @@ public final class ViewManager {
             s.vehicleId = viewer.getVehicle() == null ? null : viewer.getVehicle().getUUID();
             s.mannequin = entity;
             s.display = new ViewDisplay(viewer, s.targetName, s.cycleId);
-            if (s.options.spectator()) {
-                viewer.setGameMode(GameType.SPECTATOR);
-            }
+            // 回看期间始终旁观：无碰撞、无伤害，可自由飞行
+            viewer.setGameMode(GameType.SPECTATOR);
             // 回看保护：安全跟随 + ALLOW_DAMAGE 取消伤害（见 Samsara 事件注册）
             s.lastWriteDim = viewer.level().dimension().identifier().toString();
             s.lastWriteX = viewer.getX();
@@ -374,7 +381,7 @@ public final class ViewManager {
             s.display.update("[回看] " + s.targetName + " · 0%", 0f);
 
             String msg = "开始回看 " + s.targetName + "（周目 " + s.cycleId + " · "
-                    + s.sourceSummary + " · " + s.options.speed() + "× · 样本 "
+                    + s.sourceSummary + " · " + s.speed() + "× · 样本 "
                     + s.cursor.sampleCount() + " 点"
                     + (s.options.follow() ? " · 跟随" : "")
                     + (s.options.spectator() ? " · 旁观" : "")
@@ -384,12 +391,12 @@ public final class ViewManager {
                     + "\n停止：/samsara track view stop";
             Samsara.LOGGER.info("[回看] 开始: viewer={} target={} cycle={} window={} → {} speed={} samples={} cutoff={} truncated={}",
                     s.viewerName, s.targetName, s.cycleId, ViewTime.format(s.startTrackMs),
-                    ViewTime.format(s.endTrackMs), s.options.speed(), s.cursor.sampleCount(),
+                    ViewTime.format(s.endTrackMs), s.speed(), s.cursor.sampleCount(),
                     s.cutoffApplied, s.truncated);
             viewer.sendSystemMessage(Component.literal("[回看] " + msg));
             if (!s.targetUuid.equals(s.viewer)) {
                 ViewAudit.append(s.viewerName, s.targetName, s.cycleId, s.windowFrom,
-                        s.windowTo, s.options.speed(), "STARTED");
+                        s.windowTo, s.speed(), "STARTED");
             }
         } catch (Exception e) {
             Samsara.LOGGER.warn("[回看] 应用会话失败，回滚观看者状态: {}", e.getMessage());
@@ -403,7 +410,7 @@ public final class ViewManager {
         s.state = ViewSession.State.FAILED;
         Samsara.LOGGER.warn("[回看] 失败: viewer={} target={} cycle={} window={} → {} speed={} reason={}",
                 s.viewerName, s.targetName, s.cycleId, ViewTime.format(s.windowFrom),
-                ViewTime.format(s.windowTo), s.options.speed(), reason);
+                ViewTime.format(s.windowTo), s.speed(), reason);
         ServerPlayer viewer = server.getPlayerList().getPlayer(s.viewer);
         if (viewer != null) {
             viewer.sendSystemMessage(Component.literal("[回看] 无法开始：" + reason
@@ -411,7 +418,7 @@ public final class ViewManager {
         }
         if (!s.targetUuid.equals(s.viewer)) {
             ViewAudit.append(s.viewerName, s.targetName, s.cycleId, s.windowFrom,
-                    s.windowTo, s.options.speed(), "FAILED: " + reason);
+                    s.windowTo, s.speed(), "FAILED: " + reason);
         }
     }
 
@@ -451,6 +458,10 @@ public final class ViewManager {
         m.setDeltaMovement(Vec3.ZERO);
         m.applyTrackFlags(point.flags());
         if (s.hasPrevMannequin) {
+            double jx = point.x() - s.prevMannequinX;
+            double jy = point.y() - s.prevMannequinY;
+            double jz = point.z() - s.prevMannequinZ;
+            s.mannequinTeleported = jx * jx + jy * jy + jz * jz > 16.0 * 16.0;
             double dx = point.x() - s.prevMannequinX;
             double dz = point.z() - s.prevMannequinZ;
             float walk = (float) Math.min(1.5, Math.hypot(dx, dz) * 4.0);
@@ -459,6 +470,8 @@ public final class ViewManager {
             } else {
                 m.walkAnimation.stop();
             }
+        } else {
+            s.mannequinTeleported = true;
         }
         s.prevMannequinX = point.x();
         s.prevMannequinY = point.y();
@@ -471,38 +484,29 @@ public final class ViewManager {
     private static final double FOLLOW_DISTANCE = 4.5;
     private static final double FOLLOW_HEIGHT = 2.0;
 
+    /**
+     * 自由活动 + 自动跟随：
+     * 观看者始终旁观，可在 {@code view.freeRoamRadius} 范围内自由飞行；
+     * 超出范围、人偶瞬移或换维度时才重新贴近。
+     */
     private void follow(ViewSession s, ServerPlayer player, long trackTime) {
         ViewCursor.Point point = s.cursor.pointAt(trackTime);
         ServerLevel level = findLevel(player.level().getServer(), point.dimension());
         if (level == null) {
             return;
         }
+        int radius = Math.max(8, CommandConfig.getInstance().viewFreeRoamRadius());
+        boolean dimensionChanged = !point.dimension().equals(s.lastFollowDim);
+        boolean tooFar = player.distanceToSqr(point.x(), point.y(), point.z())
+                > (double) radius * radius;
+        if (s.followInitialized && !dimensionChanged && !s.mannequinTeleported && !tooFar) {
+            return; // 自由活动范围内：不打断观看者
+        }
+
         double yawRad = Math.toRadians(point.yaw());
         double vx = point.x() + Math.sin(yawRad) * FOLLOW_DISTANCE;
         double vy = point.y() + FOLLOW_HEIGHT;
         double vz = point.z() - Math.cos(yawRad) * FOLLOW_DISTANCE;
-
-        // 安全跟随：优先找附近 2 格净空、下方有实心地面的落脚点；
-        // 找不到（例如人偶在 1×1 地洞/墙里）就临时切旁观，避免把观看者塞进方块窒息。
-        boolean spectator = s.options.spectator() || s.forcedSpectator
-                || player.gameMode() == GameType.SPECTATOR;
-        if (!spectator && protectViewer()) {
-            double[] safe = findSafeSpot(level, vx, vy, vz);
-            if (safe != null) {
-                vx = safe[0];
-                vy = safe[1];
-                vz = safe[2];
-            } else {
-                player.setGameMode(GameType.SPECTATOR);
-                s.forcedSpectator = true;
-                if (!s.forceSpectatorNotified) {
-                    s.forceSpectatorNotified = true;
-                    player.sendSystemMessage(Component.literal(
-                            "[回看] 跟随点附近没有安全落脚点，已临时切换旁观模式（结束后自动恢复）"));
-                }
-            }
-        }
-
         double dx = point.x() - vx;
         double dz = point.z() - vz;
         double dy = (point.y() + 1.2) - (vy + 1.62);
@@ -511,11 +515,9 @@ public final class ViewManager {
         player.teleportTo(level, vx, vy, vz, java.util.Set.of(), lookYaw, lookPitch, false);
         player.setDeltaMovement(Vec3.ZERO);
         player.fallDistance = 0;
-        if (protectViewer()) {
-            // 双保险：即使安全点判断失手，也不因窒息/溺水/火焰/摔落掉血
-            player.setAirSupply(player.getMaxAirSupply());
-            player.setRemainingFireTicks(0);
-        }
+        s.followInitialized = true;
+        s.mannequinTeleported = false;
+        s.lastFollowDim = point.dimension();
         s.lastWriteDim = point.dimension();
         s.lastWriteX = vx;
         s.lastWriteY = vy;
@@ -533,6 +535,30 @@ public final class ViewManager {
         return s != null && !s.restored
                 && (s.state == ViewSession.State.PLAYING || s.state == ViewSession.State.PAUSED)
                 && protectViewer();
+    }
+
+    /** 聊天栏（左下角）可点击控制条：倍速 / 暂停 / 继续 / 倒放 / 停止。 */
+    private static void sendControls(ViewSession s, ServerPlayer viewer) {
+        MutableComponent line1 = Component.literal("[回看控制] 速度： ").withStyle(ChatFormatting.GRAY);
+        for (double speed : new double[]{0.25, 0.5, 1, 2, 4, 8}) {
+            String label = speed == Math.rint(speed) ? (int) speed + "x" : speed + "x";
+            line1.append(button("[" + label + "]", "点击设置 " + label + " 倍速",
+                    "/samsara track view speed " + speed)).append(" ");
+        }
+        MutableComponent line2 = Component.literal("[回看控制] ").withStyle(ChatFormatting.GRAY)
+                .append(button("[暂停]", "暂停回看", "/samsara track view pause")).append(" ")
+                .append(button("[继续]", "继续回看", "/samsara track view resume")).append(" ")
+                .append(button("[倒放/正放]", "切换正放与倒放", "/samsara track view reverse")).append(" ")
+                .append(button("[停止]", "停止回看并恢复状态", "/samsara track view stop"));
+        viewer.sendSystemMessage(line1);
+        viewer.sendSystemMessage(line2);
+    }
+
+    private static MutableComponent button(String label, String hover, String command) {
+        return Component.literal(label).withStyle(style -> style
+                .withColor(ChatFormatting.AQUA)
+                .withClickEvent(new ClickEvent.RunCommand(command))
+                .withHoverEvent(new HoverEvent.ShowText(Component.literal(hover))));
     }
 
     /** 候选水平偏移：先正后方，再左右/前方，最后 2 格环；都尽量贴近理想观察点。 */
@@ -749,8 +775,10 @@ public final class ViewManager {
             try {
                 ViewRestore.Gate gate = new ViewRestore.Gate(
                         s.lastWriteDim, s.lastWriteX, s.lastWriteY, s.lastWriteZ,
-                        (s.options.spectator() || s.forcedSpectator) ? "SPECTATOR" : null,
-                        ViewRestore.MAX_DRIFT, !viewer.isDeadOrDying());
+                        "SPECTATOR",
+                        Math.max(ViewRestore.MAX_DRIFT,
+                                CommandConfig.getInstance().viewFreeRoamRadius() + 8),
+                        !viewer.isDeadOrDying());
                 ViewRestore.Result r = ViewRestore.restore(s.snapshot.data(),
                         ViewRestore.sink(viewer), gate);
                 skippedPosition = r.skippedPosition();
@@ -777,7 +805,7 @@ public final class ViewManager {
                 s.viewerName, s.targetName, s.cycleId, reason, skippedPosition, skippedMode);
         if (server != null && !s.targetUuid.equals(s.viewer)) {
             ViewAudit.append(s.viewerName, s.targetName, s.cycleId, s.windowFrom,
-                    s.windowTo, s.options.speed(), "STOPPED: " + reason);
+                    s.windowTo, s.speed(), "STOPPED: " + reason);
         }
     }
 
@@ -816,6 +844,42 @@ public final class ViewManager {
         }
         s.resume();
         return "已继续回看 " + s.targetName;
+    }
+
+    /** 点击控制面板：调整倍速 */
+    public synchronized String setSpeed(MinecraftServer server, ServerPlayer actor, String target,
+                                        double speed, boolean allowOthers) {
+        ViewSession s = findSession(server, actor, target);
+        if (s == null) {
+            return target == null || target.isBlank() ? "你当前没有进行中的回看"
+                    : "没有该观看者的进行中回看: " + target;
+        }
+        if (actor != null && !actor.getUUID().equals(s.viewer) && !allowOthers) {
+            return "调整他人回看需要管理员权限";
+        }
+        if (s.state != ViewSession.State.PLAYING && s.state != ViewSession.State.PAUSED) {
+            return "当前状态不能调整倍速: " + s.state;
+        }
+        s.setSpeed(speed);
+        return "回看速度已设为 " + String.format("%.2f", speed).replaceAll("0+$", "").replaceAll("\\.$", "") + "×";
+    }
+
+    /** 点击控制面板：切换正放/倒放 */
+    public synchronized String toggleReverse(MinecraftServer server, ServerPlayer actor, String target,
+                                             boolean allowOthers) {
+        ViewSession s = findSession(server, actor, target);
+        if (s == null) {
+            return target == null || target.isBlank() ? "你当前没有进行中的回看"
+                    : "没有该观看者的进行中回看: " + target;
+        }
+        if (actor != null && !actor.getUUID().equals(s.viewer) && !allowOthers) {
+            return "控制他人回看需要管理员权限";
+        }
+        if (s.state != ViewSession.State.PLAYING && s.state != ViewSession.State.PAUSED) {
+            return "当前状态不能倒放: " + s.state;
+        }
+        s.toggleDirection();
+        return s.direction() < 0 ? "已切换为倒放" : "已切换为正放";
     }
 
     private ViewSession findSession(MinecraftServer server, ServerPlayer actor, String target) {
@@ -866,14 +930,16 @@ public final class ViewManager {
         long now = System.currentTimeMillis();
         StringBuilder sb = new StringBuilder("回看中 · 目标 ").append(s.targetName)
                 .append(" · 周目 ").append(s.cycleId)
-                .append(" · ").append(s.options.speed()).append("×")
+                .append(" · ").append(s.speed()).append("×")
+                .append(s.direction() < 0 ? " 倒放" : " 正放")
                 .append(" · ").append(s.state);
         sb.append("\n来源: ").append(s.sourceSummary == null ? s.cycleId + " / 加载中" : s.sourceSummary);
         sb.append("\n进度: ").append(Math.round(s.progress(now) * 100)).append("%")
                 .append(" · 轨迹时间 ").append(ViewTime.format(s.trackTime(now)))
-                .append(" · 剩余 ").append(com.shenqianye.samsara.season.DurationUtil.formatMs(s.remainingMs(now)));
+                .append(s.direction() < 0 ? " · 距起点 " : " · 剩余 ")
+                .append(com.shenqianye.samsara.season.DurationUtil.formatMs(s.remainingMs(now)));
         sb.append("\n参数: follow=").append(s.options.follow() ? "on" : "off")
-                .append(" · spectator=").append(s.options.spectator() ? "on" : "off")
+                .append(" · spectator=on")
                 .append(" · interact=").append(s.options.interact() ? "on" : "off");
         if (s.cutoffApplied) {
             sb.append("\n⚠ 该段被捕捉截断（截断之后不播）");
@@ -884,16 +950,20 @@ public final class ViewManager {
         return sb.toString();
     }
 
-    public synchronized String list(MinecraftServer server, String targetName, int page) {
+    /**
+     * 可回看时段列表（可点击）：每个时段用 {@link ClickEvent.SuggestCommand} 填入回看命令，
+     * 避免玩家手打长串时间戳/参数。
+     */
+    public synchronized Component list(MinecraftServer server, String targetName, int page) {
         UUID uuid = resolvePlayerId(server, targetName);
         if (uuid == null) {
-            return "找不到玩家: " + targetName;
+            return Component.literal("[周目管理] ▸ 找不到玩家: " + targetName);
         }
         String display = displayName(server, uuid, targetName);
         TrackRecorder recorder = TrackRecorder.getInstance();
         Path root = recorder.worldRoot();
         if (root == null) {
-            return "世界轨迹目录尚未初始化";
+            return Component.literal("[周目管理] ▸ 世界轨迹目录尚未初始化");
         }
         String worldKey = recorder.worldKey() == null ? DiffStore.sanitizeWorldKey("world") : recorder.worldKey();
         recorder.cuts().load();
@@ -901,33 +971,71 @@ public final class ViewManager {
         List<ViewTrackReader.Available> all = ViewTrackReader.available(root, playerId,
                 cycle -> recorder.cuts().cutoff(worldKey, cycle, playerId));
         if (all.isEmpty()) {
-            return display + " 没有可回看的轨迹（可用时段：无）";
+            return Component.literal("[周目管理] ▸ " + display + " 没有可回看的轨迹（可用时段：无）");
         }
         final int pageSize = 8;
         int pages = Math.max(1, (int) Math.ceil(all.size() / (double) pageSize));
         int p = Math.max(1, Math.min(page, pages));
         int from = (p - 1) * pageSize;
         int to = Math.min(from + pageSize, all.size());
-        StringBuilder sb = new StringBuilder(display).append(" 可回看时段（")
-                .append(all.size()).append(" 个文件 · 第 ").append(p).append("/").append(pages).append(" 页）：");
+
+        MutableComponent out = Component.literal("[周目管理] ▸ " + display + " 可回看时段（")
+                .append(String.valueOf(all.size())).append(" 个文件 · 第 ")
+                .append(String.valueOf(p)).append("/").append(String.valueOf(pages)).append(" 页）：");
         for (int i = from; i < to; i++) {
             ViewTrackReader.Available a = all.get(i);
-            sb.append("\n  cycle").append(a.cycleId()).append(" / ").append(a.day()).append(" · ");
+            out.append("\n");
             if (a.error() != null) {
-                sb.append("损坏: ").append(a.error());
+                out.append(Component.literal("  ▸ cycle" + a.cycleId() + " / " + a.day()
+                        + " · 损坏: " + a.error()).withStyle(ChatFormatting.RED));
                 continue;
             }
-            sb.append(ViewTime.format(a.firstMs())).append(" → ").append(ViewTime.format(a.lastMs()))
-                    .append(" · ").append(a.samples()).append(" 点");
-            if (a.cutoffApplied()) {
-                sb.append(" · 被截断");
+            String fullStart = ViewTime.format(a.firstMs());
+            String command = "/samsara track view " + display + " "
+                    + fullStart.replace(' ', 'T')
+                    + " --cycle cycle" + a.cycleId() + " --duration 30m";
+            String flags = (a.cutoffApplied() ? " · 被截断" : "")
+                    + (a.truncated() ? " · 尾部不完整" : "");
+            String label = "  ▸ [cycle" + a.cycleId() + " / " + a.day() + "] "
+                    + shortTime(a.firstMs()) + " → " + shortTime(a.lastMs())
+                    + " · " + a.samples() + " 点" + flags;
+            MutableComponent entry = Component.literal(label).withStyle(style -> style
+                    .withColor(ChatFormatting.AQUA)
+                    .withClickEvent(new ClickEvent.SuggestCommand(command))
+                    .withHoverEvent(new HoverEvent.ShowText(Component.literal(
+                            "点击填入回看命令：\n" + command))));
+            out.append(entry);
+        }
+        out.append("\n").append(Component.literal("  ▸ 点击任意条目自动填入回看命令（不会直接执行）")
+                .withStyle(ChatFormatting.GRAY));
+        if (pages > 1) {
+            out.append("\n  ");
+            if (p > 1) {
+                out.append(Component.literal("[上一页]").withStyle(style -> style
+                        .withColor(ChatFormatting.YELLOW)
+                        .withClickEvent(new ClickEvent.SuggestCommand(
+                                "/samsara track list " + display + " " + (p - 1)))));
             }
-            if (a.truncated()) {
-                sb.append(" · 尾部不完整");
+            if (p < pages) {
+                if (p > 1) out.append(" ");
+                out.append(Component.literal("[下一页]").withStyle(style -> style
+                        .withColor(ChatFormatting.YELLOW)
+                        .withClickEvent(new ClickEvent.SuggestCommand(
+                                "/samsara track list " + display + " " + (p + 1)))));
             }
         }
-        sb.append("\n开始回看：/samsara track view <玩家> <开始时间> [--cycle cycleN] [--duration 30m]");
-        return sb.toString();
+        return out;
+    }
+
+    /** 列表里只显示 HH:mm:ss，日期已在条目开头。 */
+    private static String shortTime(long epochMs) {
+        String text = ViewTime.format(epochMs);
+        int space = text.indexOf(' ');
+        if (space < 0) {
+            return text;
+        }
+        String time = text.substring(space + 1);
+        return time.length() > 8 ? time.substring(0, 8) : time;
     }
 
     // ---- 生命周期 ----

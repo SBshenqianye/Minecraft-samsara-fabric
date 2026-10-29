@@ -43,9 +43,20 @@ public final class ViewSession {
     long startTrackMs;
     long endTrackMs;
     long pausedTrackMs;
+    /** 当前倍速与方向（1 = 正放，-1 = 倒放）；点击控制面板可动态修改 */
+    double speed;
+    int direction = 1;
     boolean truncated;
     boolean cutoffApplied;
     boolean restored;
+    /** 自由活动/跟随状态 */
+    boolean followInitialized;
+    String lastFollowDim;
+    double lastFollowMannequinX;
+    double lastFollowMannequinY;
+    double lastFollowMannequinZ;
+    /** 人偶本 tick 是否发生了瞬移（跨度过大），需要把观看者拉过去 */
+    boolean mannequinTeleported;
     /** 因附近没有安全落脚点而临时切换旁观模式（结束时按快照恢复） */
     boolean forcedSpectator;
     /** 已提示过"临时旁观"，避免每 tick 刷屏 */
@@ -79,6 +90,7 @@ public final class ViewSession {
         this.windowFrom = windowFrom;
         this.windowTo = windowTo;
         this.sourceSummary = sourceSummary;
+        this.speed = options.speed();
     }
 
     public UUID viewer() {
@@ -121,25 +133,63 @@ public final class ViewSession {
         return cutoffApplied;
     }
 
-    /** 当前轨迹时间（墙钟 × 倍速；PAUSED 时冻结） */
+    /** 当前轨迹时间（墙钟 × 倍速 × 方向；PAUSED 时冻结） */
     public long trackTime(long nowWallMs) {
         if (state == State.PAUSED) {
             return pausedTrackMs;
         }
-        long t = startTrackMs + (long) ((nowWallMs - startWallMs) * options.speed());
-        return Math.max(startTrackMs, Math.min(endTrackMs, t));
+        long t = startTrackMs + (long) ((nowWallMs - startWallMs) * speed * direction);
+        long lower = cursor == null ? startTrackMs : cursor.startMs();
+        return Math.max(lower, Math.min(endTrackMs, t));
+    }
+
+    public double speed() {
+        return speed;
+    }
+
+    public int direction() {
+        return direction;
+    }
+
+    /** 改倍速：以当前轨迹时间为新起点，避免时间跳变 */
+    void setSpeed(double newSpeed) {
+        long now = System.currentTimeMillis();
+        long t = trackTime(now);
+        speed = newSpeed;
+        startTrackMs = t;
+        startWallMs = now;
+        if (state == State.PAUSED) {
+            pausedTrackMs = t;
+        }
+    }
+
+    /** 切换正放/倒放：以当前轨迹时间为新起点 */
+    void toggleDirection() {
+        long now = System.currentTimeMillis();
+        long t = trackTime(now);
+        direction = -direction;
+        startTrackMs = t;
+        startWallMs = now;
+        if (state == State.PAUSED) {
+            pausedTrackMs = t;
+        }
     }
 
     public long remainingMs(long nowWallMs) {
+        if (direction < 0) {
+            long lower = cursor == null ? startTrackMs : cursor.startMs();
+            return Math.max(0, trackTime(nowWallMs) - lower);
+        }
         return Math.max(0, endTrackMs - trackTime(nowWallMs));
     }
 
     public float progress(long nowWallMs) {
-        long span = endTrackMs - startTrackMs;
+        long from = cursor == null ? startTrackMs : cursor.startMs();
+        long span = endTrackMs - from;
         if (span <= 0) {
             return 1f;
         }
-        return Math.max(0f, Math.min(1f, (trackTime(nowWallMs) - startTrackMs) / (float) span));
+        return Math.max(0f, Math.min(1f, (trackTime(nowWallMs) - from) / (float) span));
     }
 
     void pause() {

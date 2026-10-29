@@ -1,6 +1,7 @@
 package com.shenqianye.samsara.command;
 
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
@@ -8,6 +9,7 @@ import com.mojang.brigadier.context.CommandContext;
 import com.shenqianye.samsara.track.view.ViewManager;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.permissions.Permissions;
 
@@ -18,6 +20,8 @@ import net.minecraft.server.permissions.Permissions;
  * /samsara track view stop [玩家|all]
  * /samsara track view status [玩家]
  * /samsara track view pause|resume [玩家]
+ * /samsara track view speed &lt;0.1..64&gt;
+ * /samsara track view reverse
  * /samsara track list &lt;玩家&gt; [页]
  * </pre>
  * 短别名 {@code /track ...} 仅在根节点未被其他模组占用时注册（命令谦让）。
@@ -72,6 +76,12 @@ public final class TrackViewCommand {
                         .then(Commands.argument("player", StringArgumentType.word())
                                 .executes(ctx -> resume(ctx,
                                         StringArgumentType.getString(ctx, "player")))))
+                .then(Commands.literal("speed")
+                        .then(Commands.argument("value", DoubleArgumentType.doubleArg(0.1, 64))
+                                .executes(ctx -> speed(ctx,
+                                        DoubleArgumentType.getDouble(ctx, "value")))))
+                .then(Commands.literal("reverse")
+                        .executes(ctx -> reverse(ctx)))
                 .then(Commands.argument("player", StringArgumentType.word())
                         .then(Commands.argument("input", StringArgumentType.greedyString())
                                 .executes(TrackViewCommand::startGreedy)));
@@ -134,7 +144,22 @@ public final class TrackViewCommand {
 
     private static int list(CommandContext<CommandSourceStack> ctx, int page) {
         String target = StringArgumentType.getString(ctx, "player");
-        String msg = ViewManager.getInstance().list(ctx.getSource().getServer(), target, page);
+        Component msg = ViewManager.getInstance().list(ctx.getSource().getServer(), target, page);
+        ctx.getSource().sendSuccess(() -> msg, false);
+        return 1;
+    }
+
+    private static int speed(CommandContext<CommandSourceStack> ctx, double value) {
+        ServerPlayer viewer = ctx.getSource().getPlayer();
+        String msg = ViewManager.getInstance().setSpeed(ctx.getSource().getServer(), viewer,
+                null, value, isAdmin(ctx.getSource()));
+        return reply(ctx.getSource(), msg);
+    }
+
+    private static int reverse(CommandContext<CommandSourceStack> ctx) {
+        ServerPlayer viewer = ctx.getSource().getPlayer();
+        String msg = ViewManager.getInstance().toggleReverse(ctx.getSource().getServer(), viewer,
+                null, isAdmin(ctx.getSource()));
         return reply(ctx.getSource(), msg);
     }
 

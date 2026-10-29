@@ -18,7 +18,8 @@
 | 安全删除 | ⚠ 部分可用 | 预览、备份、执行、报告；整档压缩备份尚未实现 |
 | 活动记录 | ✅ 可用 | 静默记录登录、在线时长与本次会话的原版统计增量，供事后 Web 统计 |
 | 玩家轨迹 | ✅ 可用 | 5Hz 采样位置/朝向，按「世界 + 周目 + 日期」留档并按年龄几何简化；回放为原版人偶（Mannequin），支持多人同屏、攻击/交互即捕捉 |
-| 回看模式 | ✅ 可用 | `/samsara track view` 只读回看任意时间段：倍速、时间窗、跟随/旁观/可交互/发光/名牌、暂停恢复；安全跟随 + 会话期间免伤，结束恢复观看者，不写轨迹/差异/截断点/存档/周目数据 |
+| 回看模式 | ✅ 可用 | `/samsara track view` 只读回看任意时间段：倍速、时间窗、跟随/旁观/可交互/发光/名牌、暂停恢复、倒放；观看者全程旁观，可在 32 格内自由活动，超出/人偶瞬移/换维度自动跟随；会话期间免伤，结束恢复观看者，不写轨迹/差异/截断点/存档/周目数据 |
+| 回看控制 | ✅ 可用 | 聊天栏可点击控制条（倍速/暂停/继续/倒放/停止）；`/samsara track list` 条目可点击自动填入命令 |
 | 权限 | ✅ 可用 | 四级权限，命令所需等级可配置，支持 owner 名单 |
 | 位置查询 | ✅ 可用 | `/samsara where` 查看自己的维度与坐标（可带区块、朝向），`where broadcast` 广播全服；命令启用与输出字段在 `config/samsara/commands.json` 配置 |
 | TPA 传送 | ✅ 可用 | `/tpa`、`/tpahere` 发起请求，`/tpaccept`、`/tpdeny`、`/tpcancel` 处理；默认 60 秒过期、每人同时只有 1 个请求、仅同维度 |
@@ -82,7 +83,7 @@ Linux/macOS 用 `./gradlew build`。产物是 `mod/build/libs/samsara-<版本>.j
 
 所有模组数据都在 `config/samsara/`，**不写入存档目录 `world/`，也不在服务端根目录散落文件**。包括周目、圈地、倒流、玩家轨迹、备份、权限与活动记录。
 
-命令功能开关在 `config/samsara/commands.json`：`where.enabled` 控制是否启用 `/samsara where`，`where.broadcast` 控制是否允许广播，`where.broadcastCooldownSeconds` 是广播冷却（0=不限），`where.showCoordinates/showDimension/showChunk/showFacing` 控制输出字段；`tpa.enabled` 控制 TPA 系列，`tpa.requestTimeoutSeconds` 是请求有效期（默认 60），`tpa.crossDimension` 控制是否允许跨维度；`view.protectViewer` 控制回看时是否启用安全跟随/免伤（默认开）。改完执行 `/samsara debug reload` 生效，无需重启。
+命令功能开关在 `config/samsara/commands.json`：`where.enabled` 控制是否启用 `/samsara where`，`where.broadcast` 控制是否允许广播，`where.broadcastCooldownSeconds` 是广播冷却（0=不限），`where.showCoordinates/showDimension/showChunk/showFacing` 控制输出字段；`tpa.enabled` 控制 TPA 系列，`tpa.requestTimeoutSeconds` 是请求有效期（默认 60），`tpa.crossDimension` 控制是否允许跨维度；`view.protectViewer` 控制回看时是否免伤，`view.freeRoamRadius` 是回看时允许自由活动的半径（默认 32 格）。改完执行 `/samsara debug reload` 生效，无需重启。
 
 活动记录按天保存，只写不读：登录、在线时长，以及本次会话的移动、挖掘、使用、击杀、交易等原版统计增量。没有 tick 轮询，也不提供游戏内查询命令；字段与开销见[《设计规范》](docs/设计规范.md)的〈活动记录：静默采集约定〉。
 
