@@ -50,7 +50,14 @@ public final class CommandConfig {
               },
               "view": {
                 "protectViewer": true,
-                "freeRoamRadius": 32
+                "freeRoamRadius": 32,
+                "aim": {
+                  "enabled": false,
+                  "deadzone": 6.0,
+                  "edge": 24.0,
+                  "maxDegPerSec": 90.0,
+                  "pitch": true
+                }
               }
             }
             """;
@@ -71,6 +78,12 @@ public final class CommandConfig {
 
     private boolean viewProtectViewer = true;
     private int viewFreeRoamRadius = 32;
+
+    private boolean viewAimEnabled = false;
+    private double viewAimDeadzone = 6.0;
+    private double viewAimEdge = 24.0;
+    private double viewAimMaxDegPerSec = 90.0;
+    private boolean viewAimPitch = true;
 
     private CommandConfig() {
         Path dir = FabricLoader.getInstance().getConfigDir().resolve("samsara");
@@ -153,6 +166,27 @@ public final class CommandConfig {
         return viewFreeRoamRadius;
     }
 
+    /** 回看默认是否开启自动瞄准（命令 --aim 可覆盖） */
+    public boolean viewAimEnabled() {
+        return viewAimEnabled;
+    }
+
+    public double viewAimDeadzone() {
+        return viewAimDeadzone;
+    }
+
+    public double viewAimEdge() {
+        return viewAimEdge;
+    }
+
+    public double viewAimMaxDegPerSec() {
+        return viewAimMaxDegPerSec;
+    }
+
+    public boolean viewAimPitch() {
+        return viewAimPitch;
+    }
+
     /** 配置文件绝对路径 */
     public String configPath() {
         return file.toAbsolutePath().normalize().toString();
@@ -181,6 +215,13 @@ public final class CommandConfig {
         JsonObject view = new JsonObject();
         view.addProperty("protectViewer", viewProtectViewer);
         view.addProperty("freeRoamRadius", viewFreeRoamRadius);
+        JsonObject aim = new JsonObject();
+        aim.addProperty("enabled", viewAimEnabled);
+        aim.addProperty("deadzone", viewAimDeadzone);
+        aim.addProperty("edge", viewAimEdge);
+        aim.addProperty("maxDegPerSec", viewAimMaxDegPerSec);
+        aim.addProperty("pitch", viewAimPitch);
+        view.add("aim", aim);
         root.add("view", view);
         try {
             Files.writeString(file, GSON.toJson(root), StandardCharsets.UTF_8);
@@ -229,6 +270,19 @@ public final class CommandConfig {
                     : new JsonObject();
             viewProtectViewer = readBoolean(view, "protectViewer", viewProtectViewer);
             viewFreeRoamRadius = readInt(view, "freeRoamRadius", viewFreeRoamRadius, 8, 256);
+
+            JsonElement aimElement = view.get("aim");
+            JsonObject aim = aimElement != null && aimElement.isJsonObject()
+                    ? aimElement.getAsJsonObject()
+                    : new JsonObject();
+            viewAimEnabled = readBoolean(aim, "enabled", viewAimEnabled);
+            viewAimDeadzone = readDouble(aim, "deadzone", viewAimDeadzone, 2.0, 45.0);
+            viewAimEdge = readDouble(aim, "edge", viewAimEdge, 2.0, 75.0);
+            if (viewAimEdge <= viewAimDeadzone) {
+                viewAimEdge = Math.min(75.0, viewAimDeadzone + 1.0);
+            }
+            viewAimMaxDegPerSec = readDouble(aim, "maxDegPerSec", viewAimMaxDegPerSec, 10.0, 360.0);
+            viewAimPitch = readBoolean(aim, "pitch", viewAimPitch);
         } catch (Exception e) {
             Samsara.LOGGER.warn("[周目管理 samsara] commands.json 解析失败，使用默认值: {}", e.getMessage());
         }
@@ -242,6 +296,7 @@ public final class CommandConfig {
                 + " · tpa " + (tpaEnabled ? "启用" : "禁用")
                 + "（超时 " + tpaRequestTimeoutSeconds + "s）"
                 + " · 回看保护 " + (viewProtectViewer ? "开" : "关")
+                + " · 回看自瞄 " + (viewAimEnabled ? "默认开" : "默认关")
                 + " · 来源 " + configPath();
     }
 
@@ -258,5 +313,18 @@ public final class CommandConfig {
             return fallback;
         }
         return Math.max(min, Math.min(max, value.getAsInt()));
+    }
+
+    private static double readDouble(JsonObject json, String key, double fallback,
+                                     double min, double max) {
+        JsonElement value = json.get(key);
+        if (value == null || !value.isJsonPrimitive() || !value.getAsJsonPrimitive().isNumber()) {
+            return fallback;
+        }
+        double v = value.getAsDouble();
+        if (!Double.isFinite(v)) {
+            return fallback;
+        }
+        return Math.max(min, Math.min(max, v));
     }
 }

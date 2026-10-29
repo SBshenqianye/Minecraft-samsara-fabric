@@ -110,6 +110,8 @@ public class DebugCommand {
                                                                                 IntegerArgumentType.getInteger(ctx, "scale")))))))));
         var samsaraNode = Commands.literal("samsara")
                 .executes(ctx -> sendHelp(ctx.getSource()))
+                .then(Commands.literal("help")
+                        .executes(ctx -> sendHelp(ctx.getSource())))
                 .then(Commands.literal("version")
                         .executes(ctx -> reply(ctx.getSource(), versionInfo())))
                 .then(Commands.literal("mspt")

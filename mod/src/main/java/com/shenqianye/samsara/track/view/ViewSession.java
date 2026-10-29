@@ -46,6 +46,13 @@ public final class ViewSession {
     /** 当前倍速与方向（1 = 正放，-1 = 倒放）；点击控制面板可动态修改 */
     double speed;
     int direction = 1;
+    /** 自动瞄准（会话内可即时开关；参数来自选项或 commands.json） */
+    boolean aimEnabled;
+    double aimDeadzone = ViewOptions.DEFAULT_AIM_DEADZONE;
+    double aimEdge = ViewOptions.DEFAULT_AIM_EDGE;
+    double aimSpeed = ViewOptions.DEFAULT_AIM_SPEED;
+    boolean aimPitch = true;
+    long lastAimAtMs;
     boolean truncated;
     boolean cutoffApplied;
     boolean restored;
@@ -156,6 +163,23 @@ public final class ViewSession {
         long now = System.currentTimeMillis();
         long t = trackTime(now);
         speed = newSpeed;
+        startTrackMs = t;
+        startWallMs = now;
+        if (state == State.PAUSED) {
+            pausedTrackMs = t;
+        }
+    }
+
+    /**
+     * 跳转到指定轨迹时间（F-101）：以当前轨迹时间为新起点，避免时间跳变。
+     * 暂停时同时更新 {@link #pausedTrackMs}，人偶由调用方立即刷新。
+     */
+    void seekTo(long targetTrackMs) {
+        if (cursor == null) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        long t = Math.max(cursor.startMs(), Math.min(endTrackMs, targetTrackMs));
         startTrackMs = t;
         startWallMs = now;
         if (state == State.PAUSED) {

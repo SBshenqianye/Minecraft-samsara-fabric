@@ -89,6 +89,22 @@ public final class TrackViewCommand {
                                         DoubleArgumentType.getDouble(ctx, "value")))))
                 .then(Commands.literal("reverse")
                         .executes(ctx -> reverse(ctx)))
+                .then(Commands.literal("align")
+                        .executes(ctx -> align(ctx, null))
+                        .then(Commands.argument("player", StringArgumentType.word())
+                                .suggests(SuggestionProviders.playersProvider())
+                                .executes(ctx -> align(ctx,
+                                        StringArgumentType.getString(ctx, "player")))))
+                .then(Commands.literal("seek")
+                        .then(Commands.argument("input", StringArgumentType.greedyString())
+                                .suggests(SuggestionProviders.seekProvider())
+                                .executes(TrackViewCommand::seek)))
+                .then(Commands.literal("aim")
+                        .executes(ctx -> aim(ctx, ""))
+                        .then(Commands.argument("input", StringArgumentType.greedyString())
+                                .suggests(SuggestionProviders.aimProvider())
+                                .executes(ctx -> aim(ctx,
+                                        StringArgumentType.getString(ctx, "input")))))
                 .then(Commands.argument("player", StringArgumentType.word())
                         .suggests(SuggestionProviders.knownPlayersProvider())
                         .then(Commands.argument("input", StringArgumentType.greedyString())
@@ -169,6 +185,60 @@ public final class TrackViewCommand {
         ServerPlayer viewer = ctx.getSource().getPlayer();
         String msg = ViewManager.getInstance().toggleReverse(ctx.getSource().getServer(), viewer,
                 null, isAdmin(ctx.getSource()));
+        return reply(ctx.getSource(), msg);
+    }
+
+    private static int align(CommandContext<CommandSourceStack> ctx, String target) {
+        ServerPlayer viewer = ctx.getSource().getPlayer();
+        String msg = ViewManager.getInstance().align(ctx.getSource().getServer(), viewer,
+                target, isAdmin(ctx.getSource()));
+        return reply(ctx.getSource(), msg);
+    }
+
+    private static int seek(CommandContext<CommandSourceStack> ctx) {
+        ServerPlayer viewer = ctx.getSource().getPlayer();
+        String raw = StringArgumentType.getString(ctx, "input").trim();
+        if (raw.isEmpty()) {
+            return reply(ctx.getSource(), "缺少跳转目标（示例：+30s、-10m、50%、2026-10-28T21:20）");
+        }
+        String target = null;
+        String spec = raw;
+        int split = 0;
+        while (split < raw.length() && !Character.isWhitespace(raw.charAt(split))) {
+            split++;
+        }
+        if (split < raw.length()) {
+            String first = raw.substring(0, split);
+            String rest = raw.substring(split).trim();
+            if (!rest.isEmpty() && ViewManager.getInstance()
+                    .hasViewerSession(ctx.getSource().getServer(), first)) {
+                target = first;
+                spec = rest;
+            }
+        }
+        String msg = ViewManager.getInstance().seek(ctx.getSource().getServer(), viewer,
+                target, spec, isAdmin(ctx.getSource()));
+        return reply(ctx.getSource(), msg);
+    }
+
+    private static int aim(CommandContext<CommandSourceStack> ctx, String raw) {
+        ServerPlayer viewer = ctx.getSource().getPlayer();
+        Boolean on = null;
+        String target = null;
+        for (String token : raw.trim().split("\\s+")) {
+            if (token.isBlank()) {
+                continue;
+            }
+            if (token.equalsIgnoreCase("on") || token.equalsIgnoreCase("true")) {
+                on = true;
+            } else if (token.equalsIgnoreCase("off") || token.equalsIgnoreCase("false")) {
+                on = false;
+            } else {
+                target = token;
+            }
+        }
+        String msg = ViewManager.getInstance().setAim(ctx.getSource().getServer(), viewer,
+                target, on, isAdmin(ctx.getSource()));
         return reply(ctx.getSource(), msg);
     }
 

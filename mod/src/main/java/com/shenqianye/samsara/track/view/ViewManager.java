@@ -18,6 +18,8 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.level.TicketType;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.PositionMoveRotation;
+import net.minecraft.world.entity.Relative;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Blocks;
@@ -33,6 +35,7 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -244,10 +247,14 @@ public final class ViewManager {
                 if (s.options.follow()) {
                     follow(s, player, trackTime);
                 }
+                if (s.aimEnabled) {
+                    applyAim(s, player, trackTime);
+                }
                 if (s.display != null) {
                     s.display.update("[回看] " + s.targetName + " · "
                                     + Math.round(s.progress(now) * 100) + "% · "
-                                    + String.format("%.1f", s.speed()) + "×",
+                                    + String.format("%.1f", s.speed()) + "×"
+                                    + (s.aimEnabled ? " · 自瞄" : ""),
                             s.progress(now));
                 }
             } else if (s.state == ViewSession.State.PAUSED && s.display != null) {
@@ -328,7 +335,7 @@ public final class ViewManager {
         // 1) 人偶与临时 ticket（失败时观看者仍未被修改）
         moveTicket(s, level, BlockPos.containing(first.x(), first.y(), first.z()));
         ViewMannequin entity = new ViewMannequin(level, s.targetUuid, s.targetName,
-                s.options.interact(), s.options.glow(), s.options.nameTag());
+                s.options.glow(), s.options.nameTag());
         GameProfile profile = resolveProfile(server, s.targetUuid, s.targetName);
         s.profile = profile;
         entity.applyProfile(profile);
@@ -372,6 +379,13 @@ public final class ViewManager {
             s.startTrackMs = s.cursor.startMs();
             s.endTrackMs = s.cursor.endMs();
             s.state = ViewSession.State.PLAYING;
+            CommandConfig cfg = CommandConfig.getInstance();
+            s.aimEnabled = s.options.aim() != null ? s.options.aim() : cfg.viewAimEnabled();
+            s.aimDeadzone = s.options.aimDeadzone();
+            s.aimEdge = s.options.aimEdge();
+            s.aimSpeed = s.options.aimSpeed();
+            s.aimPitch = s.options.aimPitch();
+            s.lastAimAtMs = System.currentTimeMillis();
             sessions.put(s.viewer, s);
             if (s.options.follow()) {
                 follow(s, viewer, s.startTrackMs);
@@ -384,7 +398,7 @@ public final class ViewManager {
                     + s.cursor.sampleCount() + " 点"
                     + (s.options.follow() ? " · 跟随" : "")
                     + (s.options.spectator() ? " · 旁观" : "")
-                    + (s.options.interact() ? " · 可交互(只读)" : "") + "）"
+                    + (s.aimEnabled ? " · 自瞄" : "") + "）"
                     + (s.cutoffApplied ? " · 已按捕捉截断" : "")
                     + (s.truncated ? " · 文件尾部已截断" : "")
                     + "\n停止：/samsara track view stop";
@@ -435,16 +449,17 @@ public final class ViewManager {
         ViewMannequin m = s.mannequin;
         if (m == null || m.isRemoved()) {
             m = new ViewMannequin(level, s.targetUuid, s.targetName,
-                    s.options.interact(), s.options.glow(), s.options.nameTag());
+                    s.options.glow(), s.options.nameTag());
             m.applyProfile(s.profile);
             if (!level.addFreshEntity(m)) {
                 return false;
             }
             s.mannequin = m;
         } else if (m.level() != level) {
+            releaseCamera(server, s, m);
             m.discard();
             m = new ViewMannequin(level, s.targetUuid, s.targetName,
-                    s.options.interact(), s.options.glow(), s.options.nameTag());
+                    s.options.glow(), s.options.nameTag());
             m.applyProfile(s.profile);
             if (!level.addFreshEntity(m)) {
                 return false;
@@ -503,7 +518,23 @@ public final class ViewManager {
         if (s.followInitialized && !dimensionChanged && !s.mannequinTeleported && !tooFar) {
             return; // 自由活动范围内：不打断观看者
         }
+        snapToObservation(s, player, level, point);
+    }
 
+    /**
+     * 一键对齐（F-96）：一次性贴到理想观察点并面向人偶；不改变 follow 开关。
+     */
+    private void align(ViewSession s, ServerPlayer player, long trackTime) {
+        ViewCursor.Point point = s.cursor.pointAt(trackTime);
+        ServerLevel level = findLevel(player.level().getServer(), point.dimension());
+        if (level == null) {
+            return;
+        }
+        snapToObservation(s, player, level, point);
+    }
+
+    private void snapToObservation(ViewSession s, ServerPlayer player,
+                                   ServerLevel level, ViewCursor.Point point) {
         double yawRad = Math.toRadians(point.yaw());
         double vx = point.x() + Math.sin(yawRad) * FOLLOW_DISTANCE;
         double vy = point.y() + FOLLOW_HEIGHT;
@@ -513,7 +544,7 @@ public final class ViewManager {
         double dy = (point.y() + 1.2) - (vy + 1.62);
         float lookYaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
         float lookPitch = (float) -Math.toDegrees(Math.atan2(dy, Math.hypot(dx, dz)));
-        player.teleportTo(level, vx, vy, vz, java.util.Set.of(), lookYaw, lookPitch, false);
+        player.teleportTo(level, vx, vy, vz, Set.of(), lookYaw, lookPitch, false);
         player.setDeltaMovement(Vec3.ZERO);
         player.fallDistance = 0;
         s.followInitialized = true;
@@ -524,6 +555,70 @@ public final class ViewManager {
         s.lastWriteY = vy;
         s.lastWriteZ = vz;
         s.lastWriteAtMs = System.currentTimeMillis();
+        s.lastAimAtMs = System.currentTimeMillis();
+    }
+
+    /**
+     * 自动瞄准（F-100）：只发旋转增量，不改位置/速度。
+     * 相机已经接管到人偶时不再修正。
+     */
+    private void applyAim(ViewSession s, ServerPlayer player, long trackTime) {
+        if (player.getCamera() != player) {
+            return;
+        }
+        ViewCursor.Point point = s.cursor.pointAt(trackTime);
+        if (!point.dimension().equals(player.level().dimension().identifier().toString())) {
+            return;
+        }
+        double targetX = point.x();
+        double targetY = point.y() + 1.5;
+        double targetZ = point.z();
+        if (player.distanceToSqr(targetX, targetY, targetZ) > 128.0 * 128.0) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        double dt = Math.min(0.25, (now - s.lastAimAtMs) / 1000.0);
+        s.lastAimAtMs = now;
+        if (dt <= 0) {
+            return;
+        }
+        ViewAim.Delta delta;
+        try {
+            delta = ViewAim.step(player.getYRot(), player.getXRot(),
+                    player.getX(), player.getEyeY(), player.getZ(),
+                    targetX, targetY, targetZ,
+                    new ViewAim.Params(s.aimDeadzone, s.aimEdge, s.aimSpeed, s.aimPitch),
+                    dt);
+        } catch (IllegalArgumentException e) {
+            s.aimEnabled = false;
+            return;
+        }
+        if (delta.isZero()) {
+            return;
+        }
+        float pitch = player.getXRot() + delta.pitch();
+        if (pitch > 90f) {
+            delta = new ViewAim.Delta(delta.yaw(), 90f - player.getXRot());
+        } else if (pitch < -90f) {
+            delta = new ViewAim.Delta(delta.yaw(), -90f - player.getXRot());
+        }
+        PositionMoveRotation change = new PositionMoveRotation(Vec3.ZERO, Vec3.ZERO,
+                delta.yaw(), delta.pitch());
+        player.connection.teleport(change, Set.of(
+                Relative.X, Relative.Y, Relative.Z,
+                Relative.DELTA_X, Relative.DELTA_Y, Relative.DELTA_Z,
+                Relative.Y_ROT, Relative.X_ROT));
+    }
+
+    /** 人偶被移除/替换前，如果相机正接管在它身上，先归还观看者。 */
+    private static void releaseCamera(MinecraftServer server, ViewSession s, Entity mannequin) {
+        if (server == null || mannequin == null) {
+            return;
+        }
+        ServerPlayer viewer = server.getPlayerList().getPlayer(s.viewer);
+        if (viewer != null && viewer.getCamera() == mannequin) {
+            viewer.setCamera(viewer);
+        }
     }
 
     private static boolean protectViewer() {
@@ -553,8 +648,19 @@ public final class ViewManager {
                 ChatUi.run("暂停", "/samsara track view pause", "暂停回看"),
                 ChatUi.run("继续", "/samsara track view resume", "继续回看"),
                 ChatUi.run("倒放/正放", "/samsara track view reverse", "切换正放与倒放"),
+                ChatUi.run("对齐", "/samsara track view align", "一键回到人偶观察点"),
+                ChatUi.run("自瞄", "/samsara track view aim", "即时开关自动瞄准"),
                 ChatUi.run("停止", "/samsara track view stop", "停止回看并恢复状态"));
-        ChatUi.send(viewer, line1, line2);
+        MutableComponent line3 = ChatUi.line(
+                ChatUi.text("[进度]", ChatFormatting.GRAY),
+                ChatUi.run("-30s", "/samsara track view seek -30s", "后退 30 秒"),
+                ChatUi.run("-10s", "/samsara track view seek -10s", "后退 10 秒"),
+                ChatUi.run("+10s", "/samsara track view seek +10s", "前进 10 秒"),
+                ChatUi.run("+30s", "/samsara track view seek +30s", "前进 30 秒"),
+                ChatUi.run("25%", "/samsara track view seek 25%", "跳到 25%"),
+                ChatUi.run("50%", "/samsara track view seek 50%", "跳到 50%"),
+                ChatUi.run("75%", "/samsara track view seek 75%", "跳到 75%"));
+        ChatUi.send(viewer, line1, line2, line3);
     }
 
     /** 候选水平偏移：先正后方，再左右/前方，最后 2 格环；都尽量贴近理想观察点。 */
@@ -750,6 +856,13 @@ public final class ViewManager {
         s.state = ViewSession.State.RESTORING;
         s.stopReason = reason == null ? "" : reason;
 
+        MinecraftServer server = currentServer;
+        ServerPlayer viewer = s.playerRef;
+        if (viewer == null && server != null) {
+            viewer = server.getPlayerList().getPlayer(s.viewer);
+        }
+        // 相机接管在人偶身上时先归还，再移除实体，避免黑屏/相机悬空
+        releaseCamera(server, s, s.mannequin);
         if (s.mannequin != null) {
             s.mannequin.discard();
             s.mannequin = null;
@@ -758,12 +871,6 @@ public final class ViewManager {
         if (s.display != null) {
             s.display.release();
             s.display = null;
-        }
-
-        MinecraftServer server = currentServer;
-        ServerPlayer viewer = s.playerRef;
-        if (viewer == null && server != null) {
-            viewer = server.getPlayerList().getPlayer(s.viewer);
         }
         boolean skippedPosition = false;
         boolean skippedMode = false;
@@ -860,6 +967,101 @@ public final class ViewManager {
         return "回看速度已设为 " + String.format("%.2f", speed).replaceAll("0+$", "").replaceAll("\\.$", "") + "×";
     }
 
+    /** 一键对齐（F-96）：单目标贴到理想观察点；不改变 follow 开关。 */
+    public synchronized String align(MinecraftServer server, ServerPlayer actor, String target,
+                                     boolean allowOthers) {
+        ViewSession s = findSession(server, actor, target);
+        if (s == null) {
+            return target == null || target.isBlank() ? "你当前没有进行中的回看"
+                    : "没有该观看者的进行中回看: " + target;
+        }
+        if (actor != null && !actor.getUUID().equals(s.viewer) && !allowOthers) {
+            return "对齐他人回看需要管理员权限";
+        }
+        if (s.state != ViewSession.State.PLAYING && s.state != ViewSession.State.PAUSED) {
+            return "当前状态不能对齐: " + s.state;
+        }
+        ServerPlayer viewer = server.getPlayerList().getPlayer(s.viewer);
+        if (viewer == null) {
+            return "观看者不在线";
+        }
+        if (viewer.getCamera() != viewer) {
+            viewer.setCamera(viewer);
+        }
+        align(s, viewer, s.trackTime(System.currentTimeMillis()));
+        return "已对齐到 " + s.targetName + " 的观察点";
+    }
+
+    /** 进度跳转（F-101）：绝对时间 / 相对时间 / 百分比，钳到游标窗口。 */
+    public synchronized String seek(MinecraftServer server, ServerPlayer actor, String target,
+                                    String spec, boolean allowOthers) {
+        ViewSession s = findSession(server, actor, target);
+        if (s == null) {
+            return target == null || target.isBlank() ? "你当前没有进行中的回看"
+                    : "没有该观看者的进行中回看: " + target;
+        }
+        if (actor != null && !actor.getUUID().equals(s.viewer) && !allowOthers) {
+            return "跳转他人回看需要管理员权限";
+        }
+        if (s.state != ViewSession.State.PLAYING && s.state != ViewSession.State.PAUSED) {
+            return "当前状态不能跳转: " + s.state;
+        }
+        if (s.cursor == null) {
+            return "回看仍在加载，请稍候";
+        }
+        long now = System.currentTimeMillis();
+        long current = s.trackTime(now);
+        long targetMs;
+        try {
+            targetMs = ViewSeek.target(spec, current, s.cursor.startMs(), s.endTrackMs);
+        } catch (IllegalArgumentException e) {
+            return e.getMessage();
+        }
+        s.seekTo(targetMs);
+        if (!updateMannequin(server, s, targetMs)) {
+            return "跳转后的人偶维度不可用: " + s.targetName;
+        }
+        if (s.options.follow()) {
+            ServerPlayer viewer = server.getPlayerList().getPlayer(s.viewer);
+            if (viewer != null) {
+                align(s, viewer, targetMs);
+            }
+        }
+        float progress = s.progress(System.currentTimeMillis());
+        if (s.display != null) {
+            s.display.update("[回看] " + s.targetName + " · "
+                    + Math.round(progress * 100) + "% · "
+                    + String.format("%.1f", s.speed()) + "×"
+                    + (s.aimEnabled ? " · 自瞄" : ""), progress);
+        }
+        return "已跳转到 " + ViewTime.format(targetMs)
+                + "（" + Math.round(progress * 100) + "%）";
+    }
+
+    /** 自动瞄准开关（F-100）：on/off；null = 切换。 */
+    public synchronized String setAim(MinecraftServer server, ServerPlayer actor, String target,
+                                      Boolean on, boolean allowOthers) {
+        ViewSession s = findSession(server, actor, target);
+        if (s == null) {
+            return target == null || target.isBlank() ? "你当前没有进行中的回看"
+                    : "没有该观看者的进行中回看: " + target;
+        }
+        if (actor != null && !actor.getUUID().equals(s.viewer) && !allowOthers) {
+            return "控制他人回看需要管理员权限";
+        }
+        if (s.state != ViewSession.State.PLAYING && s.state != ViewSession.State.PAUSED) {
+            return "当前状态不能切换自瞄: " + s.state;
+        }
+        s.aimEnabled = on == null ? !s.aimEnabled : on;
+        s.lastAimAtMs = System.currentTimeMillis();
+        return "自动瞄准已" + (s.aimEnabled ? "开启" : "关闭");
+    }
+
+    /** 命令层判断某名字是否是正在观看的回看者（用于 seek 的“玩家 + 参数”拆词）。 */
+    public synchronized boolean hasViewerSession(MinecraftServer server, String name) {
+        return name != null && !name.isBlank() && findSession(server, null, name) != null;
+    }
+
     /** 点击控制面板：切换正放/倒放 */
     public synchronized String toggleReverse(MinecraftServer server, ServerPlayer actor, String target,
                                              boolean allowOthers) {
@@ -936,7 +1138,10 @@ public final class ViewManager {
                 .append(com.shenqianye.samsara.season.DurationUtil.formatMs(s.remainingMs(now)));
         sb.append("\n参数: follow=").append(s.options.follow() ? "on" : "off")
                 .append(" · spectator=on")
-                .append(" · interact=").append(s.options.interact() ? "on" : "off");
+                .append(" · aim=").append(s.aimEnabled
+                        ? String.format("on（%.0f°/%.0f° · %.0f°/s）",
+                        s.aimDeadzone, s.aimEdge, s.aimSpeed)
+                        : "off");
         if (s.cutoffApplied) {
             sb.append("\n⚠ 该段被捕捉截断（截断之后不播）");
         }

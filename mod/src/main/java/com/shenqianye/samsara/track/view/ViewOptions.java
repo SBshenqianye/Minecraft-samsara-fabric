@@ -1,25 +1,35 @@
 package com.shenqianye.samsara.track.view;
 
 /**
- * 回看参数（设计 5.7.6 / F-80）。
+ * 回看参数（设计〈命令与参数〉/ F-80、F-100）。
  * <p>
  * 不可变；解析失败时不产生任何会话，也不修改观看者状态。
+ * 回看人偶始终不可交互，因此不再提供 {@code --interact}。
  */
 public record ViewOptions(
         double speed,
         boolean follow,
         boolean spectator,
-        boolean interact,
         boolean glow,
         boolean nameTag,
         long endMs,
         boolean explicitEnd,
-        Integer cycle) {
+        Integer cycle,
+        /** null = 使用 commands.json 的默认值；true/false = 显式覆盖 */
+        Boolean aim,
+        double aimDeadzone,
+        double aimEdge,
+        double aimSpeed,
+        boolean aimPitch) {
 
     public static final double MIN_SPEED = 0.1;
     public static final double MAX_SPEED = 64.0;
+    public static final double DEFAULT_AIM_DEADZONE = 6.0;
+    public static final double DEFAULT_AIM_EDGE = 24.0;
+    public static final double DEFAULT_AIM_SPEED = 90.0;
     public static final String SUPPORTED = "支持参数：--speed <0.1..64>、--to <时间>、--duration <30s/10m/2h>、"
-            + "--follow[=on|off]、--spectator、--interact、--glow、--no-glow、--no-name-tag、--cycle <cycleN>";
+            + "--follow[=on|off]、--spectator、--glow、--no-glow、--no-name-tag、--cycle <cycleN>、"
+            + "--aim[=on|off]、--aim-deadzone <2..45>、--aim-edge <外圈>、--aim-speed <10..360>、--aim-pitch on|off";
 
     public ViewOptions {
         if (speed < MIN_SPEED || speed > MAX_SPEED) {
@@ -28,6 +38,8 @@ public record ViewOptions(
         if (endMs <= 0) {
             throw new IllegalArgumentException("结束时间必须为正");
         }
+        // 复用 ViewAim 的校验，确保任何入口都得到同样的边界
+        new ViewAim.Params(aimDeadzone, aimEdge, aimSpeed, aimPitch);
     }
 
     /**
@@ -42,11 +54,15 @@ public record ViewOptions(
         double speed = 1.0;
         boolean follow = true;
         boolean spectator = false;
-        boolean interact = false;
         boolean glow = true;
         boolean nameTag = true;
         Long end = null;
         Integer cycle = null;
+        Boolean aim = null;
+        double aimDeadzone = DEFAULT_AIM_DEADZONE;
+        double aimEdge = DEFAULT_AIM_EDGE;
+        double aimSpeed = DEFAULT_AIM_SPEED;
+        boolean aimPitch = true;
 
         String[] tokens = raw == null ? new String[0] : raw.trim().split("\\s+");
         for (int i = 0; i < tokens.length; i++) {
@@ -96,7 +112,6 @@ public record ViewOptions(
                 }
                 case "follow" -> {
                     if (inline == null) {
-                        // --follow 后面可跟 on/off；为避免误吞下一个 --key，只在显式单词时消费
                         if (i + 1 < tokens.length && !tokens[i + 1].startsWith("--")
                                 && isOnOff(tokens[i + 1])) {
                             follow = parseOnOff(tokens[++i]);
@@ -108,10 +123,54 @@ public record ViewOptions(
                     }
                 }
                 case "spectator" -> spectator = true;
-                case "interact" -> interact = true;
+                case "interact" -> throw new IllegalArgumentException(
+                        "回看始终不可交互；可交互仅属于捕捉式回放（含开新周目时的回放）");
                 case "glow" -> glow = true;
                 case "no-glow" -> glow = false;
                 case "no-name-tag" -> nameTag = false;
+                case "aim" -> {
+                    if (inline == null) {
+                        if (i + 1 < tokens.length && !tokens[i + 1].startsWith("--")
+                                && isOnOff(tokens[i + 1])) {
+                            aim = parseOnOff(tokens[++i]);
+                        } else {
+                            aim = true;
+                        }
+                    } else {
+                        aim = parseOnOff(inline);
+                    }
+                }
+                case "aim-deadzone" -> {
+                    String value = inline != null ? inline : value(key, tokens, ++i);
+                    aimDeadzone = parseDouble(key, value, 2.0, 45.0);
+                    if (aimEdge <= aimDeadzone) {
+                        aimEdge = Math.min(75.0, aimDeadzone + 1.0);
+                    }
+                }
+                case "aim-edge" -> {
+                    String value = inline != null ? inline : value(key, tokens, ++i);
+                    aimEdge = parseDouble(key, value, 2.0, 75.0);
+                    if (aimEdge <= aimDeadzone) {
+                        throw new IllegalArgumentException("--aim-edge 必须大于 --aim-deadzone（"
+                                + aimDeadzone + "）: " + value);
+                    }
+                }
+                case "aim-speed" -> {
+                    String value = inline != null ? inline : value(key, tokens, ++i);
+                    aimSpeed = parseDouble(key, value, 10.0, 360.0);
+                }
+                case "aim-pitch" -> {
+                    String value;
+                    if (inline != null) {
+                        value = inline;
+                    } else if (i + 1 < tokens.length && !tokens[i + 1].startsWith("--")
+                            && isOnOff(tokens[i + 1])) {
+                        value = tokens[++i];
+                    } else {
+                        value = "on";
+                    }
+                    aimPitch = parseOnOff(value);
+                }
                 case "cycle" -> {
                     String value = inline != null ? inline : value(key, tokens, ++i);
                     Integer parsed = com.shenqianye.samsara.track.TrackReplay.parseCycle(value);
@@ -128,8 +187,9 @@ public record ViewOptions(
             throw new IllegalArgumentException("结束时间必须晚于开始时间");
         }
         long effectiveEnd = end == null ? defaultEnd : end;
-        return new ViewOptions(speed, follow, spectator, interact, glow, nameTag,
-                effectiveEnd, end != null, cycle);
+        return new ViewOptions(speed, follow, spectator, glow, nameTag,
+                effectiveEnd, end != null, cycle,
+                aim, aimDeadzone, aimEdge, aimSpeed, aimPitch);
     }
 
     private static String value(String key, String[] tokens, int nextIndex) {
@@ -144,14 +204,18 @@ public record ViewOptions(
     }
 
     private static double parseSpeed(String value) {
+        return parseDouble("speed", value, MIN_SPEED, MAX_SPEED);
+    }
+
+    private static double parseDouble(String key, String value, double min, double max) {
         try {
             double v = Double.parseDouble(value);
-            if (v < MIN_SPEED || v > MAX_SPEED) {
-                throw new IllegalArgumentException("--speed 须在 " + MIN_SPEED + ".." + MAX_SPEED + " 内: " + value);
+            if (!Double.isFinite(v) || v < min || v > max) {
+                throw new IllegalArgumentException("--" + key + " 须在 " + min + ".." + max + " 内: " + value);
             }
             return v;
         } catch (NumberFormatException e) {
-            throw new IllegalArgumentException("--speed 不是数字: " + value);
+            throw new IllegalArgumentException("--" + key + " 不是数字: " + value);
         }
     }
 
@@ -162,7 +226,7 @@ public record ViewOptions(
 
     private static boolean parseOnOff(String s) {
         if (!isOnOff(s)) {
-            throw new IllegalArgumentException("--follow 只接受 on/off: " + s);
+            throw new IllegalArgumentException("只接受 on/off: " + s);
         }
         return s.equalsIgnoreCase("on") || s.equalsIgnoreCase("true");
     }

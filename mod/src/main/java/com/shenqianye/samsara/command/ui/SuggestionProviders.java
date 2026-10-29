@@ -65,8 +65,9 @@ public final class SuggestionProviders {
 
     /** 回看可选参数（与 {@code ViewOptions.parse} 支持的键一致） */
     private static final List<String> VIEW_OPTIONS = List.of(
-            "--speed", "--duration", "--cycle", "--follow", "--spectator", "--interact",
-            "--to", "--glow", "--no-glow", "--no-name-tag");
+            "--speed", "--duration", "--cycle", "--follow", "--spectator",
+            "--to", "--glow", "--no-glow", "--no-name-tag",
+            "--aim", "--aim-deadzone", "--aim-edge", "--aim-speed", "--aim-pitch");
 
     private static final List<String> DURATIONS = List.of(
             "30s", "1m", "5m", "10m", "30m", "1h", "2h", "6h", "12h", "1d");
@@ -87,7 +88,11 @@ public final class SuggestionProviders {
             Map.entry("--cycle", "指定周目，例如 --cycle cycle3；跨周目窗口必须显式指定"),
             Map.entry("--follow", "观看者跟随人偶（默认开，可写 --follow=off）"),
             Map.entry("--spectator", "回看期间保持旁观（默认就是旁观，可显式写出）"),
-            Map.entry("--interact", "人偶可被攻击/推动，但仍不写盘、不捕捉"),
+            Map.entry("--aim", "自动瞄准：默认关闭，--aim=on 开启；可即时用 /track view aim 切换"),
+            Map.entry("--aim-deadzone", "自瞄内圈（度），默认 6；圈内不修正"),
+            Map.entry("--aim-edge", "自瞄外圈（度），默认 24；越接近外圈修正越快"),
+            Map.entry("--aim-speed", "自瞄最大角速度（度/秒），默认 90"),
+            Map.entry("--aim-pitch", "是否同时修正俯仰，默认 on"),
             Map.entry("--glow", "人偶发光高亮（默认开）"),
             Map.entry("--no-glow", "关闭人偶发光"),
             Map.entry("--no-name-tag", "隐藏人偶头顶名牌"));
@@ -438,7 +443,7 @@ public final class SuggestionProviders {
             case "--cycle" -> List.copyOf(cycleCandidates == null ? List.<String>of() : cycleCandidates);
             case "--duration" -> DURATIONS;
             case "--speed" -> SPEEDS;
-            case "--follow" -> List.of("on", "off");
+            case "--follow", "--aim", "--aim-pitch" -> List.of("on", "off");
             default -> null;
         };
     }
@@ -448,7 +453,7 @@ public final class SuggestionProviders {
             case "--cycle" -> List.copyOf(cycleCandidates == null ? List.<String>of() : cycleCandidates);
             case "--duration" -> DURATIONS;
             case "--speed" -> SPEEDS;
-            case "--follow" -> List.of("on", "off");
+            case "--follow", "--aim", "--aim-pitch" -> List.of("on", "off");
             default -> null;
         };
     }
@@ -605,6 +610,19 @@ public final class SuggestionProviders {
         int value = x ? player.blockPosition().getX() >> 4 : player.blockPosition().getZ() >> 4;
         return offer(builder, List.of(String.valueOf(value)),
                 s -> x ? "你当前所在区块 X = " + s : "你当前所在区块 Z = " + s);
+    }
+
+    /** 进度跳转候选（相对时间 / 百分比） */
+    public static SuggestionProvider<CommandSourceStack> seekProvider() {
+        return (ctx, builder) -> offer(builder,
+                List.of("-30s", "-10s", "+10s", "+30s", "25%", "50%", "75%"),
+                s -> "跳转到 " + s);
+    }
+
+    /** 自瞄开关候选 */
+    public static SuggestionProvider<CommandSourceStack> aimProvider() {
+        return (ctx, builder) -> offer(builder, List.of("on", "off"),
+                s -> "自动瞄准" + (s.equals("on") ? "开启" : "关闭"));
     }
 
     /** 固定候选（true/false、start/end、add/remove 等小枚举） */
