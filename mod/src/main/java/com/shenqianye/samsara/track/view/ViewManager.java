@@ -2,6 +2,7 @@ package com.shenqianye.samsara.track.view;
 
 import com.mojang.authlib.GameProfile;
 import com.shenqianye.samsara.Samsara;
+import com.shenqianye.samsara.config.CommandConfig;
 import com.shenqianye.samsara.rewind.DiffStore;
 import com.shenqianye.samsara.season.SeasonManager;
 import com.shenqianye.samsara.track.TrackLayout;
@@ -15,6 +16,9 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.level.TicketType;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.GameType;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
 import java.io.IOException;
@@ -351,8 +355,9 @@ public final class ViewManager {
             s.mannequin = entity;
             s.display = new ViewDisplay(viewer, s.targetName, s.cycleId);
             if (s.options.spectator()) {
-                viewer.setGameMode(net.minecraft.world.level.GameType.SPECTATOR);
+                viewer.setGameMode(GameType.SPECTATOR);
             }
+            // 回看保护：安全跟随 + ALLOW_DAMAGE 取消伤害（见 Samsara 事件注册）
             s.lastWriteDim = viewer.level().dimension().identifier().toString();
             s.lastWriteX = viewer.getX();
             s.lastWriteY = viewer.getY();
@@ -476,6 +481,28 @@ public final class ViewManager {
         double vx = point.x() + Math.sin(yawRad) * FOLLOW_DISTANCE;
         double vy = point.y() + FOLLOW_HEIGHT;
         double vz = point.z() - Math.cos(yawRad) * FOLLOW_DISTANCE;
+
+        // 安全跟随：优先找附近 2 格净空、下方有实心地面的落脚点；
+        // 找不到（例如人偶在 1×1 地洞/墙里）就临时切旁观，避免把观看者塞进方块窒息。
+        boolean spectator = s.options.spectator() || s.forcedSpectator
+                || player.gameMode() == GameType.SPECTATOR;
+        if (!spectator && protectViewer()) {
+            double[] safe = findSafeSpot(level, vx, vy, vz);
+            if (safe != null) {
+                vx = safe[0];
+                vy = safe[1];
+                vz = safe[2];
+            } else {
+                player.setGameMode(GameType.SPECTATOR);
+                s.forcedSpectator = true;
+                if (!s.forceSpectatorNotified) {
+                    s.forceSpectatorNotified = true;
+                    player.sendSystemMessage(Component.literal(
+                            "[回看] 跟随点附近没有安全落脚点，已临时切换旁观模式（结束后自动恢复）"));
+                }
+            }
+        }
+
         double dx = point.x() - vx;
         double dz = point.z() - vz;
         double dy = (point.y() + 1.2) - (vy + 1.62);
@@ -484,11 +511,103 @@ public final class ViewManager {
         player.teleportTo(level, vx, vy, vz, java.util.Set.of(), lookYaw, lookPitch, false);
         player.setDeltaMovement(Vec3.ZERO);
         player.fallDistance = 0;
+        if (protectViewer()) {
+            // 双保险：即使安全点判断失手，也不因窒息/溺水/火焰/摔落掉血
+            player.setAirSupply(player.getMaxAirSupply());
+            player.setRemainingFireTicks(0);
+        }
         s.lastWriteDim = point.dimension();
         s.lastWriteX = vx;
         s.lastWriteY = vy;
         s.lastWriteZ = vz;
         s.lastWriteAtMs = System.currentTimeMillis();
+    }
+
+    private static boolean protectViewer() {
+        return CommandConfig.getInstance().viewProtectViewer();
+    }
+
+    /** 该玩家是否处于受保护的回看会话中（服务端伤害取消事件使用）。 */
+    public boolean protectsViewer(UUID viewer) {
+        ViewSession s = sessions.get(viewer);
+        return s != null && !s.restored
+                && (s.state == ViewSession.State.PLAYING || s.state == ViewSession.State.PAUSED)
+                && protectViewer();
+    }
+
+    /** 候选水平偏移：先正后方，再左右/前方，最后 2 格环；都尽量贴近理想观察点。 */
+    private static final int[][] SAFE_HORIZONTAL = {
+            {0, 0}, {1, 0}, {-1, 0}, {0, 1}, {0, -1},
+            {1, 1}, {1, -1}, {-1, 1}, {-1, -1},
+            {2, 0}, {-2, 0}, {0, 2}, {0, -2},
+            {2, 2}, {2, -2}, {-2, 2}, {-2, -2}
+    };
+
+    /** 在理想观察点附近找安全落脚点；返回 {x,y,z}，找不到返回 null。 */
+    private static double[] findSafeSpot(ServerLevel level, double x, double y, double z) {
+        // 先在同一高度附近找，再逐步向上/向下扩展到 4 格
+        for (int dy = 0; dy <= 4; dy++) {
+            for (int[] o : SAFE_HORIZONTAL) {
+                double cx = x + o[0];
+                double cy = y + dy;
+                double cz = z + o[1];
+                if (isSafeStand(level, cx, cy, cz)) {
+                    return new double[]{cx, cy, cz};
+                }
+            }
+        }
+        for (int dy = -1; dy >= -3; dy--) {
+            for (int[] o : SAFE_HORIZONTAL) {
+                double cx = x + o[0];
+                double cy = y + dy;
+                double cz = z + o[1];
+                if (isSafeStand(level, cx, cy, cz)) {
+                    return new double[]{cx, cy, cz};
+                }
+            }
+        }
+        // 地洞/低矮空间：尝试向上找洞口（最多 12 格）
+        for (int dy = 5; dy <= 12; dy++) {
+            if (isSafeStand(level, x, y + dy, z)) {
+                return new double[]{x, y + dy, z};
+            }
+        }
+        return null;
+    }
+
+    /** 脚/头两格可站、无流体/危险方块，且下方有实心地面。 */
+    private static boolean isSafeStand(ServerLevel level, double x, double y, double z) {
+        BlockPos feet = BlockPos.containing(x, y, z);
+        BlockPos head = feet.above();
+        if (!isPassable(level, feet) || !isPassable(level, head)) {
+            return false;
+        }
+        BlockPos below = feet.below();
+        BlockState ground = level.getBlockState(below);
+        if (ground.getCollisionShape(level, below).isEmpty()) {
+            return false;
+        }
+        return !isHazard(ground);
+    }
+
+    private static boolean isPassable(ServerLevel level, BlockPos pos) {
+        BlockState state = level.getBlockState(pos);
+        if (!state.getFluidState().isEmpty()) {
+            return false;
+        }
+        if (!state.getCollisionShape(level, pos).isEmpty()) {
+            return false;
+        }
+        return !isHazard(state);
+    }
+
+    private static boolean isHazard(BlockState state) {
+        return state.is(Blocks.LAVA) || state.is(Blocks.FIRE) || state.is(Blocks.SOUL_FIRE)
+                || state.is(Blocks.MAGMA_BLOCK) || state.is(Blocks.CACTUS)
+                || state.is(Blocks.POWDER_SNOW) || state.is(Blocks.SWEET_BERRY_BUSH)
+                || state.is(Blocks.CAMPFIRE) || state.is(Blocks.SOUL_CAMPFIRE)
+                || state.is(Blocks.WITHER_ROSE) || state.is(Blocks.NETHER_PORTAL)
+                || state.is(Blocks.END_PORTAL);
     }
 
     // ---- 临时 chunk ticket ----
@@ -630,7 +749,7 @@ public final class ViewManager {
             try {
                 ViewRestore.Gate gate = new ViewRestore.Gate(
                         s.lastWriteDim, s.lastWriteX, s.lastWriteY, s.lastWriteZ,
-                        s.options.spectator() ? "SPECTATOR" : null,
+                        (s.options.spectator() || s.forcedSpectator) ? "SPECTATOR" : null,
                         ViewRestore.MAX_DRIFT, !viewer.isDeadOrDying());
                 ViewRestore.Result r = ViewRestore.restore(s.snapshot.data(),
                         ViewRestore.sink(viewer), gate);

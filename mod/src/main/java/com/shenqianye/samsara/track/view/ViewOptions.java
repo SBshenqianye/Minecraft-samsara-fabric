@@ -19,7 +19,7 @@ public record ViewOptions(
     public static final double MIN_SPEED = 0.1;
     public static final double MAX_SPEED = 64.0;
     public static final String SUPPORTED = "支持参数：--speed <0.1..64>、--to <时间>、--duration <30s/10m/2h>、"
-            + "--follow[=on|off]、--spectator、--interact、--glow、--no-name-tag、--cycle <cycleN>";
+            + "--follow[=on|off]、--spectator、--interact、--glow、--no-glow、--no-name-tag、--cycle <cycleN>";
 
     public ViewOptions {
         if (speed < MIN_SPEED || speed > MAX_SPEED) {
@@ -43,7 +43,7 @@ public record ViewOptions(
         boolean follow = true;
         boolean spectator = false;
         boolean interact = false;
-        boolean glow = false;
+        boolean glow = true;
         boolean nameTag = true;
         Long end = null;
         Integer cycle = null;
@@ -110,6 +110,7 @@ public record ViewOptions(
                 case "spectator" -> spectator = true;
                 case "interact" -> interact = true;
                 case "glow" -> glow = true;
+                case "no-glow" -> glow = false;
                 case "no-name-tag" -> nameTag = false;
                 case "cycle" -> {
                     String value = inline != null ? inline : value(key, tokens, ++i);

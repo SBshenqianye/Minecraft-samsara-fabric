@@ -13,6 +13,8 @@
 - **命令功能配置**：新增 `config/samsara/commands.json`，可开关 `where` 命令、关闭广播、调整冷却，以及分别隐藏坐标/维度/区块/朝向；`tpa.enabled`、`tpa.requestTimeoutSeconds`、`tpa.crossDimension` 控制 TPA；`/samsara debug reload` 可热重载，无需重启服务器。
 - **TPA 传送**：`/samsara tpa <玩家>`、`/samsara tpahere <玩家>` 发起请求，`/samsara tpaccept`、`/samsara tpdeny`、`/samsara tpcancel` 处理；默认 60 秒过期，每个玩家同时只有 1 个待处理请求（新请求覆盖旧请求），默认仅同维度。
 - **命令短别名**：`/season`、`/claim`、`/where`、`/version`、`/track`、`/tpa`、`/tpahere`、`/tpaccept`、`/tpyes`、`/tpdeny`、`/tpno`、`/tpcancel`，以及原有 `/mspt`、`/tps`；全部按〈命令谦让〉条件注册，根节点已被其他模组占用时自动让位，只保留 `/samsara` 全名。
+- **回看保护**：跟随点会检测两格净空与地面，找不到安全落脚点时自动临时切换旁观；会话期间取消观看者受到的窒息/溺水/摔落/火焰等伤害，结束恢复原状态。`config/samsara/commands.json` 的 `view.protectViewer` 可关闭（默认开）。
+- **人偶高亮**：回看人偶默认发光高亮；不需要时用 `--no-glow` 关闭。
 - 权限：`where`、`tpa` 系列默认 `user` 级，可通过 `/samsara perm set <命令> <等级>` 调整。
 
 ## v0.13.0（2026-10-28）· 周目隔离轨迹、人偶捕捉与多人同屏回放

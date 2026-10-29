@@ -46,6 +46,10 @@ public final class ViewSession {
     boolean truncated;
     boolean cutoffApplied;
     boolean restored;
+    /** 因附近没有安全落脚点而临时切换旁观模式（结束时按快照恢复） */
+    boolean forcedSpectator;
+    /** 已提示过"临时旁观"，避免每 tick 刷屏 */
+    boolean forceSpectatorNotified;
     String stopReason = "";
 
     /** 会话最后一次写入观看者的位置（外部干预守卫用） */

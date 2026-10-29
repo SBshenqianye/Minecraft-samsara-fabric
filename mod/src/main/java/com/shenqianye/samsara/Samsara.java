@@ -61,6 +61,12 @@ public class Samsara implements DedicatedServerModInitializer {
                 com.shenqianye.samsara.track.view.ViewManager.getInstance()
                         .onDisconnect(handler.getPlayer().getUUID()));
 
+        // 回看保护：会话期间取消观看者受到的所有伤害（窒息/溺水/摔落/火焰等）
+        net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents.ALLOW_DAMAGE.register(
+                (entity, source, amount) -> !(entity instanceof net.minecraft.server.level.ServerPlayer player
+                        && com.shenqianye.samsara.track.view.ViewManager.getInstance()
+                        .protectsViewer(player.getUUID())));
+
         // 差异记录：常开（diff/live/<世界>；服务器启动后确定世界层）
         DiffRecorder.init(net.fabricmc.loader.api.FabricLoader.getInstance()
                 .getConfigDir().resolve("samsara"));

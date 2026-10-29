@@ -47,6 +47,9 @@ public final class CommandConfig {
                 "enabled": true,
                 "requestTimeoutSeconds": 60,
                 "crossDimension": false
+              },
+              "view": {
+                "protectViewer": true
               }
             }
             """;
@@ -64,6 +67,8 @@ public final class CommandConfig {
     private boolean tpaEnabled = true;
     private int tpaRequestTimeoutSeconds = 60;
     private boolean tpaCrossDimension = false;
+
+    private boolean viewProtectViewer = true;
 
     private CommandConfig() {
         Path dir = FabricLoader.getInstance().getConfigDir().resolve("samsara");
@@ -131,6 +136,16 @@ public final class CommandConfig {
         return tpaCrossDimension;
     }
 
+    // ---- 回看（track view）查询 ----
+
+    /**
+     * 回看时是否保护观看者：临时无敌、跟随点做碰撞/危险方块检测，
+     * 找不到安全落脚点时自动切换旁观模式。默认 true。
+     */
+    public boolean viewProtectViewer() {
+        return viewProtectViewer;
+    }
+
     /** 配置文件绝对路径 */
     public String configPath() {
         return file.toAbsolutePath().normalize().toString();
@@ -155,6 +170,10 @@ public final class CommandConfig {
         tpa.addProperty("requestTimeoutSeconds", tpaRequestTimeoutSeconds);
         tpa.addProperty("crossDimension", tpaCrossDimension);
         root.add("tpa", tpa);
+
+        JsonObject view = new JsonObject();
+        view.addProperty("protectViewer", viewProtectViewer);
+        root.add("view", view);
         try {
             Files.writeString(file, GSON.toJson(root), StandardCharsets.UTF_8);
         } catch (IOException e) {
@@ -195,6 +214,12 @@ public final class CommandConfig {
             tpaRequestTimeoutSeconds = readInt(tpa, "requestTimeoutSeconds",
                     tpaRequestTimeoutSeconds, 5, 3600);
             tpaCrossDimension = readBoolean(tpa, "crossDimension", tpaCrossDimension);
+
+            JsonElement viewElement = root.get("view");
+            JsonObject view = viewElement != null && viewElement.isJsonObject()
+                    ? viewElement.getAsJsonObject()
+                    : new JsonObject();
+            viewProtectViewer = readBoolean(view, "protectViewer", viewProtectViewer);
         } catch (Exception e) {
             Samsara.LOGGER.warn("[周目管理 samsara] commands.json 解析失败，使用默认值: {}", e.getMessage());
         }
@@ -207,6 +232,7 @@ public final class CommandConfig {
                 + " · 广播" + (whereBroadcast ? "允许" : "禁止")
                 + " · tpa " + (tpaEnabled ? "启用" : "禁用")
                 + "（超时 " + tpaRequestTimeoutSeconds + "s）"
+                + " · 回看保护 " + (viewProtectViewer ? "开" : "关")
                 + " · 来源 " + configPath();
     }
 
