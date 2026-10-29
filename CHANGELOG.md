@@ -10,8 +10,10 @@
 - **回看模式（只读回放）**：`/samsara track view <玩家> <开始时间> [选项]` 按时间段回看任意玩家轨迹，支持倍速、结束时间/时长、跟随（默认人偶身后观察点）、临时旁观、可交互、发光/名牌、显式周目；`view stop|status|pause|resume`、`track list`，并提供条件短别名 `/track`。全程只读、不写轨迹/差异/截断点/存档/周目数据，结束恢复观看者坐标/模式/能力，遵守捕捉截断。
 - **位置查询**：`/samsara where` 显示自己所在维度（中文名 + 原版维度 ID）、方块坐标、区块坐标与朝向。
 - **位置广播**：`/samsara where broadcast` 把同样的信息发给全服；默认 30 秒冷却，按玩家独立计时。
-- **命令功能配置**：新增 `config/samsara/commands.json`，可开关 `where` 命令、关闭广播、调整冷却，以及分别隐藏坐标/维度/区块/朝向；`/samsara debug reload` 可热重载，无需重启服务器。
-- 权限：`where` 默认 `user` 级，可通过 `/samsara perm set where <等级>` 调整；`where broadcast` 沿用同一等级。
+- **命令功能配置**：新增 `config/samsara/commands.json`，可开关 `where` 命令、关闭广播、调整冷却，以及分别隐藏坐标/维度/区块/朝向；`tpa.enabled`、`tpa.requestTimeoutSeconds`、`tpa.crossDimension` 控制 TPA；`/samsara debug reload` 可热重载，无需重启服务器。
+- **TPA 传送**：`/samsara tpa <玩家>`、`/samsara tpahere <玩家>` 发起请求，`/samsara tpaccept`、`/samsara tpdeny`、`/samsara tpcancel` 处理；默认 60 秒过期，每个玩家同时只有 1 个待处理请求（新请求覆盖旧请求），默认仅同维度。
+- **命令短别名**：`/season`、`/claim`、`/where`、`/version`、`/track`、`/tpa`、`/tpahere`、`/tpaccept`、`/tpyes`、`/tpdeny`、`/tpno`、`/tpcancel`，以及原有 `/mspt`、`/tps`；全部按〈命令谦让〉条件注册，根节点已被其他模组占用时自动让位，只保留 `/samsara` 全名。
+- 权限：`where`、`tpa` 系列默认 `user` 级，可通过 `/samsara perm set <命令> <等级>` 调整。
 
 ## v0.13.0（2026-10-28）· 周目隔离轨迹、人偶捕捉与多人同屏回放
 

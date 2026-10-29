@@ -54,7 +54,7 @@ public final class WhereCommand {
         if (player == null) {
             return reply(src, "该命令需要以玩家身份执行（控制台没有位置）");
         }
-        String detail = describe(player, !broadcast);
+        String detail = describe(player);
 
         if (!broadcast) {
             return reply(src, detail);
@@ -80,35 +80,51 @@ public final class WhereCommand {
         return 1;
     }
 
-    /** 生成位置描述；compact=true 用于广播（单行），false 用于自己查看（多行） */
-    private static String describe(ServerPlayer player, boolean compact) {
+    /**
+     * 生成位置描述：每个字段独占一行。
+     * <p>
+     * 不把多个字段拼成一行，是为了避开 {@link ChatFormat} 的自动换行——
+     * 宽度不够时它会在空格处断行，曾把「坐标 55, 48, 4」拆成两行。
+     * 单行长度都远小于默认宽度，坐标不会再被拆开。
+     */
+    private static String describe(ServerPlayer player) {
         CommandConfig config = CommandConfig.getInstance();
         ServerLevel level = player.level();
         BlockPos pos = player.blockPosition();
         StringBuilder sb = new StringBuilder();
 
         if (config.whereShowDimension()) {
-            append(sb, dimensionName(level), compact);
+            appendLine(sb, dimensionName(level));
         }
         if (config.whereShowCoordinates()) {
-            append(sb, "坐标 " + pos.getX() + ", " + pos.getY() + ", " + pos.getZ(), compact);
+            appendLine(sb, "坐标 " + pos.getX() + ", " + pos.getY() + ", " + pos.getZ());
         }
-        if (config.whereShowChunk()) {
-            append(sb, "区块 " + (pos.getX() >> 4) + ", " + (pos.getZ() >> 4), compact);
+
+        // 区块与朝向合成一行（两者都很短），既省行数又不会被拆开
+        String chunk = config.whereShowChunk()
+                ? "区块 " + (pos.getX() >> 4) + ", " + (pos.getZ() >> 4)
+                : null;
+        String facing = config.whereShowFacing()
+                ? "朝向 " + facingName(player.getDirection())
+                : null;
+        if (chunk != null && facing != null) {
+            appendLine(sb, chunk + " · " + facing);
+        } else if (chunk != null) {
+            appendLine(sb, chunk);
+        } else if (facing != null) {
+            appendLine(sb, facing);
         }
-        if (config.whereShowFacing()) {
-            append(sb, "朝向 " + facingName(player.getDirection()), compact);
-        }
+
         if (sb.length() == 0) {
             sb.append("（位置输出已在 commands.json 中全部关闭）");
         }
         return sb.toString();
     }
 
-    /** 追加一段描述；多行模式用换行，单行模式用 " · " 连接 */
-    private static void append(StringBuilder sb, String text, boolean compact) {
+    /** 追加一行（字段之间用换行，避免 ChatFormat 在字段内部断行） */
+    private static void appendLine(StringBuilder sb, String text) {
         if (sb.length() > 0) {
-            sb.append(compact ? " · " : "\n");
+            sb.append('\n');
         }
         sb.append(text);
     }

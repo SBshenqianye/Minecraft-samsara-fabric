@@ -42,6 +42,11 @@ public final class CommandConfig {
                 "showDimension": true,
                 "showChunk": true,
                 "showFacing": true
+              },
+              "tpa": {
+                "enabled": true,
+                "requestTimeoutSeconds": 60,
+                "crossDimension": false
               }
             }
             """;
@@ -55,6 +60,10 @@ public final class CommandConfig {
     private boolean whereShowDimension = true;
     private boolean whereShowChunk = true;
     private boolean whereShowFacing = true;
+
+    private boolean tpaEnabled = true;
+    private int tpaRequestTimeoutSeconds = 60;
+    private boolean tpaCrossDimension = false;
 
     private CommandConfig() {
         Path dir = FabricLoader.getInstance().getConfigDir().resolve("samsara");
@@ -105,6 +114,23 @@ public final class CommandConfig {
         return whereShowFacing;
     }
 
+    // ---- tpa 命令查询 ----
+
+    /** {@code /samsara tpa ...} 系列是否启用 */
+    public boolean isTpaEnabled() {
+        return tpaEnabled;
+    }
+
+    /** 传送请求有效期（秒） */
+    public int tpaRequestTimeoutSeconds() {
+        return tpaRequestTimeoutSeconds;
+    }
+
+    /** 是否允许跨维度传送（false = 仅同一维度，设计默认） */
+    public boolean tpaCrossDimension() {
+        return tpaCrossDimension;
+    }
+
     /** 配置文件绝对路径 */
     public String configPath() {
         return file.toAbsolutePath().normalize().toString();
@@ -123,6 +149,12 @@ public final class CommandConfig {
         where.addProperty("showChunk", whereShowChunk);
         where.addProperty("showFacing", whereShowFacing);
         root.add("where", where);
+
+        JsonObject tpa = new JsonObject();
+        tpa.addProperty("enabled", tpaEnabled);
+        tpa.addProperty("requestTimeoutSeconds", tpaRequestTimeoutSeconds);
+        tpa.addProperty("crossDimension", tpaCrossDimension);
+        root.add("tpa", tpa);
         try {
             Files.writeString(file, GSON.toJson(root), StandardCharsets.UTF_8);
         } catch (IOException e) {
@@ -154,6 +186,15 @@ public final class CommandConfig {
             whereShowDimension = readBoolean(where, "showDimension", whereShowDimension);
             whereShowChunk = readBoolean(where, "showChunk", whereShowChunk);
             whereShowFacing = readBoolean(where, "showFacing", whereShowFacing);
+
+            JsonElement tpaElement = root.get("tpa");
+            JsonObject tpa = tpaElement != null && tpaElement.isJsonObject()
+                    ? tpaElement.getAsJsonObject()
+                    : new JsonObject();
+            tpaEnabled = readBoolean(tpa, "enabled", tpaEnabled);
+            tpaRequestTimeoutSeconds = readInt(tpa, "requestTimeoutSeconds",
+                    tpaRequestTimeoutSeconds, 5, 3600);
+            tpaCrossDimension = readBoolean(tpa, "crossDimension", tpaCrossDimension);
         } catch (Exception e) {
             Samsara.LOGGER.warn("[周目管理 samsara] commands.json 解析失败，使用默认值: {}", e.getMessage());
         }
@@ -164,6 +205,8 @@ public final class CommandConfig {
         load();
         return "命令配置已重载：" + (whereEnabled ? "where 启用" : "where 禁用")
                 + " · 广播" + (whereBroadcast ? "允许" : "禁止")
+                + " · tpa " + (tpaEnabled ? "启用" : "禁用")
+                + "（超时 " + tpaRequestTimeoutSeconds + "s）"
                 + " · 来源 " + configPath();
     }
 

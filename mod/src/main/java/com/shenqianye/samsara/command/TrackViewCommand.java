@@ -146,9 +146,7 @@ public final class TrackViewCommand {
 
     /** 条件注册短别名 {@code /track}：根节点已存在时让位，不抢占。 */
     public static void registerAlias(CommandDispatcher<CommandSourceStack> dispatcher) {
-        if (dispatcher.getRoot().getChild("track") == null) {
-            dispatcher.register(trackNode());
-        }
+        CommandAliases.register(dispatcher, "track", TrackViewCommand::trackNode);
     }
 
     private static int reply(CommandSourceStack src, String message) {

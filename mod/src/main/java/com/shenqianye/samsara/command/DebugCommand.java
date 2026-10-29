@@ -117,6 +117,11 @@ public class DebugCommand {
                 .then(ClaimCommand.claimNode())
                 .then(TrackViewCommand.trackNode())
                 .then(WhereCommand.whereNode())
+                .then(TpaCommand.tpaNode())
+                .then(TpaCommand.tpaHereNode())
+                .then(TpaCommand.acceptNode())
+                .then(TpaCommand.denyNode())
+                .then(TpaCommand.cancelNode())
                 .then(Commands.literal("debug")
                         .requires(src -> isOwner(src))
                         // debug info — 切换式
@@ -390,7 +395,20 @@ public class DebugCommand {
                         .then(permNode()));
 
         dispatcher.register(samsaraNode);
-        // 短别名：/track ...（冲突时按〈命令谦让〉让位，不抢占）
+        // 短别名：全部按〈命令谦让〉条件注册；根节点已被其他模组占用时自动让位
+        CommandAliases.register(dispatcher, "season", SeasonCommand::seasonNode);
+        CommandAliases.register(dispatcher, "claim", ClaimCommand::claimNode);
+        CommandAliases.register(dispatcher, "where", WhereCommand::whereNode);
+        CommandAliases.register(dispatcher, "version", () -> Commands.literal("version")
+                .executes(ctx -> reply(ctx.getSource(), versionInfo())));
+        CommandAliases.register(dispatcher, "tpa", TpaCommand::tpaNode);
+        CommandAliases.register(dispatcher, "tpahere", TpaCommand::tpaHereNode);
+        CommandAliases.register(dispatcher, "tpaccept", TpaCommand::acceptNode);
+        CommandAliases.register(dispatcher, "tpyes", () -> TpaCommand.acceptNode("tpyes"));
+        CommandAliases.register(dispatcher, "tpdeny", TpaCommand::denyNode);
+        CommandAliases.register(dispatcher, "tpno", () -> TpaCommand.denyNode("tpno"));
+        CommandAliases.register(dispatcher, "tpcancel", TpaCommand::cancelNode);
+        // 短别名：/track ...（同一让位策略）
         TrackViewCommand.registerAlias(dispatcher);
 
         // 条件别名：/mspt 和 /tps（仅当其他模组未注册时）
@@ -962,7 +980,9 @@ public class DebugCommand {
                 + "  /samsara mspt|tps —— 服务器性能（别名 /mspt /tps）\n"
                 + "  /samsara track view|list —— 只读回看（别名 /track view|list）\n"
                 + "  /samsara where [broadcast] —— 查看自己的维度与坐标（broadcast=广播给全服）\n"
-                + "  /samsara version —— 模组版本号\n"
+                + "  /samsara tpa|tpahere <玩家> —— 请求传送到对方 / 对方传送到你（别名 /tpa /tpahere）\n"
+                + "  /samsara tpaccept|tpdeny|tpcancel —— 同意/拒绝/取消传送请求（别名 /tpaccept /tpyes /tpdeny /tpno /tpcancel）\n"
+                + "  /samsara version —— 模组版本号（别名 /version）\n"
                 + "管理员命令（/samsara debug ...）：\n"
                 + "  debug info [on|off] —— 调试信息开关（不带参数=切换）\n"
                 + "  debug claim give|list|rebuild|scan|remove|info|particle|delete|owner —— 圈地管理\n"
