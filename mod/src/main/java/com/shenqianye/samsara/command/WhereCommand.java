@@ -2,13 +2,16 @@ package com.shenqianye.samsara.command;
 
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
+import com.shenqianye.samsara.command.ui.ChatUi;
 import com.shenqianye.samsara.config.CommandConfig;
 import com.shenqianye.samsara.permission.PermissionChecker;
+import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
@@ -57,7 +60,14 @@ public final class WhereCommand {
         String detail = describe(player);
 
         if (!broadcast) {
-            return reply(src, detail);
+            MutableComponent broadcastButton = ChatUi.runIfPermitted(src, "where broadcast",
+                    "广播位置", "/samsara where broadcast", "把你的位置广播给全服（有冷却）");
+            MutableComponent action = CommandConfig.getInstance().isWhereBroadcastEnabled()
+                    ? ChatUi.line(ChatUi.text(ChatFormat.getContinuePrefix(), ChatFormatting.GRAY),
+                            broadcastButton)
+                    : null;
+            ChatUi.send(src, ChatFormat.formatComponent(detail, player.getUUID()), action);
+            return 1;
         }
 
         int cooldown = CommandConfig.getInstance().whereBroadcastCooldownSeconds();

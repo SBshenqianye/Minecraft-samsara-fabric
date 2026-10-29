@@ -3,6 +3,29 @@
 > 面向玩家与服主的功能变化；实现细节、未达标项与证据见[《实现状态》](docs/实现状态.md)。
 > 每个版本按「新增 / 修复 / 优化 / 变更 / 重构 / 文档」分组，只写功能口径。
 
+## v0.15.0（2026-10-29）· 可点击指令与 Tab 补全
+
+### 新增
+
+- **可点击指令框架**：聊天栏按钮统一由服务端生成，客户端无需安装模组。只读命令点击即执行，危险命令点击只填入、不执行。
+- **帮助可点击**：`/samsara` 的指令列表改为按钮；`version`、`mspt`、`tps`、`season status/info`、`claim info`、`claim boundary`、`where` 等青色按钮点击直接运行；`season create/start/end/skip`、`debug *`、`perm set/reset` 等黄色按钮只填入命令。
+- **TPA 按钮**：收到请求的人看到 `[同意] [拒绝]`，发起者看到 `[取消请求]`；按钮只发给对应的人，`tpa.enabled=false` 时不显示。
+- **只读命令附带操作按钮**：`season status/info` 带 `[刷新]`，`claim info` 带 `[查看当前区块]`，`where` 带 `[广播位置]`（仅 `where.broadcast=true` 且有权时显示）。
+- **Tab 补全框架**：玩家名（`tpa/tpahere`、回看、`debug track`、`fakeplayers`、`groups`、`perm owner`）、`cycleN`、回看开始时刻、`--speed/--duration/--cycle/--follow/--spectator/--interact/--to/--glow/--no-glow/--no-name-tag`、时长、倍速、周目模式、权限路径/等级、区块坐标、布尔开关等均可补全，并尽量带悬停说明。
+
+### 优化
+
+- 回看控制条与 `track list` 改用统一按钮框架；控制条在回看开始时发送（倍速/暂停/继续/倒放/停止）。
+- 补全使用的玩家/周目/回看时段列表走短周期内存缓存，不在每次按键时读盘。
+
+### 修复
+
+- `/samsara debug perm set <命令路径> <等级>` 的等级参数此前永远解析不到（Brigadier 的 greedyString 必须位于末尾）；现改为单个 greedyString 拆「路径 + 等级」，并补全路径与等级。
+
+### 文档
+
+- 设计文档新增〈可点击指令与 Tab 补全〉，设计规范新增同名规范，说明点击策略、greedyString 补全的替换范围与测试要求。
+
 ## v0.14.0（2026-10-29）· 回看模式、位置查询与命令开关配置
 
 ### 新增

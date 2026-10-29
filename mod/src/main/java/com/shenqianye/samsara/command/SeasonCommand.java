@@ -2,10 +2,14 @@ package com.shenqianye.samsara.command;
 
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.shenqianye.samsara.command.ui.ChatUi;
+import com.shenqianye.samsara.command.ui.SuggestionProviders;
 import com.shenqianye.samsara.season.SeasonManager;
+import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.permissions.Permissions;
@@ -33,18 +37,21 @@ public class SeasonCommand {
         return Commands.literal("season")
                 .requires(src -> com.shenqianye.samsara.permission.PermissionChecker.check(src, "season"))
                 .then(Commands.literal("status")
-                        .executes(ctx -> reply(ctx.getSource(), MANAGER.statusText(1)))
+                        .executes(ctx -> status(ctx.getSource(), 1))
                         .then(Commands.argument("page", IntegerArgumentType.integer(1))
-                                .executes(ctx -> reply(ctx.getSource(),
-                                        MANAGER.statusText(IntegerArgumentType.getInteger(ctx, "page"))))))
+                                .suggests(SuggestionProviders.choicesWithHint("页码", "1", "2", "3"))
+                                .executes(ctx -> status(ctx.getSource(),
+                                        IntegerArgumentType.getInteger(ctx, "page")))))
                 .then(Commands.literal("info")
-                        .executes(ctx -> reply(ctx.getSource(), infoText(ctx.getSource()))))
+                        .executes(ctx -> replyWithRefresh(ctx.getSource(), infoText(ctx.getSource()),
+                                "/samsara season info", "重新读取周目与世界信息")))
                 .then(Commands.literal("create")
                         .requires(src -> isAdmin(src))
                         .then(Commands.argument("name", StringArgumentType.string())
                                 .executes(ctx -> reply(ctx.getSource(), MANAGER.create(
                                         StringArgumentType.getString(ctx, "name"), "same-world")))
                                 .then(Commands.argument("mode", StringArgumentType.word())
+                                        .suggests(SuggestionProviders.seasonModesProvider())
                                         .executes(ctx -> reply(ctx.getSource(), MANAGER.create(
                                                 StringArgumentType.getString(ctx, "name"),
                                                 StringArgumentType.getString(ctx, "mode")))))))
@@ -65,6 +72,20 @@ public class SeasonCommand {
 
     private static boolean isAdmin(CommandSourceStack src) {
         return src.permissions().hasPermission(Permissions.COMMANDS_ADMIN);
+    }
+
+    /** 周目状态/信息：只读，附 [刷新] 点击即执行（保留当前页码）。 */
+    private static int status(CommandSourceStack src, int page) {
+        return replyWithRefresh(src, MANAGER.statusText(page),
+                "/samsara season status" + (page > 1 ? " " + page : ""), "重新查询周目状态");
+    }
+
+    private static int replyWithRefresh(CommandSourceStack src, String message,
+                                        String refreshCommand, String hover) {
+        MutableComponent refresh = ChatUi.run("刷新", refreshCommand, hover);
+        ChatUi.send(src, ChatFormat.formatComponent(message),
+                ChatUi.line(ChatUi.text(ChatFormat.getContinuePrefix(), ChatFormatting.GRAY), refresh));
+        return 1;
     }
 
     /**

@@ -4,10 +4,14 @@ import com.mojang.brigadier.Command;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
+import com.shenqianye.samsara.command.ui.ChatUi;
+import com.shenqianye.samsara.command.ui.SuggestionProviders;
 import com.shenqianye.samsara.config.CommandConfig;
 import com.shenqianye.samsara.permission.PermissionChecker;
+import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.server.level.ServerPlayer;
 
 import java.util.Map;
@@ -87,6 +91,7 @@ public final class TpaCommand {
                 .requires(src -> CommandConfig.getInstance().isTpaEnabled()
                         && PermissionChecker.check(src, literal))
                 .then(Commands.argument("player", StringArgumentType.word())
+                        .suggests(SuggestionProviders.playersProvider())
                         .executes(ctx -> request(ctx, here)));
     }
 
@@ -129,20 +134,57 @@ public final class TpaCommand {
         OUTGOING.put(sender.getUUID(), target.getUUID());
 
         String timeout = timeoutText();
+        String senderName = sender.getName().getString();
+        String targetDisplay = target.getName().getString();
         if (here) {
-            reply(src, "已请求 " + target.getName().getString()
-                    + " 传送到你这里（" + timeout + "内有效）");
-            target.sendSystemMessage(ChatFormat.formatComponent(
-                    sender.getName().getString() + " 请求你传送到他那里。\n"
-                            + timeout + "内输入 /tpaccept 同意，/tpdeny 拒绝"));
+            sendSenderRequested(sender, targetDisplay, timeout, true);
+            sendTargetRequest(target, senderName, timeout, true);
         } else {
-            reply(src, "已向 " + target.getName().getString()
-                    + " 发送传送请求（" + timeout + "内有效）");
-            target.sendSystemMessage(ChatFormat.formatComponent(
-                    sender.getName().getString() + " 请求传送到你这里。\n"
-                            + timeout + "内输入 /tpaccept 同意，/tpdeny 拒绝"));
+            sendSenderRequested(sender, targetDisplay, timeout, false);
+            sendTargetRequest(target, senderName, timeout, false);
         }
         return 1;
+    }
+
+    /** 发起者只看到自己的请求 + [取消请求]（按钮不广播给其他人）。 */
+    private static void sendSenderRequested(ServerPlayer sender, String targetName, String timeout, boolean here) {
+        ChatUi.send(sender, senderRequestLine(targetName, here, timeout));
+    }
+
+    /** 收件人只看到发给自己的请求 + [同意] [拒绝]；tpa.enabled=false 时不显示按钮。 */
+    private static void sendTargetRequest(ServerPlayer target, String senderName, String timeout, boolean here) {
+        if (!CommandConfig.getInstance().isTpaEnabled()) {
+            return;
+        }
+        ChatUi.send(target, targetRequestLine(senderName, here, timeout), targetHintLine(timeout));
+    }
+
+    /** 发起者的消息行（包级可见，供单测断言按钮/命令）。 */
+    static MutableComponent senderRequestLine(String targetName, boolean here, String timeout) {
+        String text = here
+                ? "已请求 " + targetName + " 传送到你这里（" + timeout + "内有效）"
+                : "已向 " + targetName + " 发送传送请求（" + timeout + "内有效）";
+        return ChatUi.line(
+                ChatUi.text(ChatFormat.getFirstPrefix() + text, ChatFormatting.WHITE),
+                ChatUi.run("取消请求", "/samsara tpcancel", "取消这次传送请求（对方将收到提示）"));
+    }
+
+    /** 收件人的消息行（包级可见，供单测断言按钮/命令）。 */
+    static MutableComponent targetRequestLine(String senderName, boolean here, String timeout) {
+        String text = here
+                ? senderName + " 请求你传送到他那里。"
+                : senderName + " 请求传送到你这里。";
+        return ChatUi.line(
+                ChatUi.text(ChatFormat.getFirstPrefix() + text, ChatFormatting.WHITE),
+                ChatUi.run("同意", "/samsara tpaccept", "同意传送请求（将以你的身份执行）"),
+                ChatUi.run("拒绝", "/samsara tpdeny", "拒绝传送请求"));
+    }
+
+    /** 收件人的第二行：有效期说明（不带按钮）。 */
+    static MutableComponent targetHintLine(String timeout) {
+        return ChatUi.text(
+                ChatFormat.getContinuePrefix() + "请求在 " + timeout + "内有效；也可直接输入 /tpaccept 或 /tpdeny",
+                ChatFormatting.GRAY);
     }
 
     private static int accept(CommandContext<CommandSourceStack> ctx) {

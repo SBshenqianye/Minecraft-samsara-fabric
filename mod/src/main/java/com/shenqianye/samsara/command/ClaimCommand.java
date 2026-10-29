@@ -5,10 +5,14 @@ import com.shenqianye.samsara.claim.AreaService;
 import com.shenqianye.samsara.claim.ClaimInteractions;
 import com.shenqianye.samsara.claim.ClaimNode;
 import com.shenqianye.samsara.claim.ClaimParticles;
+import com.shenqianye.samsara.command.ui.ChatUi;
+import com.shenqianye.samsara.command.ui.SuggestionProviders;
 import com.shenqianye.samsara.geometry.ChunkCoord;
+import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BannerBlockEntity;
@@ -35,14 +39,16 @@ public class ClaimCommand {
                 .requires(src -> com.shenqianye.samsara.permission.PermissionChecker.check(src, "claim"))
                 // claim info [x] [z]
                 .then(Commands.literal("info")
-                        .executes(ctx -> reply(ctx.getSource(), infoAtPlayer(ctx.getSource())))
+                        .executes(ctx -> infoReply(ctx.getSource(), infoAtPlayer(ctx.getSource())))
                         .then(Commands.argument("x", IntegerArgumentType.integer())
+                                .suggests(SuggestionProviders.chunkXProvider())
                                 .then(Commands.argument("z", IntegerArgumentType.integer())
+                                        .suggests(SuggestionProviders.chunkZProvider())
                                         .executes(ctx -> {
                                             ServerPlayer p;
                                             try { p = ctx.getSource().getPlayerOrException(); }
                                             catch (Exception e) { return reply(ctx.getSource(), "需要以玩家身份执行"); }
-                                            return reply(ctx.getSource(),
+                                            return infoReply(ctx.getSource(),
                                                     infoAt(p.level().dimension(),
                                                             IntegerArgumentType.getInteger(ctx, "x"),
                                                             IntegerArgumentType.getInteger(ctx, "z")));
@@ -89,8 +95,19 @@ public class ClaimCommand {
         return sb.toString();
     }
 
-    // ---- claim boundary ----
+    /**
+     * claim info 输出：只读 + 幂等，附 [查看当前区块] 点击即执行。
+     * 按钮只在玩家执行时附加，控制台/RCON 不会看到（也没有客户端可点）。
+     */
+    private static int infoReply(CommandSourceStack src, String message) {
+        MutableComponent action = ChatUi.run("查看当前区块", "/samsara claim info",
+                "查看你当前所在区块的圈地信息");
+        ChatUi.send(src, ChatFormat.formatComponent(message),
+                ChatUi.line(ChatUi.text(ChatFormat.getContinuePrefix(), ChatFormatting.GRAY), action));
+        return 1;
+    }
 
+    // ---- claim boundary ----
     private static String toggleBoundary(CommandSourceStack src) {
         ServerPlayer player;
         try {

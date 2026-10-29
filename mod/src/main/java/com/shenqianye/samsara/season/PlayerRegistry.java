@@ -89,6 +89,11 @@ public class PlayerRegistry {
         return injected.size();
     }
 
+    /** 注入池里的玩家名（内存快照；供 Tab 补全，不涉及文件 IO）。 */
+    public synchronized List<String> injectedNames() {
+        return List.copyOf(injected.keySet());
+    }
+
     /**
      * 构建注册玩家列表：注入池 + 在线玩家 + usercache + playerdata，
      * 按最后上线时间倒序（未知名取 0，在线/注入取 now）。

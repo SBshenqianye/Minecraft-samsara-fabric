@@ -2,6 +2,7 @@ package com.shenqianye.samsara.track.view;
 
 import com.mojang.authlib.GameProfile;
 import com.shenqianye.samsara.Samsara;
+import com.shenqianye.samsara.command.ui.ChatUi;
 import com.shenqianye.samsara.config.CommandConfig;
 import com.shenqianye.samsara.rewind.DiffStore;
 import com.shenqianye.samsara.season.SeasonManager;
@@ -10,9 +11,7 @@ import com.shenqianye.samsara.track.TrackRecorder;
 import com.shenqianye.samsara.track.TrackReplay;
 import net.minecraft.core.BlockPos;
 import net.minecraft.ChatFormatting;
-import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
-import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -394,6 +393,8 @@ public final class ViewManager {
                     ViewTime.format(s.endTrackMs), s.speed(), s.cursor.sampleCount(),
                     s.cutoffApplied, s.truncated);
             viewer.sendSystemMessage(Component.literal("[回看] " + msg));
+            // 控制条只在会话开始时发一次（不每 tick 刷屏）
+            sendControls(s, viewer);
             if (!s.targetUuid.equals(s.viewer)) {
                 ViewAudit.append(s.viewerName, s.targetName, s.cycleId, s.windowFrom,
                         s.windowTo, s.speed(), "STARTED");
@@ -539,26 +540,21 @@ public final class ViewManager {
 
     /** 聊天栏（左下角）可点击控制条：倍速 / 暂停 / 继续 / 倒放 / 停止。 */
     private static void sendControls(ViewSession s, ServerPlayer viewer) {
-        MutableComponent line1 = Component.literal("[回看控制] 速度： ").withStyle(ChatFormatting.GRAY);
-        for (double speed : new double[]{0.25, 0.5, 1, 2, 4, 8}) {
-            String label = speed == Math.rint(speed) ? (int) speed + "x" : speed + "x";
-            line1.append(button("[" + label + "]", "点击设置 " + label + " 倍速",
-                    "/samsara track view speed " + speed)).append(" ");
-        }
-        MutableComponent line2 = Component.literal("[回看控制] ").withStyle(ChatFormatting.GRAY)
-                .append(button("[暂停]", "暂停回看", "/samsara track view pause")).append(" ")
-                .append(button("[继续]", "继续回看", "/samsara track view resume")).append(" ")
-                .append(button("[倒放/正放]", "切换正放与倒放", "/samsara track view reverse")).append(" ")
-                .append(button("[停止]", "停止回看并恢复状态", "/samsara track view stop"));
-        viewer.sendSystemMessage(line1);
-        viewer.sendSystemMessage(line2);
-    }
-
-    private static MutableComponent button(String label, String hover, String command) {
-        return Component.literal(label).withStyle(style -> style
-                .withColor(ChatFormatting.AQUA)
-                .withClickEvent(new ClickEvent.RunCommand(command))
-                .withHoverEvent(new HoverEvent.ShowText(Component.literal(hover))));
+        MutableComponent line1 = ChatUi.line(
+                ChatUi.text("[回看控制] 速度：", ChatFormatting.GRAY),
+                ChatUi.run("0.25x", "/samsara track view speed 0.25", "点击设置 0.25 倍速"),
+                ChatUi.run("0.5x", "/samsara track view speed 0.5", "点击设置 0.5 倍速"),
+                ChatUi.run("1x", "/samsara track view speed 1", "点击设置 1 倍速"),
+                ChatUi.run("2x", "/samsara track view speed 2", "点击设置 2 倍速"),
+                ChatUi.run("4x", "/samsara track view speed 4", "点击设置 4 倍速"),
+                ChatUi.run("8x", "/samsara track view speed 8", "点击设置 8 倍速"));
+        MutableComponent line2 = ChatUi.line(
+                ChatUi.text("[回看控制]", ChatFormatting.GRAY),
+                ChatUi.run("暂停", "/samsara track view pause", "暂停回看"),
+                ChatUi.run("继续", "/samsara track view resume", "继续回看"),
+                ChatUi.run("倒放/正放", "/samsara track view reverse", "切换正放与倒放"),
+                ChatUi.run("停止", "/samsara track view stop", "停止回看并恢复状态"));
+        ChatUi.send(viewer, line1, line2);
     }
 
     /** 候选水平偏移：先正后方，再左右/前方，最后 2 格环；都尽量贴近理想观察点。 */
@@ -999,29 +995,21 @@ public final class ViewManager {
             String label = "  ▸ [cycle" + a.cycleId() + " / " + a.day() + "] "
                     + shortTime(a.firstMs()) + " → " + shortTime(a.lastMs())
                     + " · " + a.samples() + " 点" + flags;
-            MutableComponent entry = Component.literal(label).withStyle(style -> style
-                    .withColor(ChatFormatting.AQUA)
-                    .withClickEvent(new ClickEvent.SuggestCommand(command))
-                    .withHoverEvent(new HoverEvent.ShowText(Component.literal(
-                            "点击填入回看命令：\n" + command))));
-            out.append(entry);
+            out.append(ChatUi.suggestText(label, command,
+                    "点击填入回看命令（不会直接执行）：\n" + command));
         }
-        out.append("\n").append(Component.literal("  ▸ 点击任意条目自动填入回看命令（不会直接执行）")
-                .withStyle(ChatFormatting.GRAY));
+        out.append("\n").append(ChatUi.text("  ▸ 点击任意条目自动填入回看命令（不会直接执行）",
+                ChatFormatting.GRAY));
         if (pages > 1) {
             out.append("\n  ");
             if (p > 1) {
-                out.append(Component.literal("[上一页]").withStyle(style -> style
-                        .withColor(ChatFormatting.YELLOW)
-                        .withClickEvent(new ClickEvent.SuggestCommand(
-                                "/samsara track list " + display + " " + (p - 1)))));
+                out.append(ChatUi.suggest("上一页", "/samsara track list " + display + " " + (p - 1),
+                        "点击填入上一页命令"));
             }
             if (p < pages) {
                 if (p > 1) out.append(" ");
-                out.append(Component.literal("[下一页]").withStyle(style -> style
-                        .withColor(ChatFormatting.YELLOW)
-                        .withClickEvent(new ClickEvent.SuggestCommand(
-                                "/samsara track list " + display + " " + (p + 1)))));
+                out.append(ChatUi.suggest("下一页", "/samsara track list " + display + " " + (p + 1),
+                        "点击填入下一页命令"));
             }
         }
         return out;

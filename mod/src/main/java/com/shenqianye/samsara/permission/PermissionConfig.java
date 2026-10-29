@@ -125,6 +125,15 @@ public class PermissionConfig {
         return result;
     }
 
+    /**
+     * 内置默认命令路径（不触发单例、不读盘）。
+     * <p>
+     * 供 Tab 补全在无 Fabric 环境（单元测试）或 permissions.json 读取失败时兜底。
+     */
+    public static List<String> defaultCommandPaths() {
+        return List.copyOf(DEFAULTS.keySet());
+    }
+
     /** 检查 owner 名单 */
     public boolean isOwner(String playerName) {
         return ownerNames.contains(playerName.toLowerCase());

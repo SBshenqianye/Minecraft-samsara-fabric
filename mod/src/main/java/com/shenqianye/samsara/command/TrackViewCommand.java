@@ -6,6 +6,7 @@ import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
+import com.shenqianye.samsara.command.ui.SuggestionProviders;
 import com.shenqianye.samsara.track.view.ViewManager;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -50,6 +51,7 @@ public final class TrackViewCommand {
     public static LiteralArgumentBuilder<CommandSourceStack> listNode() {
         return Commands.literal("list")
                 .then(Commands.argument("player", StringArgumentType.word())
+                        .suggests(SuggestionProviders.knownPlayersProvider())
                         .executes(ctx -> list(ctx, 1))
                         .then(Commands.argument("page", IntegerArgumentType.integer(1))
                                 .executes(ctx -> list(ctx,
@@ -61,29 +63,36 @@ public final class TrackViewCommand {
                 .then(Commands.literal("stop")
                         .executes(ctx -> stop(ctx, null))
                         .then(Commands.argument("player", StringArgumentType.word())
+                                .suggests(SuggestionProviders.playersProvider())
                                 .executes(ctx -> stop(ctx, StringArgumentType.getString(ctx, "player")))))
                 .then(Commands.literal("status")
                         .executes(ctx -> status(ctx, null))
                         .then(Commands.argument("player", StringArgumentType.word())
+                                .suggests(SuggestionProviders.playersProvider())
                                 .executes(ctx -> status(ctx, StringArgumentType.getString(ctx, "player")))))
                 .then(Commands.literal("pause")
                         .executes(ctx -> pause(ctx, null))
                         .then(Commands.argument("player", StringArgumentType.word())
+                                .suggests(SuggestionProviders.playersProvider())
                                 .executes(ctx -> pause(ctx,
                                         StringArgumentType.getString(ctx, "player")))))
                 .then(Commands.literal("resume")
                         .executes(ctx -> resume(ctx, null))
                         .then(Commands.argument("player", StringArgumentType.word())
+                                .suggests(SuggestionProviders.playersProvider())
                                 .executes(ctx -> resume(ctx,
                                         StringArgumentType.getString(ctx, "player")))))
                 .then(Commands.literal("speed")
                         .then(Commands.argument("value", DoubleArgumentType.doubleArg(0.1, 64))
+                                .suggests(SuggestionProviders.speedProvider())
                                 .executes(ctx -> speed(ctx,
                                         DoubleArgumentType.getDouble(ctx, "value")))))
                 .then(Commands.literal("reverse")
                         .executes(ctx -> reverse(ctx)))
                 .then(Commands.argument("player", StringArgumentType.word())
+                        .suggests(SuggestionProviders.knownPlayersProvider())
                         .then(Commands.argument("input", StringArgumentType.greedyString())
+                                .suggests(SuggestionProviders.viewGreedyProvider())
                                 .executes(TrackViewCommand::startGreedy)));
     }
 

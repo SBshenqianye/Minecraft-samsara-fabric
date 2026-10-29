@@ -4,11 +4,14 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
+import com.shenqianye.samsara.command.ui.ChatUi;
+import com.shenqianye.samsara.command.ui.SuggestionProviders;
 import com.shenqianye.samsara.rewind.RewindEngine;
 import com.shenqianye.samsara.season.PlayerRegistry;
 import com.shenqianye.samsara.season.Season;
 import com.shenqianye.samsara.season.SeasonManager;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandBuildContext;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -106,7 +109,7 @@ public class DebugCommand {
                                                                                 IntegerArgumentType.getInteger(ctx, "stateId"),
                                                                                 IntegerArgumentType.getInteger(ctx, "scale")))))))));
         var samsaraNode = Commands.literal("samsara")
-                .executes(ctx -> reply(ctx.getSource(), help()))
+                .executes(ctx -> sendHelp(ctx.getSource()))
                 .then(Commands.literal("version")
                         .executes(ctx -> reply(ctx.getSource(), versionInfo())))
                 .then(Commands.literal("mspt")
@@ -148,6 +151,7 @@ public class DebugCommand {
                                                 MANAGER.setupSeason(ctx.getSource().getServer()))))
                                 .then(Commands.literal("rewind")
                                         .then(Commands.argument("teleportAfter", StringArgumentType.word())
+                                                .suggests(SuggestionProviders.boolProvider())
                                                 .executes(ctx -> reply(ctx.getSource(),
                                                         MANAGER.startRewindOnly(ctx.getSource().getServer(),
                                                                 Boolean.parseBoolean(StringArgumentType.getString(ctx, "teleportAfter")))))))
@@ -175,17 +179,21 @@ public class DebugCommand {
                         .then(Commands.literal("settime")
                                 .then(Commands.argument("id", IntegerArgumentType.integer(1))
                                         .then(Commands.argument("field", StringArgumentType.word())
+                                                .suggests(SuggestionProviders.choicesWithHint("时间字段", "start", "end"))
                                                 .then(Commands.argument("value", StringArgumentType.word())
+                                                        .suggests(SuggestionProviders.choicesWithHint("now = 当前时间；也可填 epoch 毫秒", "now"))
                                                         .executes(ctx -> reply(ctx.getSource(), MANAGER.setTime(
                                                                 IntegerArgumentType.getInteger(ctx, "id"),
                                                                 StringArgumentType.getString(ctx, "field"),
                                                                 StringArgumentType.getString(ctx, "value"))))))))
                         .then(Commands.literal("fakeplayers")
                                 .then(Commands.argument("names", StringArgumentType.greedyString())
+                                        .suggests(SuggestionProviders.fakePlayersProvider())
                                         .executes(DebugCommand::fakePlayers)))
                         .then(Commands.literal("groups")
                                 .executes(ctx -> reply(ctx.getSource(), previewGroups(ctx, null)))
                                 .then(Commands.argument("names", StringArgumentType.greedyString())
+                                        .suggests(SuggestionProviders.playerListProvider())
                                         .executes(ctx -> reply(ctx.getSource(),
                                                 previewGroups(ctx, StringArgumentType.getString(ctx, "names"))))))
                         .then(Commands.literal("rewind")
@@ -211,19 +219,23 @@ public class DebugCommand {
                                                                 posToChunkZ(ctx, "pos"))))))
                                 .then(Commands.literal("set")
                                         .then(Commands.argument("dur", StringArgumentType.greedyString())
+                                                .suggests(SuggestionProviders.durationsProvider())
                                                 .executes(ctx -> reply(ctx.getSource(), MANAGER.setRewindDuration(
                                                         StringArgumentType.getString(ctx, "dur")))))))
                         .then(Commands.literal("track")
                                 .then(Commands.literal("replay")
                                         .then(Commands.argument("player", StringArgumentType.word())
+                                                .suggests(SuggestionProviders.knownPlayersProvider())
                                                 .then(Commands.argument("start", StringArgumentType.word())
                                                         .executes(ctx -> reply(ctx.getSource(),
                                                                 debugTrackReplay(ctx, 1.0)))
                                                         .then(Commands.argument("speed", StringArgumentType.word())
+                                                                .suggests(SuggestionProviders.speedProvider())
                                                                 .executes(ctx -> reply(ctx.getSource(),
                                                                         debugTrackReplay(ctx,
                                                                                 parseDoubleArg(ctx, "speed"))))
                                                                 .then(Commands.argument("cycle", StringArgumentType.word())
+                                                                        .suggests(SuggestionProviders.cyclesProvider())
                                                                         .executes(ctx -> reply(ctx.getSource(),
                                                                                 debugTrackReplay(ctx,
                                                                                         parseDoubleArg(ctx, "speed")))))))))
@@ -231,12 +243,14 @@ public class DebugCommand {
                                         .executes(ctx -> reply(ctx.getSource(),
                                                 com.shenqianye.samsara.track.TrackReplay.stop()))
                                         .then(Commands.argument("player", StringArgumentType.word())
+                                                .suggests(SuggestionProviders.knownPlayersProvider())
                                                 .executes(ctx -> reply(ctx.getSource(),
                                                         com.shenqianye.samsara.track.TrackReplay.stop(
                                                                 StringArgumentType.getString(ctx, "player"))))))
                                 .then(Commands.literal("status")
                                         .executes(ctx -> reply(ctx.getSource(), debugTrackStatus(ctx.getSource(), null)))
                                         .then(Commands.argument("player", StringArgumentType.word())
+                                                .suggests(SuggestionProviders.knownPlayersProvider())
                                                 .executes(ctx -> reply(ctx.getSource(), debugTrackStatus(ctx.getSource(),
                                                         StringArgumentType.getString(ctx, "player"))))))
                                 .then(TrackViewCommand.debugViewNode())
@@ -267,22 +281,18 @@ public class DebugCommand {
                                                         IntegerArgumentType.getInteger(ctx, "blocks"))))))
                                 .then(Commands.literal("birthreset")
                                         .then(Commands.argument("on", StringArgumentType.word())
+                                                .suggests(SuggestionProviders.boolProvider())
                                                 .executes(ctx -> reply(ctx.getSource(), MANAGER.setResetIndividualBirthpoint(
                                                         Boolean.parseBoolean(StringArgumentType.getString(ctx, "on"))))))))
                         .then(Commands.literal("claim")
                                 // debug claim give <dir> <dist>
                                 .then(Commands.literal("give")
                                         .then(Commands.argument("dir", StringArgumentType.word())
-                                                .suggests((ctx, builder) -> {
-                                                    for (String d : new String[]{
-                                                            "f", "b", "l", "r",
-                                                            "fl", "fr", "bl", "br",
-                                                            "dl", "dr", "c", "m",
-                                                            "sc", "x", "a"}) {
-                                                        builder.suggest(d);
-                                                    }
-                                                    return builder.buildFuture();
-                                                })
+                                                .suggests(SuggestionProviders.choices(DebugCommand::claimDirTooltip,
+                                                        "f", "b", "l", "r",
+                                                        "fl", "fr", "bl", "br",
+                                                        "dl", "dr", "c", "m",
+                                                        "sc", "x", "a"))
                                                 .then(Commands.argument("dist", IntegerArgumentType.integer(1, 16))
                                                         .executes(ctx -> reply(ctx.getSource(), debugGiveBanner(
                                                                 ctx.getSource(),
@@ -300,7 +310,9 @@ public class DebugCommand {
                                 // debug claim remove <x> <z>
                                 .then(Commands.literal("remove")
                                         .then(Commands.argument("x", IntegerArgumentType.integer())
+                                                .suggests(SuggestionProviders.chunkXProvider())
                                                 .then(Commands.argument("z", IntegerArgumentType.integer())
+                                                        .suggests(SuggestionProviders.chunkZProvider())
                                                         .executes(ctx -> reply(ctx.getSource(),
                                                                 debugRemoveNode(
                                                                         IntegerArgumentType.getInteger(ctx, "x"),
@@ -308,7 +320,9 @@ public class DebugCommand {
                                 // debug claim info <x> <z>
                                 .then(Commands.literal("info")
                                         .then(Commands.argument("x", IntegerArgumentType.integer())
+                                                .suggests(SuggestionProviders.chunkXProvider())
                                                 .then(Commands.argument("z", IntegerArgumentType.integer())
+                                                        .suggests(SuggestionProviders.chunkZProvider())
                                                         .executes(ctx -> {
                                                             net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> dim = net.minecraft.world.level.Level.OVERWORLD;
                                                             try { dim = ctx.getSource().getPlayerOrException().level().dimension(); }
@@ -364,10 +378,12 @@ public class DebugCommand {
                                                 .executes(ctx -> reply(ctx.getSource(), debugListParticles())))
                                         .then(Commands.literal("shared")
                                                 .then(Commands.argument("on_off", StringArgumentType.word())
+                                                        .suggests(SuggestionProviders.boolProvider())
                                                         .executes(ctx -> reply(ctx.getSource(),
                                                                 debugSetSharedDisplay(StringArgumentType.getString(ctx, "on_off"))))))
                                         .then(Commands.literal("global")
                                                 .then(Commands.argument("on_off", StringArgumentType.word())
+                                                        .suggests(SuggestionProviders.boolProvider())
                                                         .executes(ctx -> reply(ctx.getSource(),
                                                                 debugSetGlobalDisplay(StringArgumentType.getString(ctx, "on_off")))))))
                                 // debug claim delete dryrun|backup|execute|report
@@ -387,7 +403,9 @@ public class DebugCommand {
                                 // debug claim owner <x> <z> — 查看指定区块的旗帜归属
                                 .then(Commands.literal("owner")
                                         .then(Commands.argument("x", IntegerArgumentType.integer())
+                                                .suggests(SuggestionProviders.chunkXProvider())
                                                 .then(Commands.argument("z", IntegerArgumentType.integer())
+                                                        .suggests(SuggestionProviders.chunkZProvider())
                                                         .executes(ctx -> reply(ctx.getSource(),
                                                                 debugClaimOwner(
                                                                         IntegerArgumentType.getInteger(ctx, "x"),
@@ -429,24 +447,30 @@ public class DebugCommand {
         return Commands.literal("perm")
                 .then(Commands.literal("list")
                         .executes(ctx -> reply(ctx.getSource(), permList())))
+                // 语法说明：greedyString 必须位于末尾。旧写法 greedyString("command") + word("level")
+                // 的 level 分支永远解析不到，这里改为单个 greedyString 自己拆「路径 + 等级」。
                 .then(Commands.literal("set")
-                        .then(Commands.argument("command", StringArgumentType.greedyString())
-                                .then(Commands.argument("level", StringArgumentType.word())
-                                        .executes(ctx -> reply(ctx.getSource(),
-                                                permSet(ctx.getSource(),
-                                                        StringArgumentType.getString(ctx, "command"),
-                                                        StringArgumentType.getString(ctx, "level")))))))
+                        .then(Commands.argument("input", StringArgumentType.greedyString())
+                                .suggests(SuggestionProviders.permInputProvider())
+                                .executes(ctx -> replyOrErr(ctx,
+                                        permSet(ctx.getSource(),
+                                                StringArgumentType.getString(ctx, "input"))))))
                 .then(Commands.literal("reset")
                         .then(Commands.argument("command", StringArgumentType.greedyString())
+                                .suggests(SuggestionProviders.commandPathProvider())
                                 .executes(ctx -> reply(ctx.getSource(),
                                         permReset(StringArgumentType.getString(ctx, "command"))))))
                 .then(Commands.literal("info")
                         .then(Commands.argument("command", StringArgumentType.greedyString())
+                                .suggests(SuggestionProviders.commandPathProvider())
                                 .executes(ctx -> reply(ctx.getSource(),
                                         permInfo(StringArgumentType.getString(ctx, "command"))))))
                 .then(Commands.literal("owner")
                         .then(Commands.argument("sub", StringArgumentType.word())
+                                .suggests(SuggestionProviders.choicesWithHint("add=加入 owner 名单；remove=移出",
+                                        "add", "remove"))
                                 .then(Commands.argument("name", StringArgumentType.word())
+                                        .suggests(SuggestionProviders.knownPlayersProvider())
                                         .executes(ctx -> reply(ctx.getSource(),
                                                 permOwner(StringArgumentType.getString(ctx, "sub"),
                                                         StringArgumentType.getString(ctx, "name")))))));
@@ -546,7 +570,20 @@ public class DebugCommand {
         return sb.toString().trim();
     }
 
-    private static String permSet(CommandSourceStack src, String command, String levelStr) {
+    /**
+     * perm set：单个 greedyString 拆成「命令路径 + 等级」。
+     * 路径本身可能含空格（如 {@code season create}），因此以最后一个空格为界拆等级。
+     *
+     * @return 成功/错误信息；参数不足时返回 null 让 replyOrErr 回错误
+     */
+    private static String permSet(CommandSourceStack src, String input) {
+        String trimmed = input == null ? "" : input.trim();
+        int split = trimmed.lastIndexOf(' ');
+        if (split <= 0 || split >= trimmed.length() - 1) {
+            return null;
+        }
+        String command = trimmed.substring(0, split).trim();
+        String levelStr = trimmed.substring(split + 1).trim();
         var config = com.shenqianye.samsara.permission.PermissionConfig.getInstance();
         var playerLevel = com.shenqianye.samsara.permission.PermissionChecker.getPlayerLevel(src);
         var newLevel = com.shenqianye.samsara.permission.PermissionLevel.fromString(levelStr);
@@ -716,6 +753,32 @@ public class DebugCommand {
         player.getInventory().add(banner);
 
         return "已给予圈地旗：" + dir + " " + dist + " 区块";
+    }
+
+    /**
+     * debug give 的方向补全说明。
+     * <p>
+     * 方向字母按**图案在旗帜上的位置**命名（观看者视角，与 MC 图案 id 同一视角）。
+     */
+    private static String claimDirTooltip(String dir) {
+        return switch (dir) {
+            case "f" -> "前：stripe_top（单条纹·线）";
+            case "b" -> "后：stripe_bottom（单条纹·线）";
+            case "l" -> "左：stripe_left（单条纹·线）";
+            case "r" -> "右：stripe_right（单条纹·线）";
+            case "fl" -> "前左：square_top_left（角）";
+            case "fr" -> "前右：square_top_right（角）";
+            case "bl" -> "后左：square_bottom_left（角）";
+            case "br" -> "后右：square_bottom_right（角）";
+            case "dl" -> "斜左下：stripe_downleft";
+            case "dr" -> "斜右下：stripe_downright";
+            case "c" -> "竖条：stripe_center";
+            case "m" -> "横条：stripe_middle";
+            case "sc" -> "四正：straight_cross（实心菱形）";
+            case "x" -> "四斜：cross（实心正方形）";
+            case "a" -> "全部 8 方向：border（实心正方形）";
+            default -> "方向字母";
+        };
     }
 
     /** debug list：列出所有已注册的圈地旗帜 */
@@ -971,29 +1034,61 @@ public class DebugCommand {
         return "全图显示已设为: " + (global ? "ON（不在管理区域内也显示边界）" : "OFF（仅管理区域内显示）");
     }
 
-    private static String help() {
-        return "周目管理 samsara 指令：\n"
-                + "玩家命令：\n"
-                + "  /samsara claim info [x] [z] —— 查看区块圈地信息\n"
-                + "  /samsara claim boundary —— 切换边界持续显示\n"
-                + "  /samsara season —— 周目业务（status/info/create/start/end/skip/respawn-groups）\n"
-                + "  /samsara mspt|tps —— 服务器性能（别名 /mspt /tps）\n"
-                + "  /samsara track view|list —— 只读回看（别名 /track view|list）\n"
-                + "  /samsara where [broadcast] —— 查看自己的维度与坐标（broadcast=广播给全服）\n"
-                + "  /samsara tpa|tpahere <玩家> —— 请求传送到对方 / 对方传送到你（别名 /tpa /tpahere）\n"
-                + "  /samsara tpaccept|tpdeny|tpcancel —— 同意/拒绝/取消传送请求（别名 /tpaccept /tpyes /tpdeny /tpno /tpcancel）\n"
-                + "  /samsara version —— 模组版本号（别名 /version）\n"
-                + "管理员命令（/samsara debug ...）：\n"
-                + "  debug info [on|off] —— 调试信息开关（不带参数=切换）\n"
-                + "  debug claim give|list|rebuild|scan|remove|info|particle|delete|owner —— 圈地管理\n"
-                + "    delete dryrun|backup|execute|report —— 删除未保留区块生命周期\n"
-                + "    owner <x> <z> —— 查看区域归属（旗帜放置者）\n"
-                + "  debug create|settime|setup|teleport —— 周目数据注入与测试\n"
-                + "  debug status|json|reload|reset|config|settings —— 状态与配置\n"
-                + "  debug fakeplayers|groups —— 测试数据注入与分组预览\n"
-                + "  debug rewind|diff|flow —— 倒流与差异控制\n"
-                + "  debug track replay <玩家> <开始时刻> [倍速] [周目] | stop [玩家|all] | status | sweep —— 轨迹回放\n"
-                + "  debug perm —— 权限管理";
+    /**
+     * {@code /samsara}：可点击指令列表。
+     * <p>
+     * 只读命令用 {@link ChatUi#run}（点击即执行），破坏性/管理员/需要参数的命令用
+     * {@link ChatUi#suggest}（点击只填入）。管理员按钮再按 {@code PermissionChecker} 决定是否显示，
+     * 避免普通玩家看到点了也会被拒绝的按钮。
+     */
+    private static int sendHelp(CommandSourceStack src) {
+        String head = ChatFormat.getFirstPrefix();
+        String cont = ChatFormat.getContinuePrefix();
+        ChatUi.send(src,
+                ChatUi.text(head + "指令列表（青色=点击执行 · 黄色=点击填入，不执行）", ChatFormatting.WHITE),
+                ChatUi.text(cont + "玩家：", ChatFormatting.GRAY),
+                ChatUi.line(ChatUi.text(cont, ChatFormatting.GRAY),
+                        ChatUi.run("版本", "/samsara version", "查看模组与游戏版本"),
+                        ChatUi.run("MSPT", "/samsara mspt", "查看服务器 MSPT"),
+                        ChatUi.run("TPS", "/samsara tps", "查看服务器 TPS")),
+                ChatUi.line(ChatUi.text(cont, ChatFormatting.GRAY),
+                        ChatUi.run("周目状态", "/samsara season status", "查看当前周目与周目列表"),
+                        ChatUi.run("周目信息", "/samsara season info", "查看世界种子与出生点")),
+                ChatUi.line(ChatUi.text(cont, ChatFormatting.GRAY),
+                        ChatUi.run("我的位置", "/samsara where", "查看自己的维度、坐标、区块与朝向"),
+                        ChatUi.run("圈地信息", "/samsara claim info", "查看当前区块的圈地信息"),
+                        ChatUi.run("边界开关", "/samsara claim boundary", "切换边界持续显示")),
+                ChatUi.line(ChatUi.text(cont, ChatFormatting.GRAY),
+                        ChatUi.suggest("回看时段", "/samsara track list ", "填入 /samsara track list <玩家>"),
+                        ChatUi.suggest("向玩家传送", "/samsara tpa ", "填入 /samsara tpa <玩家>"),
+                        ChatUi.suggest("请玩家过来", "/samsara tpahere ", "填入 /samsara tpahere <玩家>")),
+                ChatUi.text(cont + "管理员（点击只填入，仍受权限检查）：", ChatFormatting.GRAY),
+                ChatUi.line(ChatUi.text(cont, ChatFormatting.GRAY),
+                        ChatUi.suggestIfPermitted(src, "season create", "新周目",
+                                "/samsara season create ", "填入 /samsara season create <名称> [模式]"),
+                        ChatUi.suggestIfPermitted(src, "season start", "开始周目",
+                                "/samsara season start", "危险：需二次确认"),
+                        ChatUi.suggestIfPermitted(src, "season end", "结束周目",
+                                "/samsara season end", "结束当前周目"),
+                        ChatUi.suggestIfPermitted(src, "season skip", "跳过周目",
+                                "/samsara season skip", "跳过当前周目")),
+                ChatUi.line(ChatUi.text(cont, ChatFormatting.GRAY),
+                        ChatUi.suggestIf(isOwner(src), "调试状态",
+                                "/samsara debug status", "查看调试总览"),
+                        ChatUi.suggestIf(isOwner(src), "圈地管理",
+                                "/samsara debug claim list", "查看全部圈地旗帜"),
+                        ChatUi.suggestIf(isOwner(src), "权限配置",
+                                "/samsara debug perm list", "查看命令权限等级"),
+                        ChatUi.suggestIf(isOwner(src), "倒流预览",
+                                "/samsara debug rewind preview", "预览将倒流的区块（不执行）")),
+                ChatUi.line(ChatUi.text(cont, ChatFormatting.GRAY),
+                        ChatUi.suggestIf(isOwner(src), "轨迹回放",
+                                "/samsara debug track replay ", "填入 /samsara debug track replay <玩家> <开始时刻>"),
+                        ChatUi.suggestIf(isOwner(src), "全部调试命令",
+                                "/samsara debug ", "点击填入后自行补参数")),
+                ChatUi.text(cont + "完整命令树：输入 /samsara <Tab> 逐级补全；玩家名、周目、时长、回看参数均支持 Tab。",
+                        ChatFormatting.GRAY));
+        return 1;
     }
 
     /** /samsara version：从 FabricLoader 取模组版本 + 显示名 + 游戏版本 */
@@ -1069,7 +1164,8 @@ public class DebugCommand {
     private static int replyOrErr(CommandContext<CommandSourceStack> ctx, String message) {
         if (message == null) {
             ctx.getSource().sendSuccess(() -> ChatFormat.formatDebugComponent(
-                    "未知配置项（可用 /samsara debug config 查看全部）"), false);
+                    "参数不足或未知配置项（perm set 用法：/samsara debug perm set <命令路径> <等级>；"
+                            + "配置项可用 /samsara debug config 查看全部）"), false);
             return 0;
         }
         return reply(ctx.getSource(), message);
