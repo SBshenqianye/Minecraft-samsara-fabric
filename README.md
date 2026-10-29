@@ -19,7 +19,7 @@
 | 活动记录 | ✅ 可用 | 静默记录登录、在线时长与本次会话的原版统计增量，供事后 Web 统计 |
 | 玩家轨迹 | ✅ 可用 | 5Hz 采样位置/朝向，按「世界 + 周目 + 日期」留档并按年龄几何简化；回放为原版人偶（Mannequin），支持多人同屏、攻击/交互即捕捉 |
 | 回看模式 | ✅ 可用 | `/samsara track view` 只读回看任意时间段：倍速、时间窗、跟随/旁观/发光/名牌、暂停恢复、倒放、自动瞄准（死区平滑修正，可即时开关）、进度跳转；回看人偶始终不可交互，但旁观左键可进入人偶视角；观看者全程旁观，可在 32 格内自由活动，超出/人偶瞬移/换维度自动跟随；会话期间免伤，结束恢复观看者，不写轨迹/差异/截断点/存档/周目数据 |
-| 回看控制 | ✅ 可用 | 聊天栏可点击控制条（倍速/暂停/继续/倒放/对齐/自瞄/±10s/±30s/25%/50%/75%/停止）；`/samsara track list` 条目可点击自动填入命令；`/samsara help` 与 `/samsara` 等价 |
+| 回看控制 | ✅ 可用 | 聊天栏可点击控制条（倍速/暂停/继续/倒放/对齐/自瞄/拖动/±10s/±30s/25%/50%/75%/停止）；`拖动模式`用 A 后退、D 快进、空格暂停、Shift 加速（服务端读取，无需客户端模组；滚轮不可用）；`/samsara track list` 条目可点击自动填入命令；`/samsara help` 与 `/samsara` 等价 |
 | 可点击指令 | ✅ 可用 | `/samsara` 帮助、`season status/info`、`claim info`、`where` 等只读命令点击即执行；`season start`、`debug *`、`perm set` 等危险命令点击只填入、不执行 |
 | Tab 补全 | ✅ 可用 | 玩家名、`cycleN`、回看开始时刻/参数/时长/倍速、周目模式、权限路径与等级、区块坐标、布尔开关等；补全项带说明，不按键读盘 |
 | 权限 | ✅ 可用 | 四级权限，命令所需等级可配置，支持 owner 名单 |
@@ -41,7 +41,7 @@
 | 开新周目 | `/samsara season create <名称>` → `/samsara season start`（开始前二次确认） |
 | 管理/调试 | `/samsara debug ...`（owner；圈地、倒流、轨迹、配置、测试数据） |
 | 回放玩家轨迹 | `/samsara debug track replay <玩家> <开始时刻> [倍速] [周目]` · `track stop [玩家\\|all]` · `track status` |
-| 回看历史轨迹 | `/samsara track view <玩家> <开始时间> [--speed 4 --duration 30m --follow --aim]` · `view stop/status/pause/resume/align/seek/aim` · `track list <玩家>`（短别名 `/track`） |
+| 回看历史轨迹 | `/samsara track view <玩家> <开始时间> [--speed 4 --duration 30m --follow --aim]` · `view stop/status/pause/resume/align/seek/aim/scrub` · `track list <玩家>`（短别名 `/track`） |
 | 看自己的坐标/维度 | `/samsara where`；`/samsara where broadcast` 广播全服 |
 | 传送到别人/让别人过来 | `/tpa <玩家>`、`/tpahere <玩家>`；对方 `/tpaccept` 或 `/tpdeny`；发起者 `/tpcancel` |
 | 看版本 | `/samsara version`（别名 `/version`） |

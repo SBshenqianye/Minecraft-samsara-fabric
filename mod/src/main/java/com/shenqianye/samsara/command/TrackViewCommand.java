@@ -99,6 +99,12 @@ public final class TrackViewCommand {
                         .then(Commands.argument("input", StringArgumentType.greedyString())
                                 .suggests(SuggestionProviders.seekProvider())
                                 .executes(TrackViewCommand::seek)))
+                .then(Commands.literal("scrub")
+                        .executes(ctx -> scrub(ctx, ""))
+                        .then(Commands.argument("input", StringArgumentType.greedyString())
+                                .suggests(SuggestionProviders.scrubProvider())
+                                .executes(ctx -> scrub(ctx,
+                                        StringArgumentType.getString(ctx, "input")))))
                 .then(Commands.literal("aim")
                         .executes(ctx -> aim(ctx, ""))
                         .then(Commands.argument("input", StringArgumentType.greedyString())
@@ -238,6 +244,27 @@ public final class TrackViewCommand {
             }
         }
         String msg = ViewManager.getInstance().setAim(ctx.getSource().getServer(), viewer,
+                target, on, isAdmin(ctx.getSource()));
+        return reply(ctx.getSource(), msg);
+    }
+
+    private static int scrub(CommandContext<CommandSourceStack> ctx, String raw) {
+        ServerPlayer viewer = ctx.getSource().getPlayer();
+        Boolean on = null;
+        String target = null;
+        for (String token : raw.trim().split("\\s+")) {
+            if (token.isBlank()) {
+                continue;
+            }
+            if (token.equalsIgnoreCase("on") || token.equalsIgnoreCase("true")) {
+                on = true;
+            } else if (token.equalsIgnoreCase("off") || token.equalsIgnoreCase("false")) {
+                on = false;
+            } else {
+                target = token;
+            }
+        }
+        String msg = ViewManager.getInstance().setScrub(ctx.getSource().getServer(), viewer,
                 target, on, isAdmin(ctx.getSource()));
         return reply(ctx.getSource(), msg);
     }

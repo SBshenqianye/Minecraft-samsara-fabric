@@ -53,6 +53,15 @@ public final class ViewSession {
     double aimSpeed = ViewOptions.DEFAULT_AIM_SPEED;
     boolean aimPitch = true;
     long lastAimAtMs;
+
+    /** 拖动模式：A/D 倒退/快进，空格暂停，Shift 加速；不读取滚轮 */
+    boolean scrubMode;
+    String scrubAnchorDim;
+    double scrubAnchorX;
+    double scrubAnchorY;
+    double scrubAnchorZ;
+    boolean lastScrubJump;
+    long lastScrubAtMs;
     boolean truncated;
     boolean cutoffApplied;
     boolean restored;

@@ -230,6 +230,9 @@ public final class ViewManager {
                 restore(s, "观看者换维度/被外部传送");
                 continue;
             }
+            if (s.scrubMode) {
+                handleScrub(server, s, player, now);
+            }
             if (s.state == ViewSession.State.PLAYING) {
                 long trackTime = s.trackTime(now);
                 if (s.direction() > 0 && trackTime >= s.endTrackMs) {
@@ -244,7 +247,7 @@ public final class ViewManager {
                     restore(s, "人偶所在维度不可用");
                     continue;
                 }
-                if (s.options.follow()) {
+                if (s.options.follow() && !s.scrubMode) {
                     follow(s, player, trackTime);
                 }
                 if (s.aimEnabled) {
@@ -610,6 +613,75 @@ public final class ViewManager {
                 Relative.Y_ROT, Relative.X_ROT));
     }
 
+    /**
+     * 拖动模式（仅服务端）：读取客户端本来就会发送的移动输入。
+     * A/D 倒退/快进，空格暂停/继续，Shift 加速；滚轮在 vanilla 旁观下不发包，无法读取。
+     */
+    private void handleScrub(MinecraftServer server, ViewSession s, ServerPlayer player, long now) {
+        if (s.cursor == null) {
+            return;
+        }
+        if (s.scrubAnchorDim == null) {
+            anchorScrub(s, player);
+        }
+        // 拖动期间锚定位置，只保留视角旋转；避免 A/D/空格/Shift 同时把镜头飞走
+        if (player.distanceToSqr(s.scrubAnchorX, s.scrubAnchorY, s.scrubAnchorZ) > 1.0E-6) {
+            player.teleportTo(player.level(), s.scrubAnchorX, s.scrubAnchorY, s.scrubAnchorZ,
+                    Set.of(), player.getYRot(), player.getXRot(), false);
+            player.setDeltaMovement(Vec3.ZERO);
+            player.fallDistance = 0;
+            s.lastWriteDim = player.level().dimension().identifier().toString();
+            s.lastWriteX = s.scrubAnchorX;
+            s.lastWriteY = s.scrubAnchorY;
+            s.lastWriteZ = s.scrubAnchorZ;
+            s.lastWriteAtMs = now;
+        }
+        var input = player.getLastClientInput();
+        if (input == null) {
+            return;
+        }
+        if (input.jump() && !s.lastScrubJump) {
+            if (s.state == ViewSession.State.PLAYING) {
+                s.pause();
+                player.sendOverlayMessage(Component.literal("[回看] 已暂停"));
+            } else if (s.state == ViewSession.State.PAUSED) {
+                s.resume();
+                player.sendOverlayMessage(Component.literal("[回看] 已继续"));
+            }
+        }
+        s.lastScrubJump = input.jump();
+
+        double dt = Math.min(0.25, (now - s.lastScrubAtMs) / 1000.0);
+        s.lastScrubAtMs = now;
+        long current = s.trackTime(now);
+        long target = ViewScrub.target(current, s.cursor.startMs(), s.endTrackMs,
+                input.left(), input.right(), input.shift(), dt);
+        if (target != current) {
+            s.seekTo(target);
+            if (!updateMannequin(server, s, target)) {
+                restore(s, "拖动到不可用维度");
+                return;
+            }
+            if (s.display != null) {
+                float progress = s.progress(now);
+                s.display.update("[回看] " + s.targetName + " · "
+                                + Math.round(progress * 100) + "% · 拖动"
+                                + (s.state == ViewSession.State.PAUSED ? "（暂停）" : ""),
+                        progress);
+            }
+        }
+    }
+
+    private void anchorScrub(ViewSession s, ServerPlayer player) {
+        s.scrubAnchorDim = player.level().dimension().identifier().toString();
+        s.scrubAnchorX = player.getX();
+        s.scrubAnchorY = player.getY();
+        s.scrubAnchorZ = player.getZ();
+        s.lastScrubAtMs = System.currentTimeMillis();
+        var input = player.getLastClientInput();
+        s.lastScrubJump = input != null && input.jump();
+    }
+
     /** 人偶被移除/替换前，如果相机正接管在它身上，先归还观看者。 */
     private static void releaseCamera(MinecraftServer server, ViewSession s, Entity mannequin) {
         if (server == null || mannequin == null) {
@@ -650,6 +722,7 @@ public final class ViewManager {
                 ChatUi.run("倒放/正放", "/samsara track view reverse", "切换正放与倒放"),
                 ChatUi.run("对齐", "/samsara track view align", "一键回到人偶观察点"),
                 ChatUi.run("自瞄", "/samsara track view aim", "即时开关自动瞄准"),
+                ChatUi.run("拖动", "/samsara track view scrub", "A/D 后退/快进，空格暂停，Shift 加速"),
                 ChatUi.run("停止", "/samsara track view stop", "停止回看并恢复状态"));
         MutableComponent line3 = ChatUi.line(
                 ChatUi.text("[进度]", ChatFormatting.GRAY),
@@ -1057,6 +1130,44 @@ public final class ViewManager {
         return "自动瞄准已" + (s.aimEnabled ? "开启" : "关闭");
     }
 
+    /** 拖动模式开关（F-102）：A/D/空格/Shift；滚轮不可用。 */
+    public synchronized String setScrub(MinecraftServer server, ServerPlayer actor, String target,
+                                        Boolean on, boolean allowOthers) {
+        ViewSession s = findSession(server, actor, target);
+        if (s == null) {
+            return target == null || target.isBlank() ? "你当前没有进行中的回看"
+                    : "没有该观看者的进行中回看: " + target;
+        }
+        if (actor != null && !actor.getUUID().equals(s.viewer) && !allowOthers) {
+            return "控制他人回看需要管理员权限";
+        }
+        if (s.state != ViewSession.State.PLAYING && s.state != ViewSession.State.PAUSED) {
+            return "当前状态不能开启拖动: " + s.state;
+        }
+        boolean enable = on == null ? !s.scrubMode : on;
+        if (enable && !s.scrubMode) {
+            ServerPlayer viewer = server.getPlayerList().getPlayer(s.viewer);
+            if (viewer == null) {
+                return "观看者不在线";
+            }
+            s.scrubMode = true;
+            anchorScrub(s, viewer);
+            viewer.sendOverlayMessage(Component.literal(
+                    "[拖动] A 后退 · D 快进 · 空格暂停 · Shift 加速（滚轮不可用）"));
+            return "拖动模式已开启：A 后退 / D 快进 / 空格暂停 / Shift 加速；滚轮不可用";
+        }
+        if (!enable && s.scrubMode) {
+            s.scrubMode = false;
+            s.scrubAnchorDim = null;
+            ServerPlayer viewer = server.getPlayerList().getPlayer(s.viewer);
+            if (viewer != null) {
+                viewer.sendOverlayMessage(Component.literal("[拖动] 已关闭"));
+            }
+            return "拖动模式已关闭";
+        }
+        return enable ? "拖动模式已经是开启状态" : "拖动模式已经是关闭状态";
+    }
+
     /** 命令层判断某名字是否是正在观看的回看者（用于 seek 的“玩家 + 参数”拆词）。 */
     public synchronized boolean hasViewerSession(MinecraftServer server, String name) {
         return name != null && !name.isBlank() && findSession(server, null, name) != null;
@@ -1141,7 +1252,8 @@ public final class ViewManager {
                 .append(" · aim=").append(s.aimEnabled
                         ? String.format("on（%.0f°/%.0f° · %.0f°/s）",
                         s.aimDeadzone, s.aimEdge, s.aimSpeed)
-                        : "off");
+                        : "off")
+                .append(" · 拖动=").append(s.scrubMode ? "on" : "off");
         if (s.cutoffApplied) {
             sb.append("\n⚠ 该段被捕捉截断（截断之后不播）");
         }

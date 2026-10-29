@@ -625,6 +625,12 @@ public final class SuggestionProviders {
                 s -> "自动瞄准" + (s.equals("on") ? "开启" : "关闭"));
     }
 
+    /** 拖动模式开关候选 */
+    public static SuggestionProvider<CommandSourceStack> scrubProvider() {
+        return (ctx, builder) -> offer(builder, List.of("on", "off"),
+                s -> "拖动模式" + (s.equals("on") ? "开启（A/D/空格/Shift）" : "关闭"));
+    }
+
     /** 固定候选（true/false、start/end、add/remove 等小枚举） */
     public static SuggestionProvider<CommandSourceStack> choices(String... values) {
         return choices(null, values);
