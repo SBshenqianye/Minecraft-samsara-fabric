@@ -5,7 +5,7 @@
 
 ## 当前版本
 
-**v0.13.0** · Minecraft **26.3** · Fabric Loader **0.20.1** · Java **25**
+**v0.14.0** · Minecraft **26.3** · Fabric Loader **0.20.1** · Java **25**
 
 ## 能做什么
 
@@ -18,7 +18,9 @@
 | 安全删除 | ⚠ 部分可用 | 预览、备份、执行、报告；整档压缩备份尚未实现 |
 | 活动记录 | ✅ 可用 | 静默记录登录、在线时长与本次会话的原版统计增量，供事后 Web 统计 |
 | 玩家轨迹 | ✅ 可用 | 5Hz 采样位置/朝向，按「世界 + 周目 + 日期」留档并按年龄几何简化；回放为原版人偶（Mannequin），支持多人同屏、攻击/交互即捕捉 |
+| 回看模式 | ✅ 可用 | `/samsara track view` 只读回看任意时间段：倍速、时间窗、跟随/旁观/可交互/发光/名牌、暂停恢复；结束恢复观看者，不写轨迹/差异/截断点/存档/周目数据 |
 | 权限 | ✅ 可用 | 四级权限，命令所需等级可配置，支持 owner 名单 |
+| 位置查询 | ✅ 可用 | `/samsara where` 查看自己的维度与坐标（可带区块、朝向），`where broadcast` 广播全服；命令启用与输出字段在 `config/samsara/commands.json` 配置 |
 | 命令短别名 | ⚠ 部分可用 | 目前只有 `/mspt`、`/tps`，其余使用 `/samsara` 全名 |
 | 新世界模式 | 🚧 规划中 | 旧世界入栈、新建世界、跨世界传送、栈顶限制 |
 | 全员同意开新周目 | 🚧 规划中 | 无管理员时由在线玩家发起并全员同意 |
@@ -36,6 +38,8 @@
 | 开新周目 | `/samsara season create <名称>` → `/samsara season start`（开始前二次确认） |
 | 管理/调试 | `/samsara debug ...`（owner；圈地、倒流、轨迹、配置、测试数据） |
 | 回放玩家轨迹 | `/samsara debug track replay <玩家> <开始时刻> [倍速] [周目]` · `track stop [玩家\\|all]` · `track status` |
+| 回看历史轨迹 | `/samsara track view <玩家> <开始时间> [--speed 4 --duration 30m --follow --spectator]` · `view stop/status/pause/resume` · `track list <玩家>`（短别名 `/track`） |
+| 看自己的坐标/维度 | `/samsara where`；`/samsara where broadcast` 广播全服 |
 | 看版本 | `/samsara version` |
 
 > 周目管理在 `/samsara season`，调试与圈地管理在 `/samsara debug`；游戏内输入 `/samsara` 可看帮助。
@@ -75,6 +79,8 @@ Linux/macOS 用 `./gradlew build`。产物是 `mod/build/libs/samsara-<版本>.j
 ## 数据放在哪
 
 所有模组数据都在 `config/samsara/`，**不写入存档目录 `world/`，也不在服务端根目录散落文件**。包括周目、圈地、倒流、玩家轨迹、备份、权限与活动记录。
+
+命令功能开关在 `config/samsara/commands.json`：`where.enabled` 控制是否启用 `/samsara where`，`where.broadcast` 控制是否允许广播，`where.broadcastCooldownSeconds` 是广播冷却（0=不限），`where.showCoordinates/showDimension/showChunk/showFacing` 控制输出字段；改完执行 `/samsara debug reload` 生效，无需重启。
 
 活动记录按天保存，只写不读：登录、在线时长，以及本次会话的移动、挖掘、使用、击杀、交易等原版统计增量。没有 tick 轮询，也不提供游戏内查询命令；字段与开销见[《设计规范》](docs/设计规范.md)的〈活动记录：静默采集约定〉。
 

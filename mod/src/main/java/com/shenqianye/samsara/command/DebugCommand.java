@@ -115,6 +115,8 @@ public class DebugCommand {
                         .executes(ctx -> reply(ctx.getSource(), tps())))
                 .then(SeasonCommand.seasonNode())
                 .then(ClaimCommand.claimNode())
+                .then(TrackViewCommand.trackNode())
+                .then(WhereCommand.whereNode())
                 .then(Commands.literal("debug")
                         .requires(src -> isOwner(src))
                         // debug info — 切换式
@@ -151,7 +153,9 @@ public class DebugCommand {
                                 .executes(ctx -> reply(ctx.getSource(), MANAGER.rawJson()
                                         + "\n\n↑ season.json 位置: " + MANAGER.configPath())))
                         .then(Commands.literal("reload")
-                                .executes(ctx -> reply(ctx.getSource(), MANAGER.reload())))
+                                .executes(ctx -> reply(ctx.getSource(), MANAGER.reload()
+                                        + "\n" + com.shenqianye.samsara.config.CommandConfig
+                                        .getInstance().reload())))
                         .then(Commands.literal("reset")
                                 .executes(ctx -> reply(ctx.getSource(), doReset())))
                         .then(Commands.literal("create")
@@ -230,6 +234,8 @@ public class DebugCommand {
                                         .then(Commands.argument("player", StringArgumentType.word())
                                                 .executes(ctx -> reply(ctx.getSource(), debugTrackStatus(ctx.getSource(),
                                                         StringArgumentType.getString(ctx, "player"))))))
+                                .then(TrackViewCommand.debugViewNode())
+                                .then(TrackViewCommand.listNode())
                                 .then(Commands.literal("sweep")
                                         .executes(ctx -> {
                                             com.shenqianye.samsara.track.TrackRecorder.getInstance().sweepAsync();
@@ -384,6 +390,8 @@ public class DebugCommand {
                         .then(permNode()));
 
         dispatcher.register(samsaraNode);
+        // 短别名：/track ...（冲突时按〈命令谦让〉让位，不抢占）
+        TrackViewCommand.registerAlias(dispatcher);
 
         // 条件别名：/mspt 和 /tps（仅当其他模组未注册时）
         boolean hasMspt = dispatcher.getRoot().getChild("mspt") != null;
@@ -952,6 +960,8 @@ public class DebugCommand {
                 + "  /samsara claim boundary —— 切换边界持续显示\n"
                 + "  /samsara season —— 周目业务（status/info/create/start/end/skip/respawn-groups）\n"
                 + "  /samsara mspt|tps —— 服务器性能（别名 /mspt /tps）\n"
+                + "  /samsara track view|list —— 只读回看（别名 /track view|list）\n"
+                + "  /samsara where [broadcast] —— 查看自己的维度与坐标（broadcast=广播给全服）\n"
                 + "  /samsara version —— 模组版本号\n"
                 + "管理员命令（/samsara debug ...）：\n"
                 + "  debug info [on|off] —— 调试信息开关（不带参数=切换）\n"

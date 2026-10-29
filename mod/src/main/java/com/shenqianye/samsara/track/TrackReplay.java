@@ -228,6 +228,11 @@ public final class TrackReplay {
         return sb.toString();
     }
 
+    /** 该目标是否已有捕捉式回放进行中（只读查询；回看 F-92 互斥检查用） */
+    public static synchronized boolean isReplaying(UUID uuid) {
+        return ACTIVE.containsKey(uuid);
+    }
+
     /** 每 tick 插值推进（由 Samsara 注册） */
     public static synchronized void tick(MinecraftServer server) {
         if (ACTIVE.isEmpty()) {

@@ -41,6 +41,9 @@ public class PermissionConfig {
         DEFAULTS.put("season status", PermissionLevel.USER);
         DEFAULTS.put("season respawn-groups", PermissionLevel.OWNER);
 
+        // where 命令（玩家自查坐标；广播同样沿用 "where" 的等级）
+        DEFAULTS.put("where", PermissionLevel.USER);
+
         // claim 命令
         DEFAULTS.put("claim give", PermissionLevel.OP);
         DEFAULTS.put("claim list", PermissionLevel.USER);
