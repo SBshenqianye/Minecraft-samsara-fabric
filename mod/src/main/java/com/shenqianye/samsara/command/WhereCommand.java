@@ -4,6 +4,7 @@ import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.shenqianye.samsara.command.ui.ChatUi;
 import com.shenqianye.samsara.config.CommandConfig;
+import com.shenqianye.samsara.output.OutputRenderer;
 import com.shenqianye.samsara.permission.PermissionChecker;
 import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
@@ -55,11 +56,21 @@ public final class WhereCommand {
         CommandSourceStack src = ctx.getSource();
         ServerPlayer player = src.getPlayer();
         if (player == null) {
-            return reply(src, "该命令需要以玩家身份执行（控制台没有位置）");
+            return templateReply(src, "where.console", Map.of());
         }
-        String detail = describe(player);
 
         if (!broadcast) {
+            if (!whereAnyFieldEnabled()) {
+                return templateReply(src, "where.allOff", Map.of("file", "commands.yml"));
+            }
+            if (whereAllFieldsEnabled()) {
+                Map<String, Object> values = values(player);
+                Component component = OutputRenderer.render("where.result", values, src,
+                        key -> CommandConfig.getInstance().isWhereBroadcastEnabled());
+                ChatUi.send(src, component);
+                return 1;
+            }
+            String detail = describe(player);
             MutableComponent broadcastButton = ChatUi.runIfPermitted(src, "where broadcast",
                     "广播位置", "/samsara where broadcast", "把你的位置广播给全服（有冷却）");
             MutableComponent action = CommandConfig.getInstance().isWhereBroadcastEnabled()
@@ -77,17 +88,60 @@ public final class WhereCommand {
             long remainMs = cooldown * 1000L - (now - last);
             if (remainMs > 0) {
                 long remainSeconds = (remainMs + 999) / 1000;
-                return reply(src, "广播冷却中，请 " + remainSeconds + " 秒后再试");
+                return templateReply(src, "where.cooldown",
+                        Map.of("seconds", remainSeconds));
             }
         }
         LAST_BROADCAST.put(player.getUUID(), now);
 
-        String message = player.getGameProfile().name() + " 的位置\n" + detail;
-        Component component = ChatFormat.formatComponent(message);
+        Component component;
+        if (whereAnyFieldEnabled() && whereAllFieldsEnabled()) {
+            Map<String, Object> values = values(player);
+            values.put("player", player.getGameProfile().name());
+            component = OutputRenderer.render("where.broadcast", values, src, null);
+        } else {
+            String message = player.getGameProfile().name() + " 的位置\n" + describe(player);
+            component = ChatFormat.formatComponent(message);
+        }
         for (ServerPlayer target : src.getServer().getPlayerList().getPlayers()) {
             target.sendSystemMessage(component);
         }
         return 1;
+    }
+
+    private static boolean whereAllFieldsEnabled() {
+        CommandConfig config = CommandConfig.getInstance();
+        return config.whereShowDimension() && config.whereShowCoordinates()
+                && config.whereShowChunk() && config.whereShowFacing();
+    }
+
+    private static boolean whereAnyFieldEnabled() {
+        CommandConfig config = CommandConfig.getInstance();
+        return config.whereShowDimension() || config.whereShowCoordinates()
+                || config.whereShowChunk() || config.whereShowFacing();
+    }
+
+    private static Map<String, Object> values(ServerPlayer player) {
+        CommandConfig config = CommandConfig.getInstance();
+        ServerLevel level = player.level();
+        BlockPos pos = player.blockPosition();
+        Map<String, Object> values = new java.util.LinkedHashMap<>();
+        if (config.whereShowDimension()) {
+            values.put("dimension", dimensionName(level));
+        }
+        if (config.whereShowCoordinates()) {
+            values.put("x", pos.getX());
+            values.put("y", pos.getY());
+            values.put("z", pos.getZ());
+        }
+        if (config.whereShowChunk()) {
+            values.put("chunkX", pos.getX() >> 4);
+            values.put("chunkZ", pos.getZ() >> 4);
+        }
+        if (config.whereShowFacing()) {
+            values.put("facing", facingName(player.getDirection()));
+        }
+        return values;
     }
 
     /**
@@ -166,7 +220,13 @@ public final class WhereCommand {
     }
 
     private static int reply(CommandSourceStack src, String message) {
-        src.sendSuccess(() -> ChatFormat.formatComponent(message), false);
+        src.sendSuccess(() -> OutputRenderer.renderLegacy("where.reply", message, src), false);
+        return 1;
+    }
+
+    private static int templateReply(CommandSourceStack src, String key,
+                                     Map<String, Object> values) {
+        ChatUi.send(src, OutputRenderer.render(key, values, src, null));
         return 1;
     }
 }

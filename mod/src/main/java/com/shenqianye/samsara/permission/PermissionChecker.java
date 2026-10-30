@@ -19,8 +19,12 @@ public class PermissionChecker {
      * @return true = 允许
      */
     public static boolean check(CommandSourceStack src, String commandPath) {
+        PermissionConfig config = PermissionConfig.getInstance();
+        if (config.isDisabled(commandPath)) {
+            return false;
+        }
         PermissionLevel playerLevel = getPlayerLevel(src);
-        PermissionLevel required = PermissionConfig.getInstance().getRequired(commandPath);
+        PermissionLevel required = config.getRequired(commandPath);
         return playerLevel.meets(required);
     }
 

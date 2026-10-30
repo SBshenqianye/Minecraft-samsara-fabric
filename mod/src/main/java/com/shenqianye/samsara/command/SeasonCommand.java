@@ -4,6 +4,10 @@ import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.shenqianye.samsara.command.ui.ChatUi;
 import com.shenqianye.samsara.command.ui.SuggestionProviders;
+import com.shenqianye.samsara.output.OutputPreviewFragment;
+import com.shenqianye.samsara.output.OutputRenderer;
+import com.shenqianye.samsara.season.Season;
+import com.shenqianye.samsara.season.SeasonData;
 import com.shenqianye.samsara.season.SeasonManager;
 import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
@@ -14,6 +18,15 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.permissions.Permissions;
 import net.minecraft.world.level.Level;
+
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * 周目业务命令：{@code /samsara season ...}
@@ -43,8 +56,7 @@ public class SeasonCommand {
                                 .executes(ctx -> status(ctx.getSource(),
                                         IntegerArgumentType.getInteger(ctx, "page")))))
                 .then(Commands.literal("info")
-                        .executes(ctx -> replyWithRefresh(ctx.getSource(), infoText(ctx.getSource()),
-                                "/samsara season info", "重新读取周目与世界信息")))
+                        .executes(ctx -> infoReply(ctx.getSource())))
                 .then(Commands.literal("create")
                         .requires(src -> isAdmin(src))
                         .then(Commands.argument("name", StringArgumentType.string())
@@ -76,14 +88,100 @@ public class SeasonCommand {
 
     /** 周目状态/信息：只读，附 [刷新] 点击即执行（保留当前页码）。 */
     private static int status(CommandSourceStack src, int page) {
-        return replyWithRefresh(src, manager().statusText(page),
-                "/samsara season status" + (page > 1 ? " " + page : ""), "重新查询周目状态");
+        SeasonManager manager = manager();
+        SeasonData data = manager.data();
+        final int pageSize = 8;
+        List<OutputPreviewFragment> body = new ArrayList<>();
+        if (data.seasons.isEmpty()) {
+            body.add(OutputPreviewFragment.text("text",
+                    "尚无周目，使用 /season create <名称> 创建", null));
+        } else {
+            int total = data.seasons.size();
+            int pages = Math.max(1, (int) Math.ceil(total / (double) pageSize));
+            if (page > 0 && page > pages) {
+                page = pages;
+            }
+            int from = page > 0 ? (page - 1) * pageSize : 0;
+            int to = page > 0 ? Math.min(from + pageSize, total) : total;
+            for (int i = from; i < to; i++) {
+                if (i > from) {
+                    body.add(OutputPreviewFragment.text("text", "\n", null));
+                }
+                body.addAll(OutputRenderer.renderRawBody("season.status.item",
+                        seasonValues(data.seasons.get(i)), OutputRenderer.ButtonPolicy.all()));
+            }
+        }
+        Map<String, Object> header = new LinkedHashMap<>();
+        int total = data.seasons.size();
+        int pages = Math.max(1, (int) Math.ceil(total / (double) pageSize));
+        if (page > 0 && page > pages) {
+            page = pages;
+        }
+        header.put("pageLine", page > 0 && pages > 1
+                ? "\n--- 第 " + page + "/" + pages + " 页，共 " + total + " 条 ---" : "");
+        Season current = manager.current();
+        header.put("currentLine", current == null ? ""
+                : "\n当前：#" + current.id + "「" + current.name + "」 " + current.state);
+        header.put("worldStackLine", data.worldStack.isEmpty() ? ""
+                : "\n世界栈：" + String.join(" → ", data.worldStack));
+        header.put("rewindLine", com.shenqianye.samsara.rewind.RewindEngine.getInstance().running()
+                ? "\n时间倒流进行中（"
+                + com.shenqianye.samsara.rewind.RewindEngine.getInstance().status() + "）" : "");
+        List<OutputPreviewFragment> fragments = new ArrayList<>(
+                OutputRenderer.renderPrefix("season.status.header", header,
+                        OutputRenderer.ButtonPolicy.all()));
+        boolean explicitPrefix = !fragments.isEmpty();
+        fragments.addAll(body);
+        fragments.addAll(OutputRenderer.renderRawBody("season.status.header", header,
+                OutputRenderer.ButtonPolicy.all()));
+        ChatUi.send(src, OutputRenderer.toComponent(
+                OutputRenderer.decorate(fragments, explicitPrefix)));
+        return 1;
+    }
+
+    private static Map<String, Object> seasonValues(Season season) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("id", season.id);
+        values.put("name", season.name);
+        values.put("state", season.state);
+        values.put("mode", season.mode);
+        values.put("startSuffix", season.startTime == null ? ""
+                : " · 始于 " + fmt(season.startTime));
+        values.put("endSuffix", season.endTime == null ? ""
+                : " · 止于 " + fmt(season.endTime));
+        values.put("groupSuffix", season.groupSpawns == null || season.groupSpawns.isEmpty() ? ""
+                : " · 分组 " + season.groupSpawns.size() + " 组");
+        return values;
+    }
+
+    private static String fmt(long ms) {
+        return LocalDateTime.ofInstant(Instant.ofEpochMilli(ms), ZoneId.systemDefault())
+                .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
     }
 
     private static int replyWithRefresh(CommandSourceStack src, String message,
                                         String refreshCommand, String hover) {
         MutableComponent refresh = ChatUi.run("刷新", refreshCommand, hover);
         ChatUi.send(src, ChatFormat.formatComponent(message),
+                ChatUi.line(ChatUi.text(ChatFormat.getContinuePrefix(), ChatFormatting.GRAY), refresh));
+        return 1;
+    }
+
+    private static int infoReply(CommandSourceStack src) {
+        MinecraftServer server = src.getServer();
+        ServerLevel world = server.getLevel(Level.OVERWORLD);
+        if (world == null) {
+            return reply(src, infoText(src));
+        }
+        BlockPos spawn = world.getRespawnData().pos();
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("seed", world.getSeed());
+        values.put("spawnX", spawn.getX());
+        values.put("spawnY", spawn.getY());
+        values.put("spawnZ", spawn.getZ());
+        MutableComponent refresh = ChatUi.run("刷新", "/samsara season info",
+                "重新读取周目与世界信息");
+        ChatUi.send(src, OutputRenderer.render("season.info", values, src, null),
                 ChatUi.line(ChatUi.text(ChatFormat.getContinuePrefix(), ChatFormatting.GRAY), refresh));
         return 1;
     }
@@ -141,7 +239,7 @@ public class SeasonCommand {
      * @return 固定返回 1（brigadier 命令执行成功）
      */
     private static int reply(CommandSourceStack src, String message) {
-        src.sendSuccess(() -> ChatFormat.formatComponent(message), false);
+        src.sendSuccess(() -> OutputRenderer.renderLegacy("season.reply", message, src), false);
         return 1;
     }
 }

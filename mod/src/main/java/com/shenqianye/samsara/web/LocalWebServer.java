@@ -38,18 +38,29 @@ public final class LocalWebServer {
 
     private final ConfigService service;
     private final IdentityWebService identityService;
+    private final OutputWebService outputService;
+    private final PermissionWebService permissionService;
     private final String token;
     private final int port;
     private HttpServer server;
 
     public LocalWebServer(ConfigService service, String token, int port) {
-        this(service, null, token, port);
+        this(service, null, null, null, token, port);
     }
 
     public LocalWebServer(ConfigService service, IdentityWebService identityService,
                           String token, int port) {
+        this(service, identityService, null, null, token, port);
+    }
+
+    public LocalWebServer(ConfigService service, IdentityWebService identityService,
+                          OutputWebService outputService,
+                          PermissionWebService permissionService,
+                          String token, int port) {
         this.service = service;
         this.identityService = identityService;
+        this.outputService = outputService;
+        this.permissionService = permissionService;
         this.token = token == null ? "" : token;
         this.port = port;
     }
@@ -77,6 +88,12 @@ public final class LocalWebServer {
         server.createContext("/api/status", this::handleStatus);
         if (identityService != null) {
             server.createContext("/api/identity", this::handleIdentity);
+        }
+        if (outputService != null) {
+            server.createContext("/api/output", this::handleOutput);
+        }
+        if (permissionService != null) {
+            server.createContext("/api/permissions", this::handlePermissions);
         }
         server.setExecutor(null);
         server.start();
@@ -289,6 +306,150 @@ public final class LocalWebServer {
                         result = Map.of("error", "Method Not Allowed");
                     } else {
                         result = identityService.generate();
+                    }
+                }
+                default -> {
+                    status = 404;
+                    result = Map.of("error", "Not Found");
+                }
+            }
+            if (status == 200 && Boolean.FALSE.equals(result.get("ok"))) {
+                status = 400;
+            }
+            json(exchange, status, result);
+        } catch (RuntimeException e) {
+            status = 500;
+            json(exchange, status, Map.of("error", "服务器内部错误"));
+            LOG.warn("[web] 处理 {} 失败: {}", exchange.getRequestURI().getPath(), e.getMessage());
+        } finally {
+            log(exchange, status, start);
+        }
+    }
+
+    private void handleOutput(HttpExchange exchange) throws IOException {
+        long start = System.currentTimeMillis();
+        int status = 200;
+        try {
+            if (!authorized(exchange)) {
+                status = 401;
+                json(exchange, status, Map.of("error", "未授权：缺少或错误的 Bearer token"));
+                return;
+            }
+            if (outputService == null) {
+                status = 503;
+                json(exchange, status, Map.of("error", "输出格式服务未启动"));
+                return;
+            }
+            String path = exchange.getRequestURI().getPath();
+            String method = exchange.getRequestMethod();
+            Map<String, Object> body = Map.of();
+            if ("POST".equals(method) || "PUT".equals(method)) {
+                try {
+                    body = parseObject(readBody(exchange));
+                } catch (BodyTooLarge e) {
+                    status = 413;
+                    json(exchange, status, Map.of("error", "请求体过大"));
+                    return;
+                } catch (RuntimeException e) {
+                    status = 400;
+                    json(exchange, status, Map.of("error", "请求体应为 JSON 对象"));
+                    return;
+                }
+            }
+            Map<String, Object> result;
+            switch (path) {
+                case "/api/output" -> {
+                    if ("GET".equals(method)) {
+                        result = outputService.model();
+                    } else if ("PUT".equals(method)) {
+                        result = outputService.save(body);
+                    } else {
+                        status = 405;
+                        result = Map.of("error", "Method Not Allowed");
+                    }
+                }
+                case "/api/output/preview" -> {
+                    if (!"POST".equals(method)) {
+                        status = 405;
+                        result = Map.of("error", "Method Not Allowed");
+                    } else {
+                        result = outputService.preview(body);
+                    }
+                }
+                case "/api/output/reload" -> {
+                    if (!"POST".equals(method)) {
+                        status = 405;
+                        result = Map.of("error", "Method Not Allowed");
+                    } else {
+                        result = outputService.reload();
+                    }
+                }
+                default -> {
+                    status = 404;
+                    result = Map.of("error", "Not Found");
+                }
+            }
+            if (status == 200 && Boolean.FALSE.equals(result.get("ok"))) {
+                status = 400;
+            }
+            json(exchange, status, result);
+        } catch (RuntimeException e) {
+            status = 500;
+            json(exchange, status, Map.of("error", "服务器内部错误"));
+            LOG.warn("[web] 处理 {} 失败: {}", exchange.getRequestURI().getPath(), e.getMessage());
+        } finally {
+            log(exchange, status, start);
+        }
+    }
+
+    private void handlePermissions(HttpExchange exchange) throws IOException {
+        long start = System.currentTimeMillis();
+        int status = 200;
+        try {
+            if (!authorized(exchange)) {
+                status = 401;
+                json(exchange, status, Map.of("error", "未授权：缺少或错误的 Bearer token"));
+                return;
+            }
+            if (permissionService == null) {
+                status = 503;
+                json(exchange, status, Map.of("error", "权限树服务未启动"));
+                return;
+            }
+            String path = exchange.getRequestURI().getPath();
+            String method = exchange.getRequestMethod();
+            Map<String, Object> body = Map.of();
+            if ("PUT".equals(method) || "POST".equals(method)) {
+                try {
+                    body = parseObject(readBody(exchange));
+                } catch (BodyTooLarge e) {
+                    status = 413;
+                    json(exchange, status, Map.of("error", "请求体过大"));
+                    return;
+                } catch (RuntimeException e) {
+                    status = 400;
+                    json(exchange, status, Map.of("error", "请求体应为 JSON 对象"));
+                    return;
+                }
+            }
+            Map<String, Object> result;
+            switch (path) {
+                case "/api/permissions" -> {
+                    if ("GET".equals(method)) {
+                        result = permissionService.model();
+                    } else if ("PUT".equals(method)) {
+                        result = permissionService.save(body);
+                    } else {
+                        status = 405;
+                        result = Map.of("error", "Method Not Allowed");
+                    }
+                }
+                case "/api/permissions/reload" -> {
+                    if (!"POST".equals(method)) {
+                        status = 405;
+                        result = Map.of("error", "Method Not Allowed");
+                    } else {
+                        result = permissionService.reload();
                     }
                 }
                 default -> {

@@ -2,12 +2,19 @@ package com.shenqianye.samsara.command;
 
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import com.shenqianye.samsara.command.ui.ChatUi;
 import com.shenqianye.samsara.command.ui.SuggestionProviders;
+import com.shenqianye.samsara.identity.IdentityConfig;
 import com.shenqianye.samsara.identity.IdentityService;
+import com.shenqianye.samsara.identity.IdentityStateStore;
+import com.shenqianye.samsara.identity.IdentityValidator;
+import com.shenqianye.samsara.output.OutputRenderer;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.server.level.ServerPlayer;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -23,16 +30,57 @@ public final class IdentityCommand {
     /** {@code /samsara identity status} 与短别名 {@code /identity}。 */
     public static LiteralArgumentBuilder<CommandSourceStack> identityNode() {
         return Commands.literal("identity")
+                .requires(src -> com.shenqianye.samsara.permission.PermissionChecker
+                        .check(src, "identity"))
                 .then(Commands.literal("status")
-                        .executes(ctx -> {
-                            ServerPlayer player = player(ctx.getSource());
-                            if (player == null) {
-                                return reply(ctx.getSource(),
-                                        IdentityService.getInstance().status(null));
-                            }
-                            return reply(ctx.getSource(),
-                                    IdentityService.getInstance().status(player));
-                        }));
+                        .executes(ctx -> status(ctx.getSource(), player(ctx.getSource()))));
+    }
+
+    private static int status(CommandSourceStack src, ServerPlayer player) {
+        IdentityService service = IdentityService.getInstance();
+        if (!service.enabled()) {
+            return send(src, "identity.status.disabled", Map.of());
+        }
+        if (service.configStore() != null && !service.configStore().valid()) {
+            StringBuilder issues = new StringBuilder();
+            for (IdentityValidator.Issue issue : service.configStore().issues()) {
+                if (issues.length() > 0) {
+                    issues.append('\n');
+                }
+                issues.append("  · ").append(issue.field()).append("：").append(issue.message());
+            }
+            Map<String, Object> values = new LinkedHashMap<>();
+            values.put("issues", issues.length() == 0 ? "\n  · 未知错误" : "\n" + issues);
+            return send(src, "identity.status.invalid", values);
+        }
+        UUID uuid = player == null ? null : player.getUUID();
+        IdentityConfig.Group group = uuid == null ? null : service.groupOf(uuid);
+        if (group == null) {
+            Map<String, Object> values = new LinkedHashMap<>();
+            values.put("uuid", uuid == null ? "?" : uuid.toString());
+            return send(src, "identity.status.ungrouped", values);
+        }
+
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("groupName", group.name);
+        values.put("dataUuid", group.data);
+        values.put("premium", group.premium == null ? "（未设置）" : group.premium);
+        values.put("offline", group.offline == null ? "（未设置）" : group.offline);
+        values.put("noteLine", group.note == null || group.note.isBlank()
+                ? "" : "\n备注: " + group.note);
+        IdentityStateStore.GroupState state = service.stateStore() == null ? null
+                : service.stateStore().get(group.dataUuid());
+        values.put("lastWriterLine", state == null ? ""
+                : "\n最后写入账号: "
+                + (state.lastWriter == null ? "（尚未同步）" : state.lastWriter));
+        values.put("blockedLine", state != null && state.syncBlocked
+                ? "\n⚠ 同步已阻断（sync-blocked），请联系管理员" : "");
+        return send(src, "identity.status", values);
+    }
+
+    private static int send(CommandSourceStack src, String key, Map<String, Object> values) {
+        ChatUi.send(src, OutputRenderer.render(key, values, src, null));
+        return 1;
     }
 
     /** {@code /samsara debug identity map|preview|reload|audit}（OWNER）。 */

@@ -16,22 +16,75 @@
       <button id="save">保存并重载</button>
       <a class="ghost button-link" href="/identity">身份组</a>
     </div>
+    <nav class="tabs" aria-label="页面">
+      <button class="tab active" data-panel="panel-config">配置</button>
+      <button class="tab" data-panel="panel-output">输出格式</button>
+      <button class="tab" data-panel="panel-permissions">权限</button>
+    </nav>
   </header>
 
   <main>
-    <section id="status" class="panel" hidden>
-      <h2>状态</h2>
-      <dl id="status-list"></dl>
-    </section>
+    <div id="panel-config">
+      <section id="status" class="panel" hidden>
+        <h2>状态</h2>
+        <dl id="status-list"></dl>
+      </section>
 
-    <section class="panel">
-      <div class="search-row">
-        <input id="search" type="search" placeholder="搜索配置（键名 / 说明 / 分组）">
-        <span id="summary" class="muted"></span>
-      </div>
-      <div id="message" class="message" role="status"></div>
-      <div id="files"></div>
-    </section>
+      <section class="panel">
+        <div class="search-row">
+          <input id="search" type="search" placeholder="搜索配置（键名 / 说明 / 分组）">
+          <span id="summary" class="muted"></span>
+        </div>
+        <div id="message" class="message" role="status"></div>
+        <div id="files"></div>
+      </section>
+    </div>
+
+    <div id="panel-output" hidden>
+      <section class="panel output-panel">
+        <div class="output-toolbar">
+          <input id="output-search" type="search" placeholder="搜索输出消息 / 分组 / 说明">
+          <button id="output-default" class="ghost">恢复默认</button>
+          <button id="output-reload" class="ghost">重新读取</button>
+          <button id="output-save">保存并重载</button>
+        </div>
+        <div id="output-message" class="message" role="status"></div>
+        <div class="output-grid">
+          <aside class="output-messages-wrap">
+            <h2 class="column-title">消息</h2>
+            <div id="output-messages" class="output-messages"></div>
+          </aside>
+          <section class="output-edit-wrap">
+            <h2 class="column-title">手动改写</h2>
+            <div id="output-disabled" class="output-disabled" hidden></div>
+            <div id="output-meta" class="output-meta"></div>
+            <div id="output-editor" class="output-editor"></div>
+            <div id="output-errors" class="output-errors"></div>
+            <h3 class="palette-title">变量</h3>
+            <div id="output-palette" class="palette"></div>
+            <h3 class="palette-title">按钮</h3>
+            <div id="output-buttons" class="palette"></div>
+          </section>
+          <section class="output-preview-wrap">
+            <h2 class="column-title">渲染预览</h2>
+            <div id="output-preview" class="output-preview"></div>
+            <p class="muted small">预览由服务端渲染，按钮只显示标签，不执行命令。</p>
+          </section>
+        </div>
+      </section>
+    </div>
+
+    <div id="panel-permissions" hidden>
+      <section class="panel">
+        <div class="output-toolbar">
+          <input id="perm-search" type="search" placeholder="搜索权限路径">
+          <button id="perm-reload" class="ghost">重新读取</button>
+        </div>
+        <div id="perm-message" class="message" role="status"></div>
+        <p class="muted small">关闭树干会级联关闭所有树枝与叶子；重新开启后恢复各节点原来的等级。叶子的实际等级取整条路径上的最高等级。</p>
+        <div id="perm-tree" class="perm-tree"></div>
+      </section>
+    </div>
   </main>
 
   <template id="file-template">
@@ -42,6 +95,9 @@
     </section>
   </template>
 
+  <script src="/structured.js"></script>
   <script src="/app.js"></script>
+  <script src="/output.js"></script>
+  <script src="/permissions.js"></script>
 </body>
 </html>

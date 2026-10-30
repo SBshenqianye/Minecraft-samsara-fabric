@@ -7,6 +7,8 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.shenqianye.samsara.command.ui.SuggestionProviders;
+import com.shenqianye.samsara.output.OutputRenderer;
+import com.shenqianye.samsara.permission.PermissionChecker;
 import com.shenqianye.samsara.track.view.ViewManager;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -39,6 +41,7 @@ public final class TrackViewCommand {
     /** {@code /samsara track ...}（也是 {@code /track ...} 别名树） */
     public static LiteralArgumentBuilder<CommandSourceStack> trackNode() {
         return Commands.literal("track")
+                .requires(src -> PermissionChecker.check(src, "track"))
                 .then(viewNode())
                 .then(listNode());
     }
@@ -281,7 +284,7 @@ public final class TrackViewCommand {
     }
 
     private static int reply(CommandSourceStack src, String message) {
-        src.sendSuccess(() -> ChatFormat.formatComponent(message), false);
+        src.sendSuccess(() -> OutputRenderer.renderLegacy("track.reply", message, src), false);
         return 1;
     }
 }

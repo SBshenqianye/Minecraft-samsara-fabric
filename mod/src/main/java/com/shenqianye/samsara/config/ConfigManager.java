@@ -254,6 +254,10 @@ public final class ConfigManager {
     public synchronized Map<String, Object> apiModel() {
         List<Map<String, Object>> files = new ArrayList<>();
         for (String id : ConfigSchema.fileIds()) {
+            if (ConfigSchema.OUTPUT.equals(id)) {
+                // 输出模板有独立变量元数据，走 /api/output，不在扁平配置表单里重复编辑
+                continue;
+            }
             Map<String, Object> values = cache.getOrDefault(id, Map.of());
             List<Map<String, Object>> entries = new ArrayList<>();
             for (ConfigEntry entry : ConfigSchema.entries(id)) {

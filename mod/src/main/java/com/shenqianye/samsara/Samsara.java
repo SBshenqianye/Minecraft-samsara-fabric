@@ -95,6 +95,7 @@ public class Samsara implements DedicatedServerModInitializer {
             com.shenqianye.samsara.track.TrackReplay.tick(server);
             com.shenqianye.samsara.track.view.ViewManager.getInstance().tick(server);
             com.shenqianye.samsara.identity.IdentityService.getInstance().tick(server);
+            com.shenqianye.samsara.shutdown.ShutdownAnnouncer.tick(server);
             com.shenqianye.samsara.command.DebugCommand.onTick();
             if (++unloadFlushCounter[0] >= 20) {
                 unloadFlushCounter[0] = 0;
@@ -125,6 +126,8 @@ public class Samsara implements DedicatedServerModInitializer {
             DiffRecorder.initWorld(server);
             RewindEngine.getInstance().onServerStarted(server);
             com.shenqianye.samsara.track.view.ViewManager.getInstance().onServerStarted(server);
+            com.shenqianye.samsara.permission.PermissionCommandPaths.capture(server);
+            com.shenqianye.samsara.shutdown.ShutdownAnnouncer.onStarted();
             com.shenqianye.samsara.web.WebLifecycle.start();
         });
 
@@ -148,7 +151,7 @@ public class Samsara implements DedicatedServerModInitializer {
                 com.shenqianye.samsara.identity.IdentityService.getInstance()
                         .onDisconnect(handler.getPlayer()));
 
-        // 优雅停服：停止发送粒子包，发告别消息（减少客户端断连时的渲染压力）
+        // 优雅停服：先停 Web、同步身份、恢复回看、刷盘，最后发退出界面提示
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
             com.shenqianye.samsara.web.WebLifecycle.stop(); // 先停 Web，避免请求在停服窗口写配置
             // 身份全状态同步必须在服务器保存玩家数据之前执行
@@ -158,11 +161,8 @@ public class Samsara implements DedicatedServerModInitializer {
             DiffRecorder.flush(); // 停服前把常开窗口的缓冲落盘（不依赖后续 SERVER_STOPPED 的时序）
             DiffRecorder.clearEditContext();
             com.shenqianye.samsara.claim.ClaimParticles.shutdown();
-            for (var player : server.getPlayerList().getPlayers()) {
-                player.sendSystemMessage(
-                        com.shenqianye.samsara.command.ChatFormat.formatComponent(
-                                "服务器即将关闭，请稍候…"));
-            }
+            // 最后断开玩家：connection.disconnect 会把玩家从在线列表移除并保存其数据
+            com.shenqianye.samsara.shutdown.ShutdownAnnouncer.onStopping(server);
         });
     }
 }

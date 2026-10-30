@@ -354,7 +354,7 @@ public final class IncompleteCommandHandler {
         return value;
     }
 
-    static boolean isSamsaraCommand(String command) {
+    public static boolean isSamsaraCommand(String command) {
         String token = firstToken(command);
         return !token.isEmpty() && CommandAliases.isSamsaraRoot(token);
     }

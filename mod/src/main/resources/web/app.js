@@ -9,6 +9,8 @@ const state = {
   edits: new Map(), // `${file}:${path}` -> value
 };
 
+const connectHooks = [];
+
 const $ = (id) => document.getElementById(id);
 
 function setMessage(text, kind) {
@@ -46,6 +48,7 @@ async function connect() {
   sessionStorage.setItem('samsara-token', state.token);
   await loadConfig();
   await loadStatus();
+  await runConnectHooks();
 }
 
 async function loadConfig() {
@@ -73,10 +76,6 @@ async function loadStatus() {
       ['Minecraft', status.minecraft],
       ['配置根', status.configRoot],
       ['世界数据根', status.worldDataRoot],
-      ['全局数据根', status.globalDataRoot],
-      ['全局数据跟随存档', status.globalFollowWorld ? '是' : '否'],
-      ['迁移状态', status.migration],
-      ['最近全局迁移', status.globalMigration || '—'],
       ['最近警告', (status.warnings || []).join('；') || '无'],
     ];
     for (const [key, value] of rows) {
@@ -114,34 +113,45 @@ function render() {
   let shown = 0;
 
   for (const file of state.model.files) {
-    const template = $('file-template').content.cloneNode(true);
-    const section = template.querySelector('.file');
-    section.querySelector('.file-title').textContent = file.name;
-    section.querySelector('.file-path').textContent = file.path;
-
-    const groupsEl = section.querySelector('.groups');
-    const groups = new Map();
-    for (const entry of file.entries) {
+    const matching = file.entries.filter((entry) => {
       const haystack = (file.id + ' ' + entry.path + ' ' + entry.description + ' '
           + entry.group).toLowerCase();
-      if (query && !haystack.includes(query)) continue;
-      shown++;
+      return !query || haystack.includes(query);
+    });
+    if (matching.length === 0) continue;
+    shown += matching.length;
+
+    const section = document.createElement('details');
+    section.className = 'file';
+    section.open = true;
+    const summary = document.createElement('summary');
+    summary.className = 'file-summary';
+    const title = document.createElement('span');
+    title.className = 'file-title';
+    title.textContent = file.name;
+    const path = document.createElement('span');
+    path.className = 'file-path muted';
+    path.textContent = file.path;
+    summary.append(title, path);
+    section.append(summary);
+
+    const groups = new Map();
+    for (const entry of matching) {
       if (!groups.has(entry.group)) groups.set(entry.group, []);
       groups.get(entry.group).push(entry);
     }
-
     for (const [groupName, entries] of groups) {
-      const groupEl = document.createElement('div');
+      const groupEl = document.createElement('details');
       groupEl.className = 'group';
-      const title = document.createElement('h3');
-      title.className = 'group-title';
-      title.textContent = groupName;
-      groupEl.append(title);
+      groupEl.open = true;
+      const groupSummary = document.createElement('summary');
+      groupSummary.className = 'group-title';
+      groupSummary.textContent = groupName;
+      groupEl.append(groupSummary);
       for (const entry of entries) groupEl.append(renderEntry(file, entry));
-      groupsEl.append(groupEl);
+      section.append(groupEl);
     }
-
-    if (groups.size > 0) container.append(section);
+    container.append(section);
   }
 
   $('summary').textContent = shown + ' / ' + totalEntries() + ' 项';
@@ -232,30 +242,15 @@ function buildInput(file, entry) {
       return select;
     }
     case 'string-list': {
-      const textarea = document.createElement('textarea');
-      textarea.value = Array.isArray(value) ? value.join('\n') : '';
-      textarea.placeholder = '一行一个';
-      textarea.addEventListener('input', () => markEdited(file.id, entry,
-          textarea.value.split('\n').map(s => s.trim()).filter(Boolean)));
-      return textarea;
+      return window.SamsaraStructured.stringList(
+          Array.isArray(value) ? value : [],
+          (next) => markEdited(file.id, entry, next));
     }
     case 'level-map': {
-      const textarea = document.createElement('textarea');
       const map = value && typeof value === 'object' ? value : {};
-      textarea.value = Object.entries(map).map(([k, v]) => k + ': ' + v).join('\n');
-      textarea.placeholder = '命令路径: 等级（user/op/owner/config）';
-      textarea.addEventListener('input', () => {
-        const out = {};
-        for (const line of textarea.value.split('\n')) {
-          const idx = line.lastIndexOf(':');
-          if (idx <= 0) continue;
-          const key = line.slice(0, idx).trim();
-          const level = line.slice(idx + 1).trim();
-          if (key) out[key] = level;
-        }
-        markEdited(file.id, entry, out);
-      });
-      return textarea;
+      return window.SamsaraStructured.keyValueMap(
+          map, ['user', 'op', 'owner', 'config'],
+          (next) => markEdited(file.id, entry, next));
     }
     default: {
       const input = document.createElement('input');
@@ -329,6 +324,43 @@ $('reload').addEventListener('click', reload);
 $('search').addEventListener('input', render);
 $('token').value = state.token;
 
+for (const tab of document.querySelectorAll('.tab')) {
+  tab.addEventListener('click', () => {
+    for (const other of document.querySelectorAll('.tab')) {
+      other.classList.toggle('active', other === tab);
+    }
+    const target = tab.dataset.panel;
+    for (const panel of ['panel-config', 'panel-output', 'panel-permissions']) {
+      document.getElementById(panel).hidden = panel !== target;
+    }
+    if (target === 'panel-output') window.SamsaraOutput?.ensureLoaded();
+    if (target === 'panel-permissions') window.SamsaraPermissions?.ensureLoaded();
+  });
+}
+
+function onConnect(fn) {
+  connectHooks.push(fn);
+}
+
+async function runConnectHooks() {
+  for (const fn of connectHooks) {
+    try {
+      await fn();
+    } catch (e) {
+      // 各面板自己显示错误；这里只避免连接流程中断
+    }
+  }
+}
+
+window.SamsaraUI = {
+  state,
+  api,
+  setMessage,
+  onConnect,
+  runConnectHooks,
+  getToken: () => state.token,
+};
+
 if (state.token) {
-  loadConfig().then(loadStatus);
+  loadConfig().then(loadStatus).then(runConnectHooks);
 }

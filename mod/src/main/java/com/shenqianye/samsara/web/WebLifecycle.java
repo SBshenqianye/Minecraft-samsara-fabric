@@ -36,7 +36,8 @@ public final class WebLifecycle {
         }
         int port = config.integer(ConfigSchema.WEB, "port");
         LocalWebServer candidate = new LocalWebServer(new WebConfigService(),
-                new WebIdentityService(), token, port);
+                new WebIdentityService(), new WebOutputService(),
+                new WebPermissionService(), token, port);
         if (!candidate.start()) {
             return; // 端口占用：WARN 已记录，不阻塞服务器
         }

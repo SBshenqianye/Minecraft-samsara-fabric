@@ -8,11 +8,10 @@ import com.shenqianye.samsara.claim.ClaimParticles;
 import com.shenqianye.samsara.command.ui.ChatUi;
 import com.shenqianye.samsara.command.ui.SuggestionProviders;
 import com.shenqianye.samsara.geometry.ChunkCoord;
-import net.minecraft.ChatFormatting;
+import com.shenqianye.samsara.output.OutputRenderer;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
-import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BannerBlockEntity;
@@ -49,96 +48,120 @@ public class ClaimCommand {
                                             try { p = ctx.getSource().getPlayerOrException(); }
                                             catch (Exception e) { return reply(ctx.getSource(), "需要以玩家身份执行"); }
                                             return infoReply(ctx.getSource(),
-                                                    infoAt(p.level().dimension(),
+                                                    infoData(p.level().dimension(),
                                                             IntegerArgumentType.getInteger(ctx, "x"),
                                                             IntegerArgumentType.getInteger(ctx, "z")));
                                         }))))
                 // claim boundary — 持续显示边界开关
                 .then(Commands.literal("boundary")
-                        .executes(ctx -> reply(ctx.getSource(), toggleBoundary(ctx.getSource())))
+                        .executes(ctx -> toggleBoundary(ctx.getSource()))
                         .then(Commands.literal("fixed")
-                                .executes(ctx -> reply(ctx.getSource(), toggleFixed(ctx.getSource()))))
+                                .executes(ctx -> toggleFixed(ctx.getSource())))
                         .then(Commands.literal("dynamic")
-                                .executes(ctx -> reply(ctx.getSource(), toggleDynamic(ctx.getSource())))));
+                                .executes(ctx -> toggleDynamic(ctx.getSource()))));
     }
 
     // ---- claim info ----
 
-    private static String infoAtPlayer(CommandSourceStack src) {
+    private static InfoData infoAtPlayer(CommandSourceStack src) {
         ServerPlayer player;
         try {
             player = src.getPlayerOrException();
         } catch (Exception e) {
-            return "请指定坐标（info <x> <z>）";
+            return null;
         }
         int cx = player.blockPosition().getX() >> 4;
         int cz = player.blockPosition().getZ() >> 4;
-        return infoAt(player.level().dimension(), cx, cz);
+        return infoData(player.level().dimension(), cx, cz);
     }
 
     static String infoAt(net.minecraft.resources.ResourceKey<Level> dim, int x, int z) {
+        return infoData(dim, x, z).text();
+    }
+
+    static InfoData infoData(net.minecraft.resources.ResourceKey<Level> dim, int x, int z) {
         ChunkCoord loc = new ChunkCoord(x, z);
         ClaimNode node = AreaService.getInstance().getNode(dim, loc);
         boolean protected_ = AreaService.getInstance().isProtected(dim, x, z);
-        StringBuilder sb = new StringBuilder();
-        sb.append("区块 (").append(x).append(",").append(z).append(") ");
-        sb.append(dim.identifier()).append(" ");
-        sb.append(protected_ ? "✓ 受保护" : "✗ 未保护");
+        String status = protected_ ? "✓ 受保护" : "✗ 未保护";
+        StringBuilder detail = new StringBuilder();
         if (node != null) {
-            sb.append("\n  旗帜朝向: ").append(ClaimInteractions.facingToDisplay(node.getFacing()));
-            if (node.getOwnerName() != null) sb.append(" · 主人: ").append(node.getOwnerName());
-            sb.append(" · 图案:");
+            detail.append("\n  旗帜朝向: ").append(ClaimInteractions.facingToDisplay(node.getFacing()));
+            if (node.getOwnerName() != null) detail.append(" · 主人: ").append(node.getOwnerName());
+            detail.append(" · 图案:");
             for (ClaimNode.PatternEntry pe : node.getPatterns()) {
-                sb.append(" ").append(pe.patternId()).append("(").append(pe.color() + 1).append("区块)");
+                detail.append(" ").append(pe.patternId()).append("(").append(pe.color() + 1).append("区块)");
             }
         }
-        return sb.toString();
+        return new InfoData(x, z, dim.identifier().toString(), status, detail.toString());
     }
 
     /**
      * claim info 输出：只读 + 幂等，附 [查看当前区块] 点击即执行。
-     * 按钮只在玩家执行时附加，控制台/RCON 不会看到（也没有客户端可点）。
+     * 按钮由模板插槽给出，命令内容固定。
      */
-    private static int infoReply(CommandSourceStack src, String message) {
-        MutableComponent action = ChatUi.run("查看当前区块", "/samsara claim info",
-                "查看你当前所在区块的圈地信息");
-        ChatUi.send(src, ChatFormat.formatComponent(message),
-                ChatUi.line(ChatUi.text(ChatFormat.getContinuePrefix(), ChatFormatting.GRAY), action));
+    private static int infoReply(CommandSourceStack src, InfoData data) {
+        if (data == null) {
+            return reply(src, "请指定坐标（info <x> <z>）");
+        }
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("chunkX", data.x());
+        values.put("chunkZ", data.z());
+        values.put("dimension", data.dimension());
+        values.put("status", data.status());
+        values.put("detailLine", data.detailLine());
+        ChatUi.send(src, OutputRenderer.render("claim.info", values, src, null));
         return 1;
     }
 
+    record InfoData(int x, int z, String dimension, String status, String detailLine) {
+        String text() {
+            return "区块 (" + x + "," + z + ") " + dimension + " " + status + detailLine;
+        }
+    }
+
     // ---- claim boundary ----
-    private static String toggleBoundary(CommandSourceStack src) {
+    private static int toggleBoundary(CommandSourceStack src) {
         ServerPlayer player;
         try {
             player = src.getPlayerOrException();
         } catch (Exception e) {
-            return "需要以玩家身份执行";
+            return reply(src, "需要以玩家身份执行");
         }
         boolean nowOn = ClaimParticles.toggleBoundary(player.getUUID());
-        return "边界持续显示已" + (nowOn ? "开启 ✓（进入管理区域自动显示）" : "关闭 ✗");
+        return boundaryReply(src, "claim.boundary", nowOn,
+                " ✓（进入管理区域自动显示）", " ✗");
     }
 
-    private static String toggleFixed(CommandSourceStack src) {
+    private static int toggleFixed(CommandSourceStack src) {
         ServerPlayer player;
         try {
             player = src.getPlayerOrException();
         } catch (Exception e) {
-            return "需要以玩家身份执行";
+            return reply(src, "需要以玩家身份执行");
         }
         boolean nowOn = ClaimParticles.toggleFixed(player.getUUID());
-        return "固定边界（旗帜高度）已" + (nowOn ? "开启 ✓" : "关闭 ✗");
+        return boundaryReply(src, "claim.boundary.fixed", nowOn, " ✓", " ✗");
     }
 
-    private static String toggleDynamic(CommandSourceStack src) {
+    private static int toggleDynamic(CommandSourceStack src) {
         ServerPlayer player;
         try {
             player = src.getPlayerOrException();
         } catch (Exception e) {
-            return "需要以玩家身份执行";
+            return reply(src, "需要以玩家身份执行");
         }
         boolean nowOn = ClaimParticles.toggleDynamic(player.getUUID());
-        return "跟随边界（玩家高度）已" + (nowOn ? "开启 ✓" : "关闭 ✗");
+        return boundaryReply(src, "claim.boundary.dynamic", nowOn, " ✓", " ✗");
+    }
+
+    private static int boundaryReply(CommandSourceStack src, String key, boolean on,
+                                     String onDetail, String offDetail) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("state", on ? "开启" : "关闭");
+        values.put("detail", on ? onDetail : offDetail);
+        ChatUi.send(src, OutputRenderer.render(key, values, src, null));
+        return 1;
     }
 
     // ---- 扫描工具（供 debug claim scan 调用） ----
@@ -246,7 +269,7 @@ public class ClaimCommand {
      * @return 固定返回 1
      */
     private static int reply(CommandSourceStack src, String message) {
-        src.sendSuccess(() -> ChatFormat.formatComponent(message), false);
+        src.sendSuccess(() -> OutputRenderer.renderLegacy("claim.reply", message, src), false);
         return 1;
     }
 }

@@ -51,6 +51,9 @@ public final class WebSecurity {
             case "/app.js" -> "/web/app.js";
             case "/identity", "/identity.html" -> "/web/identity.html";
             case "/identity.js" -> "/web/identity.js";
+            case "/structured.js" -> "/web/structured.js";
+            case "/output.js" -> "/web/output.js";
+            case "/permissions.js" -> "/web/permissions.js";
             case "/style.css" -> "/web/style.css";
             default -> null;
         };
@@ -65,7 +68,12 @@ public final class WebSecurity {
                 || "/api/identity/rebind".equals(path)
                 || "/api/identity/reload".equals(path)
                 || "/api/identity/audit".equals(path)
-                || "/api/identity/generate".equals(path);
+                || "/api/identity/generate".equals(path)
+                || "/api/output".equals(path)
+                || "/api/output/preview".equals(path)
+                || "/api/output/reload".equals(path)
+                || "/api/permissions".equals(path)
+                || "/api/permissions/reload".equals(path);
     }
 
     public static boolean bodyWithinLimit(long length) {

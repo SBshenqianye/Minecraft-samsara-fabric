@@ -7,8 +7,8 @@ import com.mojang.brigadier.context.CommandContext;
 import com.shenqianye.samsara.command.ui.ChatUi;
 import com.shenqianye.samsara.command.ui.SuggestionProviders;
 import com.shenqianye.samsara.config.CommandConfig;
+import com.shenqianye.samsara.output.OutputRenderer;
 import com.shenqianye.samsara.permission.PermissionChecker;
-import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.MutableComponent;
@@ -164,9 +164,7 @@ public final class TpaCommand {
         String text = here
                 ? "已请求 " + targetName + " 传送到你这里（" + timeout + "内有效）"
                 : "已向 " + targetName + " 发送传送请求（" + timeout + "内有效）";
-        return ChatUi.line(
-                ChatUi.text(ChatFormat.getFirstPrefix() + text, ChatFormatting.WHITE),
-                ChatUi.run("取消请求", "/samsara tpcancel", "取消这次传送请求（对方将收到提示）"));
+        return OutputRenderer.render("tpa.request.sender", Map.of("message", text), null, null);
     }
 
     /** 收件人的消息行（包级可见，供单测断言按钮/命令）。 */
@@ -174,17 +172,13 @@ public final class TpaCommand {
         String text = here
                 ? senderName + " 请求你传送到他那里。"
                 : senderName + " 请求传送到你这里。";
-        return ChatUi.line(
-                ChatUi.text(ChatFormat.getFirstPrefix() + text, ChatFormatting.WHITE),
-                ChatUi.run("同意", "/samsara tpaccept", "同意传送请求（将以你的身份执行）"),
-                ChatUi.run("拒绝", "/samsara tpdeny", "拒绝传送请求"));
+        return OutputRenderer.render("tpa.request.target", Map.of("message", text), null, null);
     }
 
     /** 收件人的第二行：有效期说明（不带按钮）。 */
     static MutableComponent targetHintLine(String timeout) {
-        return ChatUi.text(
-                ChatFormat.getContinuePrefix() + "请求在 " + timeout + "内有效；也可直接输入 /tpaccept 或 /tpdeny",
-                ChatFormatting.GRAY);
+        String text = "请求在 " + timeout + "内有效；也可直接输入 /tpaccept 或 /tpdeny";
+        return OutputRenderer.render("tpa.request.hint", Map.of("message", text), null, null);
     }
 
     private static int accept(CommandContext<CommandSourceStack> ctx) {
@@ -214,8 +208,8 @@ public final class TpaCommand {
                 Set.of(), destination.getYRot(), destination.getXRot(), false);
 
         reply(src, "已同意 " + sender.getName().getString() + " 的传送请求");
-        sender.sendSystemMessage(ChatFormat.formatComponent(
-                accepter.getName().getString() + " 同意了你的传送请求"));
+        sender.sendSystemMessage(OutputRenderer.renderLegacy("tpa.reply",
+                accepter.getName().getString() + " 同意了你的传送请求", null));
         return 1;
     }
 
@@ -232,8 +226,8 @@ public final class TpaCommand {
         ServerPlayer sender = src.getServer().getPlayerList().getPlayer(request.sender());
         reply(src, "已拒绝 " + (sender != null ? sender.getName().getString() : "对方") + " 的传送请求");
         if (sender != null) {
-            sender.sendSystemMessage(ChatFormat.formatComponent(
-                    denier.getName().getString() + " 拒绝了你的传送请求"));
+            sender.sendSystemMessage(OutputRenderer.renderLegacy("tpa.reply",
+                    denier.getName().getString() + " 拒绝了你的传送请求", null));
         }
         return 1;
     }
@@ -254,8 +248,8 @@ public final class TpaCommand {
         }
         ServerPlayer target = src.getServer().getPlayerList().getPlayer(targetId);
         if (target != null) {
-            target.sendSystemMessage(ChatFormat.formatComponent(
-                    sender.getName().getString() + " 取消了传送请求"));
+            target.sendSystemMessage(OutputRenderer.renderLegacy("tpa.reply",
+                    sender.getName().getString() + " 取消了传送请求", null));
         }
         return reply(src, "已取消传送请求");
     }
@@ -298,7 +292,7 @@ public final class TpaCommand {
     }
 
     private static int reply(CommandSourceStack src, String message) {
-        src.sendSuccess(() -> ChatFormat.formatComponent(message), false);
+        src.sendSuccess(() -> OutputRenderer.renderLegacy("tpa.reply", message, src), false);
         return 1;
     }
 }

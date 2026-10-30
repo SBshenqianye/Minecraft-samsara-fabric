@@ -65,4 +65,11 @@ public record ConfigEntry(String path, ConfigType type, Object defaultValue,
                 new java.util.LinkedHashMap<>(defaultValue), null, null,
                 List.of(), description, group, false);
     }
+
+    /** 结构化输出模板：有序片段列表。 */
+    public static ConfigEntry template(String path, java.util.List<java.util.Map<String, Object>> defaultValue,
+                                       String group, String description) {
+        return new ConfigEntry(path, ConfigType.TEMPLATE, defaultValue, null, null,
+                List.of(), description, group, false);
+    }
 }

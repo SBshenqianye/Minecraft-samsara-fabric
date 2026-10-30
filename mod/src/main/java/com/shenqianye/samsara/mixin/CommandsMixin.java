@@ -1,13 +1,20 @@
 package com.shenqianye.samsara.mixin;
 
 import com.mojang.brigadier.ParseResults;
+import com.mojang.brigadier.tree.LiteralCommandNode;
 import com.shenqianye.samsara.command.IncompleteCommandHandler;
+import com.shenqianye.samsara.permission.PermissionChecker;
+import com.shenqianye.samsara.permission.PermissionCommandPaths;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.network.chat.Component;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 未完成指令的聊天栏候选入口。
@@ -23,6 +30,21 @@ public class CommandsMixin {
     private void samsara$chatCompletionForIncompleteCommand(ParseResults<CommandSourceStack> parse,
                                                             String command,
                                                             CallbackInfo ci) {
+        if (parse != null && IncompleteCommandHandler.isSamsaraCommand(command)) {
+            CommandSourceStack source = parse.getContext().getSource();
+            List<String> literals = new ArrayList<>();
+            for (var parsed : parse.getContext().getNodes()) {
+                if (parsed.getNode() instanceof LiteralCommandNode<?> literal) {
+                    literals.add(literal.getLiteral());
+                }
+            }
+            String path = PermissionCommandPaths.pathOf(literals);
+            if (!PermissionChecker.check(source, path.isBlank() ? "*" : path)) {
+                source.sendFailure(Component.literal("samsara 已被关闭或你没有权限执行"));
+                ci.cancel();
+                return;
+            }
+        }
         if (IncompleteCommandHandler.tryHandle(parse, command)) {
             ci.cancel();
         }

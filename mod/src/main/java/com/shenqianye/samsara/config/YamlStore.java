@@ -442,6 +442,35 @@ public final class YamlStore {
     }
 
     private static void appendValue(StringBuilder out, ConfigEntry entry, Object value, int indent) {
+        if (entry.type() == ConfigType.TEMPLATE) {
+            out.append("\n");
+            appendComment(out, entry.description(), indent + 2);
+            List<?> list = value instanceof List<?> l ? l : List.of();
+            if (list.isEmpty()) {
+                appendIndent(out, indent + 2);
+                out.append("[]\n");
+            }
+            for (Object part : list) {
+                if (!(part instanceof Map<?, ?> map) || map.isEmpty()) {
+                    appendIndent(out, indent + 2);
+                    out.append("- {}\n");
+                    continue;
+                }
+                boolean first = true;
+                for (Map.Entry<?, ?> e : map.entrySet()) {
+                    if (first) {
+                        appendIndent(out, indent + 2);
+                        out.append("- ");
+                        first = false;
+                    } else {
+                        appendIndent(out, indent + 4);
+                    }
+                    out.append(quoteKey(String.valueOf(e.getKey()))).append(": ")
+                            .append(templateScalar(e.getValue())).append("\n");
+                }
+            }
+            return;
+        }
         if (entry.type() == ConfigType.LEVEL_MAP || entry.type() == ConfigType.STRING_LIST) {
             out.append("\n");
             appendComment(out, entry.description(), indent + 2);
@@ -504,6 +533,33 @@ public final class YamlStore {
         }
         String text = value == null ? "" : String.valueOf(value);
         return needsQuote(text) ? "'" + text.replace("'", "''") + "'" : text;
+    }
+
+    /** 模板片段一律用双引号，显式转义换行等控制字符，保证 YAML 往返不折叠。 */
+    private static String templateScalar(Object value) {
+        if (value instanceof Boolean || value instanceof Number) {
+            return String.valueOf(value);
+        }
+        String text = value == null ? "" : String.valueOf(value);
+        StringBuilder out = new StringBuilder("\"");
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            switch (c) {
+                case '\\' -> out.append("\\\\");
+                case '"' -> out.append("\\\"");
+                case '\n' -> out.append("\\n");
+                case '\r' -> out.append("\\r");
+                case '\t' -> out.append("\\t");
+                default -> {
+                    if (c < 0x20) {
+                        out.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        out.append(c);
+                    }
+                }
+            }
+        }
+        return out.append('"').toString();
     }
 
     private static boolean needsQuote(String text) {

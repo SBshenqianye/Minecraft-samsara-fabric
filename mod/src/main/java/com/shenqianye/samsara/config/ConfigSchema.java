@@ -1,5 +1,9 @@
 package com.shenqianye.samsara.config;
 
+import com.shenqianye.samsara.output.OutputCatalog;
+import com.shenqianye.samsara.output.OutputTemplate;
+import com.shenqianye.samsara.output.TemplateCodec;
+import com.shenqianye.samsara.output.TemplatePart;
 import com.shenqianye.samsara.permission.PermissionDefaults;
 
 import java.util.ArrayList;
@@ -22,6 +26,7 @@ public final class ConfigSchema {
     public static final String CLAIM_PARTICLES = "claim-particles";
     public static final String STORAGE = "storage";
     public static final String WEB = "web";
+    public static final String OUTPUT = "output";
 
     /** 文件 id → 文件名（不含扩展名）。 */
     private static final Map<String, String> FILE_NAMES = new LinkedHashMap<>();
@@ -76,13 +81,18 @@ public final class ConfigSchema {
                 ConfigEntry.bool("completion.fuzzy", true, "补全",
                         "没有前缀匹配时是否做拼写近似（seasn → season）"),
                 ConfigEntry.integer("completion.maxItems", 48, 4, 200, "补全",
-                        "聊天栏单页最多候选数；超过后显示翻页按钮")
+                        "聊天栏单页最多候选数；超过后显示翻页按钮"),
+                ConfigEntry.integer("shutdown.countdownSeconds", 10, 1, 300, "关服",
+                        "执行 /samsara restart 后先广播倒计时多少秒再停服")
         ));
 
         file(PERMISSIONS, "权限", List.of(
                 ConfigEntry.levelMap("entries", PermissionDefaults.entries(), "权限等级",
                         "命令路径 → 所需权限等级（user/op/owner/config）。"
                                 + "游戏内 /samsara perm set 也写这里"),
+                ConfigEntry.stringList("disabled", List.of(), "权限等级",
+                        "被整体关闭的权限节点；父节点关闭会级联到所有后代。"
+                                + "由本地 Web 权限树维护"),
                 ConfigEntry.stringList("owners", List.of(), "权限等级",
                         "始终拥有 owner 权限的玩家名（不区分大小写）")
         ));
@@ -118,13 +128,22 @@ public final class ConfigSchema {
         ));
 
         file(WEB, "Web", List.of(
-                ConfigEntry.bool("enabled", true, "服务",
-                        "是否启动本地配置面板（仅监听 127.0.0.1）"),
+                ConfigEntry.bool("enabled", false, "服务",
+                        "是否启动本地配置面板（仅监听 127.0.0.1）。"
+                                + "默认关闭；未勾选时整个 Web 服务不启动，也不会生成访问 token"),
                 ConfigEntry.integer("port", 8720, 1024, 65_535, "服务",
                         "本地面板端口"),
                 ConfigEntry.string("token", "", "鉴权",
                         "访问令牌，由程序在首次启动时生成；请求需 Authorization: Bearer <token>")
         ));
+
+        List<ConfigEntry> outputEntries = new ArrayList<>();
+        for (OutputTemplate template : OutputCatalog.all()) {
+            outputEntries.add(ConfigEntry.template(template.key(),
+                    TemplateCodec.toConfig(template.defaultParts()),
+                    template.group(), template.description()));
+        }
+        file(OUTPUT, "输出格式", outputEntries);
     }
 
     private ConfigSchema() {
@@ -310,6 +329,22 @@ public final class ConfigSchema {
                     out.put(key, value);
                 }
                 return out;
+            }
+            case TEMPLATE -> {
+                try {
+                    List<TemplatePart> parts = TemplateCodec.parse(raw);
+                    OutputTemplate template = OutputCatalog.template(entry.path());
+                    if (template != null) {
+                        Map<String, String> errors = TemplateCodec.validate(template, parts);
+                        if (!errors.isEmpty()) {
+                            throw new ConfigValidationException(path,
+                                    errors.values().iterator().next());
+                        }
+                    }
+                    return TemplateCodec.toConfig(parts);
+                } catch (TemplateCodec.FormatException e) {
+                    throw new ConfigValidationException(path, e.field() + " " + e.getMessage());
+                }
             }
             default -> throw new ConfigValidationException(path, "不支持的类型");
         }

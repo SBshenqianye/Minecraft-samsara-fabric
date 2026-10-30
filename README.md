@@ -5,7 +5,7 @@
 
 ## 当前版本
 
-**v0.20.0** · Minecraft **26.3** · Fabric Loader **0.20.1** · Java **25**
+**v0.21.1** · Minecraft **26.3** · Fabric Loader **0.20.1** · Java **25**
 
 ## 能做什么
 
@@ -27,6 +27,9 @@
 | 配置/数据分层 | ✅ 可用 | 配置留在 `config/samsara/`；周目、圈地、轨迹、倒流、回看等世界数据随存档走；身份/认证等全局数据默认也随存档，可配置为服务器级并双向迁移 |
 | YAML 配置 | ✅ 可用 | 配置改为带注释的 YAML；首次启动生成全部默认项，旧 JSON 配置自动迁移并保留 `.legacy` 备份；保存原子写并保留 `.bak` |
 | 本地 Web 配置管理 | ✅ 可用 | 仅监听本机的配置面板：查看/编辑所有配置项（含默认项）、字段校验、保存并热重载、查看数据路径与迁移状态；不改世界数据 |
+| 输出格式 | ✅ 可用 | 本地 Web 新增“输出格式”页：按消息编辑文本/变量/按钮片段，手动改写与渲染预览同屏；预览直接调用服务端渲染器，游戏内 `/samsara where`、身份状态、圈地信息、周目状态等首批输出与预览一致；默认模板保持升级前文案 |
+| 权限树 | ✅ 可用 | 本地 Web 新增“权限”页：按命令层级展示全部权限检查点，关闭树干自动级联关闭树枝与叶子；叶子实际等级取整条路径的最高等级，树枝之间互不影响 |
+| 关服提示 | ✅ 可用 | `/samsara restart [秒]` 默认 10 秒倒计时，结束后正常停服并保存；退出界面向在线玩家显示“服务器已关闭，请稍后重新连接”。外部 `/stop` 不倒数但仍发退出提示；强杀/崩溃无法发送 |
 | 权限 | ✅ 可用 | 四级权限，命令所需等级可配置，支持 owner 名单 |
 | 位置查询 | ✅ 可用 | `/samsara where` 查看自己的维度与坐标（可带区块、朝向），`where broadcast` 广播全服；命令启用与输出字段在 `config/samsara/commands.yml` 配置 |
 | TPA 传送 | ✅ 可用 | `/tpa`、`/tpahere` 发起请求，`/tpaccept`、`/tpdeny`、`/tpcancel` 处理；默认 60 秒过期、每人同时只有 1 个请求、仅同维度；请求消息带 `[同意] [拒绝]` / `[取消请求]` 可点击按钮 |
@@ -55,6 +58,7 @@
 | 看自己的坐标/维度 | `/samsara where`；`/samsara where broadcast` 广播全服 |
 | 传送到别人/让别人过来 | `/tpa <玩家>`、`/tpahere <玩家>`；对方 `/tpaccept` 或 `/tpdeny`；发起者 `/tpcancel` |
 | 看版本 | `/samsara version`（别名 `/version`） |
+| 关服/重启 | `/samsara restart [秒]`（默认 10 秒倒计时；退出界面显示“服务器已关闭，请稍后重新连接”） |
 
 > 周目管理在 `/samsara season`，调试与圈地管理在 `/samsara debug`；游戏内输入 `/samsara` 或 `/samsara help` 可看帮助（列表里的青色按钮点击即执行，黄色按钮点击只填入）。
 > 所有玩家名、周目、时长、回看参数、权限路径/等级都支持 **Tab 补全**；输入不完整时按回车，也会在聊天栏列出可点击候选（一行多个，点击只填入）。回看时段列表与帮助里的危险命令只填入命令，不会直接执行。
@@ -97,7 +101,7 @@ Linux/macOS 用 `./gradlew build`。产物是 `mod/build/libs/samsara-<版本>.j
 
 | 层 | 默认位置 | 内容 | 随存档 |
 |---|---|---|---|
-| 配置 | `config/samsara/*.yml` | 命令开关、权限、圈地粒子、存储覆盖、Web、身份组 `identity.yml` | 否 |
+| 配置 | `config/samsara/*.yml` | 命令开关、权限、圈地粒子、存储覆盖、Web、身份组 `identity.yml`、输出模板 `output.yml` | 否 |
 | 世界数据 | `<存档根>/samsara/` | 周目、圈地、倒流、轨迹、回看、备份、活动、审计 | 是 |
 | 身份运行时数据 | `<存档根>/samsara/identity/` | `state.json`、按 data UUID 存玩家数据、journal、archive、身份审计 | 是（固定随主存档） |
 | 全局数据 | `<存档根>/samsara/global/`（默认）或服务器级 | 跨世界审计等；`globalFollowWorld` 可改位置 | 默认是 |
@@ -111,9 +115,13 @@ Linux/macOS 用 `./gradlew build`。产物是 `mod/build/libs/samsara-<版本>.j
 - 旧版全部放在 `config/samsara/` 的数据，首次启动会迁移一次；旧目录改名为 `config/samsara.legacy` 保留备份，确认无误后可手动删除。
 - 旧路径说明以[《设计规范》](docs/设计规范.md)的〈文件布局：配置、世界数据与备份位置〉为准。
 
-命令功能开关在 `config/samsara/commands.yml`：`where.enabled` 控制是否启用 `/samsara where`，`where.broadcast` 控制是否允许广播，`where.broadcastCooldownSeconds` 是广播冷却（0=不限），`where.showCoordinates/showDimension/showChunk/showFacing` 控制输出字段；`tpa.enabled` 控制 TPA 系列，`tpa.requestTimeoutSeconds` 是请求有效期（默认 60），`tpa.crossDimension` 控制是否允许跨维度；`view.protectViewer` 控制回看时是否免伤，`view.freeRoamRadius` 是回看时允许自由活动的半径（默认 32 格）；`completion.chatList` 控制未完成指令是否在聊天栏列出候选，`completion.fuzzy` 控制拼写近似，`completion.maxItems` 控制单页最多展示多少项（超出可翻页）。改完执行 `/samsara debug reload` 生效，无需重启；也可以打开本地 Web 面板编辑。
+命令功能开关在 `config/samsara/commands.yml`：`where.enabled` 控制是否启用 `/samsara where`，`where.broadcast` 控制是否允许广播，`where.broadcastCooldownSeconds` 是广播冷却（0=不限），`where.showCoordinates/showDimension/showChunk/showFacing` 控制输出字段；`tpa.enabled` 控制 TPA 系列，`tpa.requestTimeoutSeconds` 是请求有效期（默认 60），`tpa.crossDimension` 控制是否允许跨维度；`view.protectViewer` 控制回看时是否免伤，`view.freeRoamRadius` 是回看时允许自由活动的半径（默认 32 格）；`completion.chatList` 控制未完成指令是否在聊天栏列出候选，`completion.fuzzy` 控制拼写近似，`completion.maxItems` 控制单页最多展示多少项（超出可翻页）；`shutdown.countdownSeconds` 控制 `/samsara restart` 默认倒计时。改完执行 `/samsara debug reload` 生效，无需重启；也可以打开本地 Web 面板编辑。
 
-本地 Web 面板默认只监听 `127.0.0.1:8720`，首次启动会在控制台打印访问令牌（也写在 `config/samsara/web.yml`）。用浏览器打开后填入令牌即可查看/修改全部配置；面板不会改世界数据，也不提供公网监听。“身份组”是独立页面：可增删改身份组、设置 data/premium/offline、从在线玩家或 usercache 选 UUID、预览圈地/玩家数据/轨迹/活动影响；修改 data UUID 必须走二次确认的重绑流程，默认拒绝覆盖已有数据。
+本地 Web 面板默认**关闭**；在 `config/samsara/web.yml` 勾选 `enabled` 后才会监听 `127.0.0.1:8720`，首次启动会在控制台打印访问令牌。用浏览器打开后填入令牌即可查看/修改全部配置；面板不会改世界数据，也不提供公网监听。开启时请只在本机使用，不要把端口暴露到公网。“身份组”是独立页面：可增删改身份组、设置 data/premium/offline、从在线玩家或 usercache 选 UUID、预览圈地/玩家数据/轨迹/活动影响；修改 data UUID 必须走二次确认的重绑流程，默认拒绝覆盖已有数据。
+
+“输出格式”页把手动改写和渲染预览分成两个并排区域：左侧选消息，中间是一个类似文本框的 Token 画布，文本、变量、按钮和首行前缀都可以在画布内上下左右拖拽排序；文本与 `[周目管理] ▸ ` 前缀可直接编辑。右侧实时显示服务端渲染结果。变量只能从后端面板拖入，手写 `{player}` 只是普通文字；按钮命令固定，只能移动、删除或改显示标签。保存后自动热重载，`output.yml` 保存结构化片段而不是纯字符串模板。默认模板逐字保持升级前输出；点击“恢复默认”回到系统默认。
+
+“权限”页按真实命令树的层级展示权限：每个节点可单独设置 `user/op/owner/config` 或恢复继承；取消“启用”会关闭该节点及其所有后代，重新启用后各节点恢复原来的等级。叶子的实际所需等级取整条路径上的最高等级，因此关闭或提高树枝权限会同时约束该树枝下的所有叶子，但不会影响其他树枝。
 
 活动记录按天保存，只写不读：登录、在线时长，以及本次会话的移动、挖掘、使用、击杀、交易等原版统计增量。没有 tick 轮询，也不提供游戏内查询命令；字段与开销见[《设计规范》](docs/设计规范.md)的〈活动记录：静默采集约定〉。
 

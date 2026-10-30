@@ -6,6 +6,7 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.shenqianye.samsara.command.ui.ChatUi;
 import com.shenqianye.samsara.command.ui.SuggestionProviders;
+import com.shenqianye.samsara.output.OutputRenderer;
 import com.shenqianye.samsara.rewind.RewindEngine;
 import com.shenqianye.samsara.season.PlayerRegistry;
 import com.shenqianye.samsara.season.Season;
@@ -19,7 +20,9 @@ import net.minecraft.server.permissions.Permissions;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -113,7 +116,16 @@ public class DebugCommand {
                 .then(Commands.literal("help")
                         .executes(ctx -> sendHelp(ctx.getSource())))
                 .then(Commands.literal("version")
-                        .executes(ctx -> reply(ctx.getSource(), versionInfo())))
+                        .executes(ctx -> replyVersion(ctx.getSource())))
+                .then(Commands.literal("restart")
+                        .requires(src -> com.shenqianye.samsara.permission.PermissionChecker
+                                .check(src, "restart"))
+                        .executes(ctx -> restart(ctx.getSource(),
+                                com.shenqianye.samsara.config.CommandConfig.getInstance()
+                                        .shutdownCountdownSeconds()))
+                        .then(Commands.argument("seconds", IntegerArgumentType.integer(1, 300))
+                                .executes(ctx -> restart(ctx.getSource(),
+                                        IntegerArgumentType.getInteger(ctx, "seconds")))))
                 .then(IdentityCommand.identityNode())
                 .then(Commands.literal("mspt")
                         .executes(ctx -> reply(ctx.getSource(), mspt())))
@@ -129,7 +141,8 @@ public class DebugCommand {
                 .then(TpaCommand.denyNode())
                 .then(TpaCommand.cancelNode())
                 .then(Commands.literal("debug")
-                        .requires(src -> isOwner(src))
+                        .requires(src -> isOwner(src)
+                                && com.shenqianye.samsara.permission.PermissionChecker.check(src, "debug"))
                         // debug info — 切换式
                         .then(Commands.literal("info")
                                 .executes(ctx -> {
@@ -424,7 +437,7 @@ public class DebugCommand {
         CommandAliases.register(dispatcher, "claim", ClaimCommand::claimNode);
         CommandAliases.register(dispatcher, "where", WhereCommand::whereNode);
         CommandAliases.register(dispatcher, "version", () -> Commands.literal("version")
-                .executes(ctx -> reply(ctx.getSource(), versionInfo())));
+                .executes(ctx -> replyVersion(ctx.getSource())));
         CommandAliases.register(dispatcher, "tpa", TpaCommand::tpaNode);
         CommandAliases.register(dispatcher, "tpahere", TpaCommand::tpaHereNode);
         CommandAliases.register(dispatcher, "tpaccept", TpaCommand::acceptNode);
@@ -1185,7 +1198,7 @@ public class DebugCommand {
     }
 
     /** /samsara version：从 FabricLoader 取模组版本 + 显示名 + 游戏版本 */
-    private static String versionInfo() {
+    private static Map<String, Object> versionValues() {
         String version = "unknown";
         String name = "samsara";
         String gameVersion = "unknown";
@@ -1204,8 +1217,30 @@ public class DebugCommand {
         } catch (Exception e) {
             // 取不到版本就用 unknown
         }
-        return "周目管理（" + name + "） · 版本 " + version
-                + " · MC " + gameVersion + " / Fabric —— 空间/时间/逆熵";
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("name", name);
+        values.put("version", version);
+        values.put("minecraft", gameVersion);
+        return values;
+    }
+
+    private static String versionInfo() {
+        Map<String, Object> values = versionValues();
+        return "周目管理（" + values.get("name") + "） · 版本 " + values.get("version")
+                + " · MC " + values.get("minecraft") + " / Fabric —— 空间/时间/逆熵";
+    }
+
+    private static int replyVersion(CommandSourceStack src) {
+        ChatUi.send(src, OutputRenderer.render("version", versionValues(), src, null));
+        return 1;
+    }
+
+    private static int restart(CommandSourceStack src, int seconds) {
+        if (!com.shenqianye.samsara.shutdown.ShutdownAnnouncer.request(
+                src.getServer(), seconds)) {
+            return reply(src, "已有正在进行的关服倒计时");
+        }
+        return 1;
     }
 
     /** MSPT 追踪：由 Samsara.onTick() 每 tick 调用 */
@@ -1249,17 +1284,16 @@ public class DebugCommand {
      * @return 固定返回 1（brigadier 命令执行成功）
      */
     private static int reply(CommandSourceStack src, String message) {
-        src.sendSuccess(() -> ChatFormat.formatDebugComponent(message), false);
+        src.sendSuccess(() -> OutputRenderer.renderLegacy("debug.reply", message, src), false);
         return 1;
     }
 
     /** config 命令：message==null 表示未知配置项 */
     private static int replyOrErr(CommandContext<CommandSourceStack> ctx, String message) {
         if (message == null) {
-            ctx.getSource().sendSuccess(() -> ChatFormat.formatDebugComponent(
+            return reply(ctx.getSource(),
                     "参数不足或未知配置项（perm set 用法：/samsara debug perm set <命令路径> <等级>；"
-                            + "配置项可用 /samsara debug config 查看全部）"), false);
-            return 0;
+                            + "配置项可用 /samsara debug config 查看全部）");
         }
         return reply(ctx.getSource(), message);
     }

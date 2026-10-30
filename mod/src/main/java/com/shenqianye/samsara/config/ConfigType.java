@@ -8,7 +8,8 @@ public enum ConfigType {
     STRING("string"),
     ENUM("enum"),
     STRING_LIST("string-list"),
-    LEVEL_MAP("level-map");
+    LEVEL_MAP("level-map"),
+    TEMPLATE("template");
 
     private final String id;
 

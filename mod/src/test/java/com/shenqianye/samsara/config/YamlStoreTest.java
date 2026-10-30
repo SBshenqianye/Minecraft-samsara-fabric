@@ -1,5 +1,9 @@
 package com.shenqianye.samsara.config;
 
+import com.shenqianye.samsara.output.OutputCatalog;
+import com.shenqianye.samsara.output.TemplateCodec;
+import com.shenqianye.samsara.output.TemplatePart;
+import com.shenqianye.samsara.output.TextPart;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -107,21 +111,31 @@ class YamlStoreTest {
     }
 
     @Test
+    void webIsDisabledByDefault() {
+        YamlStore store = new YamlStore(tmp);
+        Map<String, Object> values = store.load(ConfigSchema.WEB);
+        assertEquals(false, values.get("enabled"), "Web 默认必须关闭");
+    }
+
+    @Test
     void permissionsLevelMapAndOwnersRoundTrip() {
         YamlStore store = new YamlStore(tmp);
         Map<String, Object> values = store.load(ConfigSchema.PERMISSIONS);
         @SuppressWarnings("unchecked")
         Map<String, String> entries = (Map<String, String>) values.get("entries");
         assertEquals("owner", entries.get("season start"));
+        assertEquals(List.of(), values.get("disabled"));
 
         YamlStore.SaveResult result = store.save(ConfigSchema.PERMISSIONS, Map.of(
                 "entries", Map.of("season status", "op", "where", "op"),
+                "disabled", List.of("debug claim"),
                 "owners", List.of("Alice", "bob")));
         assertTrue(result.ok(), () -> String.valueOf(result.errors()));
 
         YamlStore reloaded = new YamlStore(tmp);
         Map<String, Object> after = reloaded.load(ConfigSchema.PERMISSIONS);
         assertEquals(List.of("Alice", "bob"), after.get("owners"));
+        assertEquals(List.of("debug claim"), after.get("disabled"));
         Map<?, ?> entriesAfter = (Map<?, ?>) after.get("entries");
         assertEquals("op", entriesAfter.get("season status"));
         assertEquals("op", entriesAfter.get("where"));
@@ -147,5 +161,51 @@ class YamlStoreTest {
         assertEquals(false, after.get("globalFollowWorld"));
         assertEquals("D:/samsara-data", after.get("worldDataRoot"));
         assertEquals(1, after.get("migration.version"));
+    }
+
+    @Test
+    void outputTemplateRoundTripPreservesNewlinesAndBackup() throws Exception {
+        YamlStore store = new YamlStore(tmp);
+        Map<String, Object> initial = store.load(ConfigSchema.OUTPUT);
+        assertTrue(Files.exists(tmp.resolve("output.yml")));
+        assertTrue(initial.containsKey("where.result"));
+
+        List<TemplatePart> parts = List.of(
+                new TextPart("自定义\n第二行 "),
+                new com.shenqianye.samsara.output.VariablePart("dimension"),
+                new TextPart("\n坐标 "),
+                new com.shenqianye.samsara.output.VariablePart("x"),
+                new TextPart(", "), new com.shenqianye.samsara.output.VariablePart("y"),
+                new TextPart(", "), new com.shenqianye.samsara.output.VariablePart("z"),
+                new TextPart("\n区块 "), new com.shenqianye.samsara.output.VariablePart("chunkX"),
+                new TextPart(", "), new com.shenqianye.samsara.output.VariablePart("chunkZ"),
+                new TextPart(" · 朝向 "), new com.shenqianye.samsara.output.VariablePart("facing"),
+                new TextPart("\n"), new com.shenqianye.samsara.output.ButtonPart("broadcast")
+        );
+        assertTrue(store.save(ConfigSchema.OUTPUT,
+                Map.of("where.result", TemplateCodec.toConfig(parts))).ok());
+        assertTrue(Files.exists(tmp.resolve("output.yml.bak")));
+        String yaml = Files.readString(tmp.resolve("output.yml"));
+        assertTrue(yaml.contains("自定义\\n第二行"));
+
+        YamlStore reloaded = new YamlStore(tmp);
+        List<TemplatePart> after = TemplateCodec.parse(
+                reloaded.load(ConfigSchema.OUTPUT).get("where.result"));
+        assertEquals("自定义\n第二行 ", ((TextPart) after.get(0)).text());
+    }
+
+    @Test
+    void invalidOutputTemplateFallsBackToDefaultAndWarns() throws Exception {
+        Files.writeString(tmp.resolve("output.yml"), """
+                where:
+                  result:
+                    - text: 缺少所有必需变量
+                """);
+        YamlStore store = new YamlStore(tmp);
+        Map<String, Object> values = store.load(ConfigSchema.OUTPUT);
+        assertTrue(store.warnings().stream().anyMatch(w -> w.contains("where.result")));
+
+        List<TemplatePart> parts = TemplateCodec.parse(values.get("where.result"));
+        assertEquals(OutputCatalog.template("where.result").defaultParts(), parts);
     }
 }

@@ -15,6 +15,15 @@ public final class PermissionDefaults {
 
     public static Map<String, String> entries() {
         Map<String, String> map = new LinkedHashMap<>();
+        // 树枝默认值：叶子还会取路径上的最高等级，树枝设置后会自动约束所有叶子
+        map.put("season", "user");
+        map.put("identity", "user");
+        map.put("claim", "user");
+        map.put("debug", "owner");
+        map.put("perm", "user");
+        map.put("track", "user");
+        map.put("restart", "owner");
+
         // season
         map.put("season create", "owner");
         map.put("season start", "owner");
