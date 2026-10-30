@@ -64,6 +64,14 @@ class ChatUiTest {
     }
 
     @Test
+    void suggestPreservesTrailingSpaceForDrillDown() {
+        MutableComponent component = ChatUi.suggest("周目", "samsara season ", "继续输入");
+        assertEquals("/samsara season ",
+                ((ClickEvent.SuggestCommand) component.getStyle().getClickEvent()).command(),
+                "补全按钮需要保留尾随空格，normalizeCommand 的 trim 不能吃掉它");
+    }
+
+    @Test
     void alreadyBracketedLabelIsNotWrappedTwice() {
         assertEquals("[停止]", ChatUi.run("[停止]", "/stop", "停止").getString());
     }

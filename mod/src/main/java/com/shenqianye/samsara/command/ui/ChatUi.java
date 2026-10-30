@@ -170,6 +170,13 @@ public final class ChatUi {
             text = wrapBrackets(text);
         }
         String normalized = normalizeCommand(command);
+        // SuggestCommand 的用途是“填进聊天框”。补全按钮常需要带一个尾随空格，
+        // 让玩家能继续输入下一个参数；normalizeCommand 会 trim，这里单独保留。
+        if (command != null && !command.isBlank()
+                && Character.isWhitespace(command.charAt(command.length() - 1))
+                && !normalized.endsWith(" ")) {
+            normalized = normalized + " ";
+        }
         String tooltip = hover == null || hover.isBlank() ? normalized : hover;
         ClickEvent click = execute
                 ? new ClickEvent.RunCommand(normalized)

@@ -22,6 +22,7 @@ import java.nio.file.Path;
  *   <li>{@code where.broadcast} —— 是否允许 {@code /samsara where broadcast}</li>
  *   <li>{@code where.broadcastCooldownSeconds} —— 广播冷却（0 = 不限）</li>
  *   <li>{@code where.showCoordinates/showDimension/showChunk/showFacing} —— 输出内容开关</li>
+ *   <li>{@code completion.chatList/fuzzy/maxItems} —— 未完成指令的聊天栏候选</li>
  * </ul>
  * 修改后可用 {@code /samsara debug reload} 重新读取（无需重启）。
  * <p>
@@ -58,6 +59,11 @@ public final class CommandConfig {
                   "maxDegPerSec": 90.0,
                   "pitch": true
                 }
+              },
+              "completion": {
+                "chatList": true,
+                "fuzzy": true,
+                "maxItems": 48
               }
             }
             """;
@@ -84,6 +90,10 @@ public final class CommandConfig {
     private double viewAimEdge = 24.0;
     private double viewAimMaxDegPerSec = 90.0;
     private boolean viewAimPitch = true;
+
+    private boolean chatCompletionEnabled = true;
+    private boolean completionFuzzyEnabled = true;
+    private int completionMaxItems = 48;
 
     private CommandConfig() {
         Path dir = FabricLoader.getInstance().getConfigDir().resolve("samsara");
@@ -187,6 +197,23 @@ public final class CommandConfig {
         return viewAimPitch;
     }
 
+    // ---- 指令补全查询 ----
+
+    /** 未完成指令是否改为在聊天栏列出可点击候选（默认 true）。 */
+    public boolean isChatCompletionEnabled() {
+        return chatCompletionEnabled;
+    }
+
+    /** 没有前缀匹配时是否做拼写近似匹配（{@code seasn → season}，默认 true）。 */
+    public boolean isCompletionFuzzyEnabled() {
+        return completionFuzzyEnabled;
+    }
+
+    /** 聊天栏一次最多展示的候选数（超出提示继续输入/按 Tab）。 */
+    public int completionMaxItems() {
+        return completionMaxItems;
+    }
+
     /** 配置文件绝对路径 */
     public String configPath() {
         return file.toAbsolutePath().normalize().toString();
@@ -223,6 +250,12 @@ public final class CommandConfig {
         aim.addProperty("pitch", viewAimPitch);
         view.add("aim", aim);
         root.add("view", view);
+
+        JsonObject completion = new JsonObject();
+        completion.addProperty("chatList", chatCompletionEnabled);
+        completion.addProperty("fuzzy", completionFuzzyEnabled);
+        completion.addProperty("maxItems", completionMaxItems);
+        root.add("completion", completion);
         try {
             Files.writeString(file, GSON.toJson(root), StandardCharsets.UTF_8);
         } catch (IOException e) {
@@ -283,6 +316,14 @@ public final class CommandConfig {
             }
             viewAimMaxDegPerSec = readDouble(aim, "maxDegPerSec", viewAimMaxDegPerSec, 10.0, 360.0);
             viewAimPitch = readBoolean(aim, "pitch", viewAimPitch);
+
+            JsonElement completionElement = root.get("completion");
+            JsonObject completion = completionElement != null && completionElement.isJsonObject()
+                    ? completionElement.getAsJsonObject()
+                    : new JsonObject();
+            chatCompletionEnabled = readBoolean(completion, "chatList", chatCompletionEnabled);
+            completionFuzzyEnabled = readBoolean(completion, "fuzzy", completionFuzzyEnabled);
+            completionMaxItems = readInt(completion, "maxItems", completionMaxItems, 4, 200);
         } catch (Exception e) {
             Samsara.LOGGER.warn("[周目管理 samsara] commands.json 解析失败，使用默认值: {}", e.getMessage());
         }
@@ -297,6 +338,7 @@ public final class CommandConfig {
                 + "（超时 " + tpaRequestTimeoutSeconds + "s）"
                 + " · 回看保护 " + (viewProtectViewer ? "开" : "关")
                 + " · 回看自瞄 " + (viewAimEnabled ? "默认开" : "默认关")
+                + " · 聊天栏补全 " + (chatCompletionEnabled ? "开" : "关")
                 + " · 来源 " + configPath();
     }
 

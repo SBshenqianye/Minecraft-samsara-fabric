@@ -412,9 +412,11 @@ public class DebugCommand {
                                                                 debugClaimOwner(
                                                                         IntegerArgumentType.getInteger(ctx, "x"),
                                                                         IntegerArgumentType.getInteger(ctx, "z"))))))))
-                        .then(permNode()));
+                        .then(permNode())
+                        .then(completionNode()));
 
         dispatcher.register(samsaraNode);
+        CommandAliases.markRoot("samsara");
         // 短别名：全部按〈命令谦让〉条件注册；根节点已被其他模组占用时自动让位
         CommandAliases.register(dispatcher, "season", SeasonCommand::seasonNode);
         CommandAliases.register(dispatcher, "claim", ClaimCommand::claimNode);
@@ -437,11 +439,77 @@ public class DebugCommand {
         if (!hasMspt) {
             dispatcher.register(Commands.literal("mspt")
                     .executes(ctx -> reply(ctx.getSource(), mspt())));
+            CommandAliases.markRoot("mspt");
         }
         if (!hasTps) {
             dispatcher.register(Commands.literal("tps")
                     .executes(ctx -> reply(ctx.getSource(), tps())));
+            CommandAliases.markRoot("tps");
         }
+    }
+
+    /** 构建 /samsara debug completion 子命令（补全诊断） */
+    private static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> completionNode() {
+        return Commands.literal("completion")
+                .then(Commands.literal("send")
+                        .then(Commands.argument("input", StringArgumentType.greedyString())
+                                .executes(ctx -> debugCompletionSend(ctx.getSource(),
+                                        StringArgumentType.getString(ctx, "input")))))
+                .then(Commands.argument("input", StringArgumentType.greedyString())
+                        .executes(ctx -> debugCompletion(ctx.getSource(),
+                                StringArgumentType.getString(ctx, "input"))));
+    }
+
+    /** `/samsara debug completion <input>`：只打印候选，便于 RCON/日志核对。 */
+    private static int debugCompletion(CommandSourceStack src, String raw) {
+        String input = IncompleteCommandHandler.normalize(raw);
+        var dispatcher = src.getServer().getCommands().getDispatcher();
+        var parse = dispatcher.parse(input, src);
+        var suggestions = dispatcher.getCompletionSuggestions(parse).join();
+        boolean fuzzy = false;
+        if (suggestions.getList().isEmpty()) {
+            suggestions = IncompleteCommandHandler.fuzzySuggestions(input, parse,
+                    IncompleteCommandHandler.deepestNode(parse));
+            fuzzy = !suggestions.getList().isEmpty();
+        }
+        var cells = IncompleteCommandHandler.cells(input, suggestions,
+                IncompleteCommandHandler.deepestNode(parse));
+        StringBuilder sb = new StringBuilder("补全诊断：/").append(input)
+                .append("\n解析：").append(IncompleteCommandHandler.isIncomplete(parse) ? "未完成/未知" : "完整")
+                .append(" · samsara 根节点：")
+                .append(CommandAliases.isSamsaraRoot(IncompleteCommandHandler.firstToken(input)) ? "是" : "否")
+                .append(" · 候选 ").append(cells.size()).append(" 项")
+                .append(fuzzy ? "（近似匹配）" : "");
+        int limit = Math.min(cells.size(), 16);
+        for (int i = 0; i < limit; i++) {
+            sb.append("\n· ").append(cells.get(i).command());
+            String tooltip = cells.get(i).tooltip();
+            if (tooltip != null && !tooltip.isBlank()) {
+                sb.append("  —  ").append(tooltip);
+            }
+        }
+        if (cells.size() > limit) {
+            sb.append("\n… 还有 ").append(cells.size() - limit).append(" 项");
+        }
+        return reply(src, sb.toString());
+    }
+
+    /** `/samsara debug completion send <input>`：用当前玩家身份真正触发一次聊天栏候选。 */
+    private static int debugCompletionSend(CommandSourceStack src, String raw) {
+        String input = IncompleteCommandHandler.normalize(raw);
+        var dispatcher = src.getServer().getCommands().getDispatcher();
+        var parse = dispatcher.parse(input, src);
+        if (!IncompleteCommandHandler.isIncomplete(parse)) {
+            return reply(src, "只用于未完成指令；该输入已经是完整指令，未执行");
+        }
+        String before = IncompleteCommandHandler.lastHandled();
+        // 走真正的 performPrefixedCommand 路径，确保 mixin 拦截也被验证到。
+        src.getServer().getCommands().performPrefixedCommand(src, input);
+        String after = IncompleteCommandHandler.lastHandled();
+        boolean handled = !after.equals(before) && !after.isBlank();
+        return reply(src, handled
+                ? "聊天栏候选：已发送（" + after + "）"
+                : "聊天栏候选：未接管（控制台/非 samsara/无候选/配置关闭）");
     }
 
     /** 构建 /samsara perm 子命令树 */

@@ -1,7 +1,5 @@
 package com.shenqianye.samsara.command.ui;
 
-import com.mojang.brigadier.context.StringRange;
-import com.mojang.brigadier.suggestion.Suggestion;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
 import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
@@ -12,7 +10,6 @@ import com.shenqianye.samsara.track.TrackRecorder;
 import com.shenqianye.samsara.track.view.ViewTime;
 import com.shenqianye.samsara.track.view.ViewTrackReader;
 import net.minecraft.commands.CommandSourceStack;
-import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 
@@ -20,7 +17,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -64,50 +60,15 @@ public final class SuggestionProviders {
     public static final long TTL_VIEW_TIMES_MS = 15_000L;
 
     /** 回看可选参数（与 {@code ViewOptions.parse} 支持的键一致） */
-    private static final List<String> VIEW_OPTIONS = List.of(
-            "--speed", "--duration", "--cycle", "--follow", "--spectator",
-            "--to", "--glow", "--no-glow", "--no-name-tag",
-            "--aim", "--aim-deadzone", "--aim-edge", "--aim-speed", "--aim-pitch");
+    private static final List<String> VIEW_OPTIONS = SuggestionCatalog.viewOptions();
 
-    private static final List<String> DURATIONS = List.of(
-            "30s", "1m", "5m", "10m", "30m", "1h", "2h", "6h", "12h", "1d");
+    private static final List<String> DURATIONS = SuggestionCatalog.durations();
 
-    private static final List<String> SPEEDS = List.of(
-            "0.25", "0.5", "1", "2", "4", "8", "16", "32", "64");
+    private static final List<String> SPEEDS = SuggestionCatalog.speeds();
 
-    private static final List<String> SEASON_MODES = List.of("same-world", "new-world");
+    private static final List<String> SEASON_MODES = SuggestionCatalog.seasonModes();
 
-    private static final List<String> FAKE_PLAYER_HINTS = List.of(
-            "clear", "1", "3", "5", "10", "20");
-
-    /** 选项 → hover 说明 */
-    private static final Map<String, String> VIEW_OPTION_HINTS = Map.ofEntries(
-            Map.entry("--speed", "播放倍速 0.1~64，例如 --speed 4"),
-            Map.entry("--duration", "从开始时间起播放多久，例如 --duration 30m"),
-            Map.entry("--to", "显式结束时间，例如 --to 22:00（与 --duration 二选一）"),
-            Map.entry("--cycle", "指定周目，例如 --cycle cycle3；跨周目窗口必须显式指定"),
-            Map.entry("--follow", "观看者跟随人偶（默认开，可写 --follow=off）"),
-            Map.entry("--spectator", "回看期间保持旁观（默认就是旁观，可显式写出）"),
-            Map.entry("--aim", "自动瞄准：默认关闭，--aim=on 开启；可即时用 /track view aim 切换"),
-            Map.entry("--aim-deadzone", "自瞄内圈（度），默认 6；圈内不修正"),
-            Map.entry("--aim-edge", "自瞄外圈（度），默认 24；越接近外圈修正越快"),
-            Map.entry("--aim-speed", "自瞄最大角速度（度/秒），默认 90"),
-            Map.entry("--aim-pitch", "是否同时修正俯仰，默认 on"),
-            Map.entry("--glow", "人偶发光高亮（默认开）"),
-            Map.entry("--no-glow", "关闭人偶发光"),
-            Map.entry("--no-name-tag", "隐藏人偶头顶名牌"));
-
-    private static final Map<String, String> DURATION_HINTS = Map.of(
-            "30s", "30 秒（快速预览）",
-            "1m", "1 分钟",
-            "5m", "5 分钟",
-            "10m", "10 分钟",
-            "30m", "30 分钟（常用）",
-            "1h", "1 小时",
-            "2h", "2 小时",
-            "6h", "6 小时",
-            "12h", "12 小时",
-            "1d", "1 天");
+    private static final List<String> FAKE_PLAYER_HINTS = SuggestionCatalog.fakePlayerHints();
 
     // ---- 缓存（只缓存内存/短周期 IO 的结果，避免每次按键读盘） ----
 
@@ -134,7 +95,7 @@ public final class SuggestionProviders {
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             out.add(player.getScoreboardName());
         }
-        return dedupe(out);
+        return CompletionSupport.dedupe(out);
     }
 
     /**
@@ -168,7 +129,7 @@ public final class SuggestionProviders {
             }
         }
         out.addAll(cachedKnownPlayers);
-        return dedupe(out);
+        return CompletionSupport.dedupe(out);
     }
 
     /** 周目 id → {@code cycleN}，保留传入顺序并去重。 */
@@ -182,7 +143,7 @@ public final class SuggestionProviders {
                 out.add("cycle" + id);
             }
         }
-        return dedupe(out);
+        return CompletionSupport.dedupe(out);
     }
 
     /** 当前世界轨迹目录下的全部周目（短 TTL 缓存）。 */
@@ -306,22 +267,12 @@ public final class SuggestionProviders {
                 out.addAll(list);
             }
         }
-        return dedupe(out);
+        return CompletionSupport.dedupe(out);
     }
 
-    /** 不区分大小写的前缀过滤，保留候选原顺序。 */
+    /** 不区分大小写的前缀过滤，保留候选原顺序（委托给纯工具层）。 */
     public static List<String> filter(String prefix, Collection<String> candidates) {
-        List<String> out = new ArrayList<>();
-        if (candidates == null) {
-            return out;
-        }
-        String needle = prefix == null ? "" : prefix.toLowerCase(Locale.ROOT);
-        for (String candidate : candidates) {
-            if (candidate != null && candidate.toLowerCase(Locale.ROOT).startsWith(needle)) {
-                out.add(candidate);
-            }
-        }
-        return dedupe(out);
+        return CompletionSupport.filter(prefix, candidates);
     }
 
     // ==================== 贪心参数的 token 逻辑 ====================
@@ -343,21 +294,9 @@ public final class SuggestionProviders {
      */
     public static TokenSuggestions token(String remaining, char separator, Collection<String> candidates) {
         String input = remaining == null ? "" : remaining;
-        int offset = lastSeparator(input, separator) + 1;
+        int offset = CompletionSupport.lastSeparator(input, separator) + 1;
         String token = input.substring(offset);
         return new TokenSuggestions(offset, token, filter(token, candidates));
-    }
-
-    private static int lastSeparator(String input, char separator) {
-        if (separator == ' ') {
-            for (int i = input.length() - 1; i >= 0; i--) {
-                if (Character.isWhitespace(input.charAt(i))) {
-                    return i;
-                }
-            }
-            return -1;
-        }
-        return input.lastIndexOf(separator);
     }
 
     /**
@@ -389,7 +328,7 @@ public final class SuggestionProviders {
     public static TokenSuggestions viewInput(String remaining, Collection<String> startTimes,
                                              Collection<String> cycleCandidates) {
         String input = remaining == null ? "" : remaining;
-        int offset = lastSeparator(input, ' ') + 1;
+        int offset = CompletionSupport.lastSeparator(input, ' ') + 1;
         String token = input.substring(offset);
         String before = input.substring(0, offset).trim();
 
@@ -462,32 +401,32 @@ public final class SuggestionProviders {
 
     /** 在线玩家 */
     public static SuggestionProvider<CommandSourceStack> playersProvider() {
-        return (ctx, builder) -> offer(builder, players(ctx.getSource().getServer()));
+        return (ctx, builder) -> CompletionSupport.offer(builder, players(ctx.getSource().getServer()));
     }
 
     /** 在线 + 已知/离线玩家（短 TTL 缓存） */
     public static SuggestionProvider<CommandSourceStack> knownPlayersProvider() {
-        return (ctx, builder) -> offer(builder, knownPlayers(ctx.getSource().getServer()));
+        return (ctx, builder) -> CompletionSupport.offer(builder, knownPlayers(ctx.getSource().getServer()));
     }
 
     /** {@code cycleN} */
     public static SuggestionProvider<CommandSourceStack> cyclesProvider() {
-        return (ctx, builder) -> offer(builder, cycles());
+        return (ctx, builder) -> CompletionSupport.offer(builder, cycles());
     }
 
     /** {@code --speed} 等倍速候选 */
     public static SuggestionProvider<CommandSourceStack> speedProvider() {
-        return (ctx, builder) -> offer(builder, SPEEDS, s -> "倍速 " + s + "×");
+        return (ctx, builder) -> CompletionSupport.offer(builder, SPEEDS, s -> "倍速 " + s + "×");
     }
 
     /** 时长候选 */
     public static SuggestionProvider<CommandSourceStack> durationsProvider() {
-        return (ctx, builder) -> offer(builder, DURATIONS, DURATION_HINTS::get);
+        return (ctx, builder) -> CompletionSupport.offer(builder, DURATIONS, SuggestionCatalog::durationHint);
     }
 
     /** 权限等级（user/op/owner/config） */
     public static SuggestionProvider<CommandSourceStack> permissionLevelsProvider() {
-        return (ctx, builder) -> offer(builder, permissionLevels(),
+        return (ctx, builder) -> CompletionSupport.offer(builder, permissionLevels(),
                 s -> "权限等级 " + s + "（config 仅控制台/配置文件）");
     }
 
@@ -500,13 +439,13 @@ public final class SuggestionProviders {
 
     /** 周目创建模式 */
     public static SuggestionProvider<CommandSourceStack> seasonModesProvider() {
-        return (ctx, builder) -> offer(builder, seasonModes(),
+        return (ctx, builder) -> CompletionSupport.offer(builder, seasonModes(),
                 s -> "same-world：同一存档开新周目；new-world：新世界（当前仅切换出生点）");
     }
 
     /** true / false */
     public static SuggestionProvider<CommandSourceStack> boolProvider() {
-        return (ctx, builder) -> offer(builder, List.of("true", "false"));
+        return (ctx, builder) -> CompletionSupport.offer(builder, List.of("true", "false"));
     }
 
     /** 回看 greedyString：开始时间 / 选项 / cycle / duration / speed */
@@ -534,7 +473,7 @@ public final class SuggestionProviders {
             } catch (Exception ignored) {
                 // 无 player 参数时留空
             }
-            return offer(builder, times, s -> "从 " + s.replace('T', ' ') + " 开始回看");
+            return CompletionSupport.offer(builder, times, s -> "从 " + s.replace('T', ' ') + " 开始回看");
         };
     }
 
@@ -572,7 +511,7 @@ public final class SuggestionProviders {
         return (ctx, builder) -> {
             String remaining = builder.getRemaining();
             List<String> paths = commandPaths();
-            int lastSpace = lastSeparator(remaining, ' ');
+            int lastSpace = CompletionSupport.lastSeparator(remaining, ' ');
             String head = lastSpace < 0 ? "" : remaining.substring(0, lastSpace).trim();
             boolean trailingSpace = !remaining.isEmpty()
                     && Character.isWhitespace(remaining.charAt(remaining.length() - 1));
@@ -583,10 +522,10 @@ public final class SuggestionProviders {
                 return offerToken(builder, token, s -> "把 /samsara " + head + " 设为 " + s + " 级");
             }
             if (trailingSpace && head.isEmpty()) {
-                return offerWholeRemaining(builder, paths, s -> "/samsara " + s);
+                return CompletionSupport.offerWholeRemaining(builder, paths, s -> "/samsara " + s);
             }
             // 还没写完路径：路径里本身可能含空格，替换整段 remaining
-            return offerWholeRemaining(builder, filter(remaining.trim(), paths), s -> "/samsara " + s);
+            return CompletionSupport.offerWholeRemaining(builder, filter(remaining.trim(), paths), s -> "/samsara " + s);
         };
     }
 
@@ -608,26 +547,26 @@ public final class SuggestionProviders {
             return builder.buildFuture();
         }
         int value = x ? player.blockPosition().getX() >> 4 : player.blockPosition().getZ() >> 4;
-        return offer(builder, List.of(String.valueOf(value)),
+        return CompletionSupport.offer(builder, List.of(String.valueOf(value)),
                 s -> x ? "你当前所在区块 X = " + s : "你当前所在区块 Z = " + s);
     }
 
     /** 进度跳转候选（相对时间 / 百分比） */
     public static SuggestionProvider<CommandSourceStack> seekProvider() {
-        return (ctx, builder) -> offer(builder,
+        return (ctx, builder) -> CompletionSupport.offer(builder,
                 List.of("-30s", "-10s", "+10s", "+30s", "25%", "50%", "75%"),
                 s -> "跳转到 " + s);
     }
 
     /** 自瞄开关候选 */
     public static SuggestionProvider<CommandSourceStack> aimProvider() {
-        return (ctx, builder) -> offer(builder, List.of("on", "off"),
+        return (ctx, builder) -> CompletionSupport.offer(builder, List.of("on", "off"),
                 s -> "自动瞄准" + (s.equals("on") ? "开启" : "关闭"));
     }
 
     /** 拖动模式开关候选 */
     public static SuggestionProvider<CommandSourceStack> scrubProvider() {
-        return (ctx, builder) -> offer(builder, List.of("on", "off"),
+        return (ctx, builder) -> CompletionSupport.offer(builder, List.of("on", "off"),
                 s -> "拖动模式" + (s.equals("on") ? "开启（A/D/空格/Shift）" : "关闭"));
     }
 
@@ -639,28 +578,26 @@ public final class SuggestionProviders {
     /** 固定候选 + 统一 hover 说明。 */
     public static SuggestionProvider<CommandSourceStack> choicesWithHint(String hint, String... values) {
         List<String> list = List.of(values);
-        return (ctx, builder) -> offer(builder, list, s -> hint);
+        return (ctx, builder) -> CompletionSupport.offer(builder, list, s -> hint);
     }
 
     public static SuggestionProvider<CommandSourceStack> choices(Function<String, String> tooltip, String... values) {
         List<String> list = List.of(values);
-        return (ctx, builder) -> offer(builder, list, tooltip);
+        return (ctx, builder) -> CompletionSupport.offer(builder, list, tooltip);
     }
 
-    // ---- 内部：构造 Suggestions ----
+    // ---- 内部：构造 Suggestions（委托给纯工具层） ----
 
     /** 普通参数：用当前 remaining 做前缀过滤，替换范围就是 Brigadier 给的范围。 */
     public static CompletableFuture<Suggestions> offer(SuggestionsBuilder builder,
                                                        Collection<String> candidates) {
-        return offer(builder, candidates, null);
+        return CompletionSupport.offer(builder, candidates, null);
     }
 
     public static CompletableFuture<Suggestions> offer(SuggestionsBuilder builder,
                                                        Collection<String> candidates,
                                                        Function<String, String> tooltip) {
-        String remaining = builder.getRemaining();
-        List<String> filtered = filter(remaining, candidates);
-        return build(builder, builder.getStart(), filtered, tooltip);
+        return CompletionSupport.offer(builder, candidates, tooltip);
     }
 
     /** 贪心参数：替换范围从 {@link TokenSuggestions#offset()} 到末尾。 */
@@ -668,73 +605,21 @@ public final class SuggestionProviders {
                                                             TokenSuggestions token,
                                                             Function<String, String> tooltip) {
         int offset = Math.max(0, Math.min(token.offset(), builder.getRemaining().length()));
-        return build(builder, builder.getStart() + offset, token.candidates(), tooltip);
+        return CompletionSupport.offerRange(builder, builder.getStart() + offset,
+                token.candidates(), tooltip);
     }
 
     /** 整段 remaining 作为替换范围（命令路径这种本身含空格的候选）。 */
     public static CompletableFuture<Suggestions> offerWholeRemaining(SuggestionsBuilder builder,
                                                                      Collection<String> candidates,
                                                                      Function<String, String> tooltip) {
-        return build(builder, builder.getStart(), candidates, tooltip);
-    }
-
-    private static CompletableFuture<Suggestions> build(SuggestionsBuilder builder, int rangeStart,
-                                                        Collection<String> candidates,
-                                                        Function<String, String> tooltip) {
-        int end = builder.getStart() + builder.getRemaining().length();
-        int start = Math.max(builder.getStart(), Math.min(rangeStart, end));
-        StringRange range = StringRange.between(start, end);
-        List<Suggestion> suggestions = new ArrayList<>();
-        if (candidates != null) {
-            for (String candidate : dedupe(candidates)) {
-                String tip = tooltip == null ? null : tooltip.apply(candidate);
-                suggestions.add(new Suggestion(range, candidate,
-                        tip == null || tip.isBlank() ? null : Component.literal(tip)));
-            }
-        }
-        return CompletableFuture.completedFuture(new Suggestions(range, suggestions));
+        return CompletionSupport.offerWholeRemaining(builder, candidates, tooltip);
     }
 
     // ---- 内部：工具 ----
 
-    /** 回看选项/值的 hover 说明 */
+    /** 回看选项/值的 hover 说明（Tab 与聊天栏候选共用）。 */
     public static String viewTooltip(String candidate) {
-        if (candidate == null) {
-            return null;
-        }
-        String hint = VIEW_OPTION_HINTS.get(candidate);
-        if (hint != null) {
-            return hint;
-        }
-        String lower = candidate.toLowerCase(Locale.ROOT);
-        if (lower.startsWith("--cycle")) {
-            return cycles().contains(candidate) ? "回看周目 " + candidate : null;
-        }
-        if (lower.startsWith("cycle")) {
-            return "回看周目 " + candidate;
-        }
-        String durationHint = DURATION_HINTS.get(candidate);
-        if (durationHint != null) {
-            return "时长 " + candidate + "：" + durationHint;
-        }
-        if (SPEEDS.contains(candidate)) {
-            return "倍速 " + candidate + "×";
-        }
-        if (candidate.contains("T") && candidate.length() >= 16) {
-            return "从 " + candidate.replace('T', ' ') + " 开始回看";
-        }
-        return null;
-    }
-
-    private static List<String> dedupe(Collection<String> values) {
-        LinkedHashSet<String> set = new LinkedHashSet<>();
-        if (values != null) {
-            for (String value : values) {
-                if (value != null && !value.isBlank()) {
-                    set.add(value);
-                }
-            }
-        }
-        return List.copyOf(set);
+        return SuggestionCatalog.viewTooltip(candidate, cycles());
     }
 }

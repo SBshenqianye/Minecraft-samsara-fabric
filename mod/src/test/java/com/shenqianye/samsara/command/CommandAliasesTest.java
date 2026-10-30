@@ -19,6 +19,7 @@ class CommandAliasesTest {
         assertTrue(CommandAliases.register(dispatcher, "where",
                 () -> LiteralArgumentBuilder.literal("where")));
         assertNotNull(dispatcher.getRoot().getChild("where"));
+        assertTrue(CommandAliases.isSamsaraRoot("where"), "成功注册的别名应登记为 samsara 根节点");
     }
 
     @Test
@@ -31,6 +32,13 @@ class CommandAliasesTest {
                 "已被其他模组占用时应让位");
         assertSame(existing, dispatcher.getRoot().getChild("where"),
                 "不得覆盖已有根节点");
+    }
+
+    @Test
+    void markRootIsExplicitAndTrimmed() {
+        CommandAliases.markRoot(" samsara ");
+        assertTrue(CommandAliases.isSamsaraRoot("samsara"));
+        assertFalse(CommandAliases.isSamsaraRoot("not-samsara"));
     }
 
     @Test
