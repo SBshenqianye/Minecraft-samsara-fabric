@@ -5,7 +5,7 @@
 
 ## 当前版本
 
-**v0.16.0** · Minecraft **26.3** · Fabric Loader **0.20.1** · Java **25**
+**v0.17.0** · Minecraft **26.3** · Fabric Loader **0.20.1** · Java **25**
 
 ## 能做什么
 
@@ -22,6 +22,11 @@
 | 回看控制 | ✅ 可用 | 聊天栏可点击控制条（倍速/暂停/继续/倒放/对齐/自瞄/拖动/±10s/±30s/25%/50%/75%/停止）；`拖动模式`用 A 后退、D 快进、空格暂停、Shift 加速（服务端读取，无需客户端模组；滚轮不可用）；`/samsara track list` 条目可点击自动填入命令；`/samsara help` 与 `/samsara` 等价 |
 | 可点击指令 | ✅ 可用 | `/samsara` 帮助、`season status/info`、`claim info`、`where` 等只读命令点击即执行；`season start`、`debug *`、`perm set` 等危险命令点击只填入、不执行 |
 | Tab 补全 | ✅ 可用 | 玩家名、`cycleN`、回看开始时刻/参数/时长/倍速、周目模式、权限路径与等级、区块坐标、布尔开关等；补全项带说明，不按键读盘 |
+| 聊天栏补全 | ✅ 可用 | 输入不完整或拼错的 samsara 指令并回车时，不弹原版错误，而是在聊天栏列出可选项；一行多个、点击只填入聊天框；与 Tab 补全同源，另含拼写近似（`/seasn` → `season`）；只接管 samsara 自己的指令，不影响其他模组 |
+| 补全交互增强 | 🚧 规划中 | 有执行器的节点提供 `[展开子命令]`；点击候选后自动补分隔符并打开下一层候选；候选超过单页时可点击 `[上一页] [下一页]` |
+| 配置/数据分层 | 🚧 规划中 | 配置留在 `config/`；周目、圈地、轨迹、倒流、回看等世界数据随存档走；身份/认证等全局数据默认也随存档，可配置为服务器级并双向迁移 |
+| YAML 配置 | 🚧 规划中 | 配置改为带注释的 YAML；首次启动生成全部默认项，旧 JSON 配置自动迁移 |
+| 本地 Web 配置管理 | 🚧 规划中 | 仅监听本机的配置面板：查看/编辑所有配置项（含默认项）、校验、保存并热重载；不改世界数据 |
 | 权限 | ✅ 可用 | 四级权限，命令所需等级可配置，支持 owner 名单 |
 | 位置查询 | ✅ 可用 | `/samsara where` 查看自己的维度与坐标（可带区块、朝向），`where broadcast` 广播全服；命令启用与输出字段在 `config/samsara/commands.json` 配置 |
 | TPA 传送 | ✅ 可用 | `/tpa`、`/tpahere` 发起请求，`/tpaccept`、`/tpdeny`、`/tpcancel` 处理；默认 60 秒过期、每人同时只有 1 个请求、仅同维度；请求消息带 `[同意] [拒绝]` / `[取消请求]` 可点击按钮 |
@@ -29,7 +34,7 @@
 | 新世界模式 | 🚧 规划中 | 旧世界入栈、新建世界、跨世界传送、栈顶限制 |
 | 全员同意开新周目 | 🚧 规划中 | 无管理员时由在线玩家发起并全员同意 |
 | 身份同步 | 🚧 规划中 | 正版/离线账号映射、密码保护、数据迁移 |
-| 数据包开场流程 | 🚧 规划中 | 数据包目前只有骨架，出生区预生成也未接入 |
+| 开场流程（Fabric） | 🚧 规划中 | 新周目开场、分组与传送由 Fabric 服务端事件/代码实现；数据包暂不作为近期依赖 |
 | Web 面板 | 🔭 远期 | 地图、玩家数据与管理可视化 |
 
 ## 常用命令
@@ -40,6 +45,7 @@
 | 看圈地 | `/samsara claim info`、`/samsara claim boundary` |
 | 开新周目 | `/samsara season create <名称>` → `/samsara season start`（开始前二次确认） |
 | 管理/调试 | `/samsara debug ...`（owner；圈地、倒流、轨迹、配置、测试数据） |
+| 查看补全候选 | `/samsara debug completion <指令片段>`（owner；只打印候选，便于排查补全） |
 | 回放玩家轨迹 | `/samsara debug track replay <玩家> <开始时刻> [倍速] [周目]` · `track stop [玩家\\|all]` · `track status` |
 | 回看历史轨迹 | `/samsara track view <玩家> <开始时间> [--speed 4 --duration 30m --follow --aim]` · `view stop/status/pause/resume/align/seek/aim/scrub` · `track list <玩家>`（短别名 `/track`） |
 | 看自己的坐标/维度 | `/samsara where`；`/samsara where broadcast` 广播全服 |
@@ -47,7 +53,7 @@
 | 看版本 | `/samsara version`（别名 `/version`） |
 
 > 周目管理在 `/samsara season`，调试与圈地管理在 `/samsara debug`；游戏内输入 `/samsara` 或 `/samsara help` 可看帮助（列表里的青色按钮点击即执行，黄色按钮点击只填入）。
-> 所有玩家名、周目、时长、回看参数、权限路径/等级都支持 **Tab 补全**；回看时段列表与帮助里的危险命令只填入命令，不会直接执行。
+> 所有玩家名、周目、时长、回看参数、权限路径/等级都支持 **Tab 补全**；输入不完整时按回车，也会在聊天栏列出可点击候选（一行多个，点击只填入）。回看时段列表与帮助里的危险命令只填入命令，不会直接执行。
 
 ## 安装与构建
 
@@ -85,7 +91,9 @@ Linux/macOS 用 `./gradlew build`。产物是 `mod/build/libs/samsara-<版本>.j
 
 所有模组数据都在 `config/samsara/`，**不写入存档目录 `world/`，也不在服务端根目录散落文件**。包括周目、圈地、倒流、玩家轨迹、备份、权限与活动记录。
 
-命令功能开关在 `config/samsara/commands.json`：`where.enabled` 控制是否启用 `/samsara where`，`where.broadcast` 控制是否允许广播，`where.broadcastCooldownSeconds` 是广播冷却（0=不限），`where.showCoordinates/showDimension/showChunk/showFacing` 控制输出字段；`tpa.enabled` 控制 TPA 系列，`tpa.requestTimeoutSeconds` 是请求有效期（默认 60），`tpa.crossDimension` 控制是否允许跨维度；`view.protectViewer` 控制回看时是否免伤，`view.freeRoamRadius` 是回看时允许自由活动的半径（默认 32 格）。改完执行 `/samsara debug reload` 生效，无需重启。
+> 下一版计划把「配置」与「世界数据」分开：配置留在 `config/samsara/`（改 YAML），周目/圈地/轨迹/倒流/回看等世界数据迁到存档目录下的 `samsara/`，随存档一起备份和迁移；身份/认证等全局数据默认也随存档，可通过配置改为服务器级并双向迁移；当前 v0.17.0 仍全部在 `config/samsara/`。
+
+命令功能开关在 `config/samsara/commands.json`：`where.enabled` 控制是否启用 `/samsara where`，`where.broadcast` 控制是否允许广播，`where.broadcastCooldownSeconds` 是广播冷却（0=不限），`where.showCoordinates/showDimension/showChunk/showFacing` 控制输出字段；`tpa.enabled` 控制 TPA 系列，`tpa.requestTimeoutSeconds` 是请求有效期（默认 60），`tpa.crossDimension` 控制是否允许跨维度；`view.protectViewer` 控制回看时是否免伤，`view.freeRoamRadius` 是回看时允许自由活动的半径（默认 32 格）；`completion.chatList` 控制未完成指令是否在聊天栏列出候选，`completion.fuzzy` 控制拼写近似，`completion.maxItems` 控制一次最多展示多少项。改完执行 `/samsara debug reload` 生效，无需重启。
 
 活动记录按天保存，只写不读：登录、在线时长，以及本次会话的移动、挖掘、使用、击杀、交易等原版统计增量。没有 tick 轮询，也不提供游戏内查询命令；字段与开销见[《设计规范》](docs/设计规范.md)的〈活动记录：静默采集约定〉。
 
@@ -95,7 +103,7 @@ Linux/macOS 用 `./gradlew build`。产物是 `mod/build/libs/samsara-<版本>.j
 
 ## 仓库结构
 
-`mod/` 服务端模组 · `tools/` 离线脚本 · `docs/` 文档 · `datapack/` 数据包骨架
+`mod/` 服务端模组 · `tools/` 离线脚本 · `docs/` 文档
 
 ## 文档
 
