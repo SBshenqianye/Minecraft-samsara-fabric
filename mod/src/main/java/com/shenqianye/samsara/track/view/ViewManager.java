@@ -122,6 +122,8 @@ public final class ViewManager {
         if (other && !allowOthers) {
             return "回看他人记录需要管理员权限";
         }
+        List<UUID> targetIds = com.shenqianye.samsara.identity.IdentityService.getInstance()
+                .aliasesOf(targetUuid);
 
         long dayEnd = ViewTime.dayOf(startMs).plusDays(1)
                 .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli() - 1;
@@ -160,6 +162,7 @@ public final class ViewManager {
         String worldKey = recorder.worldKey() == null ? DiffStore.sanitizeWorldKey("world") : recorder.worldKey();
         recorder.cuts().load();
         Long cutoff = recorder.cuts().cutoff(worldKey, cycleId, targetUuid);
+        final List<UUID> loadIds = targetIds;
         String summary = "cycle" + cycleId + " · " + ViewTime.format(startMs) + " → "
                 + ViewTime.format(options.endMs());
 
@@ -179,12 +182,12 @@ public final class ViewManager {
 
         final long start = startMs;
         final long end = options.endMs();
-        final UUID target = targetUuid;
         final int cycle = cycleId;
-        final Long cut = cutoff;
+
         CompletableFuture<ViewTrackReader.LoadResult> future = CompletableFuture.supplyAsync(() -> {
             try {
-                return ViewTrackReader.load(worldRoot, cycle, target, start, end, cut);
+                return ViewTrackReader.load(worldRoot, cycle, loadIds, start, end,
+                        (owner, ignored) -> recorder.cuts().cutoff(worldKey, cycle, owner));
             } catch (IOException e) {
                 throw new CompletionException(e);
             }
@@ -1280,9 +1283,10 @@ public final class ViewManager {
         }
         String worldKey = recorder.worldKey() == null ? DiffStore.sanitizeWorldKey("world") : recorder.worldKey();
         recorder.cuts().load();
-        final UUID playerId = uuid;
-        List<ViewTrackReader.Available> all = ViewTrackReader.available(root, playerId,
-                cycle -> recorder.cuts().cutoff(worldKey, cycle, playerId));
+        List<UUID> ids = com.shenqianye.samsara.identity.IdentityService.getInstance()
+                .aliasesOf(uuid);
+        List<ViewTrackReader.Available> all = ViewTrackReader.available(root, ids,
+                (owner, cycle) -> recorder.cuts().cutoff(worldKey, cycle, owner));
         if (all.isEmpty()) {
             return Component.literal("[周目管理] ▸ " + display + " 没有可回看的轨迹（可用时段：无）");
         }

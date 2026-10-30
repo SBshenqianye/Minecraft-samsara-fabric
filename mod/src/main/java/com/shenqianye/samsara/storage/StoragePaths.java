@@ -43,7 +43,7 @@ public final class StoragePaths {
     private static volatile String migrationSummary = "尚未初始化";
     private static volatile String globalMigrationSummary = "";
 
-    /** 迁移期间暂停身份/认证读写（当前尚无身份模块，保留锁给后续实现）。 */
+    /** 迁移期间暂停全局数据读写（v0.20 身份运行时数据已独立，不再走此锁）。 */
     private static final ReentrantReadWriteLock GLOBAL_IO_LOCK = new ReentrantReadWriteLock();
     private static volatile boolean globalIoPaused;
 
@@ -217,9 +217,19 @@ public final class StoragePaths {
         return serverDataRoot;
     }
 
-    /** 全局数据根（身份/认证/跨世界审计）。 */
+    /** 全局数据根（跨世界审计等；v0.20 起身份组运行数据不再放这里）。 */
     public Path globalDataRoot() {
         return globalDataRoot;
+    }
+
+    /**
+     * 身份运行时数据根：{@code <主存档根>/samsara/identity/}。
+     *
+     * <p>固定跟随主存档，不随世界栈或 {@code globalFollowWorld} 切换；
+     * 即使 {@code worldDataRoot} 被覆盖也保持这个位置，避免切换世界分裂背包。
+     */
+    public Path identityDataRoot() {
+        return worldRoot.resolve("samsara").resolve("identity").toAbsolutePath().normalize();
     }
 
     public boolean globalFollowWorld() {
@@ -255,7 +265,7 @@ public final class StoragePaths {
 
     /**
      * 切换全局数据位置并迁移。返回 null = 成功；否则为错误说明。
-     * 迁移期间暂停身份/认证读写；迁移成功后才切换 {@link #globalDataRoot}。
+     * 迁移期间暂停全局数据读写；迁移成功后才切换 {@link #globalDataRoot}。
      */
     public static synchronized String applyGlobalFollowWorld(boolean follow) {
         StoragePaths paths = instance;

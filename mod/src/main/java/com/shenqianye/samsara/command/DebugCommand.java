@@ -114,6 +114,7 @@ public class DebugCommand {
                         .executes(ctx -> sendHelp(ctx.getSource())))
                 .then(Commands.literal("version")
                         .executes(ctx -> reply(ctx.getSource(), versionInfo())))
+                .then(IdentityCommand.identityNode())
                 .then(Commands.literal("mspt")
                         .executes(ctx -> reply(ctx.getSource(), mspt())))
                 .then(Commands.literal("tps")
@@ -412,6 +413,7 @@ public class DebugCommand {
                                                                 debugClaimOwner(
                                                                         IntegerArgumentType.getInteger(ctx, "x"),
                                                                         IntegerArgumentType.getInteger(ctx, "z"))))))))
+                        .then(IdentityCommand.debugIdentityNode())
                         .then(permNode())
                         .then(completionNode()));
 
@@ -430,6 +432,8 @@ public class DebugCommand {
         CommandAliases.register(dispatcher, "tpdeny", TpaCommand::denyNode);
         CommandAliases.register(dispatcher, "tpno", () -> TpaCommand.denyNode("tpno"));
         CommandAliases.register(dispatcher, "tpcancel", TpaCommand::cancelNode);
+        // 身份组只读短别名（同一让位策略）；组管理走本地 Web
+        CommandAliases.register(dispatcher, "identity", IdentityCommand::identityNode);
         // 短别名：/track ...（同一让位策略）
         TrackViewCommand.registerAlias(dispatcher);
 
@@ -1142,6 +1146,8 @@ public class DebugCommand {
                         ChatUi.run("圈地信息", "/samsara claim info", "查看当前区块的圈地信息"),
                         ChatUi.run("边界开关", "/samsara claim boundary", "切换边界持续显示")),
                 ChatUi.line(ChatUi.text(cont, ChatFormatting.GRAY),
+                        ChatUi.run("身份状态", "/samsara identity status", "查看自己的身份组与 data UUID")),
+                ChatUi.line(ChatUi.text(cont, ChatFormatting.GRAY),
                         ChatUi.suggest("回看时段", "/samsara track list ", "填入 /samsara track list <玩家>"),
                         ChatUi.suggest("向玩家传送", "/samsara tpa ", "填入 /samsara tpa <玩家>"),
                         ChatUi.suggest("请玩家过来", "/samsara tpahere ", "填入 /samsara tpahere <玩家>")),
@@ -1162,6 +1168,10 @@ public class DebugCommand {
                                 "/samsara debug claim list", "查看全部圈地旗帜"),
                         ChatUi.suggestIf(isOwner(src), "权限配置",
                                 "/samsara debug perm list", "查看命令权限等级"),
+                        ChatUi.suggestIf(isOwner(src), "身份映射",
+                                "/samsara debug identity map", "查看全部身份组"),
+                        ChatUi.suggestIf(isOwner(src), "身份审计",
+                                "/samsara debug identity audit", "检查重复 UUID、空组、非法 data"),
                         ChatUi.suggestIf(isOwner(src), "倒流预览",
                                 "/samsara debug rewind preview", "预览将倒流的区块（不执行）")),
                 ChatUi.line(ChatUi.text(cont, ChatFormatting.GRAY),

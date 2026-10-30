@@ -89,7 +89,10 @@ public final class TrackReplay {
         int cycleId = explicitCycle != null ? explicitCycle
                 : SeasonManager.getInstance().cycleIdAt(startMs);
         TrackRecorder recorder = TrackRecorder.getInstance();
-        Path file = recorder.fileFor(uuid, startMs, cycleId);
+        List<UUID> aliases = com.shenqianye.samsara.identity.IdentityService.getInstance()
+                .aliasesOf(uuid);
+        TrackRecorder.LocatedFile located = recorder.fileForAny(aliases, startMs, cycleId);
+        Path file = located == null ? null : located.file();
         if (file == null) {
             return "找不到 " + name + " 在周目 " + cycleId + " / "
                     + Instant.ofEpochMilli(startMs).atZone(ZoneId.systemDefault()).toLocalDateTime()
@@ -111,7 +114,7 @@ public final class TrackReplay {
         }
         // capture cutoff：捕捉后该玩家该周目从捕捉时刻起的轨迹作废（磁盘记录保留）
         String worldKey = recorder.worldKey() == null ? "world" : recorder.worldKey();
-        Long cutoff = recorder.cuts().cutoff(worldKey, cycleId, uuid);
+        Long cutoff = recorder.cuts().cutoff(worldKey, cycleId, located.owner());
         List<TrackStore.Sample> samples = cutoff == null
                 ? seg.samples
                 : TrackStore.truncate(seg.samples, cutoff);

@@ -48,7 +48,9 @@ public class Samsara implements DedicatedServerModInitializer {
             com.shenqianye.samsara.config.CommandConfig.getInstance().reload();
             com.shenqianye.samsara.permission.PermissionConfig.getInstance().reload();
             com.shenqianye.samsara.claim.ClaimParticleConfig.getInstance().load();
+            com.shenqianye.samsara.identity.IdentityService.getInstance().reload();
         });
+        com.shenqianye.samsara.identity.IdentityService.getInstance().initConfig();
         SeasonCommand.register();
         DebugCommand.register();
 
@@ -60,6 +62,9 @@ public class Samsara implements DedicatedServerModInitializer {
 
         // 活动记录：静默写 JSONL（登录/退出 + 原版统计增量），无命令、无 tick 开销
         ActivityRecorder.init();
+
+        // 宠物多主人：对应驯服物品右键已驯服宠物 → 加入 owner
+        com.shenqianye.samsara.pet.PetInteractions.init();
 
         // 玩家轨迹：5Hz 采样 + 按天轮转 + 几何衰减保留（设计文档 §5.4/§5.5）
         com.shenqianye.samsara.track.TrackRecorder.init();
@@ -89,6 +94,7 @@ public class Samsara implements DedicatedServerModInitializer {
             RewindEngine.getInstance().tick(server);
             com.shenqianye.samsara.track.TrackReplay.tick(server);
             com.shenqianye.samsara.track.view.ViewManager.getInstance().tick(server);
+            com.shenqianye.samsara.identity.IdentityService.getInstance().tick(server);
             com.shenqianye.samsara.command.DebugCommand.onTick();
             if (++unloadFlushCounter[0] >= 20) {
                 unloadFlushCounter[0] = 0;
@@ -105,6 +111,7 @@ public class Samsara implements DedicatedServerModInitializer {
         // 必须在任何世界模块读取路径之前；ConfigManager 已在 mod init 完成 YAML 初始化。
         ServerLifecycleEvents.SERVER_STARTING.register(server -> {
             com.shenqianye.samsara.storage.StoragePaths.init(server);
+            com.shenqianye.samsara.identity.IdentityService.getInstance().init(server);
             SeasonManager.getInstance();
             DiffRecorder.init(com.shenqianye.samsara.storage.StoragePaths.get().worldDataRoot());
             com.shenqianye.samsara.track.TrackRecorder.getInstance()
@@ -130,12 +137,22 @@ public class Samsara implements DedicatedServerModInitializer {
             RewindEngine.getInstance().onServerStopped(server);
         });
 
-        // 分组出生：倒流完成后的离线玩家上线补传送
+        // 身份：账号切换同步先应用玩家数据，再让分组/待传送把玩家放到本周目位置
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
+                com.shenqianye.samsara.identity.IdentityService.getInstance()
+                        .onJoin(handler.getPlayer()));
+        // 分组出生：倒流完成后的离线玩家上线补传送（放在身份同步之后）
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
                 SeasonManager.getInstance().onPlayerJoin(server, handler.getPlayer()));
+        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) ->
+                com.shenqianye.samsara.identity.IdentityService.getInstance()
+                        .onDisconnect(handler.getPlayer()));
+
         // 优雅停服：停止发送粒子包，发告别消息（减少客户端断连时的渲染压力）
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
             com.shenqianye.samsara.web.WebLifecycle.stop(); // 先停 Web，避免请求在停服窗口写配置
+            // 身份全状态同步必须在服务器保存玩家数据之前执行
+            com.shenqianye.samsara.identity.IdentityService.getInstance().onServerStopping(server);
             com.shenqianye.samsara.track.view.ViewManager.getInstance().shutdown(server); // 先恢复观看者，再让服务器保存
             com.shenqianye.samsara.track.TrackReplay.shutdown(); // 先移除回放人偶，避免写进存档
             DiffRecorder.flush(); // 停服前把常开窗口的缓冲落盘（不依赖后续 SERVER_STOPPED 的时序）

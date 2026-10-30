@@ -54,6 +54,13 @@ public final class WebConfigService implements ConfigService {
                 : paths.globalFollowWorld());
         out.put("migration", paths == null ? "尚未初始化" : paths.migrationSummary());
         out.put("globalMigration", paths == null ? "" : paths.globalMigrationSummary());
+        com.shenqianye.samsara.identity.IdentityService identity =
+                com.shenqianye.samsara.identity.IdentityService.getInstance();
+        out.put("identityRoot", identity.identityRoot() == null ? "（服务器尚未启动）"
+                : identity.identityRoot().toString());
+        out.put("identityEnabled", identity.enabled());
+        out.put("identityConfig", identity.configStore() == null ? ""
+                : identity.configStore().file().toString());
         List<String> warnings = ConfigManager.getInstance().warnings();
         out.put("warnings", warnings);
         out.put("configFiles", ConfigSchema.fileIds().stream()

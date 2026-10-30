@@ -50,8 +50,11 @@ public class ClaimBreakListener {
 
             // 归属权检查：只有主人或 OP 可以拆除圈地旗
             if (player instanceof ServerPlayer sp) {
+                // 圈地写实际 UUID；比较时解析到 data UUID
                 boolean isOwner = node.getOwnerUUID() != null
-                        && node.getOwnerUUID().equals(sp.getUUID());
+                        && com.shenqianye.samsara.identity.IdentityService
+                        .getInstance()
+                        .sameIdentity(node.getOwnerUUID(), sp.getUUID());
                 boolean isOp = sp.permissions().hasPermission(Permissions.COMMANDS_OWNER);
                 if (!isOwner && !isOp) {
                     String ownerName = node.getOwnerName() != null ? node.getOwnerName() : "未知";

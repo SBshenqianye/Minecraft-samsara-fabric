@@ -3,6 +3,65 @@
 > 面向玩家与服主的功能变化；实现细节、未达标项与证据见[《实现状态》](docs/实现状态.md)。
 > 每个版本按「新增 / 修复 / 优化 / 变更 / 重构 / 文档」分组，只写功能口径。
 
+## v0.20.0（2026-10-30）· 身份组重构与宠物多主人
+
+### 新增
+
+- **无认证身份组**：身份组只把正版/离线/历史账号映射到同一个 data UUID，不再提供注册、登录、密码、限流、封禁或身份组锁定；身份安全交给其他认证模组。
+- **独立身份组页面**：本地 Web 新增“身份组”页，可增删改组、设置 premium/offline/data、从在线玩家或 usercache 选 UUID、预览圈地/玩家数据/轨迹/活动影响、保存后热重载并写审计。
+- **data UUID 重绑**：修改 data 必须走预览、二次确认、旧/新数据备份、复制/移动、更新 state 与审计；新 data 已有数据时默认拒绝，显式选择覆盖/合并才继续。
+- **账号切换同步**：只在 premium ↔ offline 切换时执行 data ↔ 当前账号同步；同账号重连不同步；首次用当前账号初始化 data；失败分业务/技术处理，保留 journal、`.bak` 与源数据。
+- **宠物多主人**：保留原版 `Owner`，额外主人写 `samsara:owners`；所有主人可坐下/站起、染色、喂食、繁殖、交互；跟随优先级为主主人 → 最后手持驯服物品的在线主人 → 最近在线主人 → 原地等待；任何玩家用对应驯服物品右键已驯服宠物即可加入，按身份组 data 去重，上限可配。
+- **身份组只读命令**：`/samsara identity status`、`/samsara debug identity map|preview|reload|audit`；短别名 `/identity`。
+
+### 变更
+
+- **归属策略**：圈地、周目分组、待传送、轨迹、活动、宠物 owner 写实际 UUID；查询、权限、统计、同步时解析到 data UUID；旧数据不改写。
+- **身份数据位置**：`identity.yml` 固定在 `config/samsara/`；运行时数据固定在 `<主存档根>/samsara/identity/`，随主存档备份，不随世界栈或 `globalFollowWorld` 切换。
+- **退役认证层**：删除 register/login/password、bind-premium、migrate/rollback/kick/reset-pw、密码数字键盘、`auth.yml`、Argon2id、LoginThrottle、IP 限流与身份组锁定；BouncyCastle 依赖移除。
+- **v0.19 迁移**：旧 `identity.json` 的 canonical 转为 data，第一个 premium/offline alias 进入新配置，多余 alias 写迁移报告；旧 `auth.yml` 归档保留。
+
+### 文档
+
+- README 功能表、常用命令与数据位置按身份组/账号切换/宠物多主人更新。
+- 需求、设计、设计规范与实现状态同步 v0.20 语义；决策记录 011/012 标记为已实施。
+
+### 部署
+
+- 测试服已验证：0.20.0 启动、v0.19 Bot2 组迁移与 auth.yml 归档、Web 身份组增删改与非法配置拒绝、在线时重绑拒绝、离线重绑与备份、同账号重连不同步、Bot3→Bot2 切号后位置一致、圈地/轨迹/活动按 data 聚合、宠物 `samsara:owners` NBT 读写。
+- 生产服 `Vanilia 26.3` 已部署 `samsara-0.20.0.jar`（SHA256 `ACBFE8E4…`）：升级前备份 config/mods 到 `backup/pre020_20261030_222752`；关闭旧进程后由启动脚本自动重启，日志确认 `samsara 0.20.0`、身份组 0 个且默认关闭、无 v0.19 身份数据需要迁移。
+
+## v0.19.0（2026-10-30）· 身份同步与密码保护
+
+### 新增
+
+- **身份组与 canonical UUID**：同一身份下的正版/离线 UUID 合并为一个身份组，按星型拓扑只与 canonical 同步；正版 UUID 优先成为 canonical，否则取最早注册的离线 UUID。
+- **注册/登录/改密**：`/samsara register <密码>`、`/samsara login <密码>`、`/samsara password <旧> <新>`，并提供 `/register`、`/reg`、`/login`、`/l`、`/password` 短别名。
+- **未验证保护**：未注册或未登录的玩家进入旁观模式、停在当前世界出生点，禁止破坏/放置、容器、实体与物品交互及其他命令；聊天栏按间隔提示注册/登录，不刷屏。验证通过后恢复游戏模式、位置与全状态。
+- **身份组锁定**：同一身份组内任意两个 UUID 不允许同时在线；第二个登录会被直接拒绝并说明冲突 UUID。
+- **全状态同步**：登录时 canonical → 当前 UUID，退出时当前 UUID → canonical；同步玩家数据、背包/末影箱/位置/状态、进度与统计，写盘前保留备份。
+- **密码策略**：最小长度（默认 8）、Argon2id 哈希或明文调试模式、是否允许改密、`minLength < 4` 时必须显式开启短密码；配置在 `auth.yml`，Web 面板可见并热重载。
+- **防暴力破解**：单玩家每分钟 5 次、失败指数退避 10s→160s、连续失败 10 次封禁 15 分钟、同 IP 每分钟 10 次。
+- **身份绑定与管理**：`/samsara identity status`、`bind-premium`；管理员可 `map`、`preview`、`migrate`、`rollback`、`kick`、`reset-pw`、`reload`、`audit`，破坏性操作需二次确认。
+- **圈地归属聚合**：圈地按 canonical 判断归属；新圈地直接登记 canonical，迁移时备份后重写旧归属，旧数据读取时也能正确解析。
+
+### 变更
+
+- 身份/认证数据固定写入全局数据目录（默认 `<存档根>/samsara/global/`）：`identity.json`、`auth.yml`、`audit/identity-*.jsonl` 与迁移备份；不再写进 `config/samsara/`。
+- 密码哈希使用 Argon2id，实现随模组打包，服务器无需另装依赖。
+- 未验证会话退出时不把旁观状态写回 canonical，避免覆盖最新数据。
+
+### 文档
+
+- 需求、设计、设计规范补充身份同步的存储位置、未验证边界、密码文件与迁移备份说明。
+- 实现状态将身份同步整章与验收项转为已实现；决策记录 001~004、006 标记为已实施。
+
+### 部署
+
+- 测试服 `test-server`（26.3）已部署 `samsara-0.19.0.jar`（SHA256 `BA045849…`），启动日志确认 `samsara 0.19.0`、Argon2id/SnakeYAML 依赖随模组加载、身份服务读取 `world/samsara/global/`。
+- 测试服 RCON 实测：新玩家首次进入为旁观并收到注册提示；注册后恢复生存；退出重进再次要求登录；错误密码触发 10 秒退避；改密后新密码可登录；`reset-pw` 清空密码后可用 `register` 重新设置；`identity bind-premium <身份密码>` 可完成验证；`debug identity map/preview/migrate/rollback/kick/audit` 均可执行并保留备份；同组第二个 UUID 登录被拒绝并提示冲突 UUID；Web 面板能看到 `auth.yml` 的最小长度/哈希模式/改密/短密码开关，路径指向全局数据目录。
+- 生产服 `Vanilia 26.3` **待确认**：本版本不自动替换生产服 jar，待服主选择维护窗口升级。
+
 ## v0.18.0（2026-10-30）· 补全 2.0、配置/数据分层与本地配置面板
 
 ### 新增

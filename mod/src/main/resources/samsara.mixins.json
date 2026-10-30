@@ -9,7 +9,8 @@
     "ServerExplosionMixin",
     "ChunkMapAccessor",
     "CommandsMixin",
-    "CompletionPageMixin"
+    "CompletionPageMixin",
+    "TamableAnimalMixin"
   ],
   "injectors": {
     "defaultRequire": 1

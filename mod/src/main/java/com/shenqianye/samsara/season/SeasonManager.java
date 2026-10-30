@@ -286,8 +286,9 @@ public class SeasonManager {
         s.spawnCenter.z = centerZ;
         s.spawnCenter.radius = cfg.spawnRadius;
 
-        // 3) 分组 + 持久化
-        List<PlayerRegistry.RegPlayer> players = PlayerRegistry.getInstance().read(server);
+        // 3) 分组 + 持久化（同一身份组只保留一个账号入口，按 data UUID 去重）
+        List<PlayerRegistry.RegPlayer> players = dedupePlayers(
+                PlayerRegistry.getInstance().read(server));
         // L6 修复：真实开周目自动清空测试注入池（避免假玩家残留进后续分组）
         int injectedCleared = PlayerRegistry.getInstance().injectedCount();
         if (injectedCleared > 0) {
@@ -376,7 +377,8 @@ public class SeasonManager {
         }
         Random rnd = new Random();
         SeasonData.Settings cfg = data.settings;
-        List<PlayerRegistry.RegPlayer> players = PlayerRegistry.getInstance().read(server);
+        List<PlayerRegistry.RegPlayer> players = dedupePlayers(
+                PlayerRegistry.getInstance().read(server));
         GroupPlanner.Plan plan = GroupPlanner.plan(s.spawnCenter.x, s.spawnCenter.z,
                 Math.max(1, s.spawnCenter.radius), players, cfg, rnd);
         s.groupSpawns.clear();
@@ -434,6 +436,16 @@ public class SeasonManager {
             return;
         }
         int[] pos = pendingTeleports.remove(player.getUUID());
+        if (pos == null) {
+            // 待传送按实际 UUID 保存；换号上线时按 data UUID 查找同一身份的条目。
+            for (UUID key : new ArrayList<>(pendingTeleports.keySet())) {
+                if (com.shenqianye.samsara.identity.IdentityService.getInstance()
+                        .sameIdentity(key, player.getUUID())) {
+                    pos = pendingTeleports.remove(key);
+                    break;
+                }
+            }
+        }
         if (pos != null) {
             teleportPlayer(player, overworld, pos[0], pos[1]);
             setPlayerBirthpoint(player, overworld, pos[0], pos[1], data.settings);
@@ -446,13 +458,47 @@ public class SeasonManager {
         Season s = current();
         if (s != null && s.state == Season.State.ACTIVE) {
             for (Season.GroupSpawn g : s.groupSpawns) {
-                if (g.playerUuids.contains(player.getUUID().toString())) {
-                    int[] indiv = individualBirthpoint(player.getUUID(), g.x, g.z, data.settings);
+                if (containsIdentity(g.playerUuids, player.getUUID())) {
+                    int[] indiv = individualBirthpoint(
+                            com.shenqianye.samsara.identity.IdentityService.getInstance()
+                                    .identityOf(player.getUUID()),
+                            g.x, g.z, data.settings);
                     setPlayerBirthpoint(player, overworld, indiv[0], indiv[1], data.settings);
                     break;
                 }
             }
         }
+    }
+
+    /** 同一身份组的多个 alias 只保留一个分组条目。 */
+    private static List<PlayerRegistry.RegPlayer> dedupePlayers(
+            List<PlayerRegistry.RegPlayer> players) {
+        Set<UUID> seen = new HashSet<>();
+        List<PlayerRegistry.RegPlayer> out = new ArrayList<>();
+        for (PlayerRegistry.RegPlayer player : players) {
+            UUID data = com.shenqianye.samsara.identity.IdentityService.getInstance()
+                    .identityOf(player.uuid);
+            if (seen.add(data)) {
+                out.add(player);
+            }
+        }
+        return out;
+    }
+
+    private static boolean containsIdentity(List<String> uuids, UUID player) {
+        if (uuids == null || player == null) {
+            return false;
+        }
+        for (String text : uuids) {
+            try {
+                if (com.shenqianye.samsara.identity.IdentityService.getInstance()
+                        .sameIdentity(UUID.fromString(text), player)) {
+                    return true;
+                }
+            } catch (IllegalArgumentException ignored) {
+            }
+        }
+        return false;
     }
 
     // ---- 查询 ----
@@ -618,9 +664,10 @@ public class SeasonManager {
         }
         // L3 修复：先清空再按当前周目名单填充，避免旧周目的残留待传送条目
         pendingTeleports.clear();
-        Map<UUID, ServerPlayer> online = new HashMap<>();
+        Map<UUID, ServerPlayer> onlineByData = new HashMap<>();
         for (ServerPlayer p : server.getPlayerList().getPlayers()) {
-            online.put(p.getUUID(), p);
+            onlineByData.putIfAbsent(com.shenqianye.samsara.identity.IdentityService
+                    .getInstance().identityOf(p.getUUID()), p);
         }
         Set<UUID> assigned = new HashSet<>();
         int teleported = 0;
@@ -632,21 +679,27 @@ public class SeasonManager {
                 } catch (IllegalArgumentException e) {
                     continue;
                 }
-                assigned.add(u);
-                int[] indiv = individualBirthpoint(u, g.x, g.z, data.settings);
-                ServerPlayer p = online.get(u);
+                UUID identityData = com.shenqianye.samsara.identity.IdentityService.getInstance()
+                        .identityOf(u);
+                if (!assigned.add(identityData)) {
+                    continue; // 同一身份组只处理一次
+                }
+                int[] indiv = individualBirthpoint(identityData, g.x, g.z, data.settings);
+                ServerPlayer p = onlineByData.get(identityData);
                 if (p != null) {
                     teleportPlayer(p, overworld, indiv[0], indiv[1]);
                     setPlayerBirthpoint(p, overworld, indiv[0], indiv[1], data.settings);
                     teleported++;
                 } else {
+                    // 归属数据写实际 UUID；上线时按 data 解析
                     pendingTeleports.put(u, new int[]{indiv[0], indiv[1]});
                 }
             }
         }
         // 在线但未分组的玩家 → 出生中心
-        for (ServerPlayer p : online.values()) {
-            if (!assigned.contains(p.getUUID())) {
+        for (ServerPlayer p : onlineByData.values()) {
+            if (!assigned.contains(com.shenqianye.samsara.identity.IdentityService
+                    .getInstance().identityOf(p.getUUID()))) {
                 teleportPlayer(p, overworld, s.spawnCenter.x, s.spawnCenter.z);
                 setPlayerBirthpoint(p, overworld, s.spawnCenter.x, s.spawnCenter.z, data.settings);
                 teleported++;
@@ -765,8 +818,8 @@ public class SeasonManager {
             cx = spawn.getX();
             cz = spawn.getZ();
         }
-        GroupPlanner.Plan plan = GroupPlanner.plan(cx, cz, data.settings.spawnRadius, players,
-                data.settings, new Random());
+        GroupPlanner.Plan plan = GroupPlanner.plan(cx, cz, data.settings.spawnRadius,
+                dedupePlayers(players), data.settings, new Random());
         return plan.report();
     }
 

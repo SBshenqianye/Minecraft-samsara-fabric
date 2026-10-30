@@ -23,8 +23,23 @@ public final class ConfigManager {
 
     private final YamlStore store;
     private final Map<String, Map<String, Object>> cache = new LinkedHashMap<>();
+    private final Map<String, Backend> backends = new LinkedHashMap<>();
     private final List<String> lastWarnings = new ArrayList<>();
     private Runnable reloadHook;
+
+    /**
+     * 非 {@code configRoot} 配置的后端（保留给未来需要独立文件位置的配置）。
+     * 注册后，Web/加载/保存/重载统一委托给它，仍复用 ConfigSchema 的默认值与校验。
+     */
+    public interface Backend {
+        Map<String, Object> load();
+
+        YamlStore.SaveResult save(Map<String, Object> updates);
+
+        Map<String, Object> reload();
+
+        Path file();
+    }
 
     private ConfigManager() {
         this.store = new YamlStore(StoragePaths.configRoot(), StoragePaths.legacyConfigRoot());
@@ -53,7 +68,22 @@ public final class ConfigManager {
     }
 
     public Path file(String id) {
-        return store.file(id);
+        Backend backend = backends.get(id);
+        return backend == null ? store.file(id) : backend.file();
+    }
+
+    /** 注册/替换一个全局配置后端（内部使用；幂等，可重复初始化）。 */
+    public synchronized void registerBackend(String id, Backend backend) {
+        if (backend == null) {
+            backends.remove(id);
+            return;
+        }
+        backends.put(id, backend);
+        cache.put(id, backend.load());
+    }
+
+    public synchronized boolean hasBackend(String id) {
+        return backends.containsKey(id);
     }
 
     // ---- 读取 ----
@@ -121,6 +151,15 @@ public final class ConfigManager {
      * 修改 {@code storage.globalFollowWorld} 时先做数据迁移，迁移失败不保存。
      */
     public synchronized YamlStore.SaveResult save(String id, Map<String, Object> updates) {
+        Backend backend = backends.get(id);
+        if (backend != null) {
+            YamlStore.SaveResult delegated = backend.save(updates);
+            if (delegated.ok()) {
+                cache.put(id, backend.load());
+                fireReload(id);
+            }
+            return delegated;
+        }
         boolean switchGlobal = false;
         boolean targetFollow = false;
         if (ConfigSchema.STORAGE.equals(id) && updates != null
@@ -143,6 +182,7 @@ public final class ConfigManager {
             lastWarnings.addAll(store.warnings());
             fireReload(id);
         } else if (switchGlobal) {
+            // 配置没写成功：把已迁移的数据搬回去，开关保持旧值。
             StoragePaths.applyGlobalFollowWorld(!targetFollow);
         }
         return result;
@@ -158,14 +198,20 @@ public final class ConfigManager {
         lastWarnings.clear();
         store.clearWarnings();
         for (String id : ConfigSchema.fileIds()) {
-            Map<String, Object> values = store.load(id);
-            cache.put(id, values);
-            for (String warning : store.warnings()) {
-                if (!lastWarnings.contains(warning)) {
-                    lastWarnings.add(warning);
-                    Samsara.LOGGER.warn("[周目管理 samsara] 配置：{}", warning);
+            Backend backend = backends.get(id);
+            Map<String, Object> values;
+            if (backend != null) {
+                values = backend.reload();
+            } else {
+                values = store.load(id);
+                for (String warning : store.warnings()) {
+                    if (!lastWarnings.contains(warning)) {
+                        lastWarnings.add(warning);
+                        Samsara.LOGGER.warn("[周目管理 samsara] 配置：{}", warning);
+                    }
                 }
             }
+            cache.put(id, values);
             if (message.length() > 0) {
                 message.append(" · ");
             }
@@ -179,7 +225,8 @@ public final class ConfigManager {
 
     /** 重读单个文件（Web 保存后使用）。 */
     public synchronized Map<String, Object> reload(String id) {
-        Map<String, Object> values = store.reload(id);
+        Backend backend = backends.get(id);
+        Map<String, Object> values = backend == null ? store.reload(id) : backend.reload();
         cache.put(id, values);
         fireReload(id);
         return values;
@@ -232,7 +279,7 @@ public final class ConfigManager {
             Map<String, Object> file = new LinkedHashMap<>();
             file.put("id", id);
             file.put("name", ConfigSchema.fileName(id) + ".yml");
-            file.put("path", store.file(id).toString());
+            file.put("path", file(id).toString());
             file.put("entries", entries);
             files.add(file);
         }

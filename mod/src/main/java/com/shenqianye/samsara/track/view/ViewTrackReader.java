@@ -264,7 +264,81 @@ public final class ViewTrackReader {
         return new LoadResult(List.copyOf(segments), List.copyOf(files), truncated, cutoffApplied, total);
     }
 
+    /**
+     * 多账号入口版本：按同一身份组聚合 [from,to) 的轨迹。
+     * cutoff 按文件对应 UUID 分别取，避免把某个 alias 的捕捉截断套到另一个 alias。
+     */
+    public static LoadResult load(Path worldRoot, int cycleId, java.util.Collection<UUID> uuids,
+                                  long from, long to,
+                                  java.util.function.BiFunction<UUID, Integer, Long> cutoffFor)
+            throws IOException {
+        List<ViewCursor.Segment> segments = new ArrayList<>();
+        List<Path> files = new ArrayList<>();
+        boolean truncated = false;
+        boolean cutoffApplied = false;
+        int total = 0;
+        LocalDate day = ViewTime.dayOf(from);
+        LocalDate lastDay = ViewTime.dayOf(Math.max(from, to - 1));
+        if (uuids != null) {
+            for (UUID uuid : uuids) {
+                Long cutoff = cutoffFor == null ? null : cutoffFor.apply(uuid, cycleId);
+                for (LocalDate d = day; !d.isAfter(lastDay); d = d.plusDays(1)) {
+                    Path file = TrackLayout.file(worldRoot, cycleId, d, uuid);
+                    if (!Files.isRegularFile(file) || files.contains(file)) {
+                        continue;
+                    }
+                    ParsedFile parsed = read(file);
+                    files.add(file);
+                    truncated |= parsed.truncated();
+                    for (TrackStore.Segment seg : parsed.segments()) {
+                        if (seg.samples.isEmpty()) {
+                            continue;
+                        }
+                        List<TrackStore.Sample> samples = seg.samples;
+                        if (cutoff != null) {
+                            List<TrackStore.Sample> cut = TrackStore.truncate(samples, cutoff);
+                            if (cut.size() != samples.size()) {
+                                cutoffApplied = true;
+                            }
+                            samples = cut;
+                        }
+                        if (samples.isEmpty()) {
+                            continue;
+                        }
+                        segments.add(new ViewCursor.Segment(seg.dimension, samples));
+                        total += samples.size();
+                    }
+                }
+            }
+        }
+        if (files.isEmpty()) {
+            throw new IOException("该时间窗口没有轨迹文件");
+        }
+        return new LoadResult(List.copyOf(segments), List.copyOf(files), truncated, cutoffApplied, total);
+    }
+
     // ---- 可回看时段 ----
+
+    /** 扫描同一身份组多个账号入口的轨迹文件（按 data UUID 聚合）。 */
+    public static List<Available> available(Path worldRoot, java.util.Collection<UUID> uuids,
+                                            java.util.function.BiFunction<UUID, Integer, Long> cutoffFor) {
+        Map<Path, Available> merged = new LinkedHashMap<>();
+        if (uuids != null) {
+            for (UUID uuid : uuids) {
+                if (uuid == null) {
+                    continue;
+                }
+                List<Available> one = available(worldRoot, uuid,
+                        cycle -> cutoffFor == null ? null : cutoffFor.apply(uuid, cycle));
+                for (Available available : one) {
+                    merged.putIfAbsent(available.file(), available);
+                }
+            }
+        }
+        List<Available> out = new ArrayList<>(merged.values());
+        out.sort(Comparator.comparingLong(Available::firstMs).reversed());
+        return out;
+    }
 
     /** 扫描某玩家全部周目/日期文件（只读），用于 {@code /track list}。 */
     public static List<Available> available(Path worldRoot, UUID uuid,

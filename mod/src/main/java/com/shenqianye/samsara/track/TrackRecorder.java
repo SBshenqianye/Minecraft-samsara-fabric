@@ -451,19 +451,34 @@ public final class TrackRecorder {
 
     /** 找到指定周目、包含指定时刻的轨迹文件（按日期就近查找，最多回退 2 天） */
     public Path fileFor(UUID uuid, long timeMs, int cycleId) {
+        LocatedFile located = fileForAny(List.of(uuid), timeMs, cycleId);
+        return located == null ? null : located.file();
+    }
+
+    /** 同一身份组多个账号入口的文件查找；返回命中的文件与实际 UUID。 */
+    public LocatedFile fileForAny(List<UUID> uuids, long timeMs, int cycleId) {
+        if (uuids == null || uuids.isEmpty()) {
+            return null;
+        }
         Path base = worldRoot;
         if (base == null) {
             base = TrackLayout.worldRoot(root, worldKey == null ? "world" : worldKey);
         }
         LocalDate d = Instant.ofEpochMilli(timeMs)
                 .atZone(ZoneId.systemDefault()).toLocalDate();
-        for (int i = 0; i <= 2; i++) {
-            Path f = TrackLayout.dayDir(base, cycleId, d.minusDays(i)).resolve(uuid + ".bin");
-            if (Files.isRegularFile(f)) {
-                return f;
+        for (UUID uuid : uuids) {
+            for (int i = 0; i <= 2; i++) {
+                Path f = TrackLayout.dayDir(base, cycleId, d.minusDays(i)).resolve(uuid + ".bin");
+                if (Files.isRegularFile(f)) {
+                    return new LocatedFile(f, uuid);
+                }
             }
         }
         return null;
+    }
+
+    /** 命中的轨迹文件及其实际 UUID。 */
+    public record LocatedFile(Path file, UUID owner) {
     }
 
     /** 某个玩家最近的文件（跨周目，新周目优先；状态展示用） */

@@ -133,7 +133,9 @@ public class ClaimPlacementListener {
         ChunkCoord chunkPos = new ChunkCoord(pos.getX() >> 4, pos.getZ() >> 4);
         ClaimNode regNode = new ClaimNode(chunkPos, level.dimension(), facing, patterns,
                 pos.getX(), pos.getZ(), pos.getY(),
-                sp.getUUID(), sp.getName().getString());
+                // 归属数据写实际 UUID；读取/比较时再解析到 data UUID
+                sp.getUUID(),
+                sp.getName().getString());
 
         String result = AreaService.getInstance().addNode(regNode);
         if (result != null) {

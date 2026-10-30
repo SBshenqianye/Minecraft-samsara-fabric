@@ -5,7 +5,7 @@
 
 ## 当前版本
 
-**v0.18.0** · Minecraft **26.3** · Fabric Loader **0.20.1** · Java **25**
+**v0.20.0** · Minecraft **26.3** · Fabric Loader **0.20.1** · Java **25**
 
 ## 能做什么
 
@@ -33,7 +33,9 @@
 | 命令短别名 | ✅ 可用 | `/season`、`/claim`、`/where`、`/version`、`/track`、`/tpa` 系列等；被其他模组占用时自动让位，只保留 `/samsara` 全名 |
 | 新世界模式 | 🚧 规划中 | 旧世界入栈、新建世界、跨世界传送、栈顶限制 |
 | 全员同意开新周目 | 🚧 规划中 | 无管理员时由在线玩家发起并全员同意 |
-| 身份同步 | 🚧 规划中 | 正版/离线账号映射、密码保护、数据迁移 |
+| 身份组 | ✅ 可用 | 把正版/离线/历史账号映射到同一个 data UUID；默认关闭，关闭时不解析、不同步；组由本地 Web 身份组页面维护，不提供注册/登录/密码 |
+| 账号切换同步 | ✅ 可用 | 同账号重连不同步；正版 ↔ 离线账号切换时同步背包/位置/进度/统计；失败保留 journal、`.bak` 与源数据 |
+| 宠物多主人 | ✅ 可用 | 保留原版主主人，额外主人写入 `samsara:owners`；所有主人可交互/坐下/染色/喂食/繁殖；跟随按主主人→最后手持驯服物品→最近在线主人 |
 | 开场流程（Fabric） | 🚧 规划中 | 新周目开场、分组与传送由 Fabric 服务端事件/代码实现；数据包暂不作为近期依赖 |
 | Web 面板 | 🔭 远期 | 地图、玩家数据与管理可视化 |
 
@@ -41,6 +43,8 @@
 
 | 想做什么 | 命令 |
 |---|---|
+| 查看身份组 | `/samsara identity status`（短别名 `/identity`） |
+| 管理身份组 | 本地 Web 面板的“身份组”页面；游戏内只读诊断 `/samsara debug identity map|preview|reload|audit`（owner） |
 | 看当前周目 | `/samsara season status`、`/samsara season info` |
 | 看圈地 | `/samsara claim info`、`/samsara claim boundary` |
 | 开新周目 | `/samsara season create <名称>` → `/samsara season start`（开始前二次确认） |
@@ -89,23 +93,27 @@ Linux/macOS 用 `./gradlew build`。产物是 `mod/build/libs/samsara-<版本>.j
 
 ## 数据放在哪
 
-模组把数据分成三层：**配置**留在服务器级目录，**世界数据**随存档走，**全局数据**默认也随存档。
+模组把数据分成四层：**配置**留在服务器级目录，**世界数据**与**身份运行时数据**随存档走，**全局数据**默认也随存档。
 
 | 层 | 默认位置 | 内容 | 随存档 |
 |---|---|---|---|
-| 配置 | `config/samsara/*.yml` | 命令开关、权限、圈地粒子、存储覆盖、Web | 否 |
+| 配置 | `config/samsara/*.yml` | 命令开关、权限、圈地粒子、存储覆盖、Web、身份组 `identity.yml` | 否 |
 | 世界数据 | `<存档根>/samsara/` | 周目、圈地、倒流、轨迹、回看、备份、活动、审计 | 是 |
-| 全局数据 | `<存档根>/samsara/global/` | 身份映射、认证、跨世界审计索引 | 是（默认） |
+| 身份运行时数据 | `<存档根>/samsara/identity/` | `state.json`、按 data UUID 存玩家数据、journal、archive、身份审计 | 是（固定随主存档） |
+| 全局数据 | `<存档根>/samsara/global/`（默认）或服务器级 | 跨世界审计等；`globalFollowWorld` 可改位置 | 默认是 |
 
 - `<存档根>` 在专用服务器是 `world/`，单人存档是 `saves/<存档名>/`。
 - **存档备份会包含 `samsara/` 世界数据**（轨迹与倒流记录可能较大）；配置不随存档复制。
+- **身份组配置**固定在 `config/samsara/identity.yml`，不随存档走；身份运行时数据固定在 `<存档根>/samsara/identity/`，随主存档复制/备份，不随世界栈或 `globalFollowWorld` 切换。
+- 只转移存档时 `identity/playerdata` 会一起走，但 `identity.yml` 不会；完整迁移请同时复制它，或使用 Web 导出/导入。
+- 旧版认证数据（`identity.json`、`auth.yml`）在首次启动时迁移/归档到 `identity/archive/`，原文件保留；认证能力已退役，身份安全交给其他认证模组。
 - 全局数据可用 `storage.yml` 的 `globalFollowWorld`（默认 `true`）改为服务器级 `<服务器根>/samsara/global/`；切换时程序自动双向迁移。
 - 旧版全部放在 `config/samsara/` 的数据，首次启动会迁移一次；旧目录改名为 `config/samsara.legacy` 保留备份，确认无误后可手动删除。
 - 旧路径说明以[《设计规范》](docs/设计规范.md)的〈文件布局：配置、世界数据与备份位置〉为准。
 
 命令功能开关在 `config/samsara/commands.yml`：`where.enabled` 控制是否启用 `/samsara where`，`where.broadcast` 控制是否允许广播，`where.broadcastCooldownSeconds` 是广播冷却（0=不限），`where.showCoordinates/showDimension/showChunk/showFacing` 控制输出字段；`tpa.enabled` 控制 TPA 系列，`tpa.requestTimeoutSeconds` 是请求有效期（默认 60），`tpa.crossDimension` 控制是否允许跨维度；`view.protectViewer` 控制回看时是否免伤，`view.freeRoamRadius` 是回看时允许自由活动的半径（默认 32 格）；`completion.chatList` 控制未完成指令是否在聊天栏列出候选，`completion.fuzzy` 控制拼写近似，`completion.maxItems` 控制单页最多展示多少项（超出可翻页）。改完执行 `/samsara debug reload` 生效，无需重启；也可以打开本地 Web 面板编辑。
 
-本地 Web 面板默认只监听 `127.0.0.1:8720`，首次启动会在控制台打印访问令牌（也写在 `config/samsara/web.yml`）。用浏览器打开后填入令牌即可查看/修改全部配置；面板不会改世界数据，也不提供公网监听。
+本地 Web 面板默认只监听 `127.0.0.1:8720`，首次启动会在控制台打印访问令牌（也写在 `config/samsara/web.yml`）。用浏览器打开后填入令牌即可查看/修改全部配置；面板不会改世界数据，也不提供公网监听。“身份组”是独立页面：可增删改身份组、设置 data/premium/offline、从在线玩家或 usercache 选 UUID、预览圈地/玩家数据/轨迹/活动影响；修改 data UUID 必须走二次确认的重绑流程，默认拒绝覆盖已有数据。
 
 活动记录按天保存，只写不读：登录、在线时长，以及本次会话的移动、挖掘、使用、击杀、交易等原版统计增量。没有 tick 轮询，也不提供游戏内查询命令；字段与开销见[《设计规范》](docs/设计规范.md)的〈活动记录：静默采集约定〉。
 

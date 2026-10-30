@@ -9,7 +9,9 @@ import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.BlockHitResult;
+import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
@@ -28,6 +30,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  */
 @Mixin(ServerPlayerGameMode.class)
 public class ServerPlayerGameModeMixin {
+    @Shadow
+    @Final
+    protected ServerPlayer player;
+
     @Inject(method = "destroyBlock", at = @At("HEAD"))
     private void samsara$beginDestroyBlock(BlockPos pos, CallbackInfoReturnable<Boolean> cir) {
         DiffRecorder.beginEditContext();

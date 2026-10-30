@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>samsara · 身份组</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <h1>samsara 身份组</h1>
+    <div class="toolbar">
+      <input id="token" type="password" placeholder="访问 token（web.yml）" autocomplete="off">
+      <button id="connect">连接</button>
+      <a class="ghost button-link" href="/">返回配置</a>
+      <button id="reload" class="ghost">重新读取</button>
+      <button id="save">保存并热重载</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="panel">
+      <h2>身份组设置</h2>
+      <div class="identity-global">
+        <label><input id="enabled" type="checkbox"> 启用身份组</label>
+        <label><input id="syncPlayerData" type="checkbox"> 账号切换时同步玩家数据</label>
+        <label>宠物主人上限 <input id="maxOwners" type="number" min="1" max="1024" step="1"></label>
+      </div>
+      <p class="muted" id="path"></p>
+      <p class="muted" id="root"></p>
+      <div id="message" class="message" role="status"></div>
+      <div class="toolbar">
+        <button id="add" class="ghost">新增身份组</button>
+        <button id="generate" class="ghost">生成 data UUID</button>
+        <button id="audit" class="ghost">审计</button>
+      </div>
+      <datalist id="candidates"></datalist>
+      <div id="groups"></div>
+    </section>
+
+    <section class="panel">
+      <h2>审计 / 预览</h2>
+      <pre id="audit-output" class="muted"></pre>
+    </section>
+  </main>
+
+  <template id="group-template">
+    <section class="file identity-group">
+      <h2 class="file-title"></h2>
+      <div class="group-grid">
+        <label>组名 <input data-field="name" type="text" maxlength="64"></label>
+        <label>data UUID <input data-field="data" type="text" spellcheck="false"></label>
+        <label>正版 UUID <input data-field="premium" type="text" list="candidates" spellcheck="false"></label>
+        <label>离线 UUID <input data-field="offline" type="text" list="candidates" spellcheck="false"></label>
+        <label class="wide">备注 <input data-field="note" type="text" maxlength="512"></label>
+      </div>
+      <div class="toolbar">
+        <button data-action="preview" class="ghost">预览影响</button>
+        <button data-action="rebind" class="ghost">重绑 data UUID</button>
+        <button data-action="remove" class="ghost danger">删除组</button>
+      </div>
+      <pre class="group-preview muted"></pre>
+    </section>
+  </template>
+
+  <script src="/identity.js"></script>
+</body>
+</html>

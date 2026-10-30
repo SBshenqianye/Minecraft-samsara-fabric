@@ -23,6 +23,8 @@ public final class PermissionDefaults {
         map.put("season status", "user");
         map.put("season respawn-groups", "owner");
 
+        // 身份组（只读；组管理走本地 Web）
+        map.put("identity status", "user");
 
         // where
         map.put("where", "user");
@@ -61,6 +63,7 @@ public final class PermissionDefaults {
         map.put("debug spawninfo", "owner");
         map.put("debug track", "owner");
         map.put("debug completion", "owner");
+        map.put("debug identity", "owner");
 
         // perm
         map.put("perm list", "user");

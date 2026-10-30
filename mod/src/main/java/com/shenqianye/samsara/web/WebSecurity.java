@@ -49,6 +49,8 @@ public final class WebSecurity {
         return switch (path) {
             case "/", "/index.html" -> "/web/index.html";
             case "/app.js" -> "/web/app.js";
+            case "/identity", "/identity.html" -> "/web/identity.html";
+            case "/identity.js" -> "/web/identity.js";
             case "/style.css" -> "/web/style.css";
             default -> null;
         };
@@ -57,7 +59,13 @@ public final class WebSecurity {
     /** 拒绝目录穿越/异常路径；只允许固定 API 路径。 */
     public static boolean safeApiPath(String path) {
         return "/api/config".equals(path) || "/api/reload".equals(path)
-                || "/api/status".equals(path);
+                || "/api/status".equals(path)
+                || "/api/identity".equals(path)
+                || "/api/identity/preview".equals(path)
+                || "/api/identity/rebind".equals(path)
+                || "/api/identity/reload".equals(path)
+                || "/api/identity/audit".equals(path)
+                || "/api/identity/generate".equals(path);
     }
 
     public static boolean bodyWithinLimit(long length) {

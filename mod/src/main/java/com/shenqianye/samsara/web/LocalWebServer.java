@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.reflect.TypeToken;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.slf4j.Logger;
@@ -12,6 +13,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.lang.reflect.Type;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -32,14 +34,22 @@ public final class LocalWebServer {
     public static final String BIND_ADDRESS = "127.0.0.1";
     private static final Logger LOG = LoggerFactory.getLogger("samsara-web");
     private static final Gson GSON = new GsonBuilder().create();
+    private static final Type MAP_TYPE = new TypeToken<Map<String, Object>>() { }.getType();
 
     private final ConfigService service;
+    private final IdentityWebService identityService;
     private final String token;
     private final int port;
     private HttpServer server;
 
     public LocalWebServer(ConfigService service, String token, int port) {
+        this(service, null, token, port);
+    }
+
+    public LocalWebServer(ConfigService service, IdentityWebService identityService,
+                          String token, int port) {
         this.service = service;
+        this.identityService = identityService;
         this.token = token == null ? "" : token;
         this.port = port;
     }
@@ -65,6 +75,9 @@ public final class LocalWebServer {
         server.createContext("/api/config", this::handleConfig);
         server.createContext("/api/reload", this::handleReload);
         server.createContext("/api/status", this::handleStatus);
+        if (identityService != null) {
+            server.createContext("/api/identity", this::handleIdentity);
+        }
         server.setExecutor(null);
         server.start();
         return true;
@@ -194,6 +207,112 @@ public final class LocalWebServer {
         } finally {
             log(exchange, status, start);
         }
+    }
+
+    private void handleIdentity(HttpExchange exchange) throws IOException {
+        long start = System.currentTimeMillis();
+        int status = 200;
+        try {
+            if (!authorized(exchange)) {
+                status = 401;
+                json(exchange, status, Map.of("error", "未授权：缺少或错误的 Bearer token"));
+                return;
+            }
+            if (identityService == null) {
+                status = 503;
+                json(exchange, status, Map.of("error", "身份服务未启动"));
+                return;
+            }
+            String path = exchange.getRequestURI().getPath();
+            String method = exchange.getRequestMethod();
+            Map<String, Object> body = Map.of();
+            if ("POST".equals(method) || "PUT".equals(method)) {
+                try {
+                    body = parseObject(readBody(exchange));
+                } catch (BodyTooLarge e) {
+                    status = 413;
+                    json(exchange, status, Map.of("error", "请求体过大"));
+                    return;
+                } catch (RuntimeException e) {
+                    status = 400;
+                    json(exchange, status, Map.of("error", "请求体应为 JSON 对象"));
+                    return;
+                }
+            }
+            Map<String, Object> result;
+            switch (path) {
+                case "/api/identity" -> {
+                    if ("GET".equals(method)) {
+                        result = identityService.model();
+                    } else if ("PUT".equals(method) || "POST".equals(method)) {
+                        result = identityService.save(body);
+                    } else {
+                        status = 405;
+                        result = Map.of("error", "Method Not Allowed");
+                    }
+                }
+                case "/api/identity/preview" -> {
+                    if (!"POST".equals(method)) {
+                        status = 405;
+                        result = Map.of("error", "Method Not Allowed");
+                    } else {
+                        result = identityService.preview(body);
+                    }
+                }
+                case "/api/identity/rebind" -> {
+                    if (!"POST".equals(method)) {
+                        status = 405;
+                        result = Map.of("error", "Method Not Allowed");
+                    } else {
+                        result = identityService.rebind(body);
+                    }
+                }
+                case "/api/identity/reload" -> {
+                    if (!"POST".equals(method)) {
+                        status = 405;
+                        result = Map.of("error", "Method Not Allowed");
+                    } else {
+                        result = identityService.reload();
+                    }
+                }
+                case "/api/identity/audit" -> {
+                    if (!"GET".equals(method)) {
+                        status = 405;
+                        result = Map.of("error", "Method Not Allowed");
+                    } else {
+                        result = identityService.audit();
+                    }
+                }
+                case "/api/identity/generate" -> {
+                    if (!"POST".equals(method)) {
+                        status = 405;
+                        result = Map.of("error", "Method Not Allowed");
+                    } else {
+                        result = identityService.generate();
+                    }
+                }
+                default -> {
+                    status = 404;
+                    result = Map.of("error", "Not Found");
+                }
+            }
+            if (status == 200 && Boolean.FALSE.equals(result.get("ok"))) {
+                status = 400;
+            }
+            json(exchange, status, result);
+        } catch (RuntimeException e) {
+            status = 500;
+            json(exchange, status, Map.of("error", "服务器内部错误"));
+            LOG.warn("[web] 处理 {} 失败: {}", exchange.getRequestURI().getPath(), e.getMessage());
+        } finally {
+            log(exchange, status, start);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> parseObject(String body) {
+        Map<String, Object> map = GSON.fromJson(body, MAP_TYPE);
+        return map == null ? Map.of() : map;
     }
 
     private void handleStatus(HttpExchange exchange) throws IOException {

@@ -22,10 +22,10 @@ public class ClaimNode {
     private final ResourceKey<Level> dimension;
     private final String facing;
     private final List<PatternEntry> patterns;
-    /** 旗帜主人 UUID（放置者） */
-    private final UUID ownerUUID;
+    /** 旗帜主人 UUID（放置者实际 UUID；读取时按 identityOf 聚合） */
+    private UUID ownerUUID;
     /** 旗帜主人名称 */
-    private final String ownerName;
+    private String ownerName;
     /** 该区块内所有旗帜的坐标列表（等幂性：多面旗帜共享同一注册） */
     private final List<BannerEntry> banners = new ArrayList<>();
     /** 旋转后的扩展（延迟计算，首次访问时构建） */
@@ -70,6 +70,12 @@ public class ClaimNode {
     public List<PatternEntry> getPatterns() { return patterns; }
     public UUID getOwnerUUID() { return ownerUUID; }
     public String getOwnerName() { return ownerName; }
+
+    /** 身份变更不重写旧圈地；保留 setter 供调试/兼容路径使用。 */
+    public void setOwner(UUID ownerUUID, String ownerName) {
+        this.ownerUUID = ownerUUID;
+        this.ownerName = ownerName;
+    }
     public List<BannerEntry> getBanners() { return banners; }
 
     /** 第一面旗帜的 X 坐标（兼容旧接口） */

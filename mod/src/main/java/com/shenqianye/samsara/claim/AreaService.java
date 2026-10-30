@@ -137,6 +137,12 @@ public class AreaService {
     public Map<ResourceKey<Level>, Map<ChunkCoord, ClaimNode>> getAllNodes() {
         return Collections.unmodifiableMap(nodes);
     }
+
+    /**
+     * v0.20 不再批量重写圈地归属：圈地始终保存放置者实际 UUID，
+     * 读取/权限判断时通过 {@code identityOf} 聚合到 data UUID。
+     */
+
     /** 移除整个区块的注册（debug 用） */
     public synchronized String removeNode(ResourceKey<Level> dim, ChunkCoord loc) {
         if (dimNodes(dim).remove(loc) != null) {
