@@ -78,11 +78,8 @@ public class ClaimParticleConfig {
         PARTICLE_MAP.put("white_ash", ParticleTypes.WHITE_ASH);
     }
 
-    private static final Path configPath = FabricLoader.getInstance().getConfigDir()
-            .resolve("samsara").resolve("claim-particles.json");
-
     private ClaimParticleConfig() {
-        // 构造器不读文件：load() 里若再触发反序列化会递归构造自己
+        // 构造器不读文件：load() 由 getInstance() 在实例化后调用
     }
 
     public static synchronized ClaimParticleConfig getInstance() {
@@ -163,45 +160,31 @@ public class ClaimParticleConfig {
     // ---- 持久化 ----
 
     private void save() {
-        try {
-            Files.createDirectories(configPath.getParent());
-            Files.writeString(configPath, GSON.toJson(this), StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            Samsara.LOGGER.warn("[samsara] claim-particles.json 写入失败: {}", e.getMessage());
+        com.shenqianye.samsara.config.YamlStore.SaveResult result =
+                com.shenqianye.samsara.config.ConfigManager.getInstance()
+                        .save(com.shenqianye.samsara.config.ConfigSchema.CLAIM_PARTICLES,
+                                java.util.Map.of(
+                                        "dayParticle", dayParticle,
+                                        "nightParticle", nightParticle,
+                                        "fontParticle", fontParticle,
+                                        "beamParticle", beamParticle,
+                                        "sharedDisplay", sharedDisplay,
+                                        "globalDisplay", globalDisplay));
+        if (!result.ok()) {
+            Samsara.LOGGER.warn("[samsara] claim-particles.yml 写入失败: {}", result.errors());
         }
     }
 
-    private void load() {
-        if (!Files.exists(configPath)) return;
-        try {
-            // 直接读 JsonObject 而不 GSON.fromJson(..., ClaimParticleConfig.class)：
-            // 该类只有私有构造器，Gson 反射实例化在 Java 25+ 上会失败。
-            JsonObject json = JsonParser.parseString(Files.readString(configPath, StandardCharsets.UTF_8))
-                    .getAsJsonObject();
-            this.dayParticle = readString(json, "dayParticle", this.dayParticle);
-            this.nightParticle = readString(json, "nightParticle", this.nightParticle);
-            this.fontParticle = readString(json, "fontParticle", this.fontParticle);
-            this.beamParticle = readString(json, "beamParticle", this.beamParticle);
-            this.sharedDisplay = readBoolean(json, "sharedDisplay", this.sharedDisplay);
-            this.globalDisplay = readBoolean(json, "globalDisplay", this.globalDisplay);
-        } catch (Exception e) {
-            Samsara.LOGGER.warn("[samsara] claim-particles.json 解析失败: {}", e.getMessage());
-        }
-    }
-
-    /** 读取字符串字段；缺失或类型不符时保留默认值 */
-    private static String readString(JsonObject json, String key, String fallback) {
-        JsonElement value = json.get(key);
-        return value != null && value.isJsonPrimitive() && value.getAsJsonPrimitive().isString()
-                ? value.getAsString().toLowerCase()
-                : fallback;
-    }
-
-    /** 读取布尔字段；缺失或类型不符时保留默认值 */
-    private static boolean readBoolean(JsonObject json, String key, boolean fallback) {
-        JsonElement value = json.get(key);
-        return value != null && value.isJsonPrimitive() && value.getAsJsonPrimitive().isBoolean()
-                ? value.getAsBoolean()
-                : fallback;
+    /** 重新读取 YAML（热重载 / Web 保存后）。 */
+    public synchronized void load() {
+        com.shenqianye.samsara.config.ConfigManager config =
+                com.shenqianye.samsara.config.ConfigManager.getInstance();
+        String id = com.shenqianye.samsara.config.ConfigSchema.CLAIM_PARTICLES;
+        this.dayParticle = config.string(id, "dayParticle");
+        this.nightParticle = config.string(id, "nightParticle");
+        this.fontParticle = config.string(id, "fontParticle");
+        this.beamParticle = config.string(id, "beamParticle");
+        this.sharedDisplay = config.bool(id, "sharedDisplay");
+        this.globalDisplay = config.bool(id, "globalDisplay");
     }
 }

@@ -77,14 +77,15 @@ class DiffStoreTest {
     @Test
     void migrateWorldLayerFromV011Layout() throws Exception {
         Path window = tmp.resolve("current");
-        DiffStore old = DiffStore.open(window.resolve(DiffStore.OVERWORLD_DIM), false);
+        DiffStore old = DiffStore.open(
+                window.resolve("world_s1").resolve(DiffStore.OVERWORLD_DIM), false);
         old.record(1, 70, 2, 11, 5L);
         old.flush();
 
         DiffStore.migrateWorldLayer(window, "world_s1");
 
-        assertFalse(Files.exists(window.resolve("minecraft")));
-        Path target = window.resolve("world_s1").resolve(DiffStore.OVERWORLD_DIM);
+        assertFalse(Files.exists(window.resolve("world_s1")), "旧世界层应被剥离");
+        Path target = window.resolve(DiffStore.OVERWORLD_DIM);
         List<DiffStore.Edit> edits = DiffStore.open(target, false).readChunk(0, 0);
         assertEquals(1, edits.size());
         assertEquals(11, edits.get(0).stateId);
@@ -100,7 +101,7 @@ class DiffStoreTest {
         DiffStore.migrateWorldLayer(window, "world_s2");
 
         assertFalse(Files.exists(window.resolve("r.0.0")));
-        Path target = window.resolve("world_s2")
+        Path target = window
                 .resolve(DiffStore.OVERWORLD_DIM).resolve("r.0.0").resolve("0_0.dat");
         assertTrue(Files.exists(target));
     }
@@ -168,7 +169,7 @@ class DiffStoreTest {
         cycle.record(1, 70, 2, 22, 20L);
         cycle.flush();
 
-        DiffStore.migrateWindowNames(diff);
+        DiffStore.migrateLayout(diff, "world");
 
         assertFalse(Files.exists(diff.resolve("current")));
         assertFalse(Files.exists(diff.resolve("s3")));
@@ -184,7 +185,7 @@ class DiffStoreTest {
                 .resolve(DiffStore.OVERWORLD_DIM), false).readChunk(0, 0).get(0).stateId);
 
         // 幂等：再跑一次不改数据
-        DiffStore.migrateWindowNames(diff);
+        DiffStore.migrateLayout(diff, "world");
         assertEquals(1, DiffStore.open(DiffStore.liveWorldRoot(tmp, "world")
                 .resolve(DiffStore.OVERWORLD_DIM), false).readChunk(0, 0).size());
         assertEquals(1, DiffStore.open(DiffStore.cycleWorldRoot(tmp, 3, "world")
@@ -203,7 +204,7 @@ class DiffStoreTest {
         old.flush();
         existing.flush();
 
-        DiffStore.migrateWindowNames(diff);
+        DiffStore.migrateLayout(diff, "world");
 
         assertFalse(Files.exists(diff.resolve("current")));
         List<DiffStore.Edit> merged = DiffStore.open(DiffStore.liveWorldRoot(tmp, "world")
@@ -223,8 +224,7 @@ class DiffStoreTest {
         DiffStore.migrateLayout(diff, "world_s1");
 
         assertFalse(Files.exists(diff.resolve("current")));
-        assertFalse(Files.exists(diff.resolve("live").resolve("minecraft")),
-                "旧维度层应全部并入世界层");
+        assertTrue(Files.exists(diff.resolve("live").resolve("minecraft")), "新布局保留维度层");
         List<DiffStore.Edit> edits = DiffStore.open(DiffStore.liveWorldRoot(tmp, "world_s1")
                 .resolve(DiffStore.OVERWORLD_DIM), false).readChunk(0, 0);
         assertEquals(1, edits.size());

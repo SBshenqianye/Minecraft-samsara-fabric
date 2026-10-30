@@ -79,11 +79,11 @@ public class RewindEngine {
     private MinecraftServer pauseServer;
 
     private RewindEngine() {
-        configDir = FabricLoader.getInstance().getConfigDir().resolve("samsara");
+        configDir = com.shenqianye.samsara.storage.StoragePaths.get().worldDataRoot();
         try {
             Files.createDirectories(configDir);
         } catch (IOException e) {
-            throw new RuntimeException("无法创建 samsara 配置目录", e);
+            throw new RuntimeException("无法创建 samsara 世界数据目录", e);
         }
         file = configDir.resolve("rewind.json");
         pendingQueue = new PendingDeleteQueue(configDir.resolve("pending-delete.json"));

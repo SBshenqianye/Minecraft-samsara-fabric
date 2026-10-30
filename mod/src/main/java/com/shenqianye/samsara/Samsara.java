@@ -37,10 +37,18 @@ public class Samsara implements DedicatedServerModInitializer {
     @Override
     public void onInitializeServer() {
         LOGGER.info("[周目管理 samsara] 已加载 —— 空间/时间/逆熵，世界生命周期管理");
-        // 权限系统初始化（必须在命令注册前）
+        // 存储分层：先把旧 config/samsara 整体改名备份，再建新配置目录
+        com.shenqianye.samsara.storage.StoragePaths.bootstrapConfig();
+        // 配置层（YAML + schema）：权限与命令配置都从这里读
+        com.shenqianye.samsara.config.ConfigManager configManager =
+                com.shenqianye.samsara.config.ConfigManager.getInstance();
         com.shenqianye.samsara.permission.PermissionConfig.getInstance();
-        // 命令功能配置（config/samsara/commands.json，决定命令是否注册、输出哪些字段）
         com.shenqianye.samsara.config.CommandConfig.getInstance();
+        configManager.setReloadHook(() -> {
+            com.shenqianye.samsara.config.CommandConfig.getInstance().reload();
+            com.shenqianye.samsara.permission.PermissionConfig.getInstance().reload();
+            com.shenqianye.samsara.claim.ClaimParticleConfig.getInstance().load();
+        });
         SeasonCommand.register();
         DebugCommand.register();
 
@@ -60,6 +68,9 @@ public class Samsara implements DedicatedServerModInitializer {
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) ->
                 com.shenqianye.samsara.track.view.ViewManager.getInstance()
                         .onDisconnect(handler.getPlayer().getUUID()));
+        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) ->
+                com.shenqianye.samsara.command.IncompleteCommandHandler
+                        .onDisconnect(handler.getPlayer().getUUID()));
 
         // 回看保护：会话期间取消观看者受到的所有伤害（窒息/溺水/摔落/火焰等）
         net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents.ALLOW_DAMAGE.register(
@@ -67,10 +78,7 @@ public class Samsara implements DedicatedServerModInitializer {
                         && com.shenqianye.samsara.track.view.ViewManager.getInstance()
                         .protectsViewer(player.getUUID())));
 
-        // 差异记录：常开（diff/live/<世界>；服务器启动后确定世界层）
-        DiffRecorder.init(net.fabricmc.loader.api.FabricLoader.getInstance()
-                .getConfigDir().resolve("samsara"));
-
+        // 差异记录：常开（数据根在 SERVER_STARTING 解析后传入）
         // 时间倒流：调度器（恢复轮 2s；标记/传送/删除/归档 5s 节流）
         // 卸载缓冲区：每 20 tick（1秒）批量处理卸载的待删区块
         final int[] unloadFlushCounter = {0};
@@ -93,12 +101,24 @@ public class Samsara implements DedicatedServerModInitializer {
             }
         });
 
+        // 存储分层：SERVER_STARTING 解析存档根并迁移世界数据。
+        // 必须在任何世界模块读取路径之前；ConfigManager 已在 mod init 完成 YAML 初始化。
+        ServerLifecycleEvents.SERVER_STARTING.register(server -> {
+            com.shenqianye.samsara.storage.StoragePaths.init(server);
+            SeasonManager.getInstance();
+            DiffRecorder.init(com.shenqianye.samsara.storage.StoragePaths.get().worldDataRoot());
+            com.shenqianye.samsara.track.TrackRecorder.getInstance()
+                    .initRoot(com.shenqianye.samsara.storage.StoragePaths.get().worldDataRoot());
+            RewindEngine.getInstance();
+        });
+
         // 待删队列兜底：启动时清空前次遗留（加载中的跳过，卸载即删）
         // 差异记录世界层：服务器起来后才知道世界目录名，先初始化世界层再处理删除队列
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             DiffRecorder.initWorld(server);
             RewindEngine.getInstance().onServerStarted(server);
             com.shenqianye.samsara.track.view.ViewManager.getInstance().onServerStarted(server);
+            com.shenqianye.samsara.web.WebLifecycle.start();
         });
 
         // 待删队列：区块卸载即删（不再等停服）；停服窗口兜底清空 + 归档/保留判定
@@ -113,9 +133,9 @@ public class Samsara implements DedicatedServerModInitializer {
         // 分组出生：倒流完成后的离线玩家上线补传送
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
                 SeasonManager.getInstance().onPlayerJoin(server, handler.getPlayer()));
-
         // 优雅停服：停止发送粒子包，发告别消息（减少客户端断连时的渲染压力）
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
+            com.shenqianye.samsara.web.WebLifecycle.stop(); // 先停 Web，避免请求在停服窗口写配置
             com.shenqianye.samsara.track.view.ViewManager.getInstance().shutdown(server); // 先恢复观看者，再让服务器保存
             com.shenqianye.samsara.track.TrackReplay.shutdown(); // 先移除回放人偶，避免写进存档
             DiffRecorder.flush(); // 停服前把常开窗口的缓冲落盘（不依赖后续 SERVER_STOPPED 的时序）

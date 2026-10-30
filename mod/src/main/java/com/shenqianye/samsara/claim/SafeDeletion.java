@@ -32,12 +32,15 @@ import java.util.*;
  */
 public class SafeDeletion {
     private static final DateTimeFormatter TS_FMT = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss");
-    private static final java.io.File DEBUG_LOG = FabricLoader.getInstance()
-            .getConfigDir().resolve("samsara").resolve("debug-delete.log").toFile();
+    private static java.nio.file.Path debugLog() {
+        return com.shenqianye.samsara.storage.StoragePaths.get().world("debug-delete.log");
+    }
 
     public static void dbg(String msg) {
         try {
-            java.nio.file.Files.write(DEBUG_LOG.toPath(),
+            java.nio.file.Path log = debugLog();
+            Files.createDirectories(log.getParent());
+            java.nio.file.Files.write(log,
                     (msg + "\n").getBytes(java.nio.charset.StandardCharsets.UTF_8),
                     java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
         } catch (Exception ignored) {}
@@ -45,7 +48,7 @@ public class SafeDeletion {
 
     /** 清空 debug 日志 */
     public static void clearDebugLog() {
-        try { java.nio.file.Files.deleteIfExists(DEBUG_LOG.toPath()); } catch (Exception ignored) {}
+        try { java.nio.file.Files.deleteIfExists(debugLog()); } catch (Exception ignored) {}
     }
 
     /** 获取主世界维度根目录 */
@@ -247,8 +250,8 @@ public class SafeDeletion {
      * 按世界维度结构组织备份目录。
      */
     public static String backup(ServerLevel level) {
-        Path backupDir = FabricLoader.getInstance().getConfigDir().resolve("samsara")
-                .resolve("backups").resolve("delete_" + LocalDateTime.now().format(TS_FMT));
+        Path backupDir = com.shenqianye.samsara.storage.StoragePaths.get().world("backups")
+                .resolve("delete_" + LocalDateTime.now().format(TS_FMT));
         try {
             Files.createDirectories(backupDir);
         } catch (IOException e) {

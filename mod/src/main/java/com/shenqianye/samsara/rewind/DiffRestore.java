@@ -42,7 +42,9 @@ import java.util.Set;
  * 跳过受保护区块，否则受保护区块的 diff 永远达不到"已恢复"，isFinished 恒为 false。
  */
 public class DiffRestore {
-    private static final Path CONFIG_DIR = FabricLoader.getInstance().getConfigDir().resolve("samsara");
+    private static Path dataRoot() {
+        return com.shenqianye.samsara.storage.StoragePaths.get().worldDataRoot();
+    }
     /** 每轮全局最大恢复格数上限 */
     public static final int MAX_PER_TICK = 2000;
     /** 每轮最低保底恢复格数（保证有进度） */
@@ -125,7 +127,7 @@ public class DiffRestore {
             return 0;
         }
 
-        DiffStore store = restoreStore(CONFIG_DIR, data.worldKey, data.seasonId);
+        DiffStore store = restoreStore(dataRoot(), data.worldKey, data.seasonId);
         List<ServerPlayer> players = overworldPlayers(overworld, server);
 
         // ① 先算每区块的档位/呈现光标/target，再按总欠账算预算
@@ -348,7 +350,7 @@ public class DiffRestore {
             return true;
         }
         data.normalize();
-        DiffStore store = restoreStore(CONFIG_DIR, data.worldKey, data.seasonId);
+        DiffStore store = restoreStore(dataRoot(), data.worldKey, data.seasonId);
         try {
             List<net.minecraft.world.level.chunk.LevelChunk> chunks = new ArrayList<>();
             overworld.getChunkSource().chunkMap.collectSpawningChunks(chunks);

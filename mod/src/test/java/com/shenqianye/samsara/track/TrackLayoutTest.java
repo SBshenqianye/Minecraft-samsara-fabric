@@ -87,7 +87,7 @@ class TrackLayoutTest {
         assertEquals("cycle2", cycle2.getParent().getParent().getFileName().toString());
         assertEquals("cycle0", cycle0.getParent().getParent().getFileName().toString());
         assertTrue(cycle1.toString().replace('\\', '/')
-                .endsWith("track/world/cycle1/2026-10-28/" + PLAYER + ".bin"));
+                .endsWith("track/cycle1/2026-10-28/" + PLAYER + ".bin"));
     }
 
     @Test

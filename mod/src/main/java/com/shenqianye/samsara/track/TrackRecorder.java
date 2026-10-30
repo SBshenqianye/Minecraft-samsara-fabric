@@ -52,14 +52,14 @@ public final class TrackRecorder {
     private static final double SKELETON_HZ = 0.05;
 
     private static TrackRecorder instance;
-    /** track 根目录；世界层/周目层在其下 */
-    private final Path root;
-    /** 当前世界键（世界目录名）；服务器启动后确定 */
+    /** track 根目录；服务器启动时由 StoragePaths 注入 */
+    private volatile Path root;
+    /** 当前世界键（仅用于日志；新布局不再带世界层） */
     private volatile String worldKey;
-    /** 当前世界目录：track/&lt;世界&gt; */
+    /** track 根（无世界层） */
     private volatile Path worldRoot;
     /** 捕捉截断点（capture cutoff，周目隔离） */
-    private final TrackCuts cuts;
+    private volatile TrackCuts cuts;
     private final Map<UUID, State> states = new ConcurrentHashMap<>();
     /** 正在被在线玩家追加的文件：保留扫描不要碰 */
     private final java.util.Set<Path> openFiles = ConcurrentHashMap.newKeySet();
@@ -83,13 +83,7 @@ public final class TrackRecorder {
     }
 
     private TrackRecorder() {
-        root = FabricLoader.getInstance().getConfigDir().resolve("samsara").resolve("track");
-        try {
-            Files.createDirectories(root);
-        } catch (IOException e) {
-            Samsara.LOGGER.warn("[周目管理 samsara] 无法创建 track 目录: {}", e.getMessage());
-        }
-        cuts = new TrackCuts(root.resolve("cutoffs.json"));
+        // 路径在 initRoot 注入（SERVER_STARTING，StoragePaths 初始化之后）
     }
 
     public static synchronized TrackRecorder getInstance() {
@@ -99,11 +93,22 @@ public final class TrackRecorder {
         return instance;
     }
 
+    /** 注入世界数据根：{@code <worldDataRoot>/track}。必须在 SERVER_STARTING 调用一次。 */
+    public synchronized void initRoot(Path worldDataRoot) {
+        this.root = worldDataRoot.resolve("track").toAbsolutePath().normalize();
+        try {
+            Files.createDirectories(root);
+        } catch (IOException e) {
+            Samsara.LOGGER.warn("[周目管理 samsara] 无法创建 track 目录: {}", e.getMessage());
+        }
+        this.cuts = new TrackCuts(root.resolve("cutoffs.json"));
+        this.cuts.load();
+        this.worldRoot = root;
+    }
+
     /** 注册采样/生命周期钩子（主入口调用一次） */
     public static void init() {
         TrackRecorder r = getInstance();
-        // 提前在主线程加载 season.json，避免首次保留扫描在后台线程触发 SeasonManager 初始化
-        SeasonManager.getInstance();
         ServerTickEvents.END_SERVER_TICK.register(r::tick);
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
                 r.startPlayer(handler.getPlayer()));
@@ -115,34 +120,32 @@ public final class TrackRecorder {
     }
 
     /**
-     * 服务器启动：把根切到 {@code track/<世界>}，并迁移旧布局：
-     * <ul>
-     *   <li>{@code track/<日期>/} → {@code track/<世界>/cycle<id>/<日期>/}（更早的无世界层版本）；</li>
-     *   <li>{@code track/<世界>/<日期>/} → {@code track/<世界>/cycle<id>/<日期>/}（v0.12.0）。</li>
-     * </ul>
-     * 旧数据归入当前周目；服务器还没有周目时归入 {@code cycle0}。日志写明迁移结果。
+     * 服务器启动：把根切到 track（无世界层），并迁移旧布局。
      */
     private void initWorld(MinecraftServer server) {
+        if (root == null) {
+            return;
+        }
         String key = DiffStore.sanitizeWorldKey(
                 server.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT)
                         .getFileName().toString());
-        Path target = TrackLayout.worldRoot(root, key);
+        Path target = root;
         try {
             Files.createDirectories(target);
             int cycle = cycleIdNow();
             int legacy = TrackLayout.migrateLegacyRoot(root, target, cycle);
             int worldLevel = TrackLayout.migrateWorldLayout(target, cycle);
-            if (legacy + worldLevel > 0) {
-                Samsara.LOGGER.info("[周目管理 samsara] 轨迹旧布局已迁移: {} 个日期目录 → {}/{}/"
-                                + "（旧数据归入当前周目；无周目时 cycle0）",
-                        legacy + worldLevel, key, TrackLayout.cycleDirName(cycle));
+            int worldLayer = com.shenqianye.samsara.storage.StorageMigration.stripTrackWorldLayer(root);
+            if (legacy + worldLevel + worldLayer > 0) {
+                Samsara.LOGGER.info("[周目管理 samsara] 轨迹旧布局已迁移：{} 个日期目录 → {}/"
+                                + "（旧数据归入当前周目；无周目写 cycle0）",
+                        legacy + worldLevel + worldLayer, TrackLayout.cycleDirName(cycle));
             }
         } catch (IOException e) {
-            Samsara.LOGGER.warn("[周目管理 samsara] track 世界层初始化失败: {}", e.getMessage());
+            Samsara.LOGGER.warn("[周目管理 samsara] track 根初始化失败: {}", e.getMessage());
         }
         worldKey = key;
         worldRoot = target;
-        // 世界切换（单人换存档）/外部编辑后重新读取截断点
         cuts.load();
     }
 

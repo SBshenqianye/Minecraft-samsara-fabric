@@ -26,7 +26,7 @@ import net.minecraft.world.level.Level;
  * 权限：使用原版 COMMANDS_ADMIN（OP 等级 2），后续可接 fabric-permissions-api。
  */
 public class SeasonCommand {
-    private static final SeasonManager MANAGER = SeasonManager.getInstance();
+    private static SeasonManager manager() { return SeasonManager.getInstance(); }
 
     public static void register() {
         // 命令树统一由 DebugCommand 挂在 /samsara 根下（seasonNode()），这里不再单独注册 /season
@@ -48,11 +48,11 @@ public class SeasonCommand {
                 .then(Commands.literal("create")
                         .requires(src -> isAdmin(src))
                         .then(Commands.argument("name", StringArgumentType.string())
-                                .executes(ctx -> reply(ctx.getSource(), MANAGER.create(
+                                .executes(ctx -> reply(ctx.getSource(), manager().create(
                                         StringArgumentType.getString(ctx, "name"), "same-world")))
                                 .then(Commands.argument("mode", StringArgumentType.word())
                                         .suggests(SuggestionProviders.seasonModesProvider())
-                                        .executes(ctx -> reply(ctx.getSource(), MANAGER.create(
+                                        .executes(ctx -> reply(ctx.getSource(), manager().create(
                                                 StringArgumentType.getString(ctx, "name"),
                                                 StringArgumentType.getString(ctx, "mode")))))))
                 .then(Commands.literal("start")
@@ -60,14 +60,14 @@ public class SeasonCommand {
                         .executes(ctx -> reply(ctx.getSource(), confirmStart(ctx.getSource()))))
                 .then(Commands.literal("end")
                         .requires(src -> isAdmin(src))
-                        .executes(ctx -> reply(ctx.getSource(), MANAGER.end())))
+                        .executes(ctx -> reply(ctx.getSource(), manager().end())))
                 .then(Commands.literal("skip")
                         .requires(src -> isAdmin(src))
-                        .executes(ctx -> reply(ctx.getSource(), MANAGER.skip())))
+                        .executes(ctx -> reply(ctx.getSource(), manager().skip())))
                 .then(Commands.literal("respawn-groups")
                         .requires(src -> isAdmin(src))
                         .executes(ctx -> reply(ctx.getSource(),
-                                MANAGER.respawnGroups(ctx.getSource().getServer()))));
+                                manager().respawnGroups(ctx.getSource().getServer()))));
     }
 
     private static boolean isAdmin(CommandSourceStack src) {
@@ -76,7 +76,7 @@ public class SeasonCommand {
 
     /** 周目状态/信息：只读，附 [刷新] 点击即执行（保留当前页码）。 */
     private static int status(CommandSourceStack src, int page) {
-        return replyWithRefresh(src, MANAGER.statusText(page),
+        return replyWithRefresh(src, manager().statusText(page),
                 "/samsara season status" + (page > 1 ? " " + page : ""), "重新查询周目状态");
     }
 
@@ -98,12 +98,12 @@ public class SeasonCommand {
      * 无待开始周目时直接返回错误且<b>不进入待确认状态</b>，避免留下半武装状态。
      */
     private static String confirmStart(CommandSourceStack src) {
-        com.shenqianye.samsara.season.Season pending = MANAGER.currentPending();
+        com.shenqianye.samsara.season.Season pending = manager().currentPending();
         if (pending == null) {
-            return MANAGER.start(src.getServer()); // 无 PENDING 周目：交给 MANAGER 回错误文案
+            return manager().start(src.getServer()); // 无 PENDING 周目：交给 MANAGER 回错误文案
         }
         if (!ConfirmGuard.confirm("season.start")) {
-            long rewindMs = MANAGER.settings().rewindDurationMs;
+            long rewindMs = manager().settings().rewindDurationMs;
             String rewind = rewindMs > 0
                     ? "时间倒流 " + com.shenqianye.samsara.season.DurationUtil.formatMs(rewindMs)
                     : "不倒流（配置为 0，直接传送）";
@@ -114,7 +114,7 @@ public class SeasonCommand {
                     + "· 箱子/潜影盒内容随区块文件一同删除；背包/末影箱/进度安全\n"
                     + "再次输入 /samsara season start（" + ConfirmGuard.ttlSeconds() + " 秒内）才会真正执行。";
         }
-        return MANAGER.start(src.getServer());
+        return manager().start(src.getServer());
     }
 
     /** /season info：模组说明 + 当前世界种子与出生点（测试便利：种子可查地图工具熟悉地形） */

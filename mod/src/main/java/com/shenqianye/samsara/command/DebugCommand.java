@@ -44,7 +44,7 @@ import java.util.UUID;
  * </pre>
  */
 public class DebugCommand {
-    private static final SeasonManager MANAGER = SeasonManager.getInstance();
+    private static SeasonManager manager() { return SeasonManager.getInstance(); }
     // 破坏性操作的二次确认统一由 ConfirmGuard 管理（按操作 key 隔离 + 30 秒有效期），
     // 不再使用各命令自己的 boolean 待确认标记。
 
@@ -61,7 +61,7 @@ public class DebugCommand {
         //   text 用 BlockPosArgument（方块坐标 x y z）
         com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> diffCmd =
                 Commands.literal("diff")
-                        .executes(ctx -> reply(ctx.getSource(), MANAGER.diffStatus()))
+                        .executes(ctx -> reply(ctx.getSource(), manager().diffStatus()))
                         .then(Commands.literal("fake")
                                 .then(Commands.argument("pos", net.minecraft.commands.arguments.coordinates.ColumnPosArgument.columnPos())
                                         .then(Commands.argument("count", IntegerArgumentType.integer(1, 4096))
@@ -143,28 +143,28 @@ public class DebugCommand {
                         .then(Commands.literal("status")
                                 .executes(ctx -> reply(ctx.getSource(), debugStatus())))
                         .then(Commands.literal("spawninfo")
-                                .executes(ctx -> reply(ctx.getSource(), MANAGER.spawnInfo(
+                                .executes(ctx -> reply(ctx.getSource(), manager().spawnInfo(
                                         ctx.getSource().getPlayerOrException(),
                                         ctx.getSource().getLevel()))))
                         .then(diffCmd)
                         .then(Commands.literal("flow")
                                 .then(Commands.literal("setup")
                                         .executes(ctx -> reply(ctx.getSource(),
-                                                MANAGER.setupSeason(ctx.getSource().getServer()))))
+                                                manager().setupSeason(ctx.getSource().getServer()))))
                                 .then(Commands.literal("rewind")
                                         .then(Commands.argument("teleportAfter", StringArgumentType.word())
                                                 .suggests(SuggestionProviders.boolProvider())
                                                 .executes(ctx -> reply(ctx.getSource(),
-                                                        MANAGER.startRewindOnly(ctx.getSource().getServer(),
+                                                        manager().startRewindOnly(ctx.getSource().getServer(),
                                                                 Boolean.parseBoolean(StringArgumentType.getString(ctx, "teleportAfter")))))))
                                 .then(Commands.literal("teleport")
                                         .executes(ctx -> reply(ctx.getSource(),
-                                                MANAGER.teleportOnly(ctx.getSource().getServer())))))
+                                                manager().teleportOnly(ctx.getSource().getServer())))))
                         .then(Commands.literal("json")
-                                .executes(ctx -> reply(ctx.getSource(), MANAGER.rawJson()
-                                        + "\n\n↑ season.json 位置: " + MANAGER.configPath())))
+                                .executes(ctx -> reply(ctx.getSource(), manager().rawJson()
+                                        + "\n\n↑ season.json 位置: " + manager().configPath())))
                         .then(Commands.literal("reload")
-                                .executes(ctx -> reply(ctx.getSource(), MANAGER.reload()
+                                .executes(ctx -> reply(ctx.getSource(), manager().reload()
                                         + "\n" + com.shenqianye.samsara.config.CommandConfig
                                         .getInstance().reload())))
                         .then(Commands.literal("reset")
@@ -184,7 +184,7 @@ public class DebugCommand {
                                                 .suggests(SuggestionProviders.choicesWithHint("时间字段", "start", "end"))
                                                 .then(Commands.argument("value", StringArgumentType.word())
                                                         .suggests(SuggestionProviders.choicesWithHint("now = 当前时间；也可填 epoch 毫秒", "now"))
-                                                        .executes(ctx -> reply(ctx.getSource(), MANAGER.setTime(
+                                                        .executes(ctx -> reply(ctx.getSource(), manager().setTime(
                                                                 IntegerArgumentType.getInteger(ctx, "id"),
                                                                 StringArgumentType.getString(ctx, "field"),
                                                                 StringArgumentType.getString(ctx, "value"))))))))
@@ -222,7 +222,7 @@ public class DebugCommand {
                                 .then(Commands.literal("set")
                                         .then(Commands.argument("dur", StringArgumentType.greedyString())
                                                 .suggests(SuggestionProviders.durationsProvider())
-                                                .executes(ctx -> reply(ctx.getSource(), MANAGER.setRewindDuration(
+                                                .executes(ctx -> reply(ctx.getSource(), manager().setRewindDuration(
                                                         StringArgumentType.getString(ctx, "dur")))))))
                         .then(Commands.literal("track")
                                 .then(Commands.literal("replay")
@@ -263,28 +263,28 @@ public class DebugCommand {
                                             return reply(ctx.getSource(), "已在后台启动轨迹保留扫描（降采样）");
                                         })))
                         .then(Commands.literal("config")
-                                .executes(ctx -> reply(ctx.getSource(), MANAGER.config(null, null)))
+                                .executes(ctx -> reply(ctx.getSource(), manager().config(null, null)))
                                 .then(Commands.argument("key", StringArgumentType.word())
-                                        .executes(ctx -> replyOrErr(ctx, MANAGER.config(
+                                        .executes(ctx -> replyOrErr(ctx, manager().config(
                                                 StringArgumentType.getString(ctx, "key"), null)))
                                         .then(Commands.argument("value", StringArgumentType.greedyString())
-                                                .executes(ctx -> replyOrErr(ctx, MANAGER.config(
+                                                .executes(ctx -> replyOrErr(ctx, manager().config(
                                                         StringArgumentType.getString(ctx, "key"),
                                                         StringArgumentType.getString(ctx, "value")))))))
                         .then(Commands.literal("settings")
-                                .executes(ctx -> reply(ctx.getSource(), MANAGER.settingsText()))
+                                .executes(ctx -> reply(ctx.getSource(), manager().settingsText()))
                                 .then(Commands.literal("groupdist")
                                         .then(Commands.argument("blocks", IntegerArgumentType.integer(0, 10000))
-                                                .executes(ctx -> reply(ctx.getSource(), MANAGER.setGroupMinDistance(
+                                                .executes(ctx -> reply(ctx.getSource(), manager().setGroupMinDistance(
                                                         IntegerArgumentType.getInteger(ctx, "blocks"))))))
                                 .then(Commands.literal("birthjitter")
                                         .then(Commands.argument("blocks", IntegerArgumentType.integer(0, 1000))
-                                                .executes(ctx -> reply(ctx.getSource(), MANAGER.setBirthpointJitter(
+                                                .executes(ctx -> reply(ctx.getSource(), manager().setBirthpointJitter(
                                                         IntegerArgumentType.getInteger(ctx, "blocks"))))))
                                 .then(Commands.literal("birthreset")
                                         .then(Commands.argument("on", StringArgumentType.word())
                                                 .suggests(SuggestionProviders.boolProvider())
-                                                .executes(ctx -> reply(ctx.getSource(), MANAGER.setResetIndividualBirthpoint(
+                                                .executes(ctx -> reply(ctx.getSource(), manager().setResetIndividualBirthpoint(
                                                         Boolean.parseBoolean(StringArgumentType.getString(ctx, "on"))))))))
                         .then(Commands.literal("claim")
                                 // debug claim give <dir> <dist>
@@ -451,6 +451,13 @@ public class DebugCommand {
     /** 构建 /samsara debug completion 子命令（补全诊断） */
     private static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> completionNode() {
         return Commands.literal("completion")
+                .then(Commands.literal("page")
+                        .then(Commands.argument("page", IntegerArgumentType.integer(1, 5))
+                                .then(Commands.argument("input", StringArgumentType.greedyString())
+                                        .executes(ctx -> reply(ctx.getSource(),
+                                                IncompleteCommandHandler.debugPage(ctx.getSource(),
+                                                        IntegerArgumentType.getInteger(ctx, "page"),
+                                                        StringArgumentType.getString(ctx, "input")))))))
                 .then(Commands.literal("send")
                         .then(Commands.argument("input", StringArgumentType.greedyString())
                                 .executes(ctx -> debugCompletionSend(ctx.getSource(),
@@ -465,15 +472,21 @@ public class DebugCommand {
         String input = IncompleteCommandHandler.normalize(raw);
         var dispatcher = src.getServer().getCommands().getDispatcher();
         var parse = dispatcher.parse(input, src);
+        var node = IncompleteCommandHandler.deepestNode(parse);
+        boolean childMode = false;
+        if (!parse.getReader().canRead() && node.getCommand() == null
+                && !node.getChildren().isEmpty()) {
+            parse = dispatcher.parse(input + " ", src);
+            node = IncompleteCommandHandler.deepestNode(parse);
+            childMode = true;
+        }
         var suggestions = dispatcher.getCompletionSuggestions(parse).join();
         boolean fuzzy = false;
-        if (suggestions.getList().isEmpty()) {
-            suggestions = IncompleteCommandHandler.fuzzySuggestions(input, parse,
-                    IncompleteCommandHandler.deepestNode(parse));
+        if (suggestions.getList().isEmpty() && !childMode) {
+            suggestions = IncompleteCommandHandler.fuzzySuggestions(input, parse, node);
             fuzzy = !suggestions.getList().isEmpty();
         }
-        var cells = IncompleteCommandHandler.cells(input, suggestions,
-                IncompleteCommandHandler.deepestNode(parse));
+        var cells = IncompleteCommandHandler.cells(input, suggestions, node, childMode);
         StringBuilder sb = new StringBuilder("补全诊断：/").append(input)
                 .append("\n解析：").append(IncompleteCommandHandler.isIncomplete(parse) ? "未完成/未知" : "完整")
                 .append(" · samsara 根节点：")
@@ -581,20 +594,20 @@ public class DebugCommand {
 
     private static int create(CommandContext<CommandSourceStack> ctx, String mode, int count) {
         String name = StringArgumentType.getString(ctx, "name");
-        return reply(ctx.getSource(), MANAGER.createBulk(name, mode, count));
+        return reply(ctx.getSource(), manager().createBulk(name, mode, count));
     }
 
     /** debug status：短概要（总数+当前），长列表交给 /season status 分页；配置路径放末尾避免被刷掉 */
     private static String debugStatus() {
         try {
-            Season current = MANAGER.current();
+            Season current = manager().current();
             String cur = current != null
                     ? "#" + current.id + "「" + current.name + "」 " + current.state
                     : "无（使用 /season create）";
-            return "周目总数: " + MANAGER.seasonCount() + " · 当前: " + cur
+            return "周目总数: " + manager().seasonCount() + " · 当前: " + cur
                     + " · 注入测试玩家: " + PlayerRegistry.getInstance().injectedCount()
                     + "\n（周目列表请用 /season status [页码] 分页查看）"
-                    + "\n配置目录: " + MANAGER.configPath();
+                    + "\n配置目录: " + manager().configPath();
         } catch (Exception e) {
             com.shenqianye.samsara.Samsara.LOGGER.error("[周目管理 samsara] debugStatus 异常: ", e);
             return "debugStatus 异常: " + e;
@@ -607,7 +620,7 @@ public class DebugCommand {
             return "⚠ 危险操作确认：清空全部周目数据。\n"
                     + "再次输入 /samsara debug reset（" + ConfirmGuard.ttlSeconds() + " 秒内）才会真正执行。";
         }
-        return MANAGER.reset();
+        return manager().reset();
     }
 
     /**
@@ -754,7 +767,7 @@ public class DebugCommand {
                 return "当前没有注册玩家（先用 /samsara debug fakeplayers 注入名单）";
             }
         }
-        return MANAGER.previewGroups(ctx.getSource().getServer(), players);
+        return manager().previewGroups(ctx.getSource().getServer(), players);
     }
 
     // ---- debug claim 命令实现 ----

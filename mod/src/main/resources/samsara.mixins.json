@@ -8,7 +8,8 @@
     "ServerPlayerGameModeMixin",
     "ServerExplosionMixin",
     "ChunkMapAccessor",
-    "CommandsMixin"
+    "CommandsMixin",
+    "CompletionPageMixin"
   ],
   "injectors": {
     "defaultRequire": 1

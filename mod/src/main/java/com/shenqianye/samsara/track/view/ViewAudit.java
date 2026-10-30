@@ -49,8 +49,8 @@ public final class ViewAudit {
         o.addProperty("toText", ViewTime.format(toMs));
         o.addProperty("speed", speed);
         o.addProperty("result", result);
-        Path file = FabricLoader.getInstance().getConfigDir()
-                .resolve("samsara").resolve("audit")
+        Path file = com.shenqianye.samsara.storage.StoragePaths.get()
+                .world("audit")
                 .resolve("view-" + LocalDate.now() + ".jsonl");
         try {
             Files.createDirectories(file.getParent());

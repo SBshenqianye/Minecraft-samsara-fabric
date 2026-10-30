@@ -37,7 +37,8 @@ public class GeometryStore {
     private final Map<String, DimGeoData> dimensions = new LinkedHashMap<>();
 
     private GeometryStore() {
-        Path dir = FabricLoader.getInstance().getConfigDir().resolve("samsara");
+        Path dir = com.shenqianye.samsara.storage.StoragePaths.get().worldDataRoot()
+                .resolve("claims");
         try { Files.createDirectories(dir); } catch (IOException e) { throw new RuntimeException(e); }
         file = dir.resolve("geometry.json");
         load();

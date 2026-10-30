@@ -64,8 +64,38 @@ class IncompleteCommandHandlerTest {
         assertTrue(labels.contains("start"));
         com.shenqianye.samsara.command.ui.CompletionGrid.Cell status = cells.stream()
                 .filter(c -> c.label().equals("status")).findFirst().orElseThrow();
-        assertEquals("samsara season status", status.command(),
-                "前缀必须保留，且 status 没有子命令时不补尾随空格");
+        assertEquals("samsara season status ", status.command(),
+                "叶子命令也补一个空格：回车时客户端 trim，照常执行");
+    }
+
+    @Test
+    void listArgumentUsesCommaAndDoesNotDoubleIt() {
+        CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
+        dispatcher.register(LiteralArgumentBuilder.<CommandSourceStack>literal("samsara")
+                .then(LiteralArgumentBuilder.<CommandSourceStack>literal("debug")
+                        .then(LiteralArgumentBuilder.<CommandSourceStack>literal("groups")
+                                .then(com.mojang.brigadier.builder.RequiredArgumentBuilder
+                                        .<CommandSourceStack, String>argument("names",
+                                                com.mojang.brigadier.arguments.StringArgumentType.greedyString())
+                                        .suggests((ctx, builder) ->
+                                                builder.suggest("Bot").suggest("Alex,").buildFuture())))));
+        String command = "samsara debug groups ";
+        ParseResults<CommandSourceStack> parse = dispatcher.parse(command, null);
+        Suggestions suggestions = dispatcher.getCompletionSuggestions(parse).join();
+
+        List<com.shenqianye.samsara.command.ui.CompletionGrid.Cell> cells =
+                IncompleteCommandHandler.cells(command, suggestions,
+                        IncompleteCommandHandler.deepestNode(parse));
+
+        assertEquals(2, cells.size());
+        java.util.Map<String, String> filled = new java.util.HashMap<>();
+        for (var cell : cells) {
+            filled.put(cell.label(), cell.command());
+        }
+        assertEquals("samsara debug groups Bot,", filled.get("Bot"),
+                "逗号列表候选以单个逗号结尾");
+        assertEquals("samsara debug groups Alex,", filled.get("Alex,"),
+                "已有逗号不重复补");
     }
 
     @Test
@@ -82,6 +112,42 @@ class IncompleteCommandHandlerTest {
         assertTrue(cells.stream().anyMatch(c -> c.label().equals("season")
                 && c.command().equals("samsara season ")),
                 "season 还有子命令，应补尾随空格方便继续输入");
+    }
+
+    @Test
+    void childModeListsChildrenEvenWhenClientTrimmedTrailingSpace() {
+        CommandDispatcher<CommandSourceStack> dispatcher = dispatcher();
+        String command = "samsara season"; // 客户端 trim 后服务端真正收到的输入
+        ParseResults<CommandSourceStack> extended = dispatcher.parse(command + " ", null);
+        Suggestions suggestions = dispatcher.getCompletionSuggestions(extended).join();
+
+        List<com.shenqianye.samsara.command.ui.CompletionGrid.Cell> cells =
+                IncompleteCommandHandler.cells(command, suggestions,
+                        IncompleteCommandHandler.deepestNode(extended), true);
+
+        assertTrue(cells.stream().anyMatch(c -> c.command().equals("samsara season status ")),
+                "无执行器节点应列出子命令，且填入值带一个空格");
+    }
+
+    @Test
+    void expandHintDoesNotDependOnTrailingSpaceBecauseClientTrims() {
+        CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
+        dispatcher.register(LiteralArgumentBuilder.<CommandSourceStack>literal("samsara")
+                .then(LiteralArgumentBuilder.<CommandSourceStack>literal("season")
+                        .executes(ctx -> 1)
+                        .then(LiteralArgumentBuilder.<CommandSourceStack>literal("status")
+                                .executes(ctx -> 1))));
+        // 客户端提交前会 trim，所以这里用不带尾随空格的命令模拟服务端真正收到的输入。
+        ParseResults<CommandSourceStack> parse = dispatcher.parse("samsara season", null);
+
+        assertTrue(IncompleteCommandHandler.shouldOfferExpand(parse, null),
+                "有执行器且还有子命令时应给 [展开子命令]，不能依赖尾随空格");
+        assertFalse(IncompleteCommandHandler.shouldOfferExpand(
+                        dispatcher.parse("samsara season status", null), null),
+                "叶子命令没有子命令，不显示展开按钮");
+        assertFalse(IncompleteCommandHandler.shouldOfferExpand(
+                        dispatcher.parse("samsara", null), null),
+                "没有执行器的节点不应显示展开按钮");
     }
 
     @Test

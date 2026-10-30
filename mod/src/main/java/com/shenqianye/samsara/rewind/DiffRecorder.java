@@ -47,19 +47,18 @@ public class DiffRecorder {
     }
 
     /** 服务器启动时初始化：开启常开记录窗口（diff/live），并迁移旧的无维度/无世界布局 */
-    public static synchronized void init(Path samsaraConfigDir) {
+    public static synchronized void init(Path dataRoot) {
         if (currentRoot != null) {
             flush(); // 内置服务器重启：先把上一个窗口的缓冲落盘
         }
-        configDir = samsaraConfigDir;
-        // 世界层要等服务器起来才知道世界目录名（world / world_s1 / 单人存档名），
-        // 由 initWorld(server) 在 SERVER_STARTED 补齐；此前不打开任何库。
+        configDir = dataRoot;
+        // 新布局已在数据根之上，不再带世界层；世界键只保留用于日志。
         currentRoot = null;
         worldKey = null;
         stores.clear();
         enabled = true;
-        clearEditContext(); // 内置服务器重启/异常残留：新会话从干净上下文开始
-        Samsara.LOGGER.info("[samsara] 差异记录已初始化（等待服务器启动后确定世界层）");
+        clearEditContext();
+        Samsara.LOGGER.info("[samsara] 差异记录已初始化（数据根 {}）", dataRoot);
     }
 
     /**

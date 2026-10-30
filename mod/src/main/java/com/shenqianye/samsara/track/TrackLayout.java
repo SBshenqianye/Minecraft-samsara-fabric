@@ -16,17 +16,17 @@ import java.util.stream.Stream;
 /**
  * 玩家轨迹的目录布局与迁移（纯文件系统，便于单测）。
  * <p>
- * 现行布局（按周目隔离）：
+ * 现行布局（按周目隔离，不再带世界层；数据根已绑定当前存档）：
  * <pre>
- * track/&lt;世界&gt;/cycle&lt;周目id&gt;/&lt;YYYY-MM-DD&gt;/&lt;uuid&gt;.bin
+ * track/cycle&lt;周目id&gt;/&lt;YYYY-MM-DD&gt;/&lt;uuid&gt;.bin
  * </pre>
- * 无周目时用 {@code cycle0}。世界键 = 服务器世界目录名（与 diff 库一致，
- * 由 {@link DiffStore#sanitizeWorldKey(String)} 清洗）。
+ * 无周目时用 {@code cycle0}。
  * <p>
  * 迁移（幂等、不丢数据）：
  * <ul>
- *   <li>v0.12.0 布局 {@code track/<世界>/<日期>/} → {@code track/<世界>/cycle<id>/<日期>/}；</li>
- *   <li>更早的无世界层布局 {@code track/<日期>/} → {@code track/<世界>/cycle<id>/<日期>/}。</li>
+ *   <li>v0.13.0 布局 {@code track/<世界>/cycle<id>/<日期>/} → {@code track/cycle<id>/<日期>/}；</li>
+ *   <li>v0.12.0 布局 {@code track/<世界>/<日期>/} → {@code track/cycle<id>/<日期>/}；</li>
+ *   <li>更早的无世界层布局 {@code track/<日期>/} → {@code track/cycle<id>/<日期>/}。</li>
  * </ul>
  * 同名目标文件按“多段合并”处理（track 文件本身允许多段），不会覆盖旧记录。
  */
@@ -41,24 +41,24 @@ public final class TrackLayout {
         return CYCLE_PREFIX + Math.max(0, cycleId);
     }
 
-    /** track/&lt;世界&gt; */
+    /** track 根（纯函数保留 worldKey 形参以兼容旧调用；新布局不再使用世界层）。 */
     public static Path worldRoot(Path trackRoot, String worldKey) {
-        return trackRoot.resolve(DiffStore.sanitizeWorldKey(worldKey));
+        return trackRoot;
     }
 
-    /** track/&lt;世界&gt;/cycle&lt;id&gt; */
-    public static Path cycleDir(Path worldRoot, int cycleId) {
-        return worldRoot.resolve(cycleDirName(cycleId));
+    /** track/cycle&lt;id&gt; */
+    public static Path cycleDir(Path trackRoot, int cycleId) {
+        return trackRoot.resolve(cycleDirName(cycleId));
     }
 
-    /** track/&lt;世界&gt;/cycle&lt;id&gt;/&lt;日期&gt; */
-    public static Path dayDir(Path worldRoot, int cycleId, LocalDate day) {
-        return cycleDir(worldRoot, cycleId).resolve(day.toString());
+    /** track/cycle&lt;id&gt;/&lt;日期&gt; */
+    public static Path dayDir(Path trackRoot, int cycleId, LocalDate day) {
+        return cycleDir(trackRoot, cycleId).resolve(day.toString());
     }
 
-    /** track/&lt;世界&gt;/cycle&lt;id&gt;/&lt;日期&gt;/&lt;uuid&gt;.bin */
-    public static Path file(Path worldRoot, int cycleId, LocalDate day, UUID uuid) {
-        return dayDir(worldRoot, cycleId, day).resolve(uuid + ".bin");
+    /** track/cycle&lt;id&gt;/&lt;日期&gt;/&lt;uuid&gt;.bin */
+    public static Path file(Path trackRoot, int cycleId, LocalDate day, UUID uuid) {
+        return dayDir(trackRoot, cycleId, day).resolve(uuid + ".bin");
     }
 
     /** 目录名是否是 {@code YYYY-MM-DD} */

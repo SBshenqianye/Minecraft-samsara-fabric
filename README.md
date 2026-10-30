@@ -5,7 +5,7 @@
 
 ## 当前版本
 
-**v0.17.0** · Minecraft **26.3** · Fabric Loader **0.20.1** · Java **25**
+**v0.18.0** · Minecraft **26.3** · Fabric Loader **0.20.1** · Java **25**
 
 ## 能做什么
 
@@ -23,12 +23,12 @@
 | 可点击指令 | ✅ 可用 | `/samsara` 帮助、`season status/info`、`claim info`、`where` 等只读命令点击即执行；`season start`、`debug *`、`perm set` 等危险命令点击只填入、不执行 |
 | Tab 补全 | ✅ 可用 | 玩家名、`cycleN`、回看开始时刻/参数/时长/倍速、周目模式、权限路径与等级、区块坐标、布尔开关等；补全项带说明，不按键读盘 |
 | 聊天栏补全 | ✅ 可用 | 输入不完整或拼错的 samsara 指令并回车时，不弹原版错误，而是在聊天栏列出可选项；一行多个、点击只填入聊天框；与 Tab 补全同源，另含拼写近似（`/seasn` → `season`）；只接管 samsara 自己的指令，不影响其他模组 |
-| 补全交互增强 | 🚧 规划中 | 有执行器的节点提供 `[展开子命令]`；点击候选后自动补分隔符并打开下一层候选；候选超过单页时可点击 `[上一页] [下一页]` |
-| 配置/数据分层 | 🚧 规划中 | 配置留在 `config/`；周目、圈地、轨迹、倒流、回看等世界数据随存档走；身份/认证等全局数据默认也随存档，可配置为服务器级并双向迁移 |
-| YAML 配置 | 🚧 规划中 | 配置改为带注释的 YAML；首次启动生成全部默认项，旧 JSON 配置自动迁移 |
-| 本地 Web 配置管理 | 🚧 规划中 | 仅监听本机的配置面板：查看/编辑所有配置项（含默认项）、校验、保存并热重载；不改世界数据 |
+| 补全交互增强 | ✅ 可用 | 有执行器的节点提供 `[展开子命令]`；点击候选自动补分隔符并打开下一层候选（普通参数补空格，玩家名单等逗号列表补逗号）；候选超过单页时可点击 `[上一页] [下一页]`，翻页不改变聊天输入、不执行命令 |
+| 配置/数据分层 | ✅ 可用 | 配置留在 `config/samsara/`；周目、圈地、轨迹、倒流、回看等世界数据随存档走；身份/认证等全局数据默认也随存档，可配置为服务器级并双向迁移 |
+| YAML 配置 | ✅ 可用 | 配置改为带注释的 YAML；首次启动生成全部默认项，旧 JSON 配置自动迁移并保留 `.legacy` 备份；保存原子写并保留 `.bak` |
+| 本地 Web 配置管理 | ✅ 可用 | 仅监听本机的配置面板：查看/编辑所有配置项（含默认项）、字段校验、保存并热重载、查看数据路径与迁移状态；不改世界数据 |
 | 权限 | ✅ 可用 | 四级权限，命令所需等级可配置，支持 owner 名单 |
-| 位置查询 | ✅ 可用 | `/samsara where` 查看自己的维度与坐标（可带区块、朝向），`where broadcast` 广播全服；命令启用与输出字段在 `config/samsara/commands.json` 配置 |
+| 位置查询 | ✅ 可用 | `/samsara where` 查看自己的维度与坐标（可带区块、朝向），`where broadcast` 广播全服；命令启用与输出字段在 `config/samsara/commands.yml` 配置 |
 | TPA 传送 | ✅ 可用 | `/tpa`、`/tpahere` 发起请求，`/tpaccept`、`/tpdeny`、`/tpcancel` 处理；默认 60 秒过期、每人同时只有 1 个请求、仅同维度；请求消息带 `[同意] [拒绝]` / `[取消请求]` 可点击按钮 |
 | 命令短别名 | ✅ 可用 | `/season`、`/claim`、`/where`、`/version`、`/track`、`/tpa` 系列等；被其他模组占用时自动让位，只保留 `/samsara` 全名 |
 | 新世界模式 | 🚧 规划中 | 旧世界入栈、新建世界、跨世界传送、栈顶限制 |
@@ -89,17 +89,29 @@ Linux/macOS 用 `./gradlew build`。产物是 `mod/build/libs/samsara-<版本>.j
 
 ## 数据放在哪
 
-所有模组数据都在 `config/samsara/`，**不写入存档目录 `world/`，也不在服务端根目录散落文件**。包括周目、圈地、倒流、玩家轨迹、备份、权限与活动记录。
+模组把数据分成三层：**配置**留在服务器级目录，**世界数据**随存档走，**全局数据**默认也随存档。
 
-> 下一版计划把「配置」与「世界数据」分开：配置留在 `config/samsara/`（改 YAML），周目/圈地/轨迹/倒流/回看等世界数据迁到存档目录下的 `samsara/`，随存档一起备份和迁移；身份/认证等全局数据默认也随存档，可通过配置改为服务器级并双向迁移；当前 v0.17.0 仍全部在 `config/samsara/`。
+| 层 | 默认位置 | 内容 | 随存档 |
+|---|---|---|---|
+| 配置 | `config/samsara/*.yml` | 命令开关、权限、圈地粒子、存储覆盖、Web | 否 |
+| 世界数据 | `<存档根>/samsara/` | 周目、圈地、倒流、轨迹、回看、备份、活动、审计 | 是 |
+| 全局数据 | `<存档根>/samsara/global/` | 身份映射、认证、跨世界审计索引 | 是（默认） |
 
-命令功能开关在 `config/samsara/commands.json`：`where.enabled` 控制是否启用 `/samsara where`，`where.broadcast` 控制是否允许广播，`where.broadcastCooldownSeconds` 是广播冷却（0=不限），`where.showCoordinates/showDimension/showChunk/showFacing` 控制输出字段；`tpa.enabled` 控制 TPA 系列，`tpa.requestTimeoutSeconds` 是请求有效期（默认 60），`tpa.crossDimension` 控制是否允许跨维度；`view.protectViewer` 控制回看时是否免伤，`view.freeRoamRadius` 是回看时允许自由活动的半径（默认 32 格）；`completion.chatList` 控制未完成指令是否在聊天栏列出候选，`completion.fuzzy` 控制拼写近似，`completion.maxItems` 控制一次最多展示多少项。改完执行 `/samsara debug reload` 生效，无需重启。
+- `<存档根>` 在专用服务器是 `world/`，单人存档是 `saves/<存档名>/`。
+- **存档备份会包含 `samsara/` 世界数据**（轨迹与倒流记录可能较大）；配置不随存档复制。
+- 全局数据可用 `storage.yml` 的 `globalFollowWorld`（默认 `true`）改为服务器级 `<服务器根>/samsara/global/`；切换时程序自动双向迁移。
+- 旧版全部放在 `config/samsara/` 的数据，首次启动会迁移一次；旧目录改名为 `config/samsara.legacy` 保留备份，确认无误后可手动删除。
+- 旧路径说明以[《设计规范》](docs/设计规范.md)的〈文件布局：配置、世界数据与备份位置〉为准。
+
+命令功能开关在 `config/samsara/commands.yml`：`where.enabled` 控制是否启用 `/samsara where`，`where.broadcast` 控制是否允许广播，`where.broadcastCooldownSeconds` 是广播冷却（0=不限），`where.showCoordinates/showDimension/showChunk/showFacing` 控制输出字段；`tpa.enabled` 控制 TPA 系列，`tpa.requestTimeoutSeconds` 是请求有效期（默认 60），`tpa.crossDimension` 控制是否允许跨维度；`view.protectViewer` 控制回看时是否免伤，`view.freeRoamRadius` 是回看时允许自由活动的半径（默认 32 格）；`completion.chatList` 控制未完成指令是否在聊天栏列出候选，`completion.fuzzy` 控制拼写近似，`completion.maxItems` 控制单页最多展示多少项（超出可翻页）。改完执行 `/samsara debug reload` 生效，无需重启；也可以打开本地 Web 面板编辑。
+
+本地 Web 面板默认只监听 `127.0.0.1:8720`，首次启动会在控制台打印访问令牌（也写在 `config/samsara/web.yml`）。用浏览器打开后填入令牌即可查看/修改全部配置；面板不会改世界数据，也不提供公网监听。
 
 活动记录按天保存，只写不读：登录、在线时长，以及本次会话的移动、挖掘、使用、击杀、交易等原版统计增量。没有 tick 轮询，也不提供游戏内查询命令；字段与开销见[《设计规范》](docs/设计规范.md)的〈活动记录：静默采集约定〉。
 
-倒流记录按「世界 → 维度」分目录保存在常开窗口 `diff/live/<世界>/minecraft/overworld…`（主世界、下界、末地与不同世界互不混写），倒流开始时冻结为 `diff/cycle<周目id>/`；旧版 `diff/current`、`diff/s<id>` 与无世界层记录会在启动时自动迁入新布局，记录在运行中与停服时落盘，服务器重启不会丢掉最近一段改动。
+倒流记录按维度保存在常开窗口 `diff/live/minecraft/overworld…`（主世界、下界、末地互不混写），倒流开始时冻结为 `diff/cycle<周目id>/`；旧版 `diff/current`、`diff/s<id>`、`diff/<窗口>/<世界>/` 与无世界层记录会在启动时自动迁入新布局，记录在运行中与停服时落盘，服务器重启不会丢掉最近一段改动。
 
-玩家轨迹按「世界 + 周目 + 日期」保存在 `track/<世界>/cycle<周目id>/<日期>/<uuid>.bin`，越老的记录按 1/4/16/64/256 天档位做几何简化，并保留每天至少一份骨架点；回放用原版人偶（Mannequin，客户端无需安装模组、带玩家皮肤），支持多人同屏。人偶被玩家攻击/交互后会停止回放并变成普通实体；该玩家该周目从捕捉时刻起的轨迹不再回放（磁盘记录保留，截断点写在 `track/cutoffs.json`）。捕捉不保护所在区块：留在会被删的区块里的人偶会和区块一起消失，提前运到安全区块才能活到下一周目。
+玩家轨迹按「周目 + 日期」保存在 `track/cycle<周目id>/<日期>/<uuid>.bin`，越老的记录按 1/4/16/64/256 天档位做几何简化，并保留每天至少一份骨架点；回放用原版人偶（Mannequin，客户端无需安装模组、带玩家皮肤），支持多人同屏。人偶被玩家攻击/交互后会停止回放并变成普通实体；该玩家该周目从捕捉时刻起的轨迹不再回放（磁盘记录保留，截断点写在 `track/cutoffs.json`）。捕捉不保护所在区块：留在会被删的区块里的人偶会和区块一起消失，提前运到安全区块才能活到下一周目。
 
 ## 仓库结构
 

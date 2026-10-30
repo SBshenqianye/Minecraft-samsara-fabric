@@ -72,6 +72,31 @@ class ChatUiTest {
     }
 
     @Test
+    void customButtonUsesCustomClickEvent() {
+        var payload = CompletionAction.payload("samsara season", 2, "n1");
+        MutableComponent component = ChatUi.custom("下一页", CompletionAction.ID, payload, "翻页");
+
+        ClickEvent click = component.getStyle().getClickEvent();
+        assertInstanceOf(ClickEvent.Custom.class, click);
+        ClickEvent.Custom custom = (ClickEvent.Custom) click;
+        assertEquals(CompletionAction.ID, custom.id());
+        assertTrue(custom.payload().isPresent());
+        assertEquals("[下一页]", component.getString());
+    }
+
+    @Test
+    void withSeparatorAddsExactlyOneSpaceOrComma() {
+        assertEquals("samsara season ", ChatUi.withSeparator("samsara season", false));
+        assertEquals("samsara debug groups Bot,",
+                ChatUi.withSeparator("samsara debug groups Bot", true));
+        assertEquals("samsara season ", ChatUi.withSeparator("samsara season ", false),
+                "已有分隔符不重复补");
+        assertEquals("samsara debug groups Bot,",
+                ChatUi.withSeparator("samsara debug groups Bot,", true),
+                "已有逗号不重复补");
+    }
+
+    @Test
     void alreadyBracketedLabelIsNotWrappedTwice() {
         assertEquals("[停止]", ChatUi.run("[停止]", "/stop", "停止").getString());
     }

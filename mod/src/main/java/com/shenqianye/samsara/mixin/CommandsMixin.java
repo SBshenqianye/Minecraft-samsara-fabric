@@ -27,4 +27,17 @@ public class CommandsMixin {
             ci.cancel();
         }
     }
+
+    /**
+     * 节点自身有执行器时，执行完补一个 {@code [展开子命令]}。
+     *
+     * <p>不能靠尾随空格区分“执行/展开”：原版客户端提交前会 trim，服务端收到的命令
+     * 没有尾随空格。这里用执行结果里的按钮表达“还想看子命令”。
+     */
+    @Inject(method = "performCommand", at = @At("TAIL"))
+    private void samsara$appendExpandHint(ParseResults<CommandSourceStack> parse,
+                                          String command,
+                                          CallbackInfo ci) {
+        IncompleteCommandHandler.appendExpandHint(parse, command);
+    }
 }

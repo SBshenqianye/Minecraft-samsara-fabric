@@ -17,6 +17,11 @@ dependencies {
     // 26.1 起依赖声明从 modImplementation 改为 implementation
     implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
+    // YAML 配置：SnakeYAML 2.x，经 Loom include 打进 jar（jar-in-jar），服务器无需另装
+    implementation "org.yaml:snakeyaml:2.5"
+    include "org.yaml:snakeyaml:2.5"
+
+
     // M4a 化线为面单测：JUnit 5（纯 Java，无 MC 依赖）
     testImplementation "org.junit.jupiter:junit-jupiter:5.10.2"
     testRuntimeOnly "org.junit.platform:junit-platform-launcher"

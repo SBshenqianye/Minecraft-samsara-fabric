@@ -89,28 +89,25 @@ public class DiffStore {
     }
 
     /**
-     * 恢复库：按「世界 → 周目 → 维度」打开（会自动迁移旧窗口名与该周目目录的旧布局）。
+     * 恢复库：按「周目 → 维度」打开（会自动迁移旧窗口名与旧世界层）。
      * <p>
-     * 世界层是为世界栈预留的：栈中的每个世界都有自己的 {@code minecraft:overworld}，
-     * 若只按维度分层，{@code world} 与 {@code world_s1} 的同坐标记录会混在一起。
-     * <p>
-     * 旧数据兼容：若仍存在 v0.12.0 的 {@code diff/s<id>}，先就地改名为 {@code diff/cycle<id>}，
-     * 避免在新目录里另起一份空恢复源。
+     * 新布局不再带世界层：数据根已经绑定当前存档，世界栈的每个世界各有自己的
+     * {@code samsara/diff/}。旧数据的 {@code diff/<窗口>/<世界>/…} 会在此处剥离。
      */
-    public static DiffStore forSeason(Path configDir, String worldKey, int seasonId, String dimKey) {
-        Path diffRoot = configDir.resolve("diff");
+    public static DiffStore forSeason(Path dataRoot, String worldKey, int seasonId, String dimKey) {
+        Path diffRoot = dataRoot.resolve("diff");
         migrateWindowNames(diffRoot);
-        Path seasonRoot = cycleRoot(configDir, seasonId);
+        Path seasonRoot = cycleRoot(dataRoot, seasonId);
         migrateWorldLayer(seasonRoot, worldKey);
-        return new DiffStore(seasonRoot.resolve(sanitizeWorldKey(worldKey)).resolve(dimKey), true);
+        return new DiffStore(seasonRoot.resolve(dimKey), true);
     }
 
-    /** 兼容入口：主世界恢复库（必须显式给出世界，避免世界栈下串数据） */
-    public static DiffStore forSeason(Path configDir, String worldKey, int seasonId) {
-        return forSeason(configDir, worldKey, seasonId, OVERWORLD_DIM);
+    /** 兼容入口：主世界恢复库。 */
+    public static DiffStore forSeason(Path dataRoot, String worldKey, int seasonId) {
+        return forSeason(dataRoot, worldKey, seasonId, OVERWORLD_DIM);
     }
 
-    // ---- 世界层布局（世界栈预留）----
+    // ---- 布局 ----
 
     /** 世界目录名清洗：只允许文件系统安全字符，防止把路径分隔符写进世界键 */
     public static String sanitizeWorldKey(String worldKey) {
@@ -121,24 +118,27 @@ public class DiffStore {
         return s.isBlank() || ".".equals(s) || "..".equals(s) ? "world" : s;
     }
 
-    /** 一个记录窗口下某世界的根：diff/&lt;窗口&gt;/&lt;世界&gt; */
-    public static Path windowRoot(Path configDir, String window, String worldKey) {
-        return configDir.resolve("diff").resolve(window).resolve(sanitizeWorldKey(worldKey));
+    /**
+     * 一个记录窗口的根：{@code diff/&lt;窗口&gt;}。
+     * 保留 {@code worldKey} 形参只为兼容旧调用；新布局不使用世界层。
+     */
+    public static Path windowRoot(Path dataRoot, String window, String worldKey) {
+        return dataRoot.resolve("diff").resolve(window);
     }
 
-    /** 常开记录窗口下某世界的根：diff/live/&lt;世界&gt; */
-    public static Path liveWorldRoot(Path configDir, String worldKey) {
-        return windowRoot(configDir, LIVE, worldKey);
+    /** 常开记录窗口根：diff/live */
+    public static Path liveWorldRoot(Path dataRoot, String worldKey) {
+        return windowRoot(dataRoot, LIVE, worldKey);
     }
 
     /** 周目恢复源根：diff/cycle&lt;id&gt; */
-    public static Path cycleRoot(Path configDir, int seasonId) {
-        return configDir.resolve("diff").resolve(CYCLE_PREFIX + seasonId);
+    public static Path cycleRoot(Path dataRoot, int seasonId) {
+        return dataRoot.resolve("diff").resolve(CYCLE_PREFIX + seasonId);
     }
 
-    /** 周目恢复源下某世界的根：diff/cycle&lt;id&gt;/&lt;世界&gt; */
-    public static Path cycleWorldRoot(Path configDir, int seasonId, String worldKey) {
-        return windowRoot(configDir, CYCLE_PREFIX + seasonId, worldKey);
+    /** 周目恢复源根（无世界层） */
+    public static Path cycleWorldRoot(Path dataRoot, int seasonId, String worldKey) {
+        return windowRoot(dataRoot, CYCLE_PREFIX + seasonId, worldKey);
     }
 
     /**
@@ -213,10 +213,12 @@ public class DiffStore {
     }
 
     /**
-     * 把旧版「窗口/minecraft/...」迁移到「窗口/&lt;世界&gt;/minecraft/...」。
-     * <p>
-     * 可重复执行：只处理窗口下直接存在的 {@code minecraft} 目录（新版布局不会出现），
-     * 因此不会把已经分好世界的数据再搬一次。旧版没有世界层，所有记录都属于当时唯一的世界。
+     * 剥离旧世界层，并迁移更早的无维度布局：
+     * <ul>
+     *   <li>{@code 窗口/<世界>/minecraft/...} → {@code 窗口/minecraft/...}；</li>
+     *   <li>{@code 窗口/r.<rx>.<rz>/...} → {@code 窗口/minecraft/overworld/...}（v0.10）。</li>
+     * </ul>
+     * 可重复执行：世界层不存在时直接返回。
      */
     public static void migrateWorldLayer(Path windowRoot, String worldKey) {
         if (windowRoot == null || !Files.isDirectory(windowRoot)) {
@@ -224,29 +226,31 @@ public class DiffStore {
         }
         // 更早的 v0.10 布局：窗口/r.<rx>.<rz>/ → 窗口/minecraft/overworld/
         migrateLegacy(windowRoot);
-        Path legacyDims = windowRoot.resolve("minecraft");
-        if (!Files.isDirectory(legacyDims)) {
+        Path worldLayer = windowRoot.resolve(sanitizeWorldKey(worldKey));
+        if (!Files.isDirectory(worldLayer)) {
             return;
         }
-        Path target = windowRoot.resolve(sanitizeWorldKey(worldKey)).resolve("minecraft");
-        int moved = 0;
         try {
-            if (Files.exists(target)) {
-                mergeWindows(legacyDims, target);
-                deleteRecursively(legacyDims);
-            } else {
-                Files.createDirectories(target.getParent());
-                Files.move(legacyDims, target);
+            int moved = 0;
+            try (Stream<Path> list = Files.list(worldLayer)) {
+                for (Path child : (Iterable<Path>) list::iterator) {
+                    Path target = windowRoot.resolve(child.getFileName().toString());
+                    if (Files.exists(target)) {
+                        mergeWindows(child, target);
+                    } else {
+                        Files.move(child, target);
+                    }
+                    moved++;
+                }
             }
-            moved = 1;
+            deleteRecursively(worldLayer);
+            if (moved > 0) {
+                Samsara.LOGGER.info("[周目管理 samsara] diff 旧世界层已剥离: {} → {}",
+                        worldLayer.getFileName(), windowRoot.toAbsolutePath().normalize());
+            }
         } catch (IOException e) {
-            Samsara.LOGGER.warn("[周目管理 samsara] diff 世界层迁移失败（保留原数据，下次再试）: {}",
+            Samsara.LOGGER.warn("[周目管理 samsara] diff 世界层剥离失败（保留原数据，下次再试）: {}",
                     e.getMessage());
-            return;
-        }
-        if (moved > 0) {
-            Samsara.LOGGER.info("[周目管理 samsara] diff 世界层已迁移: {} → {}", legacyDims.getFileName(),
-                    target.toAbsolutePath().normalize());
         }
     }
 

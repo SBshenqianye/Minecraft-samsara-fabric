@@ -34,13 +34,18 @@ public class AreaService {
     private final Map<ResourceKey<Level>, Map<ChunkCoord, ClaimNode>> nodes = new ConcurrentHashMap<>();
 
     private AreaService() {
-        Path dir = FabricLoader.getInstance().getConfigDir().resolve("samsara");
+        Path dir = com.shenqianye.samsara.storage.StoragePaths.get().worldDataRoot();
         try {
             Files.createDirectories(dir);
         } catch (IOException e) {
-            throw new RuntimeException("无法创建 samsara 配置目录", e);
+            throw new RuntimeException("无法创建 samsara 世界数据目录", e);
         }
-        file = dir.resolve("claims.json");
+        file = dir.resolve("claims").resolve("claims.json");
+        try {
+            Files.createDirectories(file.getParent());
+        } catch (IOException e) {
+            throw new RuntimeException("无法创建 claims 目录", e);
+        }
         load();
     }
 
@@ -132,7 +137,6 @@ public class AreaService {
     public Map<ResourceKey<Level>, Map<ChunkCoord, ClaimNode>> getAllNodes() {
         return Collections.unmodifiableMap(nodes);
     }
-
     /** 移除整个区块的注册（debug 用） */
     public synchronized String removeNode(ResourceKey<Level> dim, ChunkCoord loc) {
         if (dimNodes(dim).remove(loc) != null) {

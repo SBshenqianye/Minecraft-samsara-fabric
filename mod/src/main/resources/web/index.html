@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>samsara · 配置</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <h1>samsara 配置</h1>
+    <div class="toolbar">
+      <input id="token" type="password" placeholder="访问 token（web.yml）" autocomplete="off">
+      <button id="connect">连接</button>
+      <button id="reload" class="ghost">重新读取</button>
+      <button id="save">保存并重载</button>
+    </div>
+  </header>
+
+  <main>
+    <section id="status" class="panel" hidden>
+      <h2>状态</h2>
+      <dl id="status-list"></dl>
+    </section>
+
+    <section class="panel">
+      <div class="search-row">
+        <input id="search" type="search" placeholder="搜索配置（键名 / 说明 / 分组）">
+        <span id="summary" class="muted"></span>
+      </div>
+      <div id="message" class="message" role="status"></div>
+      <div id="files"></div>
+    </section>
+  </main>
+
+  <template id="file-template">
+    <section class="file">
+      <h2 class="file-title"></h2>
+      <p class="file-path muted"></p>
+      <div class="groups"></div>
+    </section>
+  </template>
+
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -56,11 +56,11 @@ public class SeasonManager {
     private final Map<UUID, int[]> pendingTeleports = new HashMap<>();
 
     private SeasonManager() {
-        Path dir = FabricLoader.getInstance().getConfigDir().resolve("samsara");
+        Path dir = com.shenqianye.samsara.storage.StoragePaths.get().worldDataRoot();
         try {
             Files.createDirectories(dir);
         } catch (IOException e) {
-            throw new RuntimeException("无法创建 samsara 配置目录", e);
+            throw new RuntimeException("无法创建 samsara 世界数据目录", e);
         }
         file = dir.resolve("season.json");
         pendingFile = dir.resolve("pending-teleports.json");

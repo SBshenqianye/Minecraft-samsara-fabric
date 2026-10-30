@@ -5,6 +5,7 @@ import com.google.gson.GsonBuilder;
 import com.mojang.math.Transformation;
 import com.shenqianye.samsara.Samsara;
 import com.shenqianye.samsara.geometry.ChunkCoord;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.ChatFormatting;
@@ -63,9 +64,10 @@ public class ClaimParticles {
     /** 右键旗帜后持续显示时长（毫秒） */
     private static final long RIGHT_CLICK_DURATION_MS = 10_000L;
 
-    /** 持久化配置文件路径 */
-    private static final Path TOGGLES_PATH = FabricLoader.getInstance().getConfigDir()
-            .resolve("samsara").resolve("boundary-toggles.json");
+    /** 持久化配置文件路径（随存档世界数据） */
+    private static Path togglesPath() {
+        return com.shenqianye.samsara.storage.StoragePaths.get().world("boundary-toggles.json");
+    }
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
     private static final String[] ARROWS = {"↑", "↗", "→", "↘", "↓", "↙", "←", "↖"};
@@ -167,18 +169,18 @@ public class ClaimParticles {
             data.boundary = new ArrayList<>(boundaryToggle.stream().map(UUID::toString).toList());
             data.fixed = new ArrayList<>(showFixed.stream().map(UUID::toString).toList());
             data.dynamic = new ArrayList<>(showDynamic.stream().map(UUID::toString).toList());
-            Files.createDirectories(TOGGLES_PATH.getParent());
-            Files.writeString(TOGGLES_PATH, GSON.toJson(data), StandardCharsets.UTF_8);
+            Files.createDirectories(togglesPath().getParent());
+            Files.writeString(togglesPath(), GSON.toJson(data), StandardCharsets.UTF_8);
         } catch (IOException e) {
             Samsara.LOGGER.warn("[samsara] boundary-toggles.json 写入失败: {}", e.getMessage());
         }
     }
 
     private static void loadToggles() {
-        if (!Files.exists(TOGGLES_PATH)) return;
+        if (!Files.exists(togglesPath())) return;
         try {
             TogglesData data = GSON.fromJson(
-                    Files.readString(TOGGLES_PATH, StandardCharsets.UTF_8), TogglesData.class);
+                    Files.readString(togglesPath(), StandardCharsets.UTF_8), TogglesData.class);
             if (data == null) return;
             boundaryToggle.clear();
             showFixed.clear();
@@ -213,7 +215,8 @@ public class ClaimParticles {
     }
 
     public static void init() {
-        loadToggles();
+        // 世界数据根在 SERVER_STARTING 才可用；toggle 状态在 SERVER_STARTED 读取
+        ServerLifecycleEvents.SERVER_STARTED.register(server -> loadToggles());
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             if (shuttingDown) return;
 

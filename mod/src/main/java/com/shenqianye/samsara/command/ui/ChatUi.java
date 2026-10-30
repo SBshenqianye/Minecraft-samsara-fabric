@@ -8,7 +8,11 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
+import net.minecraft.nbt.Tag;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
+
+import java.util.Optional;
 
 /**
  * 聊天栏可点击组件（按钮）统一构造器。
@@ -69,6 +73,39 @@ public final class ChatUi {
     /** 点击只填入，但不额外加方括号（用于整行可点击列表）。 */
     public static MutableComponent suggestText(String text, String command, String hover) {
         return button(text, command, hover, false, false);
+    }
+
+    /**
+     * 自定义点击动作（{@code ClickEvent.Custom}），用于翻页这类“不发命令、只发数据”的按钮。
+     * 不注册隐藏命令，避免污染 Tab 补全与帮助列表。
+     */
+    public static MutableComponent custom(String label, Identifier id, Tag payload, String hover) {
+        String text = wrapBrackets(label == null ? "" : label);
+        Style style = Style.EMPTY
+                .withColor(SUGGEST_COLOR)
+                .withClickEvent(new ClickEvent.Custom(id, Optional.ofNullable(payload)))
+                .withHoverEvent(new HoverEvent.ShowText(
+                        Component.literal(hover == null || hover.isBlank() ? text : hover)));
+        return Component.literal(text).setStyle(style);
+    }
+
+    /**
+     * 补全候选的分隔符：普通参数补一个空格，逗号列表参数补一个逗号。
+     * 末尾已有空白或逗号时不重复追加。
+     *
+     * <p><b>不能靠尾随空格区分“执行/展开”</b>：原版 {@code ChatScreen.normalizeChatMessage}
+     * 在提交前会 trim + normalizeSpace，服务端收不到尾随空格。尾随空格只用于客户端
+     * 继续弹候选；这里补分隔符只是为了让点击后能接着输入。
+     */
+    public static String withSeparator(String command, boolean listArgument) {
+        if (command == null || command.isEmpty()) {
+            return command;
+        }
+        char last = command.charAt(command.length() - 1);
+        if (Character.isWhitespace(last) || last == ',') {
+            return command;
+        }
+        return command + (listArgument ? "," : " ");
     }
 
     // ---- 按权限决定是否显示按钮 ----

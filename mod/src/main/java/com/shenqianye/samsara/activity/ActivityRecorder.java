@@ -62,11 +62,14 @@ public final class ActivityRecorder {
     private static ActivityRecorder instance;
     private static final Gson GSON = new Gson();
 
-    private final Path dir;
     private final Map<UUID, Session> sessions = new HashMap<>();
 
     private ActivityRecorder() {
-        dir = FabricLoader.getInstance().getConfigDir().resolve("samsara").resolve("activity");
+    }
+
+    /** 活动日志目录由 StoragePaths 解析（随存档）。 */
+    private static Path dir() {
+        return com.shenqianye.samsara.storage.StoragePaths.get().world("activity");
     }
 
     public static synchronized ActivityRecorder getInstance() {
@@ -249,6 +252,7 @@ public final class ActivityRecorder {
 
     private synchronized void append(JsonObject event) {
         try {
+            Path dir = dir();
             Files.createDirectories(dir);
             Path file = dir.resolve(fileName(event.get("t").getAsLong()));
             Files.writeString(file, GSON.toJson(event) + "\n", StandardCharsets.UTF_8,
