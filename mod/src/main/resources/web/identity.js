@@ -11,6 +11,7 @@ const I = {
   extraCandidates: [],
   generated: [],
   names: {},
+  types: {},
   online: {},
   drag: null,
   seq: 0,
@@ -239,13 +240,6 @@ function groupCard(group, index) {
   preview.className = 'ghost';
   preview.textContent = '预览影响';
   preview.addEventListener('click', () => previewGroup(group, previewOutput));
-  const rebind = document.createElement('button');
-  rebind.type = 'button';
-  rebind.className = 'ghost';
-  rebind.textContent = '重绑 data';
-  rebind.disabled = !findExisting(group);
-  rebind.title = findExisting(group) ? '修改已有组的 data UUID' : '新组直接选 data 即可';
-  rebind.addEventListener('click', () => openRebindDialog(group, ''));
   const remove = document.createElement('button');
   remove.type = 'button';
   remove.className = 'ghost danger';
@@ -256,7 +250,7 @@ function groupCard(group, index) {
     I.dirty = true;
     renderAll();
   });
-  actions.append(preview, rebind, remove);
+  actions.append(preview, remove);
 
   const previewOutput = document.createElement('pre');
   previewOutput.className = 'card-preview';
@@ -309,18 +303,6 @@ function renderZone(group, role, labelText, hintText) {
   paste.title = '从剪贴板读取 UUID 放到这个区域';
   paste.addEventListener('click', () => pasteIntoZone(group, role));
   label.append(paste);
-  if (role === 'data') {
-    const generate = document.createElement('button');
-    generate.type = 'button';
-    generate.className = 'chip-action';
-    generate.textContent = '生成';
-    generate.title = '生成一个随机 data UUID 并填入本组';
-    generate.addEventListener('click', async () => {
-      const uuid = await generateDataUuid(false);
-      if (uuid) assignRole(group._id, 'data', uuid, '');
-    });
-    label.append(generate);
-  }
   zone.append(label);
 
   const body = document.createElement('div');
@@ -386,22 +368,22 @@ function uuidChip(uuid, role, groupId) {
     identityMessage('已复制 ' + uuid, 'ok');
   });
   actions.append(copy);
-  if (role !== 'data') {
-    const clear = document.createElement('button');
-    clear.type = 'button';
-    clear.className = 'chip-action';
-    clear.textContent = '移除';
-    clear.title = '从本组移除这个账号入口';
-    clear.addEventListener('click', (event) => {
-      event.stopPropagation();
-      clearRole(groupId, role);
-    });
-    actions.append(clear);
-  }
+  const clear = document.createElement('button');
+  clear.type = 'button';
+  clear.className = 'chip-action';
+  clear.textContent = role === 'data' ? '清空' : '移除';
+  clear.title = role === 'data'
+    ? '清空这个组的数据 UUID；不会删除玩家数据，保存前必须重新指定'
+    : '从本组移除这个账号入口';
+  clear.addEventListener('click', (event) => {
+    event.stopPropagation();
+    clearRole(groupId, role);
+  });
+  actions.append(clear);
   chip.append(actions);
 
   chip.addEventListener('dragstart', (event) => {
-    I.drag = { uuid, role, groupId, copy: role === 'data' };
+    I.drag = { uuid, role, groupId, copy: role === 'data', type: candidateType(uuid) };
     event.dataTransfer.effectAllowed = role === 'data' ? 'copy' : 'move';
     try { event.dataTransfer.setData('text/plain', uuid); } catch (e) { /* ignore */ }
   });
@@ -417,12 +399,23 @@ function displayName(uuid) {
   return I.names[uuid] || candidateName(uuid) || '未命名';
 }
 
+function navDataLabel(uuid) {
+  if (!uuid) return '未设置';
+  if (!I.names[uuid] && !candidateName(uuid) && !candidateType(uuid)) return '空白 data';
+  return displayName(uuid);
+}
+
+function navAccountLabel(uuid) {
+  return uuid ? displayName(uuid) : '未设置';
+}
+
 function candidateName(uuid) {
   const found = [...I.candidates, ...I.extraCandidates].find((item) => item.uuid === uuid);
   return found ? found.name : '';
 }
 
 function candidateType(uuid) {
+  if (I.types[uuid]) return I.types[uuid];
   const found = [...I.candidates, ...I.extraCandidates].find((item) => item.uuid === uuid);
   return found && found.type ? found.type : '';
 }
@@ -437,11 +430,20 @@ function dataLabel(uuid, groupId) {
   return '空白 data';
 }
 
+function poolEmpty(text) {
+  const empty = document.createElement('span');
+  empty.className = 'pool-empty';
+  empty.textContent = text;
+  return empty;
+}
+
 function renderPool() {
-  const accountPool = $i('identity-account-pool');
+  const premiumPool = $i('identity-premium-pool');
+  const offlinePool = $i('identity-offline-pool');
   const dataPool = $i('identity-data-pool');
-  if (!accountPool || !dataPool) return;
-  accountPool.replaceChildren();
+  if (!premiumPool || !offlinePool || !dataPool) return;
+  premiumPool.replaceChildren();
+  offlinePool.replaceChildren();
   dataPool.replaceChildren();
 
   const assigned = new Set();
@@ -450,19 +452,19 @@ function renderPool() {
     if (group.offline) assigned.add(group.offline);
   }
   const seen = new Set();
-  let accountCount = 0;
+  let premiumCount = 0;
+  let offlineCount = 0;
   for (const item of [...I.candidates, ...I.extraCandidates]) {
     if (!item.uuid || assigned.has(item.uuid) || seen.has(item.uuid)) continue;
     seen.add(item.uuid);
-    accountPool.append(poolChip(item.uuid, item.name, item.online, typeLabel(item.type)));
-    accountCount++;
+    const offline = item.type === 'offline';
+    (offline ? offlinePool : premiumPool).append(
+        poolChip(item.uuid, item.name, item.online, offline ? '离线' : '正版'));
+    if (offline) offlineCount++;
+    else premiumCount++;
   }
-  if (!accountCount) {
-    const empty = document.createElement('span');
-    empty.className = 'pool-empty';
-    empty.textContent = '没有未进组账号；可以从上方“名称 / UUID”解析新玩家，或把卡片里的账号移除后回到这里。';
-    accountPool.append(empty);
-  }
+  if (!premiumCount) premiumPool.append(poolEmpty('没有未进组的正版 UUID。'));
+  if (!offlineCount) offlinePool.append(poolEmpty('没有未进组的离线 UUID。'));
 
   const usedData = new Set(I.groups.map((group) => group.data).filter(Boolean));
   const dataSeen = new Set();
@@ -485,18 +487,24 @@ function renderPool() {
   for (const uuid of blankData) {
     if (!uuid || usedData.has(uuid) || dataSeen.has(uuid)) continue;
     dataSeen.add(uuid);
-    dataPool.append(poolChip(uuid, '空白 data', I.online[uuid], 'data'));
+    const generated = I.generated.includes(uuid);
+    dataPool.append(poolChip(uuid, '空白 data', I.online[uuid], 'data', generated ? {
+      onRemove: () => {
+        I.generated = I.generated.filter((item) => item !== uuid);
+        renderPool();
+        renderDatalists();
+        identityMessage('已从池子移除空白 data：' + uuid, 'ok');
+      },
+    } : null));
     dataCount++;
   }
   if (!dataCount) {
-    const empty = document.createElement('span');
-    empty.className = 'pool-empty';
-    empty.textContent = '没有闲置 data UUID；点“生成 data UUID”创建一把空白钥匙。';
-    dataPool.append(empty);
+    dataPool.append(poolEmpty('没有闲置 data UUID；点“生成 data UUID”创建一把空白钥匙。'));
   }
 }
 
-function poolChip(uuid, name, online, tag) {
+function poolChip(uuid, name, online, tag, options) {
+  const opts = options || {};
   const chip = document.createElement('span');
   chip.className = 'uuid-chip';
   chip.draggable = true;
@@ -531,8 +539,20 @@ function poolChip(uuid, name, online, tag) {
     identityMessage('已复制 ' + uuid, 'ok');
   });
   chip.append(copy);
+  if (typeof opts.onRemove === 'function') {
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'chip-action';
+    remove.textContent = '×';
+    remove.title = '从池子移除这个空白 data';
+    remove.addEventListener('click', (event) => {
+      event.stopPropagation();
+      opts.onRemove();
+    });
+    chip.append(remove);
+  }
   chip.addEventListener('dragstart', (event) => {
-    I.drag = { uuid, name, role: null, groupId: null, copy: true };
+    I.drag = { uuid, name, role: null, groupId: null, copy: true, type: candidateType(uuid) };
     event.dataTransfer.effectAllowed = 'copy';
     try { event.dataTransfer.setData('text/plain', uuid); } catch (e) { /* ignore */ }
   });
@@ -545,6 +565,15 @@ function assignRole(groupId, role, uuid, name) {
   if (!group || !uuid) return;
   if (!isUuid(uuid)) {
     identityMessage('UUID 格式不正确：' + uuid, 'error');
+    return;
+  }
+  const accountType = candidateType(uuid) || (I.drag && I.drag.type) || '';
+  if (role === 'premium' && accountType === 'offline') {
+    identityMessage('这是离线 UUID，只能放进“离线 UUID”区域；正版和离线 UUID 是两套不同的值。', 'error');
+    return;
+  }
+  if (role === 'offline' && accountType === 'premium') {
+    identityMessage('这是正版 UUID，只能放进“正版 UUID”区域；正版和离线 UUID 是两套不同的值。', 'error');
     return;
   }
   const existing = findExisting(group);
@@ -577,12 +606,19 @@ function assignRole(groupId, role, uuid, name) {
 }
 
 function clearRole(groupId, role) {
-  if (role === 'data') {
-    identityMessage('data UUID 不能直接清空；请用“重绑 data”或删除整个组。', 'error');
-    return;
-  }
   const group = I.groups.find((item) => item._id === groupId);
   if (!group) return;
+  if (role === 'data') {
+    if (!window.confirm('清空这个组的 data UUID？\n不会删除玩家数据；保存前必须重新指定 data，否则无法保存。')) {
+      return;
+    }
+    if (group.data && !I.generated.includes(group.data)) I.generated.push(group.data);
+    group.data = '';
+    I.dirty = true;
+    renderAll();
+    identityMessage('已清空 data UUID；请重新指定后再保存。', 'ok');
+    return;
+  }
   group[role] = null;
   I.dirty = true;
   renderAll();
@@ -637,7 +673,7 @@ function openUuidDialog(group, role) {
   if (!dialog || !input) return;
   $i('uuid-title').textContent = '设置「' + (group.name || '未命名') + '」的 ' + roleLabel(role) + ' UUID';
   $i('uuid-desc').textContent = role === 'data'
-    ? 'data UUID 是玩家数据的钥匙；同一个值可以被多个组复用。已有组改 data 会走重绑流程。'
+    ? 'data UUID 是玩家数据的钥匙；同一个值可以被多个组复用。已有组改 data 会自动弹出重绑确认。'
     : '正版/离线入口全局只能属于一个组；拖入别组已有的入口会把它移动过来。';
   input.value = group[role] || '';
   resolved.hidden = true;
@@ -665,6 +701,8 @@ async function resolveUuidInput() {
       method: 'POST',
       body: JSON.stringify(body),
     });
+    Object.assign(I.names, result.names || {});
+    Object.assign(I.types, result.types || {});
     renderResolved(result, value);
   } catch (e) {
     resolved.hidden = false;
@@ -682,13 +720,16 @@ function renderResolved(result, query) {
   resolved.replaceChildren();
   resolved.hidden = false;
   const seen = new Set();
+  const role = I.uuidContext ? I.uuidContext.role : '';
   const add = (label, uuid, name) => {
     if (!uuid || seen.has(uuid)) return;
     seen.add(uuid);
+    const type = (result.types && result.types[uuid]) || candidateType(uuid);
     const chip = document.createElement('button');
     chip.type = 'button';
     chip.className = 'uuid-chip';
     chip.style.cursor = 'pointer';
+    chip.dataset.type = type || '';
     const nameSpan = document.createElement('span');
     nameSpan.className = 'uuid-name';
     nameSpan.textContent = label + ' · ' + (name || '未命名');
@@ -696,9 +737,27 @@ function renderResolved(result, query) {
     code.className = 'uuid-code';
     code.textContent = shortUuid(uuid);
     chip.append(nameSpan, code);
+    if (type === 'offline' || type === 'premium') {
+      const typeSpan = document.createElement('span');
+      typeSpan.className = 'uuid-role';
+      typeSpan.textContent = typeLabel(type) + ' UUID';
+      chip.append(typeSpan);
+    }
+    if ((role === 'premium' && type === 'offline') || (role === 'offline' && type === 'premium')) {
+      chip.classList.add('mismatch');
+      chip.title = '类型不匹配：' + typeLabel(type) + ' UUID 不能放进 ' + roleLabel(role) + ' 区域';
+    }
     chip.addEventListener('click', () => {
+      if ((role === 'premium' && type === 'offline') || (role === 'offline' && type === 'premium')) {
+        identityMessage('类型不匹配：' + typeLabel(type) + ' UUID 不能放进 '
+            + roleLabel(role) + ' 区域。正版和离线 UUID 是两套不同的值。', 'error');
+        return;
+      }
       I.selectedUuid = uuid;
-      for (const other of resolved.querySelectorAll('.uuid-chip')) other.classList.remove('selected');
+      for (const other of resolved.querySelectorAll('.uuid-chip')) {
+        other.classList.remove('selected');
+        other.style.outline = '';
+      }
       chip.classList.add('selected');
       chip.style.outline = '2px solid var(--accent)';
       chip.style.outlineOffset = '1px';
@@ -734,6 +793,13 @@ function applyUuidDialog() {
   if (!uuid && isUuid(value)) uuid = value;
   if (!uuid) {
     identityMessage('请选择解析出的正版/离线 UUID，或直接输入完整 UUID。', 'error');
+    return;
+  }
+  const type = candidateType(uuid);
+  if ((context.role === 'premium' && type === 'offline')
+      || (context.role === 'offline' && type === 'premium')) {
+    identityMessage('类型不匹配：' + typeLabel(type) + ' UUID 不能放进 '
+        + roleLabel(context.role) + ' 区域。', 'error');
     return;
   }
   $i('uuid-dialog').close();
@@ -843,7 +909,7 @@ async function saveIdentity() {
     }
     const existing = findExisting(group);
     if (existing && existing.data !== data) {
-      identityMessage('组「' + name + '」的 data UUID 变了；必须用“重绑 data”流程，不能直接保存。', 'error');
+      identityMessage('组「' + name + '」的 data UUID 变了；请先在数据区重新选择，重绑确认会自动弹出。', 'error');
       return false;
     }
     groups.push({
@@ -988,12 +1054,12 @@ function renderNav() {
     count: [group.data, group.premium, group.offline].filter(Boolean).length,
     target: 'identity-group-' + group._id,
     children: [
-      { label: 'data · ' + shortUuid(group.data), target: 'identity-group-' + group._id },
-      { label: '正版 · ' + (group.premium ? shortUuid(group.premium) : '未设置'), target: 'identity-group-' + group._id },
-      { label: '离线 · ' + (group.offline ? shortUuid(group.offline) : '未设置'), target: 'identity-group-' + group._id },
+      { label: '数据 · ' + navDataLabel(group.data), target: 'identity-group-' + group._id },
+      { label: '正版 · ' + navAccountLabel(group.premium), target: 'identity-group-' + group._id },
+      { label: '离线 · ' + navAccountLabel(group.offline), target: 'identity-group-' + group._id },
     ],
   }));
-  items.push({ label: '未进组 / 数据 UUID 库', target: 'identity-account-pool' });
+  items.push({ label: '未进组账号 / data UUID 库', target: 'identity-pool-panel' });
   if (window.SamsaraUI.isActiveTab('identity')) {
     const targets = I.groups.map((group) => ({
       id: 'identity-group-' + group._id,
@@ -1022,6 +1088,7 @@ function refreshNames() {
         body: JSON.stringify({ uuids: [...uuids] }),
       });
       Object.assign(I.names, result.names || {});
+      Object.assign(I.types, result.types || {});
       Object.assign(I.online, result.online || {});
       for (const el of document.querySelectorAll('[data-name-for]')) {
         const uuid = el.dataset.nameFor;

@@ -120,6 +120,15 @@ public class ClaimNode {
         return rotatedExtension;
     }
 
+    /**
+     * 丢弃缓存的扩展/影响坐标。保护范围配置热重载后，已有节点必须重算，
+     * 否则仍会沿用旧距离。
+     */
+    public void invalidateGeometry() {
+        rotatedExtension = null;
+        influencedCoords = null;
+    }
+
     /** 计算影响坐标集（从节点位置沿 8 个方向延伸出的全部格点，用于展示/粒子预览） */
     public List<ChunkCoord> getInfluencedCoords() {
         if (influencedCoords != null) return influencedCoords;

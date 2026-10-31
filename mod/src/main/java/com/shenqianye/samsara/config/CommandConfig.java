@@ -37,6 +37,7 @@ public final class CommandConfig {
     private int completionMaxItems;
 
     private int shutdownCountdownSeconds;
+    private boolean outputAutoContinuePrefix;
 
     private CommandConfig() {
         reload();
@@ -139,6 +140,10 @@ public final class CommandConfig {
         return shutdownCountdownSeconds;
     }
 
+    public boolean outputAutoContinuePrefix() {
+        return outputAutoContinuePrefix;
+    }
+
     /** 配置文件绝对路径 */
     public String configPath() {
         return ConfigManager.getInstance().file(ConfigSchema.COMMANDS).toAbsolutePath()
@@ -174,6 +179,7 @@ public final class CommandConfig {
         completionFuzzyEnabled = config.bool(id, "completion.fuzzy");
         completionMaxItems = Math.max(1, config.integer(id, "completion.maxItems"));
         shutdownCountdownSeconds = Math.max(1, config.integer(id, "shutdown.countdownSeconds"));
+        outputAutoContinuePrefix = config.bool(id, "output.autoContinuePrefix");
         return "命令配置已重载：" + (whereEnabled ? "where 启用" : "where 禁用")
                 + " · 广播" + (whereBroadcast ? "允许" : "禁止")
                 + " · tpa " + (tpaEnabled ? "启用" : "禁用")

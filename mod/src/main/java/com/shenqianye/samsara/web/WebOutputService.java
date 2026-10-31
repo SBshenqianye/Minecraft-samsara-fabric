@@ -45,6 +45,7 @@ public final class WebOutputService implements OutputWebService {
         out.put("ok", true);
         out.put("path", config.file(ConfigSchema.OUTPUT).toAbsolutePath().normalize().toString());
         out.put("messages", messages);
+        out.put("autoContinuePrefix", CommandConfig.getInstance().outputAutoContinuePrefix());
         out.put("warnings", warnings);
         return out;
     }

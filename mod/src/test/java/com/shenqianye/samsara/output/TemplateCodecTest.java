@@ -71,7 +71,7 @@ class TemplateCodecTest {
     }
 
     @Test
-    void duplicateVariableIsRejected() {
+    void duplicateVariableIsAllowed() {
         OutputTemplate template = OutputCatalog.template("where.result");
         List<TemplatePart> parts = List.of(
                 new VariablePart("dimension"),
@@ -80,8 +80,7 @@ class TemplateCodecTest {
                 new VariablePart("chunkX"), new VariablePart("chunkZ"),
                 new VariablePart("facing")
         );
-        Map<String, String> errors = TemplateCodec.validate(template, parts);
-        assertTrue(errors.containsKey("parts[2].var"));
+        assertTrue(TemplateCodec.validate(template, parts).isEmpty());
     }
 
     @Test

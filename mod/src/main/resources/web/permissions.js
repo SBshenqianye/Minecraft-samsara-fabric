@@ -64,9 +64,9 @@ function renderStats(stats) {
   if (!container) return;
   container.replaceChildren();
   const rows = [
-    ['权限节点', stats.total],
+    ['命令路径', stats.total],
     ['已关闭', stats.disabled],
-    ['自定义', stats.custom],
+    ['自定义规则', stats.custom],
     ['叶子', stats.leaves],
   ];
   for (const [label, value] of rows) {
@@ -88,7 +88,7 @@ function renderOwners() {
   container.append(window.SamsaraStructured.stringList(P.owners, (next) => {
     P.owners = next;
     ownerMessage('owner 名单有修改，点右上角“保存 owner 名单”后生效');
-  }));
+  }, { addAtTop: true, scrollIntoView: true }));
 }
 
 function ownerMessage(text, kind) {

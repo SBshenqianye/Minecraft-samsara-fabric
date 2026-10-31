@@ -1,33 +1,122 @@
 'use strict';
 
-// 轻量粒子预览：不加载任何贴图/第三方库，用 Canvas 2D 画带景深的粒子。
-// 同一个 canvas 重复 attach 会取消旧动画，避免切换下拉框后叠加。
+// 纯像素粒子预览：不加载贴图，所有粒子用 1 CSS 像素的像素点绘制。
+// 每个粒子是一张 4~7 像素的小 sprite，带明暗层次，接近 MC 原版粒子的像素感。
 
 (function () {
   const STYLES = {
-    crit: { colors: ['#fff7c2', '#ffe066', '#ffc857'], shape: 'star', glow: 1.0, drift: 22 },
-    enchant: { colors: ['#b5f5ff', '#67e8f9', '#38bdf8'], shape: 'glyph', glow: .9, drift: 16 },
-    smoke: { colors: ['#a3a3a3', '#737373', '#d4d4d4'], shape: 'blob', glow: .25, drift: 20 },
-    large_smoke: { colors: ['#8a8a8a', '#525252', '#c4c4c4'], shape: 'blob', glow: .2, drift: 26 },
-    cloud: { colors: ['#e5e7eb', '#cbd5e1', '#f8fafc'], shape: 'blob', glow: .15, drift: 18 },
-    flame: { colors: ['#ffd166', '#fb923c', '#ef4444'], shape: 'flame', glow: 1.0, drift: 26 },
-    soul_fire_flame: { colors: ['#99f6e4', '#2dd4bf', '#0ea5e9'], shape: 'flame', glow: 1.0, drift: 24 },
-    end_rod: { colors: ['#f5f3ff', '#ddd6fe', '#c4b5fd'], shape: 'streak', glow: .95, drift: 14 },
-    happy_villager: { colors: ['#86efac', '#22c55e', '#bbf7d0'], shape: 'star', glow: .9, drift: 20 },
-    composter: { colors: ['#a3e635', '#65a30d', '#d9f99d'], shape: 'dot', glow: .5, drift: 18 },
-    portal: { colors: ['#d8b4fe', '#a855f7', '#7c3aed'], shape: 'swirl', glow: 1.0, drift: 22 },
-    witch: { colors: ['#c084fc', '#7e22ce', '#e9d5ff'], shape: 'dot', glow: .7, drift: 20 },
-    note: { colors: ['#fef08a', '#facc15', '#fde68a'], shape: 'note', glow: .8, drift: 18 },
-    heart: { colors: ['#fb7185', '#e11d48', '#fda4af'], shape: 'heart', glow: .8, drift: 16 },
-    angry_villager: { colors: ['#9ca3af', '#4b5563', '#d1d5db'], shape: 'blob', glow: .2, drift: 16 },
-    snowflake: { colors: ['#f0f9ff', '#bae6fd', '#e0f2fe'], shape: 'flake', glow: .7, drift: 14 },
-    white_ash: { colors: ['#f8fafc', '#e2e8f0', '#cbd5e1'], shape: 'flake', glow: .45, drift: 12 },
-    ash: { colors: ['#a8a29e', '#78716c', '#d6d3d1'], shape: 'dot', glow: .2, drift: 12 },
+    crit: { colors: ['#fff7b0', '#ffe066', '#ffc21a'], sprite: 'crit', alpha: .95, drift: 13 },
+    enchant: { colors: ['#b5f5ff', '#67e8f9', '#38bdf8'], sprite: 'sparkle', alpha: .9, drift: 11 },
+    smoke: { colors: ['#9aa0a6', '#c2c7cc', '#71767c'], sprite: 'smoke', alpha: .42, drift: 11 },
+    large_smoke: { colors: ['#858b91', '#b0b5ba', '#62686e'], sprite: 'smoke', alpha: .38, drift: 14 },
+    cloud: { colors: ['#e5e7eb', '#f8fafc', '#cbd5e1'], sprite: 'smoke', alpha: .34, drift: 9 },
+    flame: { colors: ['#ffd166', '#fb923c', '#ef4444'], sprite: 'flame', alpha: .95, drift: 14 },
+    soul_fire_flame: { colors: ['#99f6e4', '#2dd4bf', '#38bdf8'], sprite: 'flame', alpha: .95, drift: 13 },
+    end_rod: { colors: ['#f5f3ff', '#ddd6fe', '#c4b5fd'], sprite: 'streak', alpha: .95, drift: 8 },
+    happy_villager: { colors: ['#86efac', '#22c55e', '#bbf7d0'], sprite: 'star', alpha: .9, drift: 11 },
+    composter: { colors: ['#a3e635', '#65a30d', '#d9f99d'], sprite: 'dot2', alpha: .7, drift: 10 },
+    portal: { colors: ['#d8b4fe', '#a855f7', '#7c3aed'], sprite: 'swirl', alpha: .95, drift: 12 },
+    witch: { colors: ['#c084fc', '#7e22ce', '#e9d5ff'], sprite: 'dot1', alpha: .8, drift: 11 },
+    note: { colors: ['#fef08a', '#facc15', '#fde68a'], sprite: 'note', alpha: .9, drift: 10 },
+    heart: { colors: ['#fb7185', '#e11d48', '#fda4af'], sprite: 'heart', alpha: .9, drift: 9 },
+    angry_villager: { colors: ['#9ca3af', '#4b5563', '#d1d5db'], sprite: 'smoke', alpha: .35, drift: 9 },
+    snowflake: { colors: ['#f0f9ff', '#bae6fd', '#e0f2fe'], sprite: 'flake', alpha: .85, drift: 8 },
+    white_ash: { colors: ['#f8fafc', '#e2e8f0', '#cbd5e1'], sprite: 'dot1', alpha: .65, drift: 7 },
+    ash: { colors: ['#a8a29e', '#78716c', '#d6d3d1'], sprite: 'dot1', alpha: .5, drift: 7 },
   };
 
-  const DEFAULT_STYLE = { colors: ['#5eead4', '#2dd4bf', '#99f6e4'], shape: 'dot', glow: .6, drift: 16 };
+  const DEFAULT_STYLE = { colors: ['#5eead4', '#2dd4bf', '#99f6e4'], sprite: 'dot1', alpha: .8, drift: 9 };
+
+  // '.' 透明，'#' 主色，'+' 亮部，'-' 暗部。
+  const SPRITES = {
+    crit: [
+      '..+..',
+      '.+#+.',
+      '+###+',
+      '.+#+.',
+      '..+..',
+    ],
+    star: [
+      '..#..',
+      '.+#+.',
+      '##+##',
+      '.+#+.',
+      '..#..',
+    ],
+    sparkle: [
+      '#...#',
+      '.+.+.',
+      '..+..',
+      '.+.+.',
+      '#...#',
+    ],
+    smoke: [
+      '..##..',
+      '.####.',
+      '##+###',
+      '######',
+      '.####.',
+      '..##..',
+    ],
+    flame: [
+      '..+..',
+      '..+..',
+      '.++#.',
+      '.##+#',
+      '#####',
+      '.###.',
+    ],
+    streak: [
+      '.+.',
+      '.#.',
+      '.#.',
+      '.#.',
+      '.-.',
+    ],
+    dot2: [
+      '.##.',
+      '#++#',
+      '#++#',
+      '.##.',
+    ],
+    dot1: ['+'],
+    note: [
+      '..##.',
+      '..#.#',
+      '..#..',
+      '###..',
+      '###..',
+      '.#...',
+    ],
+    heart: [
+      '.##.##.',
+      '#######',
+      '#######',
+      '.#####.',
+      '..###..',
+      '...#...',
+    ],
+    swirl: [
+      '..##.',
+      '.#..#',
+      '#.+.#',
+      '#..#.',
+      '.##..',
+    ],
+    flake: [
+      '#..#..#',
+      '.#.#.#.',
+      '..###..',
+      '##+#+##',
+      '..###..',
+      '.#.#.#.',
+      '#..#..#',
+    ],
+  };
+
   const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const visibility = new WeakMap();
+  const shadeCache = new Map();
   let observer = null;
 
   function ensureObserver() {
@@ -45,200 +134,96 @@
     return min + Math.random() * (max - min);
   }
 
+  function shade(color, amount) {
+    const key = color + '|' + amount;
+    const cached = shadeCache.get(key);
+    if (cached) return cached;
+    const hex = color.replace('#', '');
+    const full = hex.length === 3
+      ? hex.split('').map((ch) => ch + ch).join('')
+      : hex;
+    const value = parseInt(full, 16);
+    if (!Number.isFinite(value)) return color;
+    const target = amount > 0 ? 255 : 0;
+    const k = Math.abs(amount);
+    const parts = [(value >> 16) & 255, (value >> 8) & 255, value & 255].map((channel) =>
+      Math.round(channel + (target - channel) * k));
+    const out = '#' + parts.map((channel) => channel.toString(16).padStart(2, '0')).join('');
+    shadeCache.set(key, out);
+    return out;
+  }
+
   function makeParticle(w, h, style) {
     return {
-      x: rand(6, w - 6),
-      y: rand(6, h - 6),
-      z: rand(.35, 1.35),
-      vx: rand(-style.drift, style.drift) * .018,
-      vy: rand(-style.drift * .7, style.drift * .2) * .018,
-      life: rand(0, Math.PI * 2),
-      spin: rand(-.08, .08),
+      x: rand(2, w - 2),
+      y: rand(2, h - 2),
+      vx: rand(-style.drift, style.drift),
+      vy: rand(-style.drift * .7, style.drift * .2),
       color: style.colors[Math.floor(Math.random() * style.colors.length)],
-      size: rand(1.4, 3.4),
     };
   }
 
-  function drawStar(ctx, x, y, r, color, glow) {
-    ctx.save();
-    ctx.translate(x, y);
-    if (glow > .1) {
-      const g = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 2.2);
-      g.addColorStop(0, color + 'aa');
-      g.addColorStop(.55, color + '33');
-      g.addColorStop(1, 'transparent');
-      ctx.fillStyle = g;
-      ctx.beginPath(); ctx.arc(0, 0, r * 2.2, 0, Math.PI * 2); ctx.fill();
-    }
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    for (let i = 0; i < 8; i++) {
-      const angle = i * Math.PI / 4;
-      const radius = i % 2 === 0 ? r * 1.5 : r * .28;
-      const px = Math.cos(angle) * radius;
-      const py = Math.sin(angle) * radius;
-      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-    }
-    ctx.closePath(); ctx.fill();
-    ctx.restore();
-  }
-
-  function drawBlob(ctx, x, y, r, color, alpha, spread) {
-    const radius = r * (spread || 2.0);
-    const g = ctx.createRadialGradient(x, y, 0, x, y, radius);
-    g.addColorStop(0, color + 'dd');
-    g.addColorStop(.55, color + '66');
-    g.addColorStop(1, 'transparent');
+  function drawSprite(ctx, cx, cy, spriteName, color, alpha) {
+    const sprite = SPRITES[spriteName] || SPRITES.dot1;
+    const height = sprite.length;
+    let width = 0;
+    for (const row of sprite) width = Math.max(width, row.length);
+    const x0 = Math.round(cx - width / 2);
+    const y0 = Math.round(cy - height / 2);
+    const light = shade(color, .45);
+    const dark = shade(color, -.38);
     ctx.globalAlpha = alpha;
-    ctx.fillStyle = g;
-    ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.fill();
-    ctx.globalAlpha = 1;
-  }
-
-  function drawHeart(ctx, x, y, r, color) {
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.scale(.1 * r, .1 * r);
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.moveTo(0, 3);
-    ctx.bezierCurveTo(-8, -5, -5, -11, 0, -6);
-    ctx.bezierCurveTo(5, -11, 8, -5, 0, 3);
-    ctx.closePath(); ctx.fill();
-    ctx.restore();
-  }
-
-  function drawNote(ctx, x, y, r, color) {
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.fillStyle = color;
-    ctx.font = `${Math.round(r * 4)}px system-ui, sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('♪', 0, 0);
-    ctx.restore();
-  }
-
-  function drawFlake(ctx, x, y, r, color, angle) {
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(angle);
-    ctx.strokeStyle = color;
-    ctx.lineWidth = Math.max(.6, r * .38);
-    ctx.lineCap = 'round';
-    for (let i = 0; i < 3; i++) {
-      const a = i * Math.PI / 3;
-      ctx.beginPath();
-      ctx.moveTo(-Math.cos(a) * r * 1.8, -Math.sin(a) * r * 1.8);
-      ctx.lineTo(Math.cos(a) * r * 1.8, Math.sin(a) * r * 1.8);
-      ctx.stroke();
-    }
-    ctx.restore();
-  }
-
-  function drawParticle(ctx, p, style, alphaScale) {
-    const scale = alphaScale == null ? 1 : alphaScale;
-    const alpha = Math.max(0, Math.min(1, (.25 + p.z * .65) * scale));
-    ctx.globalAlpha = alpha;
-    const r = p.size * p.z;
-    switch (style.shape) {
-      case 'star':
-        drawStar(ctx, p.x, p.y, r * 1.5, p.color, style.glow);
-        break;
-      case 'flame':
-        drawBlob(ctx, p.x, p.y - r * .4, r * 1.1, p.color, alpha * .9);
-        ctx.fillStyle = p.color;
-        ctx.beginPath();
-        ctx.moveTo(p.x, p.y - r * 2.1);
-        ctx.quadraticCurveTo(p.x + r * 1.5, p.y, p.x, p.y + r * 1.2);
-        ctx.quadraticCurveTo(p.x - r * 1.5, p.y, p.x, p.y - r * 2.1);
-        ctx.fill();
-        break;
-      case 'streak':
-        drawBlob(ctx, p.x, p.y, r * .75, p.color, alpha * .7);
-        ctx.strokeStyle = p.color;
-        ctx.lineWidth = Math.max(.7, r * .45);
-        ctx.beginPath();
-        ctx.moveTo(p.x, p.y - r * 2.8);
-        ctx.lineTo(p.x, p.y + r * 1.6);
-        ctx.stroke();
-        break;
-      case 'heart':
-        drawHeart(ctx, p.x, p.y, r * 1.8, p.color);
-        break;
-      case 'note':
-        drawNote(ctx, p.x, p.y, r, p.color);
-        break;
-      case 'flake':
-        drawFlake(ctx, p.x, p.y, r * 1.3, p.color, p.life);
-        break;
-      case 'swirl':
-        drawBlob(ctx, p.x, p.y, r * .9, p.color, alpha * .8);
-        ctx.strokeStyle = p.color;
-        ctx.lineWidth = Math.max(.6, r * .3);
-        ctx.beginPath();
-        for (let i = 0; i < 8; i++) {
-          const a = p.life + i * .5;
-          const rr = r * (1 + i * .3);
-          const px = p.x + Math.cos(a) * rr;
-          const py = p.y + Math.sin(a) * rr;
-          if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-        }
-        ctx.stroke();
-        break;
-      case 'glyph':
-        drawBlob(ctx, p.x, p.y, r * .8, p.color, alpha * .7);
-        ctx.strokeStyle = p.color;
-        ctx.lineWidth = Math.max(.6, r * .3);
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, r * 1.9, p.life, p.life + Math.PI * 1.4);
-        ctx.stroke();
-        break;
-      case 'blob':
-        drawBlob(ctx, p.x, p.y, r * 1.2, p.color, alpha * .46, 1.55);
-        ctx.fillStyle = p.color + '66';
-        ctx.beginPath(); ctx.arc(p.x, p.y, r * 1.05, 0, Math.PI * 2); ctx.fill();
-        break;
-      default:
-        drawBlob(ctx, p.x, p.y, r * .9, p.color, alpha * .75);
-        ctx.fillStyle = p.color;
-        ctx.beginPath(); ctx.arc(p.x, p.y, r * .65, 0, Math.PI * 2); ctx.fill();
+    for (let y = 0; y < height; y++) {
+      const row = sprite[y];
+      for (let x = 0; x < row.length; x++) {
+        const ch = row.charAt(x);
+        if (ch === '.') continue;
+        ctx.fillStyle = ch === '+' ? light : ch === '-' ? dark : color;
+        ctx.fillRect(x0 + x, y0 + y, 1, 1);
+      }
     }
     ctx.globalAlpha = 1;
   }
 
-  function paintBackground(ctx, width, height, theme) {
+  function paintBackground(ctx, w, h, theme) {
     if (theme === 'day') {
-      const sky = ctx.createLinearGradient(0, 0, 0, height);
-      sky.addColorStop(0, '#5a9cf8');
-      sky.addColorStop(.62, '#9ecbff');
-      sky.addColorStop(1, '#e5f3ff');
-      ctx.fillStyle = sky;
-      ctx.fillRect(0, 0, width, height);
-      const sun = ctx.createRadialGradient(width * .82, height * .18, 0, width * .82, height * .18, width * .22);
-      sun.addColorStop(0, 'rgba(255,255,235,.95)');
-      sun.addColorStop(.35, 'rgba(255,244,190,.55)');
-      sun.addColorStop(1, 'rgba(255,244,190,0)');
-      ctx.fillStyle = sun;
-      ctx.fillRect(0, 0, width, height);
+      const bands = [
+        ['#4f8ed6', 0, .34],
+        ['#6eaaf0', .34, .28],
+        ['#9ac7f5', .62, .22],
+        ['#d6ebfb', .84, .16],
+      ];
+      for (const [color, start, size] of bands) {
+        ctx.fillStyle = color;
+        ctx.fillRect(0, Math.floor(h * start), w, Math.ceil(h * size) + 1);
+      }
+      // 像素太阳
+      const sx = Math.floor(w * .82);
+      const sy = Math.floor(h * .18);
+      ctx.fillStyle = '#fff7b0';
+      ctx.fillRect(sx, sy, 3, 3);
+      ctx.fillStyle = '#ffe066';
+      ctx.fillRect(sx - 1, sy + 1, 5, 1);
+      ctx.fillRect(sx + 1, sy - 1, 1, 5);
       return;
     }
     if (theme === 'night') {
-      ctx.fillStyle = '#01030a';
-      ctx.fillRect(0, 0, width, height);
-      ctx.fillStyle = 'rgba(255,255,255,.45)';
-      for (let i = 0; i < 9; i++) {
-        const x = (i * 37 + 13) % width;
-        const y = (i * 19 + 7) % height;
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = '#dbeafe';
+      for (let i = 0; i < 12; i++) {
+        const x = (i * 17 + 5) % w;
+        const y = (i * 11 + 3) % h;
         ctx.fillRect(x, y, 1, 1);
       }
       return;
     }
-    const bg = ctx.createRadialGradient(width * .5, height * .55, 0, width * .5, height * .55, width * .7);
-    bg.addColorStop(0, 'rgba(255,255,255,.06)');
-    bg.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, width, height);
+    ctx.fillStyle = '#0b1017';
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#1b2633';
+    for (let i = 0; i < 8; i++) {
+      ctx.fillRect((i * 13 + 7) % w, (i * 7 + 3) % h, 1, 1);
+    }
   }
 
   function makeBurst(style, x, y) {
@@ -246,18 +231,15 @@
     const count = 14;
     for (let i = 0; i < count; i++) {
       const angle = (i / count) * Math.PI * 2 + rand(-.2, .2);
-      const speed = rand(.08, .28);
+      const speed = rand(8, 24);
       out.push({
-        x, y,
-        z: rand(.9, 1.4),
+        x: Math.round(x),
+        y: Math.round(y),
         vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed - .04,
-        life: rand(0, Math.PI * 2),
-        spin: rand(-.08, .08),
+        vy: Math.sin(angle) * speed - 4,
         color: style.colors[Math.floor(Math.random() * style.colors.length)],
-        size: rand(1.8, 4.2),
         age: 0,
-        ttl: rand(.7, 1.25),
+        ttl: rand(.65, 1.15),
       });
     }
     return out;
@@ -271,27 +253,34 @@
       canvas.__samsaraRaf = 0;
     }
     ensureObserver();
-    const ctx = canvas.getContext('2d');
     const style = styleFor(name);
-    const width = canvas.clientWidth || 132;
-    const height = canvas.clientHeight || 52;
-    const dpr = Math.min(3, Math.max(2, window.devicePixelRatio || 1));
-    canvas.width = Math.max(1, Math.round(width * dpr));
-    canvas.height = Math.max(1, Math.round(height * dpr));
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    if (canvas.isConnected && !canvas.clientWidth) {
+      // 还在布局中，下一帧再量。
+      requestAnimationFrame(() => attach(canvas, name, opts));
+      return;
+    }
+    const width = Math.max(1, Math.round(canvas.clientWidth || 130));
+    const height = Math.max(1, Math.round(canvas.clientHeight || 50));
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
+    canvas.style.imageRendering = 'pixelated';
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     const particles = [];
-    const count = 18;
-    for (let i = 0; i < count; i++) particles.push(makeParticle(width, height, style));
+    for (let i = 0; i < 16; i++) particles.push(makeParticle(width, height, style));
     const burst = [];
+
     canvas.style.cursor = 'crosshair';
     if (canvas.__samsaraPointer) {
       canvas.removeEventListener('pointerdown', canvas.__samsaraPointer);
     }
     canvas.__samsaraPointer = (event) => {
       const rect = canvas.getBoundingClientRect();
-      const x = Math.max(2, Math.min(width - 2, event.clientX - rect.left));
-      const y = Math.max(2, Math.min(height - 2, event.clientY - rect.top));
+      const x = (event.clientX - rect.left) / (rect.width / width);
+      const y = (event.clientY - rect.top) / (rect.height / height);
       burst.push(...makeBurst(style, x, y));
     };
     canvas.addEventListener('pointerdown', canvas.__samsaraPointer);
@@ -303,12 +292,11 @@
         canvas.__samsaraRaf = 0;
         return;
       }
-      const visible = visibility.get(canvas) !== false;
-      if (!visible) {
+      if (visibility.get(canvas) === false) {
         canvas.__samsaraRaf = requestAnimationFrame(frame);
         return;
       }
-      const dt = Math.min(50, last ? now - last : 16);
+      const dt = Math.min(50, last ? now - last : 16) / 1000;
       last = now;
       ctx.clearRect(0, 0, width, height);
       paintBackground(ctx, width, height, opts.background);
@@ -317,25 +305,25 @@
         if (!reduceMotion) {
           p.x += p.vx * dt;
           p.y += p.vy * dt;
-          p.life += p.spin * dt * .04;
-          if (p.x < -8) p.x = width + 8;
-          if (p.x > width + 8) p.x = -8;
-          if (p.y < -8) p.y = height + 8;
-          if (p.y > height + 8) p.y = -8;
+          if (p.x < -4) p.x = width + 4;
+          if (p.x > width + 4) p.x = -4;
+          if (p.y < -4) p.y = height + 4;
+          if (p.y > height + 4) p.y = -4;
         }
-        drawParticle(ctx, p, style);
+        drawSprite(ctx, p.x, p.y, style.sprite, p.color, style.alpha);
       }
+
       for (let i = burst.length - 1; i >= 0; i--) {
         const p = burst[i];
-        p.age += dt / 1000;
+        p.age += dt;
         if (p.age >= p.ttl) {
           burst.splice(i, 1);
           continue;
         }
         p.x += p.vx * dt;
         p.y += p.vy * dt;
-        p.vy += .02 * (dt / 1000);
-        drawParticle(ctx, p, style, 1 - p.age / p.ttl);
+        p.vy += 34 * dt;
+        drawSprite(ctx, p.x, p.y, style.sprite, p.color, style.alpha * (1 - p.age / p.ttl));
       }
       canvas.__samsaraRaf = requestAnimationFrame(frame);
     }

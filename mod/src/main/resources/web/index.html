@@ -20,11 +20,6 @@
     </div>
 
     <div class="connection">
-      <label class="token-field">
-        <span>访问 token</span>
-        <input id="token" type="password" placeholder="粘贴 web.yml 里的 token" autocomplete="off">
-      </label>
-      <button id="connect" class="primary">连接</button>
       <span id="connection-state" class="conn-state">未连接</span>
     </div>
 
@@ -34,6 +29,9 @@
       </button>
       <button class="tab active" data-panel="panel-config">
         配置 <span class="tab-count" id="config-count">0</span>
+      </button>
+      <button class="tab" data-panel="panel-claim-range">
+        圈地范围 <span class="tab-count" id="claim-range-count">0</span>
       </button>
       <button class="tab" data-panel="panel-output">
         输出格式 <span class="tab-count" id="output-count">0</span>
@@ -55,6 +53,30 @@
       </div>
     </div>
   </header>
+
+  <div id="app-skeleton" class="app-skeleton" hidden>
+    <div class="skeleton-side">
+      <div class="skeleton-bar w45"></div>
+      <div class="skeleton-bar"></div>
+      <div class="skeleton-bar w80"></div>
+      <div class="skeleton-bar w65"></div>
+      <div class="skeleton-bar w75"></div>
+      <div class="skeleton-bar w50"></div>
+    </div>
+    <div class="skeleton-main">
+      <div class="skeleton-card tall"></div>
+      <div class="skeleton-card">
+        <div class="skeleton-bar w35"></div>
+        <div class="skeleton-bar w90"></div>
+        <div class="skeleton-bar w70"></div>
+      </div>
+      <div class="skeleton-card">
+        <div class="skeleton-bar w30"></div>
+        <div class="skeleton-bar w85"></div>
+        <div class="skeleton-bar w60"></div>
+      </div>
+    </div>
+  </div>
 
   <main class="app-shell">
     <aside id="global-nav" class="side-nav" aria-label="全局导航"></aside>
@@ -88,6 +110,19 @@
           </div>
           <div id="message" class="message" role="status"></div>
           <div id="files" class="config-files"></div>
+        </section>
+      </div>
+
+      <div id="panel-claim-range" class="panel-stack" hidden>
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>圈地范围</h2>
+              <p class="panel-sub">按染料颜色设置单方向延伸距离，或使用固定距离；保存后已有圈地会立即按新范围重算。</p>
+            </div>
+          </div>
+          <div id="claim-range-message" class="message" role="status"></div>
+          <div id="claim-range-files" class="config-files"></div>
         </section>
       </div>
 
@@ -134,20 +169,20 @@
           <details class="help-card">
             <summary>data UUID 是什么？为什么它和账号 UUID 不一样？</summary>
             <div class="help-body">
-              <p><strong>账号 UUID</strong> 是玩家登录时使用的身份：正版 UUID 由 Mojang 分配，离线 UUID 由“OfflinePlayer:名称”计算。一个组最多各放一个正版/离线入口。</p>
+              <p><strong>账号 UUID</strong> 是玩家登录时使用的身份：正版 UUID 由 Mojang 分配，离线 UUID 由“OfflinePlayer:名称”计算。一个组最多各放一个正版/离线入口。身份组按 UUID 匹配，不按名字；同一个名字的正版 UUID 和离线 UUID 是两个不同的值，所以离线 UUID 不能拖进正版区域，正版 UUID 也不能拖进离线区域。</p>
               <p><strong>data UUID</strong> 是玩家数据的存储钥匙，对应 <code>identity/playerdata/&lt;data&gt;.dat</code>。它不是登录账号，所以同一把 data UUID 可以被多个组复用；复用后这些组会共享同一份背包/位置/进度。</p>
               <p>“生成 data UUID”得到的是<strong>空白钥匙</strong>：还没有绑定任何账号，所以池子里显示为“空白 data”。把正版/离线账号映射进组、玩家上线并同步后，数据才会写进这把钥匙。池子里的“正版数据 / 离线数据”候选是用账号 UUID 当数据键，名字直接来自账号，避免出现不知道是谁的 data。</p>
-              <p>直接把已有组的 data UUID 改成另一个值，必须走“重绑”流程：程序会先备份旧数据与目标数据，再按你选择的策略复制或保留。新组没有旧数据，可以直接设置。</p>
+              <p>已有组修改 data UUID 时，会自动弹出重绑确认：程序先备份旧数据与目标数据，再按你选择的策略复制或保留，避免玩家进度丢失。新组没有旧数据，直接设置即可。</p>
             </div>
           </details>
 
           <div id="identity-groups" class="identity-groups"></div>
 
-          <div class="pool-panel">
+          <div class="pool-panel" id="identity-pool-panel">
             <div class="panel-head compact">
               <div>
                 <h3>未进组 / 数据 UUID 库</h3>
-                <p class="panel-sub">把账号拖进卡片的“正版/离线”区域，把 data UUID 拖进“数据”区域。正版/离线只能在一个组；data 可以复制到多个组。</p>
+                <p class="panel-sub">账号和 data 分开显示：正版、离线、data 各自独立。把账号拖进卡片的“正版/离线”区域，把 data UUID 拖进“数据”区域。正版/离线只能在一个组；data 可以复制到多个组。</p>
               </div>
               <div class="panel-tools">
                 <label class="inline-field">
@@ -159,9 +194,11 @@
               </div>
             </div>
             <div id="identity-resolve-result" class="resolve-result" hidden></div>
-            <h4 class="pool-title">未进组账号</h4>
-            <div id="identity-account-pool" class="chip-pool"></div>
-            <h4 class="pool-title">数据 UUID 候选（账号派生 / 空白 data）</h4>
+            <h4 class="pool-title">正版 UUID（未进组）</h4>
+            <div id="identity-premium-pool" class="chip-pool"></div>
+            <h4 class="pool-title">离线 UUID（未进组）</h4>
+            <div id="identity-offline-pool" class="chip-pool"></div>
+            <h4 class="pool-title">数据 UUID（data）</h4>
             <div id="identity-data-pool" class="chip-pool"></div>
           </div>
 
@@ -185,6 +222,10 @@
                 <span aria-hidden="true">⌕</span>
                 <input id="output-search" type="search" placeholder="搜索消息 / 分组 / 说明">
               </label>
+              <label class="check-line">
+                <input id="output-auto-continue" type="checkbox">
+                <span>自动续行前缀</span>
+              </label>
             </div>
           </div>
           <div id="output-message" class="message" role="status"></div>
@@ -197,7 +238,7 @@
                    aria-label="输出消息编辑画布"></div>
               <div id="output-errors" class="output-errors"></div>
               <div class="editor-hint">
-                变量和按钮是原子标签，不能改文字；按钮可以改标签文字。画布换行会保留到游戏内；续行前缀由系统自动添加，已用浅色显示。
+                变量和按钮是原子标签，不能改文字；按钮可以改标签文字。画布换行会原样进入模板，不会自动插入三角箭头；如需游戏内续行前缀，可打开“自动续行前缀”。
               </div>
               <h3 class="palette-title">变量 <span id="output-var-count" class="count-pill">0</span></h3>
               <div id="output-palette" class="palette"></div>
@@ -218,7 +259,7 @@
           <div class="panel-head">
             <div>
               <h2>权限树</h2>
-              <p class="panel-sub">关闭树干会级联关闭所有后代；重新开启后恢复各节点原来的等级。叶子的实际等级取整条路径上的最高等级。</p>
+              <p class="panel-sub">这里的节点同时是命令路径和权限检查点：默认权限表与真实命令树合并显示。自定义规则只是其中一部分，所以“自定义”数量通常小于节点总数。关闭树干会级联关闭所有后代；重新开启后恢复各节点原来的等级。叶子的实际等级取整条路径上的最高等级。</p>
             </div>
             <div class="panel-tools">
               <label class="search-box">
@@ -300,6 +341,23 @@
         <span class="spacer"></span>
         <button type="button" id="rebind-cancel" class="ghost">取消</button>
         <button type="button" id="rebind-apply" class="primary">确认重绑</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="token-dialog" class="app-dialog token-dialog">
+    <form method="dialog" class="dialog-body" id="token-form">
+      <h3>输入访问 token</h3>
+      <p class="dialog-sub">token 在服务器启动日志或 <code>config/samsara/web.yml</code> 里，只需填写一次；之后保存在当前浏览器会话中，不再显示。</p>
+      <label class="field-card">
+        <span>访问 token</span>
+        <input id="token-input" type="password" placeholder="粘贴 web.yml 里的 token" autocomplete="off">
+        <small>只存 sessionStorage，不写 URL，也不进日志。</small>
+      </label>
+      <div id="token-error" class="message error" role="status"></div>
+      <div class="dialog-actions">
+        <span class="spacer"></span>
+        <button type="button" id="token-connect" class="primary">连接</button>
       </div>
     </form>
   </dialog>

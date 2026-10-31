@@ -21,6 +21,7 @@ const O = {
   filling: false,
   undoStack: [],
   redoStack: [],
+  autoContinuePrefix: true,
 };
 
 const $o = (id) => document.getElementById(id);
@@ -44,6 +45,7 @@ function cloneParts(parts) {
 async function loadOutput() {
   try {
     O.model = await window.SamsaraUI.api('/api/output');
+    O.autoContinuePrefix = O.model.autoContinuePrefix !== false;
     const exists = O.model.messages.some((message) => message.key === O.key);
     if (!exists) O.key = O.model.messages.length ? O.model.messages[0].key : '';
     selectOutputMessage(O.key, true);
@@ -93,7 +95,11 @@ function renderOutputNav() {
       })),
     });
   }
-  window.SamsaraUI.buildNav('输出消息 ' + shown + ' / ' + O.model.messages.length, navItems, []);
+  const title = '输出消息';
+  const count = query
+    ? shown + ' / ' + O.model.messages.length
+    : String(O.model.messages.length);
+  window.SamsaraUI.buildNav(title, navItems, [], { count });
   window.SamsaraUI.setNavActive('out-msg-' + encodeURIComponent(O.key));
 }
 
@@ -127,6 +133,8 @@ function renderOutputEditor() {
   }
   $o('output-meta').textContent = message.key + ' · ' + message.description
       + ' · 变量 ' + (message.variables || []).length + ' · 按钮 ' + (message.buttons || []).length;
+  const auto = $o('output-auto-continue');
+  if (auto) auto.checked = O.autoContinuePrefix;
   const editable = message.editable !== false;
   disabled.hidden = editable;
   editor.hidden = !editable;
@@ -157,53 +165,15 @@ function fillEditor(parts) {
 
 function renderParts(parts) {
   const editor = $o('output-editor');
-  let lineIndex = 0;
-  let atLineStart = true;
-
-  const ensureVirtualPrefix = () => {
-    if (atLineStart && lineIndex > 0) {
-      editor.append(createVirtualPrefix());
-      atLineStart = false;
-    }
-  };
-
-  const appendText = (text) => {
-    if (!text) return;
-    let start = 0;
-    for (let i = 0; i < text.length; i++) {
-      if (text.charAt(i) !== '\n') continue;
-      if (i > start) {
-        ensureVirtualPrefix();
-        editor.append(document.createTextNode(text.slice(start, i)));
-        atLineStart = false;
-      }
-      editor.append(document.createTextNode('\n'));
-      lineIndex++;
-      atLineStart = true;
-      start = i + 1;
-    }
-    if (start < text.length) {
-      ensureVirtualPrefix();
-      editor.append(document.createTextNode(text.slice(start)));
-      atLineStart = false;
-    }
-  };
-
   for (const part of parts) {
     if (part.text !== undefined) {
-      appendText(part.text);
+      editor.append(document.createTextNode(part.text));
     } else if (part.prefix !== undefined) {
-      ensureVirtualPrefix();
       editor.append(createPrefixNode(part.prefix));
-      atLineStart = false;
     } else if (part.var !== undefined) {
-      ensureVirtualPrefix();
       editor.append(createVarNode(part.var));
-      atLineStart = false;
     } else if (part.button !== undefined) {
-      ensureVirtualPrefix();
       editor.append(createButtonNode(part));
-      atLineStart = false;
     }
   }
 }
@@ -254,21 +224,6 @@ function createButtonNode(part) {
   chip.append(labelNode, document.createTextNode(']'), chipDeleteButton(chip));
   makeChipDraggable(chip);
   return chip;
-}
-
-function createVirtualPrefix() {
-  const span = document.createElement('span');
-  span.className = 'rt-cont-prefix';
-  span.dataset.virtual = '1';
-  span.contentEditable = 'false';
-  span.textContent = '  ▸ ';
-  span.title = '续行前缀由服务端自动添加，不写入模板';
-  span.addEventListener('mousedown', (event) => {
-    event.preventDefault();
-    $o('output-editor')?.focus();
-    setCaretAfter(span);
-  });
-  return span;
 }
 
 function ensureTail() {
@@ -455,13 +410,8 @@ function insertNewlineAtSelection() {
   range.deleteContents();
   const newline = document.createTextNode('\n');
   range.insertNode(newline);
-  const virtual = createVirtualPrefix();
-  const afterNewline = document.createRange();
-  afterNewline.setStartAfter(newline);
-  afterNewline.collapse(true);
-  afterNewline.insertNode(virtual);
   ensureTail();
-  setCaretAfter(virtual);
+  setCaretAfter(newline);
   syncPartsFromDom();
   scheduleOutputPreview();
 }
@@ -501,14 +451,6 @@ function insertPlainText(text) {
         r.insertNode(newline);
       }
       last = newline;
-      if (!inButtonLabel) {
-        const virtual = createVirtualPrefix();
-        const r = document.createRange();
-        r.setStartAfter(last);
-        r.collapse(true);
-        r.insertNode(virtual);
-        last = virtual;
-      }
     }
   }
   ensureTail();
@@ -629,13 +571,11 @@ function clientErrors() {
   const seenButtons = new Set();
   for (const key of varKeys) {
     if (!knownVars.has(key)) errors.push('未知变量：' + key);
-    if (seenVars.has(key)) errors.push('变量重复：' + key);
-    else seenVars.add(key);
+    seenVars.add(key);
   }
   for (const key of buttonKeys) {
     if (!knownButtons.has(key)) errors.push('未知按钮：' + key);
-    if (seenButtons.has(key)) errors.push('按钮重复：' + key);
-    else seenButtons.add(key);
+    seenButtons.add(key);
   }
   const missing = (message.variables || []).filter((variable) => variable.required && !seenVars.has(variable.key));
   const missingButtons = (message.buttons || []).filter((button) => button.required && !seenButtons.has(button.key));
@@ -815,11 +755,6 @@ function handleAtomicDelete(event, direction) {
       : container.childNodes[offset];
   }
   if (!candidate) return;
-  if (candidate.nodeType === Node.ELEMENT_NODE && candidate.dataset?.virtual !== undefined) {
-    event.preventDefault();
-    if (direction === 'back') mergePreviousLine(candidate);
-    return;
-  }
   let chip = null;
   if (candidate.nodeType === Node.ELEMENT_NODE) {
     chip = candidate.classList?.contains('rt-chip') ? candidate : candidate.querySelector?.('.rt-chip');
@@ -840,31 +775,6 @@ function handleAtomicDelete(event, direction) {
     syncPartsFromDom();
     scheduleOutputPreview();
   }
-}
-
-function mergePreviousLine(virtual) {
-  const editor = $o('output-editor');
-  if (!editor) return;
-  recordHistory();
-  let previous = virtual.previousSibling;
-  virtual.remove();
-  if (previous && previous.nodeType === Node.TEXT_NODE && previous.nodeValue.endsWith('\n')) {
-    previous.nodeValue = previous.nodeValue.slice(0, -1);
-    if (!previous.nodeValue) previous.remove();
-    const range = document.createRange();
-    if (previous && previous.parentNode) {
-      range.setStart(previous, previous.nodeValue.length);
-    } else {
-      range.selectNodeContents(editor);
-      range.collapse(false);
-    }
-    range.collapse(true);
-    const selection = window.getSelection();
-    selection.removeAllRanges();
-    selection.addRange(range);
-  }
-  syncPartsFromDom();
-  scheduleOutputPreview();
 }
 
 function editorPaste(event) {
@@ -920,9 +830,33 @@ function editorDrop(event) {
   scheduleOutputPreview();
 }
 
+async function saveAutoContinue() {
+  const checkbox = $o('output-auto-continue');
+  if (!checkbox) return;
+  const checked = checkbox.checked;
+  try {
+    await window.SamsaraUI.api('/api/config', {
+      method: 'PUT',
+      body: JSON.stringify({
+        file: 'commands',
+        values: { 'output.autoContinuePrefix': checked },
+      }),
+    });
+    O.autoContinuePrefix = checked;
+    if (O.model) O.model.autoContinuePrefix = checked;
+    outputMessage('已' + (checked ? '开启' : '关闭') + '自动续行前缀', 'ok');
+    await renderOutputPreview();
+  } catch (e) {
+    checkbox.checked = !checked;
+    outputMessage(window.SamsaraUI.authMessage(e, '保存自动续行前缀失败'), 'error');
+  }
+}
+
 function wireEvents() {
   const editor = $o('output-editor');
   if (!editor) return;
+  const auto = $o('output-auto-continue');
+  if (auto) auto.addEventListener('change', saveAutoContinue);
   editor.addEventListener('beforeinput', () => {
     if (!O.filling) recordHistory();
   });

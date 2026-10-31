@@ -19,7 +19,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 圈地边界粒子配置（持久化至 config/samsara/claim-particles.json）。
+ * 圈地边界粒子配置（持久化至 config/samsara/claim-particles.yml）。
  * <p>
  * 可配置项：
  * <ul>

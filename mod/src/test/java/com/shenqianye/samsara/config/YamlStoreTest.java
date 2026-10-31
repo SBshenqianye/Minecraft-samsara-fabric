@@ -144,6 +144,41 @@ class YamlStoreTest {
     }
 
     @Test
+    void claimRangeIntListRoundTripAndLengthValidation() {
+        YamlStore store = new YamlStore(tmp);
+        Map<String, Object> values = store.load(ConfigSchema.CLAIM_RANGE);
+        assertEquals("dye", values.get("mode"));
+        assertEquals(4, values.get("fixedDistance"));
+        assertEquals(16, values.get("maxDistance"));
+        assertEquals(ClaimRangeConfigDefaults.DEFAULT, values.get("colorDistances"));
+
+        assertFalse(store.save(ConfigSchema.CLAIM_RANGE, Map.of(
+                "colorDistances", List.of(1, 2, 3))).ok(),
+                "定长表必须拒绝长度不符的输入");
+
+        List<Integer> custom = List.of(2, 2, 2, 2, 2, 2, 2, 2,
+                2, 2, 2, 2, 2, 2, 2, 2);
+        assertTrue(store.save(ConfigSchema.CLAIM_RANGE, Map.of(
+                "mode", "fixed",
+                "fixedDistance", 6,
+                "colorDistances", custom,
+                "maxDistance", 8)).ok());
+
+        YamlStore reloaded = new YamlStore(tmp);
+        Map<String, Object> after = reloaded.load(ConfigSchema.CLAIM_RANGE);
+        assertEquals("fixed", after.get("mode"));
+        assertEquals(6, after.get("fixedDistance"));
+        assertEquals(custom, after.get("colorDistances"));
+        assertEquals(8, after.get("maxDistance"));
+    }
+
+    /** 与 ClaimRangeConfig 默认表保持一致，避免测试依赖 claim 包。 */
+    private static final class ClaimRangeConfigDefaults {
+        static final List<Integer> DEFAULT =
+                List.of(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16);
+    }
+
+    @Test
     void storageDefaultsAndOverrideRoundTrip() {
         YamlStore store = new YamlStore(tmp);
         Map<String, Object> values = store.load(ConfigSchema.STORAGE);

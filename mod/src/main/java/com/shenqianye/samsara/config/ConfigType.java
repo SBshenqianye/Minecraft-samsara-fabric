@@ -8,6 +8,7 @@ public enum ConfigType {
     STRING("string"),
     ENUM("enum"),
     STRING_LIST("string-list"),
+    INT_LIST("int-list"),
     LEVEL_MAP("level-map"),
     TEMPLATE("template");
 

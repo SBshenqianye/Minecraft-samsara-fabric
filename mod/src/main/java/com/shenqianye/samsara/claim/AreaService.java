@@ -199,6 +199,21 @@ public class AreaService {
                 GeometryStore.getInstance().getWhitelist(dim).size());
     }
 
+    /**
+     * 重算全部维度。保护范围配置（claim-range.yml）热重载后调用：
+     * 先清掉每个节点缓存的扩展距离，再按新配置重建白名单。
+     */
+    public synchronized void recomputeAll() {
+        for (Map<ChunkCoord, ClaimNode> dimMap : nodes.values()) {
+            for (ClaimNode node : dimMap.values()) {
+                node.invalidateGeometry();
+            }
+        }
+        for (ResourceKey<Level> dim : new ArrayList<>(nodes.keySet())) {
+            recompute(dim);
+        }
+    }
+
     /** 判定指定维度的区块是否受保护 */
     public boolean isProtected(ResourceKey<Level> dim, int chunkX, int chunkZ) {
         return GeometryStore.getInstance().isProtected(dim, chunkX, chunkZ);

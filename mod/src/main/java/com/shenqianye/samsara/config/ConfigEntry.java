@@ -59,6 +59,13 @@ public record ConfigEntry(String path, ConfigType type, Object defaultValue,
                 List.of(), description, group, false);
     }
 
+    /** 定长整数表（如 16 种染料颜色 → 距离）；Web 用可视化控件编辑。 */
+    public static ConfigEntry intList(String path, List<Integer> defaultValue, int min, int max,
+                                      String group, String description) {
+        return new ConfigEntry(path, ConfigType.INT_LIST, List.copyOf(defaultValue),
+                (double) min, (double) max, List.of(), description, group, false);
+    }
+
     public static ConfigEntry levelMap(String path, java.util.Map<String, String> defaultValue,
                                        String group, String description) {
         return new ConfigEntry(path, ConfigType.LEVEL_MAP,

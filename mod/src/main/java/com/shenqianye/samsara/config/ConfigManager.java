@@ -131,6 +131,27 @@ public final class ConfigManager {
         return List.of();
     }
 
+    /** 定长整数表；非法项跳过，读取方只用于展示/计算，不写回。 */
+    public List<Integer> intList(String id, String path) {
+        Object value = value(id, path);
+        if (value instanceof List<?> list) {
+            List<Integer> out = new ArrayList<>();
+            for (Object item : list) {
+                if (item instanceof Number n) {
+                    out.add(n.intValue());
+                } else {
+                    try {
+                        out.add((int) Double.parseDouble(String.valueOf(item).trim()));
+                    } catch (NumberFormatException ignored) {
+                        // 跳过非法项，由 ClaimRangeConfig 回退默认
+                    }
+                }
+            }
+            return out;
+        }
+        return List.of();
+    }
+
     @SuppressWarnings("unchecked")
     public Map<String, String> levelMap(String id, String path) {
         Object value = value(id, path);

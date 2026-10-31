@@ -48,6 +48,10 @@ public class Samsara implements DedicatedServerModInitializer {
             com.shenqianye.samsara.config.CommandConfig.getInstance().reload();
             com.shenqianye.samsara.permission.PermissionConfig.getInstance().reload();
             com.shenqianye.samsara.claim.ClaimParticleConfig.getInstance().load();
+            // 保护范围变化才重算白名单，避免保存其他配置时做无谓的全量几何重建
+            if (com.shenqianye.samsara.claim.ClaimRangeConfig.getInstance().load()) {
+                com.shenqianye.samsara.claim.AreaService.getInstance().recomputeAll();
+            }
             com.shenqianye.samsara.identity.IdentityService.getInstance().reload();
         });
         com.shenqianye.samsara.identity.IdentityService.getInstance().initConfig();

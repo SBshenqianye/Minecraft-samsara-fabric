@@ -154,8 +154,8 @@ public final class TemplateCodec {
         if (parts.size() > MAX_PARTS) {
             errors.put("parts", "片段过多（上限 " + MAX_PARTS + " 个）");
         }
-        Set<String> seenVariables = new HashSet<>();
-        Set<String> seenButtons = new HashSet<>();
+        Set<String> presentVariables = new HashSet<>();
+        Set<String> presentButtons = new HashSet<>();
         List<String> missingVariables = new ArrayList<>();
         int totalText = 0;
         for (int i = 0; i < parts.size(); i++) {
@@ -176,15 +176,16 @@ public final class TemplateCodec {
             } else if (part instanceof VariablePart variable) {
                 if (template.variable(variable.name()) == null) {
                     errors.put(field + ".var", "未知变量：" + variable.name());
-                } else if (!seenVariables.add(variable.name())) {
-                    errors.put(field + ".var", "变量重复：" + variable.name());
+                } else {
+                    // 同一变量允许重复出现；required 只要求至少出现一次。
+                    presentVariables.add(variable.name());
                 }
             } else if (part instanceof ButtonPart button) {
                 OutputButton definition = template.button(button.key());
                 if (definition == null) {
                     errors.put(field + ".button", "未知按钮：" + button.key());
-                } else if (!seenButtons.add(button.key())) {
-                    errors.put(field + ".button", "按钮重复：" + button.key());
+                } else {
+                    presentButtons.add(button.key());
                 }
             }
         }
@@ -192,7 +193,7 @@ public final class TemplateCodec {
             errors.put("parts", "文本总量过长（上限 " + MAX_TOTAL_TEXT + " 字符）");
         }
         for (OutputVariable variable : template.variables()) {
-            if (variable.required() && !seenVariables.contains(variable.key())) {
+            if (variable.required() && !presentVariables.contains(variable.key())) {
                 missingVariables.add(variable.key());
             }
         }
@@ -201,7 +202,7 @@ public final class TemplateCodec {
         }
         List<String> missingButtons = new ArrayList<>();
         for (OutputButton button : template.buttons()) {
-            if (button.required() && !seenButtons.contains(button.key())) {
+            if (button.required() && !presentButtons.contains(button.key())) {
                 missingButtons.add(button.label());
             }
         }

@@ -280,7 +280,8 @@ public final class YamlStore {
             }
             String rest = prefix.isEmpty() ? entry.path()
                     : entry.path().substring(prefix.length() + 1);
-            if (entry.type() == ConfigType.LEVEL_MAP || entry.type() == ConfigType.STRING_LIST) {
+            if (entry.type() == ConfigType.LEVEL_MAP || entry.type() == ConfigType.STRING_LIST
+                    || entry.type() == ConfigType.INT_LIST) {
                 JsonElement element = findJson(root, entry.path());
                 if (element != null) {
                     out.put(entry.path(), jsonToJava(element));
@@ -471,7 +472,8 @@ public final class YamlStore {
             }
             return;
         }
-        if (entry.type() == ConfigType.LEVEL_MAP || entry.type() == ConfigType.STRING_LIST) {
+        if (entry.type() == ConfigType.LEVEL_MAP || entry.type() == ConfigType.STRING_LIST
+                || entry.type() == ConfigType.INT_LIST) {
             out.append("\n");
             appendComment(out, entry.description(), indent + 2);
             if (entry.type() == ConfigType.LEVEL_MAP) {

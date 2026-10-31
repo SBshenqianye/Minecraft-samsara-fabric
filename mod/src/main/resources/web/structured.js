@@ -55,7 +55,8 @@
     return select;
   }
 
-  function stringList(values, onChange) {
+  function stringList(values, onChange, options) {
+    const opts = options || {};
     const wrap = el('div', 'struct-list');
     const rows = [];
     function emit() {
@@ -73,12 +74,15 @@
       }));
       rows.push(row);
       wrap.append(row);
+      if (opts.scrollIntoView) row.scrollIntoView({ block: 'nearest' });
     }
-    (Array.isArray(values) ? values : []).forEach(add);
-    wrap.append(button('+ 添加一项', '添加', () => {
+    const addButton = button('+ 添加一项', '添加', () => {
       add('');
       emit();
-    }));
+    });
+    if (opts.addAtTop) wrap.append(addButton);
+    (Array.isArray(values) ? values : []).forEach(add);
+    if (!opts.addAtTop) wrap.append(addButton);
     return wrap;
   }
 

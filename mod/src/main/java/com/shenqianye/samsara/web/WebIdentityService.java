@@ -329,6 +329,7 @@ public final class WebIdentityService implements IdentityWebService {
         }
 
         Map<String, String> names = new LinkedHashMap<>();
+        Map<String, String> types = new LinkedHashMap<>();
         Map<String, Boolean> onlineMap = new LinkedHashMap<>();
         int remoteLookups = 0;
         for (UUID uuid : uuids) {
@@ -339,6 +340,10 @@ public final class WebIdentityService implements IdentityWebService {
             }
             if (name != null && !name.isBlank()) {
                 names.put(uuid.toString(), name);
+                types.put(uuid.toString(), uuid.equals(PlayerRegistry.offlineUuid(name))
+                        ? "offline" : "premium");
+            } else if (uuid.version() == 3) {
+                types.put(uuid.toString(), "offline");
             }
             onlineMap.put(uuid.toString(), online.contains(uuid));
         }
@@ -350,6 +355,7 @@ public final class WebIdentityService implements IdentityWebService {
         out.put("offline", offline == null ? null : offline.toString());
         out.put("premiumNote", premiumNote);
         out.put("names", names);
+        out.put("types", types);
         out.put("online", onlineMap);
         return out;
     }

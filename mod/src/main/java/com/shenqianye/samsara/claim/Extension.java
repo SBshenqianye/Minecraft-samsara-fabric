@@ -67,10 +67,11 @@ public class Extension {
 
     /**
      * 添加一个图案的方向扩展。color 为 MC NBT Color 字段值（0-15）。
-     * strength = color + 1（1~16 区块）。同一方向取最大值。
+     * 延伸距离由 {@link ClaimRangeConfig} 决定（默认仍为 color + 1，1~16 区块）；
+     * 同一方向取最大值。
      */
     public void addDirection(String patternId, int color) {
-        int strength = color + 1;
+        int strength = ClaimRangeConfig.getInstance().distanceForColor(color);
         String dir = PATTERN_DIR.get(patternId);
         if (dir == null) return;
 

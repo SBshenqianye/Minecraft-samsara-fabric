@@ -1,6 +1,7 @@
 package com.shenqianye.samsara.output;
 
 import com.shenqianye.samsara.command.ChatFormat;
+import com.shenqianye.samsara.config.CommandConfig;
 import com.shenqianye.samsara.config.ConfigManager;
 import com.shenqianye.samsara.config.ConfigSchema;
 import com.shenqianye.samsara.permission.PermissionChecker;
@@ -175,6 +176,15 @@ public final class OutputRenderer {
     /** 给原始片段加 ChatFormat 首行/续行前缀，并整理首尾空行。 */
     public static List<OutputPreviewFragment> decorate(List<OutputPreviewFragment> raw,
                                                        boolean explicitPrefix) {
+        return decorate(raw, explicitPrefix, true);
+    }
+
+    /**
+     * @param autoContinuePrefix 是否自动给续行加“  ▸ ”前缀；关闭后完全按模板文字输出
+     */
+    public static List<OutputPreviewFragment> decorate(List<OutputPreviewFragment> raw,
+                                                       boolean explicitPrefix,
+                                                       boolean autoContinuePrefix) {
         List<List<OutputPreviewFragment>> lines = splitLines(raw);
         while (!lines.isEmpty() && isEmptyLine(lines.get(0))) {
             lines.remove(0);
@@ -194,11 +204,14 @@ public final class OutputRenderer {
             if (i > 0) {
                 out.add(OutputPreviewFragment.text("text", "\n", null));
             }
-            if (i == 0 && explicitPrefix) {
-                // 模板已经显式放了 prefix 变量，不再自动加首行前缀
-            } else {
-                String prefix = i == 0 ? ChatFormat.getFirstPrefix() : ChatFormat.getContinuePrefix();
-                out.add(OutputPreviewFragment.text("prefix", prefix, null));
+            if (i == 0) {
+                if (!explicitPrefix) {
+                    out.add(OutputPreviewFragment.text("prefix",
+                            ChatFormat.getFirstPrefix(), null));
+                }
+            } else if (autoContinuePrefix) {
+                out.add(OutputPreviewFragment.text("prefix",
+                        ChatFormat.getContinuePrefix(), null));
             }
             out.addAll(line);
         }
@@ -234,7 +247,7 @@ public final class OutputRenderer {
             }
         };
         List<OutputPreviewFragment> raw = renderRaw(template, parts, safeValues, policy);
-        return toComponent(decorate(raw, explicitPrefix));
+        return toComponent(decorate(raw, explicitPrefix, autoContinuePrefix()));
     }
 
     /** 动态报告类消息：先按旧 ChatFormat 宽度换行，再交给模板系统加前缀/样式。 */
@@ -255,7 +268,8 @@ public final class OutputRenderer {
         if (explicitPrefix) {
             values.putIfAbsent("prefix", ChatFormat.getFirstPrefix());
         }
-        return decorate(renderRaw(template, parts, values, ButtonPolicy.all()), explicitPrefix);
+        return decorate(renderRaw(template, parts, values, ButtonPolicy.all()), explicitPrefix,
+                autoContinuePrefix());
     }
 
     public static boolean hasExplicitPrefix(List<TemplatePart> parts) {
@@ -314,6 +328,15 @@ public final class OutputRenderer {
             out.append(Component.literal(fragment.text()).setStyle(style));
         }
         return out;
+    }
+
+    /** 纯渲染单测/早期启动时配置可能尚未就绪，回退为开启。 */
+    private static boolean autoContinuePrefix() {
+        try {
+            return CommandConfig.getInstance().outputAutoContinuePrefix();
+        } catch (RuntimeException e) {
+            return true;
+        }
     }
 
     private static ChatFormatting color(String name) {

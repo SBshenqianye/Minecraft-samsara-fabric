@@ -24,6 +24,7 @@ public final class ConfigSchema {
     public static final String COMMANDS = "commands";
     public static final String PERMISSIONS = "permissions";
     public static final String CLAIM_PARTICLES = "claim-particles";
+    public static final String CLAIM_RANGE = "claim-range";
     public static final String STORAGE = "storage";
     public static final String WEB = "web";
     public static final String OUTPUT = "output";
@@ -83,7 +84,10 @@ public final class ConfigSchema {
                 ConfigEntry.integer("completion.maxItems", 48, 4, 200, "补全",
                         "聊天栏单页最多候选数；超过后显示翻页按钮"),
                 ConfigEntry.integer("shutdown.countdownSeconds", 10, 1, 300, "关服",
-                        "执行 /samsara restart 后先广播倒计时多少秒再停服")
+                        "执行 /samsara restart 后先广播倒计时多少秒再停服"),
+                ConfigEntry.bool("output.autoContinuePrefix", true, "输出",
+                        "是否为聊天输出的续行自动添加“  ▸ ”前缀；"
+                                + "关闭后完全按模板文字输出，行首由你自己控制")
         ));
 
         file(PERMISSIONS, "权限", List.of(
@@ -110,6 +114,21 @@ public final class ConfigSchema {
                         "true = TextDisplay 所有人可见；false = 仅持有者可见"),
                 ConfigEntry.bool("globalDisplay", false, "显示",
                         "true = 不在管理区域内也显示边界；false = 仅管理区域内显示")
+        ));
+
+        file(CLAIM_RANGE, "圈地范围", List.of(
+                ConfigEntry.choice("mode", "dye", List.of("dye", "fixed"), "保护范围",
+                        "dye = 每个染料颜色对应一个延伸距离；"
+                                + "fixed = 所有颜色都使用 fixedDistance"),
+                ConfigEntry.integer("fixedDistance", 4, 1, 32, "保护范围",
+                        "固定模式下的单方向延伸距离（区块）"),
+                ConfigEntry.intList("colorDistances",
+                        List.of(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16),
+                        1, 32, "保护范围",
+                        "染料颜色 0~15（白→黑）各自对应的单方向延伸距离（区块）；"
+                                + "Web 配置页按染料色块可视化编辑并实时预览保护形状"),
+                ConfigEntry.integer("maxDistance", 16, 1, 32, "保护范围",
+                        "所有模式下的单方向距离上限；超出会截断，用来限制最大圈地规模")
         ));
 
         file(STORAGE, "存储", List.of(
@@ -311,6 +330,30 @@ public final class ConfigSchema {
                 }
                 return List.copyOf(values);
             }
+            case INT_LIST -> {
+                List<Integer> values = new ArrayList<>();
+                if (raw instanceof List<?> list) {
+                    for (Object item : list) {
+                        values.add(toInt(entry, item));
+                    }
+                } else {
+                    String text = String.valueOf(raw);
+                    for (String item : text.split("[,\\s]+")) {
+                        if (!item.isBlank()) {
+                            values.add(toInt(entry, item));
+                        }
+                    }
+                }
+                if (entry.defaultValue() instanceof List<?> defaults
+                        && values.size() != defaults.size()) {
+                    throw new ConfigValidationException(path,
+                            "应为 " + defaults.size() + " 个整数（当前 " + values.size() + " 个）");
+                }
+                for (int value : values) {
+                    checkRange(entry, value);
+                }
+                return List.copyOf(values);
+            }
             case LEVEL_MAP -> {
                 if (!(raw instanceof Map<?, ?> map)) {
                     throw new ConfigValidationException(path, "应为“命令路径: 等级”的映射");
@@ -348,6 +391,23 @@ public final class ConfigSchema {
             }
             default -> throw new ConfigValidationException(path, "不支持的类型");
         }
+    }
+
+    private static int toInt(ConfigEntry entry, Object raw) throws ConfigValidationException {
+        double value;
+        if (raw instanceof Number n) {
+            value = n.doubleValue();
+        } else {
+            try {
+                value = Double.parseDouble(String.valueOf(raw).trim());
+            } catch (NumberFormatException e) {
+                throw new ConfigValidationException(entry.path(), "应为整数");
+            }
+        }
+        if (!Double.isFinite(value) || value != Math.rint(value)) {
+            throw new ConfigValidationException(entry.path(), "应为整数");
+        }
+        return (int) value;
     }
 
     private static void checkRange(ConfigEntry entry, double value)
