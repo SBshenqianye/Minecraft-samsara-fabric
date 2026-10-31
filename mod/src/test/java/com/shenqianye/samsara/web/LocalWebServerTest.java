@@ -147,6 +147,10 @@ class LocalWebServerTest {
 
     /** 假地图服务：只验证 HTTP 路由和参数校验，不读真实存档。 */
     private static final class FakeMapService extends WebMapService {
+        private FakeMapService() {
+            super(java.nio.file.Path.of("build", "tmp", "fake-map"));
+        }
+
         @Override
         public Map<String, Object> model() {
             return Map.of("dimensions", List.of(Map.of(
@@ -156,12 +160,13 @@ class LocalWebServerTest {
         }
 
         @Override
-        public byte[] tile(String dimension, int regionX, int regionZ, int scale) {
-            return tile(dimension, regionX, regionZ, scale, true);
+        public byte[] tile(String stack, String dimension, int regionX, int regionZ, int scale) {
+            return tile(stack, dimension, regionX, regionZ, scale, true);
         }
 
         @Override
-        public byte[] tile(String dimension, int regionX, int regionZ, int scale, boolean shading) {
+        public byte[] tile(String stack, String dimension, int regionX, int regionZ, int scale,
+                           boolean shading) {
             if (!"minecraft:overworld".equals(dimension) || regionX != 0 || regionZ != 0
                     || (scale != 1 && scale != 2 && scale != 4 && scale != 8)) {
                 return null;

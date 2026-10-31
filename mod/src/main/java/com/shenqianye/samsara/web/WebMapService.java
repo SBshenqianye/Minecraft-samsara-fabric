@@ -4,86 +4,103 @@ import com.shenqianye.samsara.Samsara;
 import com.shenqianye.samsara.claim.AreaService;
 import com.shenqianye.samsara.claim.ClaimNode;
 import com.shenqianye.samsara.claim.ClaimRangeConfig;
-import com.shenqianye.samsara.claim.GeometryStore;
 import com.shenqianye.samsara.geometry.ChunkCoord;
+import com.shenqianye.samsara.geometry.Geometry;
+import com.shenqianye.samsara.season.SpawnHistory;
+import com.shenqianye.samsara.season.StackLayer;
+import com.shenqianye.samsara.season.StackManifest;
+import com.shenqianye.samsara.season.StackPaths;
 import com.shenqianye.samsara.storage.StoragePaths;
-import net.minecraft.resources.ResourceKey;
-import net.minecraft.world.level.Level;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.TreeMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /**
- * 地图标签的数据服务：扫描存档 region 文件 + 读取圈地白名单。
+ * 地图标签的数据服务：按 v0.24 世界栈读取各栈层的 region 文件与圈地白名单。
  *
  * <p>地形底图由 {@link MapTerrainRenderer} 按需渲染成 PNG；这里只负责：
- * 列出维度/region、汇总圈地保护区块与旗帜、维护有限大小的 tile 缓存。
- * 不写存档，也不把区块加载进服务器内存。
+ * 读取栈清单/栈层元数据、列出各层维度 region、汇总圈地保护区块与旗帜、
+ * 维护内存热缓存 + {@code world/samsara/web-map-cache/} 磁盘缓存。
+ *
+ * <p>只读世界数据，不加载区块，也不写 {@code level.dat}/维度目录；
+ * 地图缓存目录可随时删除。
  */
 public class WebMapService {
     private static final Pattern REGION_FILE = Pattern.compile("r\\.(-?\\d+)\\.(-?\\d+)\\.mca");
     private static final Set<Integer> SCALES = Set.of(1, 2, 4, 8);
-    private static final int MAX_CACHE = 96;
+    private static final List<String> DIMENSIONS =
+            List.of("overworld", "the_nether", "the_end");
+    private static final long MANIFEST_RESCAN_MS = 2000L;
 
-    private final Map<String, byte[]> tiles = Collections.synchronizedMap(
-            new LinkedHashMap<>(16, 0.75f, true) {
-                @Override
-                protected boolean removeEldestEntry(Map.Entry<String, byte[]> eldest) {
-                    return size() > MAX_CACHE;
-                }
-            });
+    private final Path worldRoot;
+    private final WebMapTileCache cache;
+    private final Map<Path, ClaimsSnapshot> claimsCache = new ConcurrentHashMap<>();
+    private volatile StackManifest manifestCache;
+    private volatile long manifestCheckedAt;
+    private volatile long manifestStamp = Long.MIN_VALUE;
 
-    /** 返回地图页需要的维度、region 列表、保护区块和旗帜。 */
+    public WebMapService() {
+        this(StoragePaths.get().worldRoot());
+    }
+
+    WebMapService(Path worldRoot) {
+        this.worldRoot = worldRoot.toAbsolutePath().normalize();
+        this.cache = new WebMapTileCache(this.worldRoot.resolve("samsara").resolve("web-map-cache"));
+    }
+
+    /** 返回地图页需要的栈层、维度、region 列表、保护区块、旗帜与出生点历史。 */
     public Map<String, Object> model() {
-        Map<String, Path> regionDirs = discoverRegionDirs();
-        Map<String, DimClaims> claims = collectClaims();
-
         Map<String, Object> out = new LinkedHashMap<>();
+        Path world = worldRoot;
         out.put("ok", true);
-        out.put("worldRoot", worldRoot().toString());
+        out.put("worldRoot", world.toString());
         out.put("generatedAt", System.currentTimeMillis());
         out.put("claimRange", claimRangeModel());
-        List<Map<String, Object>> dimensions = new ArrayList<>();
+        out.put("cache", cache.stats());
 
-        List<String> ids = new ArrayList<>(regionDirs.keySet());
-        for (String id : claims.keySet()) {
-            if (!ids.contains(id)) {
-                ids.add(id);
-            }
+        List<StackLayer> layers = layers(world);
+        List<Map<String, Object>> stacks = new ArrayList<>(layers.size());
+        for (StackLayer layer : layers) {
+            stacks.add(stackModel(world, layer));
         }
-        ids.sort(Comparator.comparingInt(WebMapService::dimensionOrder).thenComparing(id -> id));
-
-        for (String id : ids) {
-            Path dir = regionDirs.get(id);
-            DimClaims dimClaims = claims.get(id);
-            dimensions.add(dimensionModel(id, dir, dimClaims));
-        }
-        out.put("dimensions", dimensions);
+        out.put("stacks", stacks);
+        out.put("topStackId", layers.isEmpty() ? StackPaths.TOP_ID : layers.get(0).id);
         return out;
     }
 
-    /** 返回一个 region 的地形 PNG；维度/坐标/缩放非法或文件不存在时返回 null。 */
-    public byte[] tile(String dimension, int regionX, int regionZ, int scale) {
-        return tile(dimension, regionX, regionZ, scale, true);
+    /** 返回一个 region 的地形 PNG；栈层/维度/坐标/缩放非法或文件不存在时返回 null。 */
+    public byte[] tile(String stackId, String dimension, int regionX, int regionZ, int scale) {
+        return tile(stackId, dimension, regionX, regionZ, scale, true);
     }
 
-    public byte[] tile(String dimension, int regionX, int regionZ, int scale, boolean shading) {
+    public byte[] tile(String stackId, String dimension, int regionX, int regionZ, int scale,
+                       boolean shading) {
         if (!SCALES.contains(scale)) {
             return null;
         }
-        Path dir = discoverRegionDirs().get(dimension);
+        Path world = worldRoot;
+        StackLayer layer = resolveLayer(world, stackId);
+        if (layer == null) {
+            return null;
+        }
+        String shortDim = shortDimension(layer, dimension);
+        if (shortDim == null) {
+            return null;
+        }
+        Path dir = regionDir(world, layer, shortDim);
         if (dir == null) {
             return null;
         }
@@ -93,9 +110,10 @@ public class WebMapService {
         }
         try {
             long modified = Files.getLastModifiedTime(file).toMillis();
-            String key = dimension + "|" + regionX + "|" + regionZ + "|" + scale
-                    + "|" + shading + "|" + modified;
-            byte[] cached = tiles.get(key);
+            long size = Files.size(file);
+            String dimKey = StackPaths.key(layer, shortDim).identifier().toString();
+            byte[] cached = cache.get(layer.id, dimKey, regionX, regionZ, scale, shading,
+                    modified, size);
             if (cached != null) {
                 return cached;
             }
@@ -103,54 +121,47 @@ public class WebMapService {
             if (bytes == null) {
                 return null;
             }
-            tiles.put(key, bytes);
-            // 旧 mtime 的同一 tile 不再需要。
-            String prefix = dimension + "|" + regionX + "|" + regionZ + "|" + scale + "|";
-            synchronized (tiles) {
-                tiles.keySet().removeIf(existing -> existing.startsWith(prefix)
-                        && !existing.equals(key));
-            }
+            cache.put(layer.id, dimKey, regionX, regionZ, scale, shading, modified, size, bytes);
             return bytes;
         } catch (IOException | RuntimeException e) {
-            Samsara.LOGGER.warn("[web] 地图 tile 渲染失败 {}/{},{}: {}",
-                    dimension, regionX, regionZ, e.getMessage());
+            Samsara.LOGGER.warn("[web] 地图 tile 渲染失败 {}/{}/{},{}: {}",
+                    layer.id, shortDim, regionX, regionZ, e.getMessage());
             return null;
         }
     }
 
-    private static Map<String, Object> claimRangeModel() {
-        ClaimRangeConfig config = ClaimRangeConfig.getInstance();
+    // ---- 栈层模型 ----
+
+    private Map<String, Object> stackModel(Path world, StackLayer layer) {
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("mode", config.mode().name().toLowerCase(java.util.Locale.ROOT));
-        out.put("fixedDistance", config.fixedDistance());
-        out.put("colorDistances", config.colorDistances());
-        out.put("maxDistance", config.maxDistance());
-        out.put("patternDirections", config.patternDirections());
+        out.put("id", layer.id);
+        out.put("index", layer.index);
+        out.put("top", layer.top);
+        out.put("label", layer.top ? "world（栈顶 / 最新）" : layer.id);
+        out.put("createdAt", layer.createdAt);
+        out.put("seed", layer.seed);
+        out.put("levelType", layer.levelType);
+        out.put("spawn", Map.of("x", layer.spawnX, "y", layer.spawnY, "z", layer.spawnZ));
+        out.put("metaPath", relative(world, layer.metaDir(world)));
+
+        List<Map<String, Object>> dimensions = new ArrayList<>();
+        for (String dim : DIMENSIONS) {
+            dimensions.add(dimensionModel(world, layer, dim));
+        }
+        out.put("dimensions", dimensions);
+
+        Path historyFile = StackPaths.spawnHistory(world, layer);
+        SpawnHistory history = SpawnHistory.loadFrom(layer.metaDir(world));
+        out.put("spawnHistory", spawnHistoryModel(world, layer, historyFile, history));
         return out;
     }
 
-    private Map<String, Object> dimensionModel(String id, Path dir, DimClaims claims) {
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("id", id);
-        out.put("name", dimensionName(id));
+    private Map<String, Object> dimensionModel(Path world, StackLayer layer, String shortDim) {
+        String dimKey = StackPaths.key(layer, shortDim).identifier().toString();
+        Path dir = regionDir(world, layer, shortDim);
+        List<int[]> regions = listRegions(dir);
 
-        List<int[]> regions = new ArrayList<>();
-        if (dir != null) {
-            try (Stream<Path> files = Files.list(dir)) {
-                files.filter(Files::isRegularFile).forEach(path -> {
-                    Matcher matcher = REGION_FILE.matcher(path.getFileName().toString());
-                    if (matcher.matches()) {
-                        regions.add(new int[]{Integer.parseInt(matcher.group(1)),
-                                Integer.parseInt(matcher.group(2))});
-                    }
-                });
-            } catch (IOException e) {
-                Samsara.LOGGER.debug("[web] 读取 region 目录失败 {}: {}", dir, e.getMessage());
-            }
-        }
-        regions.sort(Comparator.comparingInt((int[] value) -> value[0])
-                .thenComparingInt(value -> value[1]));
-
+        DimClaims claims = claimsFor(layer).get(dimKey);
         List<int[]> protectedChunks = new ArrayList<>();
         List<Map<String, Object>> banners = new ArrayList<>();
         if (claims != null) {
@@ -181,24 +192,80 @@ public class WebMapService {
             }
         }
 
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("id", dimKey);
+        out.put("dim", shortDim);
+        out.put("name", dimensionName(shortDim));
         out.put("regions", regions);
         out.put("protectedChunks", protectedChunks);
         out.put("banners", banners);
         out.put("claimNodes", claims == null ? 0 : claims.nodes().size());
         out.put("protectedCount", protectedChunks.size());
         out.put("bannerCount", banners.size());
-        out.put("bounds", bounds(regions, protectedChunks, banners));
+        out.put("bounds", bounds(protectedChunks, banners));
         return out;
     }
 
-    private static Map<String, Object> bounds(List<int[]> regions, List<int[]> chunks,
-                                               List<Map<String, Object>> banners) {
+    private Map<String, Object> spawnHistoryModel(Path world, StackLayer layer, Path file,
+                                                  SpawnHistory history) {
+        List<Map<String, Object>> cycles = new ArrayList<>();
+        int currentIndex = history.currentIndex();
+        Path overworldDir = regionDir(world, layer, "overworld");
+        Path netherDir = regionDir(world, layer, "the_nether");
+        for (SpawnHistory.Cycle cycle : history.cycles) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("index", cycle.index);
+            item.put("x", cycle.x);
+            item.put("z", cycle.z);
+            item.put("createdAt", cycle.createdAt);
+            item.put("source", cycle.source == null ? "" : cycle.source);
+            item.put("current", cycle.index == currentIndex);
+            item.put("overworld", spawnTarget(layer, "overworld", overworldDir,
+                    cycle.x, cycle.z, layer.spawnY));
+            // v0.24 的 spawn-history 只有主世界 x/z。下界基地按主世界坐标 /8 推算，
+            // 明确标记 estimated=true，避免把推算值当成持久化事实。
+            item.put("nether", spawnTarget(layer, "the_nether", netherDir,
+                    Math.floorDiv(cycle.x, 8), Math.floorDiv(cycle.z, 8), 64));
+            cycles.add(item);
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("file", relative(world, file));
+        out.put("exists", Files.isRegularFile(file));
+        out.put("currentIndex", currentIndex);
+        out.put("cycles", cycles);
+        return out;
+    }
+
+    private Map<String, Object> spawnTarget(StackLayer layer, String shortDim, Path regionDir,
+                                            int x, int z, int fallbackY) {
+        Integer y = null;
+        if (regionDir != null) {
+            try {
+                y = MapTerrainRenderer.surfaceY(regionDir, x, z);
+                // 下界高度图会取到基岩顶，不能当落脚点。
+                if ("the_nether".equals(shortDim) && y != null && y > 120) {
+                    y = null;
+                }
+            } catch (IOException | RuntimeException e) {
+                y = null;
+            }
+        }
+        boolean estimated = y == null;
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("dimension", StackPaths.key(layer, shortDim).identifier().toString());
+        out.put("x", x);
+        out.put("y", estimated ? fallbackY : y);
+        out.put("z", z);
+        out.put("yEstimated", estimated);
+        return out;
+    }
+
+    private static Map<String, Object> bounds(List<int[]> chunks,
+                                              List<Map<String, Object>> banners) {
         int minX = Integer.MAX_VALUE;
         int minZ = Integer.MAX_VALUE;
         int maxX = Integer.MIN_VALUE;
         int maxZ = Integer.MIN_VALUE;
-        // 初始视图优先套住圈地；没有圈地时才退回 region 范围。
-        // region 文件可能包含测试/远航产生的孤立区块，不能用来代表“服务器地图范围”。
         for (int[] chunk : chunks) {
             minX = Math.min(minX, chunk[0] * 16);
             minZ = Math.min(minZ, chunk[1] * 16);
@@ -214,87 +281,211 @@ public class WebMapService {
             maxZ = Math.max(maxZ, z + 1);
         }
         if (minX == Integer.MAX_VALUE) {
-            for (int[] region : regions) {
-                minX = Math.min(minX, region[0] * MapTerrainRenderer.REGION_BLOCKS);
-                minZ = Math.min(minZ, region[1] * MapTerrainRenderer.REGION_BLOCKS);
-                maxX = Math.max(maxX, (region[0] + 1) * MapTerrainRenderer.REGION_BLOCKS);
-                maxZ = Math.max(maxZ, (region[1] + 1) * MapTerrainRenderer.REGION_BLOCKS);
-            }
-        }
-        if (minX == Integer.MAX_VALUE) {
             return Map.of("minX", 0, "minZ", 0, "maxX", 0, "maxZ", 0);
         }
         return Map.of("minX", minX, "minZ", minZ, "maxX", maxX, "maxZ", maxZ);
     }
 
-    private Map<String, DimClaims> collectClaims() {
-        Map<String, DimClaims> out = new TreeMap<>();
+    // ---- 栈层/claims ----
+
+    private List<StackLayer> layers(Path world) {
+        StackManifest manifest = manifest(world);
+        List<StackLayer> out = new ArrayList<>();
+        StackLayer top = manifest.top();
+        for (StackLayer layer : manifest.layers) {
+            if (layer != null) {
+                out.add(layer);
+            }
+        }
+        if (top == null) {
+            // 兼容首次启动、stack.json 还没写出的世界：临时把 world 当栈顶，不写盘。
+            top = new StackLayer();
+            top.id = StackPaths.TOP_ID;
+            top.top = true;
+            top.index = out.isEmpty() ? 0
+                    : out.stream().mapToInt(layer -> layer.index).max().orElse(-1) + 1;
+            SpawnHistory history = SpawnHistory.load(world);
+            SpawnHistory.Cycle last = history.last();
+            if (last != null) {
+                top.spawnX = last.x;
+                top.spawnZ = last.z;
+            }
+            out.add(top);
+        }
+        out.sort(Comparator.comparingInt((StackLayer layer) -> layer.index).reversed());
+        return out;
+    }
+
+    private StackLayer resolveLayer(Path world, String stackId) {
+        String wanted = stackId == null || stackId.isBlank() ? StackPaths.TOP_ID : stackId;
+        List<StackLayer> layers = layers(world);
+        if (layers.isEmpty()) {
+            return null;
+        }
+        if (StackPaths.TOP_ID.equals(wanted)) {
+            return layers.stream().filter(layer -> layer.top).findFirst().orElse(layers.get(0));
+        }
+        return layers.stream().filter(layer -> wanted.equals(layer.id)).findFirst().orElse(null);
+    }
+
+    private StackManifest manifest(Path world) {
+        long now = System.currentTimeMillis();
+        if (manifestCache != null && now - manifestCheckedAt < MANIFEST_RESCAN_MS) {
+            return manifestCache;
+        }
+        long stamp = stamp(StackPaths.manifest(world));
+        if (manifestCache == null || stamp != manifestStamp) {
+            manifestCache = StackManifest.load(world);
+            manifestStamp = stamp;
+        }
+        manifestCheckedAt = now;
+        return manifestCache;
+    }
+
+    private static long stamp(Path path) {
         try {
-            AreaService area = AreaService.getInstance();
-            GeometryStore geometry = GeometryStore.getInstance();
-            for (Map.Entry<ResourceKey<Level>, Map<ChunkCoord, ClaimNode>> entry
-                    : area.getAllNodes().entrySet()) {
-                String id = entry.getKey().identifier().toString();
-                out.put(id, new DimClaims(new ArrayList<>(entry.getValue().values()),
-                        geometry.getWhitelist(entry.getKey())));
+            if (!Files.isRegularFile(path)) {
+                return -1L;
             }
-        } catch (RuntimeException e) {
-            Samsara.LOGGER.warn("[web] 读取圈地数据失败: {}", e.getMessage());
-        }
-        return out;
-    }
-
-    private static Map<String, Path> discoverRegionDirs() {
-        Map<String, Path> out = new LinkedHashMap<>();
-        Path root = worldRoot().resolve("region");
-        if (Files.isDirectory(root)) {
-            out.put(Level.OVERWORLD.identifier().toString(), root);
-        }
-        Path dimensions = worldRoot().resolve("dimensions");
-        if (!Files.isDirectory(dimensions)) {
-            return out;
-        }
-        try (Stream<Path> namespaces = Files.list(dimensions)) {
-            for (Path namespace : namespaces.filter(Files::isDirectory).toList()) {
-                try (Stream<Path> paths = Files.list(namespace)) {
-                    for (Path dimension : paths.filter(Files::isDirectory).toList()) {
-                        Path region = dimension.resolve("region");
-                        if (Files.isDirectory(region)) {
-                            String id = namespace.getFileName() + ":"
-                                    + dimension.getFileName();
-                            out.put(id, region);
-                        }
-                    }
-                }
-            }
+            return Files.getLastModifiedTime(path).toMillis() * 31L + Files.size(path);
         } catch (IOException e) {
-            Samsara.LOGGER.debug("[web] 扫描维度目录失败: {}", e.getMessage());
+            return -1L;
+        }
+    }
+
+    private Map<String, DimClaims> claimsFor(StackLayer layer) {
+        Path file = layer.metaDir(worldRoot).resolve("claims").resolve("claims.json");
+        long mtime;
+        long size;
+        try {
+            if (!Files.isRegularFile(file)) {
+                return Map.of();
+            }
+            mtime = Files.getLastModifiedTime(file).toMillis();
+            size = Files.size(file);
+        } catch (IOException e) {
+            return Map.of();
+        }
+        ClaimsSnapshot snapshot = claimsCache.get(file);
+        if (snapshot != null && snapshot.mtime() == mtime && snapshot.size() == size) {
+            return snapshot.byDimension();
+        }
+        Map<String, List<ClaimNode>> grouped = new LinkedHashMap<>();
+        for (ClaimNode node : AreaService.readClaims(file)) {
+            String key = node.getDimension().identifier().toString();
+            grouped.computeIfAbsent(key, ignored -> new ArrayList<>()).add(node);
+        }
+        Map<String, DimClaims> byDimension = new HashMap<>();
+        for (Map.Entry<String, List<ClaimNode>> entry : grouped.entrySet()) {
+            Set<ChunkCoord> nodeSet = new HashSet<>();
+            List<int[]> segments = new ArrayList<>();
+            for (ClaimNode node : entry.getValue()) {
+                nodeSet.add(node.getLocation());
+                segments.addAll(node.getShapeSegments());
+            }
+            byDimension.put(entry.getKey(), new DimClaims(entry.getValue(),
+                    Geometry.compute(nodeSet, segments)));
+        }
+        claimsCache.put(file, new ClaimsSnapshot(mtime, size, Map.copyOf(byDimension)));
+        return byDimension;
+    }
+
+    private static List<int[]> listRegions(Path dir) {
+        List<int[]> regions = new ArrayList<>();
+        if (dir == null || !Files.isDirectory(dir)) {
+            return regions;
+        }
+        try (Stream<Path> files = Files.list(dir)) {
+            files.filter(Files::isRegularFile).forEach(path -> {
+                Matcher matcher = REGION_FILE.matcher(path.getFileName().toString());
+                if (matcher.matches()) {
+                    regions.add(new int[]{Integer.parseInt(matcher.group(1)),
+                            Integer.parseInt(matcher.group(2))});
+                }
+            });
+        } catch (IOException e) {
+            Samsara.LOGGER.debug("[web] 读取 region 目录失败 {}: {}", dir, e.getMessage());
+        }
+        regions.sort(Comparator.comparingInt((int[] value) -> value[0])
+                .thenComparingInt(value -> value[1]));
+        return regions;
+    }
+
+    private static Path regionDir(Path world, StackLayer layer, String shortDim) {
+        Path dir = StackPaths.layerDimension(world, layer, shortDim).resolve("region");
+        if (Files.isDirectory(dir)) {
+            return dir;
+        }
+        // 旧存档/首次升级：主世界 region 可能还在 world/region。
+        if (layer.top && "overworld".equals(shortDim)) {
+            Path legacy = world.resolve("region");
+            if (Files.isDirectory(legacy)) {
+                return legacy;
+            }
+        }
+        return null;
+    }
+
+    private static String shortDimension(StackLayer layer, String dimension) {
+        if (dimension == null || dimension.isBlank()) {
+            return null;
+        }
+        String value = dimension.trim();
+        for (String dim : DIMENSIONS) {
+            if (dim.equals(value)) {
+                return dim;
+            }
+            if (StackPaths.key(layer, dim).identifier().toString().equals(value)) {
+                return dim;
+            }
+        }
+        return null;
+    }
+
+    private static String relative(Path world, Path path) {
+        if (path == null) {
+            return "";
+        }
+        try {
+            return world.relativize(path.toAbsolutePath().normalize()).toString()
+                    .replace('\\', '/');
+        } catch (RuntimeException e) {
+            return path.getFileName() == null ? "" : path.getFileName().toString();
+        }
+    }
+
+    private static Map<String, Object> claimRangeModel() {
+        Map<String, Object> out = new LinkedHashMap<>();
+        try {
+            ClaimRangeConfig config = ClaimRangeConfig.getInstance();
+            out.put("mode", config.mode().name().toLowerCase(java.util.Locale.ROOT));
+            out.put("fixedDistance", config.fixedDistance());
+            out.put("colorDistances", config.colorDistances());
+            out.put("maxDistance", config.maxDistance());
+            out.put("patternDirections", config.patternDirections());
+        } catch (RuntimeException e) {
+            // 单测/配置尚未初始化时退回默认值，地图本身仍可打开。
+            out.put("mode", "dye");
+            out.put("fixedDistance", ClaimRangeConfig.DEFAULT_FIXED_DISTANCE);
+            out.put("colorDistances", ClaimRangeConfig.DEFAULT_COLOR_DISTANCES);
+            out.put("maxDistance", ClaimRangeConfig.DEFAULT_MAX_DISTANCE);
+            out.put("patternDirections", ClaimRangeConfig.DEFAULT_PATTERN_DIRECTIONS);
         }
         return out;
-    }
-
-    private static Path worldRoot() {
-        return StoragePaths.get().worldRoot();
-    }
-
-    private static int dimensionOrder(String id) {
-        return switch (id) {
-            case "minecraft:overworld" -> 0;
-            case "minecraft:the_nether" -> 1;
-            case "minecraft:the_end" -> 2;
-            default -> 10;
-        };
     }
 
     static String dimensionName(String id) {
         return switch (id) {
-            case "minecraft:overworld" -> "主世界";
-            case "minecraft:the_nether" -> "下界";
-            case "minecraft:the_end" -> "末地";
+            case "overworld" -> "主世界";
+            case "the_nether" -> "下界";
+            case "the_end" -> "末地";
             default -> id;
         };
     }
 
     private record DimClaims(List<ClaimNode> nodes, Set<ChunkCoord> protectedChunks) {
+    }
+
+    private record ClaimsSnapshot(long mtime, long size, Map<String, DimClaims> byDimension) {
     }
 }

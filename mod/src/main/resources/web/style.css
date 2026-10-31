@@ -686,12 +686,17 @@ body.locked .tabs, body.locked .tab-actions { opacity: .45; pointer-events: none
 .map-swatch { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
 .map-swatch.claim { background: rgba(45, 212, 191, .45); border: 1px solid rgba(45, 212, 191, .9); }
 .map-swatch.banner { background: #f8fafc; border: 2px solid #2dd4bf; border-radius: 999px; }
+.map-swatch.spawn { background: #f472b6; border: 1px solid #fdf2f8; transform: rotate(45deg); border-radius: 2px; }
 .map-selection { position: absolute; right: 14px; top: 14px; z-index: 6; width: 270px; max-height: calc(100% - 28px); overflow: auto; padding: 11px 13px; border: 1px solid rgba(148, 163, 184, .35); border-radius: 10px; background: rgba(8, 12, 17, .82); color: #e2e8f0; box-shadow: 0 12px 30px rgba(0, 0, 0, .35); backdrop-filter: blur(8px); }
 .map-selection[hidden] { display: none !important; }
 .map-selection-title { font-size: 12px; font-weight: 700; margin-bottom: 6px; color: #f8fafc; }
 .map-selection-list { display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 3px 8px; margin: 0 0 8px; font-size: 12px; }
 .map-selection-list dt { color: #94a3b8; }
 .map-selection-list dd { margin: 0; overflow-wrap: anywhere; color: #f1f5f9; }
+.map-hud-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.map-hud-actions button { flex: 1 1 auto; }
+.map-command { margin-top: 7px; padding: 7px 8px; border: 1px solid rgba(148, 163, 184, .3); border-radius: 7px; background: rgba(15, 23, 42, .8); color: #bae6fd; font: 11px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.map-hud-note { margin: 6px 0 0; color: #94a3b8; font-size: 11px; line-height: 1.45; }
 .map-dim-anchors { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overflow: hidden; }
 
 /* ---- responsive ---- */

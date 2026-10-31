@@ -530,6 +530,7 @@ public final class LocalWebServer {
                 return;
             }
             if ("/api/map/tile".equals(path)) {
+                String stack = query.getOrDefault("stack", "");
                 String dimension = query.getOrDefault("dim", "");
                 Integer rx = intParam(query.get("rx"));
                 Integer rz = intParam(query.get("rz"));
@@ -537,7 +538,7 @@ public final class LocalWebServer {
                 if (dimension.isBlank() || rx == null || rz == null || scale == null) {
                     status = 400;
                     json(exchange, status, Map.of("error",
-                            "参数应为 dim=<维度>&rx=<int>&rz=<int>&scale=1|2|4|8"));
+                            "参数应为 stack=<栈层>&dim=<维度>&rx=<int>&rz=<int>&scale=1|2|4|8"));
                     return;
                 }
                 if (scale != 1 && scale != 2 && scale != 4 && scale != 8) {
@@ -545,7 +546,7 @@ public final class LocalWebServer {
                     json(exchange, status, Map.of("error", "scale 只能是 1、2、4、8"));
                     return;
                 }
-                byte[] png = mapService.tile(dimension, rx, rz, scale,
+                byte[] png = mapService.tile(stack, dimension, rx, rz, scale,
                         !"0".equals(query.get("shade")));
                 if (png == null) {
                     status = 404;

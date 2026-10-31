@@ -47,6 +47,31 @@ final class MapTerrainRenderer {
     private MapTerrainRenderer() {
     }
 
+    /**
+     * 读取单个方块列的地表 Y（脚下方块的上方一格），用于出生点传送命令。
+     *
+     * <p>只读一个区块的 NBT，不加载区块；区块未生成/高度图缺失时返回 null。
+     */
+    static Integer surfaceY(Path regionDir, int blockX, int blockZ) throws IOException {
+        int regionX = Math.floorDiv(blockX, REGION_BLOCKS);
+        int regionZ = Math.floorDiv(blockZ, REGION_BLOCKS);
+        Path file = regionDir.resolve("r." + regionX + "." + regionZ + ".mca");
+        if (!Files.isRegularFile(file)) {
+            return null;
+        }
+        ChunkPos pos = new ChunkPos(Math.floorDiv(blockX, CHUNK_BLOCKS),
+                Math.floorDiv(blockZ, CHUNK_BLOCKS));
+        try (RegionFile region = new RegionFile(STORAGE, file, regionDir, false);
+             DataInputStream in = region.getChunkDataInputStream(pos)) {
+            if (in == null) {
+                return null;
+            }
+            Surface surface = surfaceOf(net.minecraft.nbt.NbtIo.read(in));
+            int height = surface.heights[localIndex(blockX, blockZ)];
+            return height == MISSING_HEIGHT ? null : height + 1;
+        }
+    }
+
     /** 渲染一个 region 的指定缩放级别；scale = 每个像素代表多少方块。 */
     static byte[] render(Path regionDir, int regionX, int regionZ, int scale, boolean shading)
             throws IOException {

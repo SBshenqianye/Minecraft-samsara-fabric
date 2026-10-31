@@ -134,10 +134,14 @@
           <div class="panel-head">
             <div>
               <h2>地图</h2>
-              <p class="panel-sub">扫描当前存档 region 文件生成地表底图，并叠加圈地保护区块与旗帜。只读展示，不加载区块、不写世界数据。</p>
-              <p class="panel-sub">地形颜色取自原版方块地图色，明暗来自南北/东西一格高度差；下界默认显示顶层基岩，圈地层仍然准确。</p>
+              <p class="panel-sub">按 v0.24 世界栈扫描各栈层的 region 文件生成地表底图，并叠加该层的圈地保护区块、旗帜与出生点历史。只读展示，不加载区块、不写世界数据；地形图缓存可安全删除。</p>
+              <p class="panel-sub">栈顶是 <code>world</code>（最新），旧栈层在 dimensions/samsara/stack_<span class="muted">n</span>；出生点标记在末地不显示，下界按主世界坐标 /8 推算。</p>
             </div>
             <div class="panel-tools">
+              <label class="inline-field">
+                <span>栈层</span>
+                <select id="map-stack"></select>
+              </label>
               <label class="inline-field">
                 <span>维度</span>
                 <select id="map-dimension"></select>
@@ -145,6 +149,10 @@
               <label class="check-line">
                 <input id="map-show-claims" type="checkbox" checked>
                 <span>显示圈地</span>
+              </label>
+              <label class="check-line">
+                <input id="map-show-spawns" type="checkbox" checked>
+                <span>显示出生点</span>
               </label>
               <label class="check-line">
                 <input id="map-shading" type="checkbox" checked>
@@ -169,7 +177,8 @@
             <div class="map-legend">
               <span><i class="map-swatch claim"></i>半透明青色 = 保护区块</span>
               <span><i class="map-swatch banner"></i>圆点 = 旗帜（颜色取图案色）</span>
-              <span>拖动平移 · 滚轮缩放 · 点击旗帜看详情</span>
+              <span><i class="map-swatch spawn"></i>菱形 = 出生点历史（独立颜色）</span>
+              <span>拖动平移 · 滚轮缩放 · 点击旗帜/出生点看详情</span>
             </div>
           </div>
         </section>

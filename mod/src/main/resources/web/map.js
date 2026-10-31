@@ -5,6 +5,7 @@
 (function () {
   const state = {
     model: null,
+    stackId: null,
     dimId: null,
     scale: 4,
     centerX: 0,
@@ -15,6 +16,7 @@
     tiles: new Map(),
     pending: new Set(),
     selected: null,
+    selectedSpawn: null,
     hover: null,
     drag: null,
     loading: false,
@@ -45,6 +47,7 @@
       canvas: $('map-canvas'),
       tooltip: $('map-tooltip'),
       selection: $('map-selection'),
+      stack: $('map-stack'),
       dimension: $('map-dimension'),
       zoom: $('map-zoom-label'),
       reload: $('map-reload'),
@@ -52,6 +55,7 @@
       zoomIn: $('map-zoom-in'),
       zoomOut: $('map-zoom-out'),
       claims: $('map-show-claims'),
+      spawns: $('map-show-spawns'),
       shading: $('map-shading'),
       anchors: $('map-dim-anchors'),
     };
@@ -69,13 +73,55 @@
     el.className = 'message' + (kind ? ' ' + kind : '');
   }
 
+  function stacks() {
+    return state.model && Array.isArray(state.model.stacks) ? state.model.stacks : [];
+  }
+
+  function currentStack() {
+    const all = stacks();
+    return all.find((stack) => stack.id === state.stackId)
+      || all.find((stack) => stack.top)
+      || all[0] || null;
+  }
+
   function dimensions() {
-    return state.model && Array.isArray(state.model.dimensions)
-      ? state.model.dimensions : [];
+    const stack = currentStack();
+    return stack && Array.isArray(stack.dimensions) ? stack.dimensions : [];
+  }
+
+  function allDimensions() {
+    const out = [];
+    for (const stack of stacks()) {
+      for (const dim of stack.dimensions || []) {
+        out.push({ stack, dim });
+      }
+    }
+    return out;
   }
 
   function currentDim() {
     return dimensions().find((dim) => dim.id === state.dimId) || dimensions()[0] || null;
+  }
+
+  function spawnPoints() {
+    const stack = currentStack();
+    const dim = currentDim();
+    if (!stack || !dim || dim.dim === 'the_end') return [];
+    const history = stack.spawnHistory;
+    if (!history || !Array.isArray(history.cycles)) return [];
+    // API 里出生点按 overworld/nether 两个键返回；the_nether 是维度短名。
+    const key = dim.dim === 'the_nether' ? 'nether' : dim.dim;
+    const out = [];
+    for (const cycle of history.cycles) {
+      const target = cycle[key];
+      if (!target) continue;
+      out.push({ cycle, target, x: target.x, z: target.z });
+    }
+    return out;
+  }
+
+  function safeId(value) {
+    return String(value || '').replace(/[^a-z0-9]+/gi, '-');
   }
 
   function chunkSet(dim) {
@@ -94,6 +140,12 @@
       const data = await window.SamsaraUI.api('/api/map');
       state.model = data;
       state.selected = null;
+      state.selectedSpawn = null;
+      const allStacks = stacks();
+      if (!state.stackId || !allStacks.some((stack) => stack.id === state.stackId)) {
+        const top = allStacks.find((stack) => stack.top) || allStacks[0];
+        state.stackId = top ? top.id : null;
+      }
       const dims = dimensions();
       if (!state.dimId || !dims.some((dim) => dim.id === state.dimId)) {
         state.dimId = dims.length ? dims[0].id : null;
@@ -115,7 +167,20 @@
   }
 
   function renderControls() {
-    const { dimension } = ensureEls();
+    const { stack: stackSelect, dimension } = ensureEls();
+    if (stackSelect) {
+      stackSelect.replaceChildren();
+      for (const stack of stacks()) {
+        const option = document.createElement('option');
+        option.value = stack.id;
+        option.textContent = stack.top
+          ? 'world（栈顶 / 最新）'
+          : stack.id + '（第 ' + ((stack.index || 0) + 1) + ' 层）';
+        stackSelect.append(option);
+      }
+      stackSelect.value = state.stackId || '';
+      stackSelect.disabled = stacks().length === 0;
+    }
     if (!dimension) return;
     dimension.replaceChildren();
     for (const dim of dimensions()) {
@@ -133,12 +198,19 @@
     const { stats } = ensureEls();
     if (!stats) return;
     stats.replaceChildren();
+    const stack = currentStack();
     const dim = currentDim();
-    const all = dimensions();
-    const totalProtected = all.reduce((sum, item) => sum + (item.protectedCount || 0), 0);
-    const totalBanners = all.reduce((sum, item) => sum + (item.bannerCount || 0), 0);
+    const all = allDimensions();
+    const totalProtected = all.reduce((sum, item) => sum + (item.dim.protectedCount || 0), 0);
+    const totalBanners = all.reduce((sum, item) => sum + (item.dim.bannerCount || 0), 0);
+    const cycles = stack && stack.spawnHistory && Array.isArray(stack.spawnHistory.cycles)
+      ? stack.spawnHistory.cycles.length : 0;
+    const spawn = stack ? stack.spawn : null;
     const chips = [
-      ['维度', all.length + ' 个'],
+      ['栈层', stack ? stack.label : '无'],
+      ['栈序号', stack ? '#' + ((stack.index || 0) + 1) : '—'],
+      ['出生点', spawn ? spawn.x + ', ' + spawn.y + ', ' + spawn.z : '—'],
+      ['出生历史', cycles + ' 轮'],
       ['当前地形', dim ? dim.regions.length + ' 个 region' : '无'],
       ['保护区块', dim ? String(dim.protectedCount || 0) : '0'],
       ['旗帜', dim ? String(dim.bannerCount || 0) : '0'],
@@ -164,39 +236,63 @@
     const stage = ensureEls().stage;
     const selection = ensureEls().selection;
     const anchors = ensureEls().anchors;
+    const stackAnchors = new Map();
     const dimAnchors = new Map();
     if (anchors) {
       anchors.replaceChildren();
-      for (const dim of dimensions()) {
-        const anchor = document.createElement('span');
-        anchor.id = 'map-dim-' + dim.id.replace(/[^a-z0-9]+/gi, '-');
-        anchors.append(anchor);
-        dimAnchors.set(dim.id, anchor.id);
+      for (const stack of stacks()) {
+        const stackAnchor = document.createElement('span');
+        stackAnchor.id = 'map-stack-' + safeId(stack.id);
+        anchors.append(stackAnchor);
+        stackAnchors.set(stack.id, stackAnchor.id);
+        for (const dim of stack.dimensions || []) {
+          const anchor = document.createElement('span');
+          anchor.id = 'map-dim-' + safeId(stack.id) + '-' + safeId(dim.id);
+          anchors.append(anchor);
+          dimAnchors.set(stack.id + '|' + dim.id, anchor.id);
+        }
       }
     }
     if (stats) {
-      const totalProtected = dimensions().reduce((sum, dim) => sum + (dim.protectedCount || 0), 0);
+      const totalProtected = allDimensions()
+        .reduce((sum, item) => sum + (item.dim.protectedCount || 0), 0);
       targets.push({ id: 'map-overview', el: stats });
       items.push({ label: '全服统计', count: totalProtected, target: 'map-overview' });
     }
-    for (const dim of dimensions()) {
-      const anchorId = dimAnchors.get(dim.id) || 'map-overview';
+    for (const stack of stacks()) {
+      const stackTotal = (stack.dimensions || [])
+        .reduce((sum, dim) => sum + (dim.protectedCount || 0), 0);
+      const children = [];
+      for (const dim of stack.dimensions || []) {
+        const anchorId = dimAnchors.get(stack.id + '|' + dim.id) || 'map-overview';
+        children.push({
+          label: dim.name,
+          count: dim.protectedCount || 0,
+          target: anchorId,
+          onClick: () => {
+            if (stack.id !== state.stackId) switchStack(stack.id);
+            if (dim.id !== state.dimId) switchDimension(dim.id);
+            const select = ensureEls().dimension;
+            if (select) select.value = dim.id;
+            window.SamsaraUI.scrollToTarget?.('map-stage-anchor');
+          },
+        });
+      }
       items.push({
-        label: dim.name,
-        count: dim.protectedCount || 0,
-        target: anchorId,
+        label: stack.label,
+        count: stackTotal,
+        target: stackAnchors.get(stack.id) || 'map-overview',
+        children,
         onClick: () => {
-          if (dim.id !== state.dimId) switchDimension(dim.id);
-          const dimension = ensureEls().dimension;
-          if (dimension) dimension.value = dim.id;
-          if (stage) window.SamsaraUI.scrollToTarget?.('map-stage-anchor');
+          if (stack.id !== state.stackId) switchStack(stack.id);
+          window.SamsaraUI.scrollToTarget?.('map-stage-anchor');
         },
       });
     }
     if (selection) {
       targets.push({ id: 'map-stage-anchor', el: stage });
       targets.push({ id: 'map-detail', el: selection });
-      items.push({ label: '选中旗帜', target: 'map-detail' });
+      items.push({ label: state.selectedSpawn ? '选中出生点' : '选中旗帜', target: 'map-detail' });
     }
     window.SamsaraUI.buildNav('地图导航', items.filter((item) => item.target), targets);
   }
@@ -274,14 +370,16 @@
   }
 
   function tileKey(rx, rz) {
-    return state.dimId + '|' + rx + '|' + rz + '|' + tileScale() + '|' + (state.shading ? 1 : 0);
+    return state.stackId + '|' + state.dimId + '|' + rx + '|' + rz + '|'
+      + tileScale() + '|' + (state.shading ? 1 : 0);
   }
 
   function ensureTile(rx, rz) {
     const key = tileKey(rx, rz);
     if (state.tiles.has(key) || state.pending.has(key)) return;
     state.pending.add(key);
-    const url = '/api/map/tile?dim=' + encodeURIComponent(state.dimId)
+    const url = '/api/map/tile?stack=' + encodeURIComponent(state.stackId)
+      + '&dim=' + encodeURIComponent(state.dimId)
       + '&rx=' + rx + '&rz=' + rz + '&scale=' + tileScale()
       + '&shade=' + (state.shading ? 1 : 0);
     fetch(url, { headers: window.SamsaraUI.authHeaders ? window.SamsaraUI.authHeaders() : {} })
@@ -402,6 +500,9 @@
 
     drawSelectedRange(ctx);
     drawBanners(ctx, dim, width, height);
+    if (!ensureEls().spawns || ensureEls().spawns.checked) {
+      drawSpawns(ctx, width, height);
+    }
     drawScale(ctx, width, height);
     ctx.fillStyle = 'rgba(226,232,240,.65)';
     ctx.font = '11px system-ui, sans-serif';
@@ -415,6 +516,35 @@
       ctx.beginPath();
       ctx.arc(point.x, point.y, 10, 0, Math.PI * 2);
       ctx.stroke();
+    }
+  }
+
+  function drawSpawns(ctx, width, height) {
+    const points = spawnPoints();
+    for (const point of points) {
+      const screen = worldToScreen(point.x, point.z);
+      if (screen.x < -20 || screen.y < -20 || screen.x > width + 20 || screen.y > height + 20) {
+        continue;
+      }
+      const selected = state.selectedSpawn
+        && state.selectedSpawn.cycle.index === point.cycle.index;
+      const size = selected ? 11 : (state.scale <= 1 ? 9 : 7);
+      ctx.save();
+      ctx.translate(screen.x, screen.y);
+      ctx.rotate(Math.PI / 4);
+      ctx.fillStyle = '#f472b6';
+      ctx.strokeStyle = selected ? '#fef3c7' : '#fdf2f8';
+      ctx.lineWidth = selected ? 2.5 : 1.5;
+      ctx.fillRect(-size / 2, -size / 2, size, size);
+      ctx.strokeRect(-size / 2, -size / 2, size, size);
+      ctx.restore();
+      if (point.cycle.current) {
+        ctx.strokeStyle = 'rgba(244, 114, 182, .75)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(screen.x, screen.y, size + 5, 0, Math.PI * 2);
+        ctx.stroke();
+      }
     }
   }
 
@@ -602,14 +732,45 @@
     return best;
   }
 
+  function spawnAt(screenX, screenY) {
+    let best = null;
+    let bestDistance = 15 * 15;
+    for (const point of spawnPoints()) {
+      const screen = worldToScreen(point.x, point.z);
+      const dx = screen.x - screenX;
+      const dy = screen.y - screenY;
+      const distance = dx * dx + dy * dy;
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = point;
+      }
+    }
+    return best;
+  }
+
   function updateTooltip(event) {
     const { tooltip } = ensureEls();
     if (!tooltip) return;
     const rect = ensureEls().canvas.getBoundingClientRect();
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
+    const spawn = ensureEls().spawns && ensureEls().spawns.checked ? spawnAt(x, y) : null;
     const banner = bannerAt(x, y);
     const dim = currentDim();
+    if (spawn) {
+      const stack = currentStack();
+      const target = spawn.target;
+      tooltip.textContent = [
+        (stack ? stack.label : '') + ' · 第 ' + (spawn.cycle.index + 1) + ' 轮',
+        '坐标 ' + target.x + ', ' + target.z
+          + (target.yEstimated ? '（Y 估算 ' + target.y + '）' : ' · Y ' + target.y),
+        spawnSourceName(spawn.cycle.source) + ' · ' + formatTime(spawn.cycle.createdAt),
+      ].join('\n');
+      tooltip.hidden = false;
+      tooltip.style.left = Math.min(rect.width - 240, x + 14) + 'px';
+      tooltip.style.top = Math.min(rect.height - 70, y + 12) + 'px';
+      return;
+    }
     if (banner) {
       const pattern = banner.patterns && banner.patterns[0];
       const lines = [
@@ -640,37 +801,73 @@
     return ({ north: '北', east: '东', south: '南', west: '西' })[facing] || facing || '?';
   }
 
+  function spawnSourceName(source) {
+    return ({
+      initial: '首次生成',
+      'same-world-reset': '同世界重置',
+      detected: '启动检测',
+      migrated: '旧数据迁移',
+      'new-world': '新世界入栈',
+    })[source] || source || '未知来源';
+  }
+
+  function formatTime(value) {
+    if (!value || value <= 0) return '时间未知';
+    try {
+      return new Date(value).toLocaleString();
+    } catch (error) {
+      return String(value);
+    }
+  }
+
+  function teleportCommand(target) {
+    return '/execute in ' + target.dimension + ' run tp <玩家> '
+      + target.x + ' ' + target.y + ' ' + target.z;
+  }
+
+  async function copyText(text, button) {
+    const done = () => {
+      button.textContent = '已复制';
+      window.setTimeout(() => { button.textContent = '复制传送命令'; }, 1600);
+    };
+    try {
+      await navigator.clipboard.writeText(text);
+      done();
+      return;
+    } catch (error) {
+      // 非安全上下文/浏览器拒绝时退回隐藏 textarea。
+    }
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.append(area);
+    area.select();
+    try {
+      document.execCommand('copy');
+      done();
+    } catch (error) {
+      button.textContent = '复制失败，请手动选择';
+    } finally {
+      area.remove();
+    }
+  }
+
   function selectBanner(banner) {
     state.selected = banner;
+    state.selectedSpawn = null;
     renderSelection();
     draw();
   }
 
-  function renderSelection() {
-    const { selection } = ensureEls();
-    if (!selection) return;
-    selection.hidden = !state.selected;
-    selection.replaceChildren();
-    const title = document.createElement('div');
-    title.className = 'map-selection-title';
-    title.textContent = '选中的旗帜';
-    selection.append(title);
-    if (!state.selected) {
-      const empty = document.createElement('p');
-      empty.className = 'muted small';
-      empty.textContent = '点击地图上的旗帜查看主人、图案和坐标；拖动平移，滚轮缩放。';
-      selection.append(empty);
-      return;
-    }
-    const banner = state.selected;
-    const rows = [
-      ['主人', banner.owner || '未知'],
-      ['坐标', banner.x + ', ' + banner.y + ', ' + banner.z],
-      ['区块', banner.chunkX + ', ' + banner.chunkZ],
-      ['朝向', facingName(banner.facing)],
-      ['图案', (banner.patterns || []).map((item) => item.id + '（' + item.color + '）').join('、') || '无'],
-      ['范围', bannerCells(banner).size + ' 区块'],
-    ];
+  function selectSpawn(point) {
+    state.selectedSpawn = point;
+    state.selected = null;
+    renderSelection();
+    draw();
+  }
+
+  function appendRows(parent, rows) {
     const list = document.createElement('dl');
     list.className = 'map-selection-list';
     for (const [key, value] of rows) {
@@ -680,17 +877,94 @@
       dd.textContent = value;
       list.append(dt, dd);
     }
-    selection.append(list);
+    parent.append(list);
+  }
+
+  function appendClearButton(parent) {
     const clear = document.createElement('button');
     clear.type = 'button';
     clear.className = 'ghost';
     clear.textContent = '清除选择';
     clear.addEventListener('click', () => {
       state.selected = null;
+      state.selectedSpawn = null;
       renderSelection();
       draw();
     });
-    selection.append(clear);
+    parent.append(clear);
+  }
+
+  function renderSelection() {
+    const { selection } = ensureEls();
+    if (!selection) return;
+    selection.hidden = !state.selected && !state.selectedSpawn;
+    selection.replaceChildren();
+    const title = document.createElement('div');
+    title.className = 'map-selection-title';
+    selection.append(title);
+    if (!state.selected && !state.selectedSpawn) {
+      title.textContent = '地图详情';
+      const empty = document.createElement('p');
+      empty.className = 'muted small';
+      empty.textContent = '点击地图上的旗帜或出生点查看详情；拖动平移，滚轮缩放。';
+      selection.append(empty);
+      return;
+    }
+    if (state.selectedSpawn) {
+      const stack = currentStack();
+      const dim = currentDim();
+      const point = state.selectedSpawn;
+      const target = point.target;
+      title.textContent = '出生点历史';
+      appendRows(selection, [
+        ['栈层', stack ? stack.label : '—'],
+        ['轮次', '第 ' + (point.cycle.index + 1) + ' 轮'
+          + (point.cycle.current ? '（当前）' : '')],
+        ['维度', dim ? dim.name : '—'],
+        ['坐标', target.x + ', ' + target.y + ', ' + target.z],
+        ['来源', spawnSourceName(point.cycle.source)],
+        ['时间', formatTime(point.cycle.createdAt)],
+        ['Y', target.yEstimated ? '估算值（地形未生成/不可用）' : '地表高度'],
+      ]);
+      const command = teleportCommand(target);
+      const code = document.createElement('div');
+      code.className = 'map-command';
+      code.textContent = command;
+      selection.append(code);
+      const note = document.createElement('p');
+      note.className = 'map-hud-note';
+      const notes = ['把 <玩家> 换成游戏内 ID；传送执行属于模组玩法层，Web 只提供坐标与命令。'];
+      if (dim && dim.dim === 'the_nether') {
+        notes.push('下界坐标按主世界出生点 /8 推算，若基地不在对应坐标请以游戏内实际基地为准。');
+      }
+      if (target.yEstimated) {
+        notes.push('Y 为估算值，传送后请确认落点。');
+      }
+      note.textContent = notes.join(' ');
+      selection.append(note);
+      const actions = document.createElement('div');
+      actions.className = 'map-hud-actions';
+      const copy = document.createElement('button');
+      copy.type = 'button';
+      copy.className = 'ghost';
+      copy.textContent = '复制传送命令';
+      copy.addEventListener('click', () => copyText(command, copy));
+      actions.append(copy);
+      selection.append(actions);
+      appendClearButton(selection);
+      return;
+    }
+    title.textContent = '选中的旗帜';
+    const banner = state.selected;
+    appendRows(selection, [
+      ['主人', banner.owner || '未知'],
+      ['坐标', banner.x + ', ' + banner.y + ', ' + banner.z],
+      ['区块', banner.chunkX + ', ' + banner.chunkZ],
+      ['朝向', facingName(banner.facing)],
+      ['图案', (banner.patterns || []).map((item) => item.id + '（' + item.color + '）').join('、') || '无'],
+      ['范围', bannerCells(banner).size + ' 区块'],
+    ]);
+    appendClearButton(selection);
   }
 
   function setScale(next, anchorX, anchorY) {
@@ -710,6 +984,23 @@
     state.tiles.clear();
     state.pending.clear();
     state.selected = null;
+    state.selectedSpawn = null;
+    renderStats();
+    renderSelection();
+    fitView();
+    draw();
+    renderNav();
+  }
+
+  function switchStack(id) {
+    state.stackId = id;
+    const dims = dimensions();
+    state.dimId = dims.length ? dims[0].id : null;
+    state.tiles.clear();
+    state.pending.clear();
+    state.selected = null;
+    state.selectedSpawn = null;
+    renderControls();
     renderStats();
     renderSelection();
     fitView();
@@ -718,10 +1009,14 @@
   }
 
   function bind() {
-    const { canvas, stage, dimension, reload, fit, zoomIn, zoomOut, claims, shading } = ensureEls();
+    const { canvas, stage, stack, dimension, reload, fit, zoomIn, zoomOut, claims, spawns, shading }
+      = ensureEls();
     if (!canvas || !stage) return;
     new ResizeObserver(resize).observe(stage);
     resize();
+    if (stack) {
+      stack.addEventListener('change', () => switchStack(stack.value));
+    }
     if (dimension) {
       dimension.addEventListener('change', () => switchDimension(dimension.value));
     }
@@ -735,6 +1030,7 @@
     if (zoomIn) zoomIn.addEventListener('click', () => setScale(state.scale / 2));
     if (zoomOut) zoomOut.addEventListener('click', () => setScale(state.scale * 2));
     if (claims) claims.addEventListener('change', draw);
+    if (spawns) spawns.addEventListener('change', draw);
     if (shading) {
       state.shading = shading.checked;
       shading.addEventListener('change', () => {
@@ -750,13 +1046,18 @@
       const rect = canvas.getBoundingClientRect();
       const x = event.clientX - rect.left;
       const y = event.clientY - rect.top;
+      const spawn = ensureEls().spawns && ensureEls().spawns.checked ? spawnAt(x, y) : null;
+      if (spawn) {
+        selectSpawn(spawn);
+        return;
+      }
       const banner = bannerAt(x, y);
       if (banner) {
         selectBanner(banner);
         return;
       }
       state.drag = { x: event.clientX, y: event.clientY, centerX: state.centerX, centerZ: state.centerZ };
-      canvas.setPointerCapture(event.pointerId);
+      try { canvas.setPointerCapture(event.pointerId); } catch (e) { /* 合成事件/不支持时忽略 */ }
       canvas.style.cursor = 'grabbing';
     });
     canvas.addEventListener('pointermove', (event) => {
@@ -769,7 +1070,8 @@
       }
       const x = event.clientX - rect.left;
       const y = event.clientY - rect.top;
-      canvas.style.cursor = bannerAt(x, y) ? 'pointer' : 'grab';
+      const spawn = ensureEls().spawns && ensureEls().spawns.checked ? spawnAt(x, y) : null;
+      canvas.style.cursor = (spawn || bannerAt(x, y)) ? 'pointer' : 'grab';
       updateTooltip(event);
     });
     canvas.addEventListener('pointerleave', () => {
@@ -782,7 +1084,14 @@
     });
     canvas.addEventListener('click', (event) => {
       const rect = canvas.getBoundingClientRect();
-      const banner = bannerAt(event.clientX - rect.left, event.clientY - rect.top);
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      const spawn = ensureEls().spawns && ensureEls().spawns.checked ? spawnAt(x, y) : null;
+      if (spawn) {
+        selectSpawn(spawn);
+        return;
+      }
+      const banner = bannerAt(x, y);
       if (banner) selectBanner(banner);
     });
     canvas.addEventListener('wheel', (event) => {
@@ -827,10 +1136,10 @@
   }
 
   function refreshCount() {
-    const totalProtected = dimensions()
-      .reduce((sum, dim) => sum + (dim.protectedCount || 0), 0);
-    const totalBanners = dimensions()
-      .reduce((sum, dim) => sum + (dim.bannerCount || 0), 0);
+    const totalProtected = allDimensions()
+      .reduce((sum, item) => sum + (item.dim.protectedCount || 0), 0);
+    const totalBanners = allDimensions()
+      .reduce((sum, item) => sum + (item.dim.bannerCount || 0), 0);
     window.SamsaraUI?.setTabCount('map', totalProtected);
     const tab = document.querySelector('.tab[data-panel="panel-map"]');
     if (tab) {
