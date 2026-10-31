@@ -16,9 +16,12 @@ import java.io.OutputStream;
 import java.lang.reflect.Type;
 import java.net.InetSocketAddress;
 import java.net.URI;
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * 本地配置面板（F-123~F-126）。
@@ -40,27 +43,38 @@ public final class LocalWebServer {
     private final IdentityWebService identityService;
     private final OutputWebService outputService;
     private final PermissionWebService permissionService;
+    private final WebMapService mapService;
     private final String token;
     private final int port;
     private HttpServer server;
+    private ExecutorService executor;
 
     public LocalWebServer(ConfigService service, String token, int port) {
-        this(service, null, null, null, token, port);
+        this(service, null, null, null, null, token, port);
     }
 
     public LocalWebServer(ConfigService service, IdentityWebService identityService,
                           String token, int port) {
-        this(service, identityService, null, null, token, port);
+        this(service, identityService, null, null, null, token, port);
     }
 
     public LocalWebServer(ConfigService service, IdentityWebService identityService,
                           OutputWebService outputService,
                           PermissionWebService permissionService,
                           String token, int port) {
+        this(service, identityService, outputService, permissionService, null, token, port);
+    }
+
+    public LocalWebServer(ConfigService service, IdentityWebService identityService,
+                          OutputWebService outputService,
+                          PermissionWebService permissionService,
+                          WebMapService mapService,
+                          String token, int port) {
         this.service = service;
         this.identityService = identityService;
         this.outputService = outputService;
         this.permissionService = permissionService;
+        this.mapService = mapService;
         this.token = token == null ? "" : token;
         this.port = port;
     }
@@ -95,7 +109,15 @@ public final class LocalWebServer {
         if (permissionService != null) {
             server.createContext("/api/permissions", this::handlePermissions);
         }
-        server.setExecutor(null);
+        if (mapService != null) {
+            server.createContext("/api/map", this::handleMap);
+        }
+        executor = Executors.newFixedThreadPool(4, runnable -> {
+            Thread thread = new Thread(runnable, "samsara-web");
+            thread.setDaemon(true);
+            return thread;
+        });
+        server.setExecutor(executor);
         server.start();
         return true;
     }
@@ -105,6 +127,10 @@ public final class LocalWebServer {
             server.stop(0);
             server = null;
             LOG.info("[web] 本地配置面板已停止");
+        }
+        if (executor != null) {
+            executor.shutdownNow();
+            executor = null;
         }
     }
 
@@ -475,6 +501,99 @@ public final class LocalWebServer {
             LOG.warn("[web] 处理 {} 失败: {}", exchange.getRequestURI().getPath(), e.getMessage());
         } finally {
             log(exchange, status, start);
+        }
+    }
+
+    private void handleMap(HttpExchange exchange) throws IOException {
+        long start = System.currentTimeMillis();
+        int status = 200;
+        try {
+            if (!authorized(exchange)) {
+                status = 401;
+                json(exchange, status, Map.of("error", "未授权：缺少或错误的 Bearer token"));
+                return;
+            }
+            if (mapService == null) {
+                status = 503;
+                json(exchange, status, Map.of("error", "地图服务未启动"));
+                return;
+            }
+            if (!"GET".equals(exchange.getRequestMethod())) {
+                status = 405;
+                json(exchange, status, Map.of("error", "Method Not Allowed"));
+                return;
+            }
+            String path = exchange.getRequestURI().getPath();
+            Map<String, String> query = parseQuery(exchange.getRequestURI().getRawQuery());
+            if ("/api/map".equals(path)) {
+                json(exchange, 200, mapService.model());
+                return;
+            }
+            if ("/api/map/tile".equals(path)) {
+                String dimension = query.getOrDefault("dim", "");
+                Integer rx = intParam(query.get("rx"));
+                Integer rz = intParam(query.get("rz"));
+                Integer scale = intParam(query.get("scale"));
+                if (dimension.isBlank() || rx == null || rz == null || scale == null) {
+                    status = 400;
+                    json(exchange, status, Map.of("error",
+                            "参数应为 dim=<维度>&rx=<int>&rz=<int>&scale=1|2|4|8"));
+                    return;
+                }
+                if (scale != 1 && scale != 2 && scale != 4 && scale != 8) {
+                    status = 400;
+                    json(exchange, status, Map.of("error", "scale 只能是 1、2、4、8"));
+                    return;
+                }
+                byte[] png = mapService.tile(dimension, rx, rz, scale,
+                        !"0".equals(query.get("shade")));
+                if (png == null) {
+                    status = 404;
+                    json(exchange, status, Map.of("error", "没有这个地图区块"));
+                    return;
+                }
+                sendBytes(exchange, 200, "image/png", png);
+                return;
+            }
+            status = 404;
+            json(exchange, status, Map.of("error", "Not Found"));
+        } catch (RuntimeException e) {
+            status = 500;
+            json(exchange, status, Map.of("error", "服务器内部错误"));
+            LOG.warn("[web] 处理 {} 失败: {}", exchange.getRequestURI().getPath(), e.getMessage());
+        } finally {
+            log(exchange, status, start);
+        }
+    }
+
+    private static Map<String, String> parseQuery(String raw) {
+        Map<String, String> out = new LinkedHashMap<>();
+        if (raw == null || raw.isEmpty()) {
+            return out;
+        }
+        for (String pair : raw.split("&")) {
+            int split = pair.indexOf('=');
+            String key = split < 0 ? pair : pair.substring(0, split);
+            String value = split < 0 ? "" : pair.substring(split + 1);
+            try {
+                key = URLDecoder.decode(key, StandardCharsets.UTF_8);
+                value = URLDecoder.decode(value, StandardCharsets.UTF_8);
+            } catch (IllegalArgumentException ignored) {
+                continue;
+            }
+            out.putIfAbsent(key, value);
+        }
+        return out;
+    }
+
+    private static Integer intParam(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException e) {
+            return null;
         }
     }
 

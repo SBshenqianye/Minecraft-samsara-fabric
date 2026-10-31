@@ -292,6 +292,7 @@ public final class ConfigManager {
                 item.put("description", entry.description());
                 item.put("group", entry.group());
                 item.put("restart", entry.restart());
+                item.put("visibleWhen", entry.visibleWhen());
                 item.put("min", entry.min());
                 item.put("max", entry.max());
                 item.put("choices", entry.choices());

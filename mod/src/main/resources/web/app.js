@@ -11,14 +11,14 @@ const state = {
   tab: 'config',
   navTargets: [],
   navScrollHandler: null,
-  scrollPositions: { config: 0, identity: 0, 'claim-range': 0, output: 0, permissions: 0 },
-  navScrollPositions: { config: 0, identity: 0, 'claim-range': 0, output: 0, permissions: 0 },
+  scrollPositions: { config: 0, identity: 0, 'claim-range': 0, output: 0, permissions: 0, map: 0 },
+  navScrollPositions: { config: 0, identity: 0, 'claim-range': 0, output: 0, permissions: 0, map: 0 },
   claimPreview: null,
 };
 
 const connectHooks = [];
-const panelIds = ['panel-identity', 'panel-config', 'panel-claim-range', 'panel-output', 'panel-permissions'];
-const tabNames = { 'panel-identity': 'identity', 'panel-config': 'config', 'panel-claim-range': 'claim-range', 'panel-output': 'output', 'panel-permissions': 'permissions' };
+const panelIds = ['panel-identity', 'panel-config', 'panel-claim-range', 'panel-output', 'panel-permissions', 'panel-map'];
+const tabNames = { 'panel-identity': 'identity', 'panel-config': 'config', 'panel-claim-range': 'claim-range', 'panel-output': 'output', 'panel-permissions': 'permissions', 'panel-map': 'map' };
 
 const $ = (id) => document.getElementById(id);
 
@@ -285,7 +285,55 @@ function buildFileBlock(file, matching, navTargets, plain) {
   }
 
   fileEl.append(body);
+  applyVisibility(fileEl, file);
+  body.addEventListener('input', () => applyVisibility(fileEl, file));
+  body.addEventListener('change', () => applyVisibility(fileEl, file));
   return { fileEl, navGroupChildren };
+}
+
+/**
+ * 通用条件显示：schema 里声明 visibleWhen="path=value" 的条目，
+ * 只有当前表单值匹配时才显示。首次从隐藏变为显示时高亮几秒。
+ */
+function applyVisibility(scope, file) {
+  for (const row of scope.querySelectorAll('.entry[data-visible-when]')) {
+    const condition = row.dataset.visibleWhen || '';
+    const split = condition.indexOf('=');
+    if (split <= 0) continue;
+    const depPath = condition.slice(0, split);
+    const expected = condition.slice(split + 1);
+    const dep = file.entries.find((item) => item.path === depPath);
+    if (!dep) continue;
+    const visible = String(currentValue(file.id, dep)) === expected;
+    const wasHidden = row.hidden;
+    row.hidden = !visible;
+    const navButton = document.querySelector(
+      '#global-nav .nav-item[data-target="' + cssEscape(row.id) + '"]');
+    if (navButton) navButton.hidden = !visible;
+    if (!visible) {
+      row.classList.remove('reveal-flash');
+      continue;
+    }
+    if (wasHidden) flashRow(row);
+  }
+}
+
+function flashRow(row) {
+  row.classList.remove('reveal-flash');
+  void row.offsetWidth;
+  row.classList.add('reveal-flash');
+  clearTimeout(Number(row.dataset.flashTimer) || 0);
+  row.dataset.flashTimer = String(setTimeout(() => {
+    row.classList.remove('reveal-flash');
+  }, 2800));
+}
+
+/** buildNav 之后再同步一次：目标行隐藏时，对应导航项也隐藏。 */
+function syncConditionalNav() {
+  for (const button of document.querySelectorAll('#global-nav .nav-item[data-target]')) {
+    const target = document.getElementById(button.dataset.target);
+    if (target) button.hidden = target.hidden;
+  }
 }
 
 function render() {
@@ -319,6 +367,7 @@ function render() {
   setTabCount('config', totalEntries());
   if (state.tab === 'config') {
     buildNav('配置导航', navItems, navTargets);
+    syncConditionalNav();
   }
 }
 
@@ -338,16 +387,22 @@ function renderClaimRange() {
     return;
   }
   const navTargets = [];
-  const patternEntries = file.entries.filter((entry) => entry.path.startsWith('patternDistances.'));
-  const mainEntries = file.entries.filter((entry) => !entry.path.startsWith('patternDistances.'));
+  let previewApi = null;
+  const patternEntries = file.entries.filter((entry) => entry.path.startsWith('patternDirections.'));
+  const mainEntries = file.entries.filter((entry) => !entry.path.startsWith('patternDirections.'));
   const { fileEl, navGroupChildren } = buildFileBlock(file, mainEntries, navTargets, true);
   const body = fileEl.querySelector('.file-body') || fileEl;
-  const patternEditor = patternDistancesEditor(file, patternEntries);
+  const patternEditor = patternDirectionsEditor(file, patternEntries, (patternId) => {
+    if (!previewApi) return;
+    previewApi.selectPattern(patternId);
+    scrollToTarget('claim-range-preview');
+  });
   body.append(patternEditor);
   navTargets.push({ id: patternEditor.id, el: patternEditor });
   const preview = claimRangePreview(file);
   preview.id = 'claim-range-preview';
   body.append(preview);
+  previewApi = preview.claimPreview;
   container.append(fileEl);
   setTabCount('claim-range', file.entries.length);
   if (state.tab === 'claim-range') {
@@ -355,9 +410,11 @@ function renderClaimRange() {
     const entryItems = navGroupChildren.flatMap((group) => group.children || []);
     buildNav('圈地范围', [
       ...entryItems,
-      { label: '图案距离', target: patternEditor.id },
+      { label: '图案单位方向', target: patternEditor.id },
       { label: '保护范围调试', target: preview.id },
+      { label: '旗帜合成器', target: 'claim-banner-composer' },
     ], navTargets);
+    syncConditionalNav();
   }
 }
 
@@ -373,6 +430,7 @@ function renderEntry(file, entry) {
   row.className = 'entry' + (entry.restart ? ' restart' : '')
       + (entry.type === 'int-list' ? ' entry-wide' : '');
   row.id = 'cfg-entry-' + encodeURIComponent(file.id + '|' + entry.path);
+  if (entry.visibleWhen) row.dataset.visibleWhen = entry.visibleWhen;
 
   const main = document.createElement('div');
   const keyLine = document.createElement('div');
@@ -562,22 +620,22 @@ function buildBoolean(file, entry, value) {
 // ---- 圈地保护范围：染料色块编辑 + 实时形状预览 ----
 
 const DYE_PALETTE = [
-  { name: '白', hex: '#f9fffe' },
-  { name: '橙', hex: '#f9801d' },
-  { name: '品红', hex: '#c74ebd' },
-  { name: '淡蓝', hex: '#3ab3da' },
-  { name: '黄', hex: '#fed83d' },
-  { name: '黄绿', hex: '#80c71f' },
-  { name: '粉', hex: '#f38baa' },
-  { name: '灰', hex: '#474f52' },
-  { name: '淡灰', hex: '#9d9d97' },
-  { name: '青', hex: '#169c9c' },
-  { name: '紫', hex: '#8932b8' },
-  { name: '蓝', hex: '#3c44aa' },
-  { name: '棕', hex: '#835432' },
-  { name: '绿', hex: '#5e7c16' },
-  { name: '红', hex: '#b02e26' },
-  { name: '黑', hex: '#1d1d21' },
+  { name: '白', id: 'white', hex: '#f9fffe' },
+  { name: '橙', id: 'orange', hex: '#f9801d' },
+  { name: '品红', id: 'magenta', hex: '#c74ebd' },
+  { name: '淡蓝', id: 'light_blue', hex: '#3ab3da' },
+  { name: '黄', id: 'yellow', hex: '#fed83d' },
+  { name: '黄绿', id: 'lime', hex: '#80c71f' },
+  { name: '粉', id: 'pink', hex: '#f38baa' },
+  { name: '灰', id: 'gray', hex: '#474f52' },
+  { name: '淡灰', id: 'light_gray', hex: '#9d9d97' },
+  { name: '青', id: 'cyan', hex: '#169c9c' },
+  { name: '紫', id: 'purple', hex: '#8932b8' },
+  { name: '蓝', id: 'blue', hex: '#3c44aa' },
+  { name: '棕', id: 'brown', hex: '#835432' },
+  { name: '绿', id: 'green', hex: '#5e7c16' },
+  { name: '红', id: 'red', hex: '#b02e26' },
+  { name: '黑', id: 'black', hex: '#1d1d21' },
 ];
 
 /** 8 方向，按角度顺序（北→东北→…→西北）；x 向东，z 向南。 */
@@ -593,21 +651,50 @@ const CLAIM_DIRECTIONS = [
 ];
 
 const CLAIM_PATTERNS = {
-  border: { label: '全边框 · 8 方向', dirs: [0, 1, 2, 3, 4, 5, 6, 7] },
-  cross: { label: '交叉 · 4 斜向', dirs: [1, 3, 5, 7] },
-  straight_cross: { label: '正向十字 · 4 正向', dirs: [0, 2, 4, 6] },
-  stripe_top: { label: '顶部条纹', dirs: [4] },
-  stripe_bottom: { label: '底部条纹', dirs: [0] },
-  stripe_left: { label: '左侧条纹', dirs: [2] },
-  stripe_right: { label: '右侧条纹', dirs: [6] },
-  square_top_left: { label: '左上角', dirs: [3] },
-  square_top_right: { label: '右上角', dirs: [5] },
-  square_bottom_left: { label: '左下角', dirs: [1] },
-  square_bottom_right: { label: '右下角', dirs: [7] },
-  stripe_downleft: { label: '左上斜纹', dirs: [1, 5] },
-  stripe_downright: { label: '右上斜纹', dirs: [3, 7] },
-  stripe_center: { label: '居中竖纹', dirs: [0, 4] },
-  stripe_middle: { label: '居中横纹', dirs: [2, 6] },
+  border: { label: '全边框' },
+  cross: { label: '交叉' },
+  straight_cross: { label: '正向十字' },
+  stripe_top: { label: '顶部条纹' },
+  stripe_bottom: { label: '底部条纹' },
+  stripe_left: { label: '左侧条纹' },
+  stripe_right: { label: '右侧条纹' },
+  square_top_left: { label: '左上角' },
+  square_top_right: { label: '右上角' },
+  square_bottom_left: { label: '左下角' },
+  square_bottom_right: { label: '右下角' },
+  stripe_downleft: { label: '左上斜纹' },
+  stripe_downright: { label: '右上斜纹' },
+  stripe_center: { label: '居中竖纹' },
+  stripe_middle: { label: '居中横纹' },
+};
+
+const CLAIM_DIRECTION_NAMES = [
+  'north', 'northeast', 'east', 'southeast',
+  'south', 'southwest', 'west', 'northwest',
+];
+const CLAIM_DIRECTION_LABELS = ['北', '东北', '东', '东南', '南', '西南', '西', '西北'];
+const CLAIM_DIRECTION_GLYPHS = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖'];
+// 3×3 罗盘位置：列、行（1-based）
+const CLAIM_DIRECTION_CELLS = [
+  [2, 1], [3, 1], [3, 2], [3, 3],
+  [2, 3], [1, 3], [1, 2], [1, 1],
+];
+const DEFAULT_CLAIM_PATTERN_DIRECTIONS = {
+  stripe_top: ['north'],
+  stripe_bottom: ['south'],
+  stripe_left: ['west'],
+  stripe_right: ['east'],
+  square_top_left: ['northwest'],
+  square_top_right: ['northeast'],
+  square_bottom_left: ['southwest'],
+  square_bottom_right: ['southeast'],
+  stripe_downleft: ['northeast', 'southwest'],
+  stripe_downright: ['northwest', 'southeast'],
+  stripe_center: ['north', 'south'],
+  stripe_middle: ['east', 'west'],
+  cross: ['northeast', 'southeast', 'southwest', 'northwest'],
+  straight_cross: ['north', 'east', 'south', 'west'],
+  border: ['north', 'northeast', 'east', 'southeast', 'south', 'southwest', 'west', 'northwest'],
 };
 
 const CLAIM_FACINGS = [
@@ -617,62 +704,306 @@ const CLAIM_FACINGS = [
   { id: 'west', label: '西', offset: 6 },
 ];
 
-function patternDistancesEditor(file, entries) {
+function normalizeDirectionNames(list) {
+  const source = Array.isArray(list) ? list : [];
+  return CLAIM_DIRECTION_NAMES.filter((name) => source.some((item) => String(item).toLowerCase() === name));
+}
+
+function createBannerComposer(getSelected, onFill) {
   const wrap = document.createElement('div');
-  wrap.className = 'pattern-distances';
-  wrap.id = 'claim-pattern-distances';
+  wrap.className = 'banner-composer';
   const head = document.createElement('div');
-  head.className = 'pattern-distances-head';
+  head.className = 'banner-composer-head';
   const title = document.createElement('strong');
-  title.textContent = '图案距离';
+  title.textContent = '旗帜选择器 / 合成器';
   const hint = document.createElement('span');
   hint.className = 'muted small';
-  hint.textContent = '0 = 沿用染料/固定距离；大于 0 时该图案固定使用这个距离。';
+  hint.textContent = '选择旗面颜色并叠加图案层；图案颜色决定保护长度。图案名/染料色已内置，织布机配方与图案物品图标暂未内置。';
+  head.append(title, hint);
+
+  const body = document.createElement('div');
+  body.className = 'banner-composer-body';
+  const preview = document.createElement('canvas');
+  preview.className = 'banner-composer-preview';
+  preview.width = 64;
+  preview.height = 80;
+  preview.title = '旗帜预览';
+
+  const controls = document.createElement('div');
+  controls.className = 'banner-composer-controls';
+  const baseWrap = document.createElement('label');
+  baseWrap.className = 'inline-field';
+  const baseLabel = document.createElement('span');
+  baseLabel.textContent = '旗面颜色';
+  const baseSelect = document.createElement('select');
+  DYE_PALETTE.forEach((dye, index) => {
+    const option = document.createElement('option');
+    option.value = String(index);
+    option.textContent = dye.name + '（' + index + '）';
+    baseSelect.append(option);
+  });
+  baseSelect.value = '15';
+  baseWrap.append(baseLabel, baseSelect);
+
+  const layers = document.createElement('div');
+  layers.className = 'banner-composer-layers';
+  const actions = document.createElement('div');
+  actions.className = 'banner-composer-actions';
+  const add = document.createElement('button');
+  add.type = 'button';
+  add.className = 'ghost';
+  add.textContent = '+ 添加图案层';
+  const load = document.createElement('button');
+  load.type = 'button';
+  load.className = 'ghost';
+  load.textContent = '载入选中旗帜';
+  const fill = document.createElement('button');
+  fill.type = 'button';
+  fill.className = 'primary';
+  fill.textContent = '填入调试画布';
+  actions.append(add, load, fill);
+  controls.append(baseWrap, layers, actions);
+
+  const commandWrap = document.createElement('div');
+  commandWrap.className = 'banner-composer-command';
+  const command = document.createElement('code');
+  const copy = document.createElement('button');
+  copy.type = 'button';
+  copy.className = 'ghost';
+  copy.textContent = '复制命令';
+  commandWrap.append(command, copy);
+
+  body.append(preview, controls);
+  wrap.append(head, body, commandWrap);
+
+  const state = { baseColor: 15, layers: [{ id: 'border', color: 0 }] };
+
+  const commandText = () => {
+    const base = DYE_PALETTE[state.baseColor] || DYE_PALETTE[0];
+    const parts = state.layers.map((layer) => {
+      const color = DYE_PALETTE[layer.color] || DYE_PALETTE[0];
+      return '{pattern:"minecraft:' + layer.id + '",color:"' + color.id + '"}';
+    });
+    return '/give @p minecraft:' + base.id + '_banner[banner_patterns=['
+      + parts.join(',') + ']] 1';
+  };
+
+  const refresh = () => {
+    if (window.SamsaraBanners) {
+      window.SamsaraBanners.paint(preview, state.layers,
+        (DYE_PALETTE[state.baseColor] || DYE_PALETTE[0]).hex);
+    }
+    command.textContent = commandText();
+  };
+
+  const renderLayers = () => {
+    layers.replaceChildren();
+    state.layers.forEach((layer, index) => {
+      const row = document.createElement('div');
+      row.className = 'banner-composer-layer';
+      const number = document.createElement('span');
+      number.className = 'banner-composer-index';
+      number.textContent = String(index + 1);
+      const pattern = document.createElement('select');
+      for (const [id, item] of Object.entries(CLAIM_PATTERNS)) {
+        const option = document.createElement('option');
+        option.value = id;
+        option.textContent = item.label;
+        pattern.append(option);
+      }
+      pattern.value = layer.id;
+      const color = document.createElement('select');
+      DYE_PALETTE.forEach((dye, colorIndex) => {
+        const option = document.createElement('option');
+        option.value = String(colorIndex);
+        option.textContent = '图案 ' + dye.name;
+        color.append(option);
+      });
+      color.value = String(layer.color);
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'ghost danger';
+      remove.textContent = '×';
+      remove.title = '删除这一层';
+      pattern.addEventListener('change', () => {
+        layer.id = pattern.value;
+        refresh();
+      });
+      color.addEventListener('change', () => {
+        layer.color = Number(color.value);
+        refresh();
+      });
+      remove.addEventListener('click', () => {
+        if (state.layers.length <= 1) return;
+        state.layers.splice(index, 1);
+        renderLayers();
+        refresh();
+      });
+      row.append(number, pattern, color, remove);
+      layers.append(row);
+    });
+  };
+
+  baseSelect.addEventListener('change', () => {
+    state.baseColor = Number(baseSelect.value);
+    refresh();
+  });
+  add.addEventListener('click', () => {
+    if (state.layers.length >= 8) return;
+    state.layers.push({ id: 'border', color: 0 });
+    renderLayers();
+    refresh();
+  });
+  load.addEventListener('click', () => {
+    const banner = getSelected();
+    if (!banner) return;
+    state.baseColor = banner.baseColor ?? 0;
+    state.layers = (banner.patterns || []).map((layer) => ({ id: layer.id, color: layer.color }));
+    if (state.layers.length === 0) state.layers = [{ id: 'border', color: 0 }];
+    baseSelect.value = String(state.baseColor);
+    renderLayers();
+    refresh();
+  });
+  fill.addEventListener('click', () => {
+    onFill({
+      baseColor: state.baseColor,
+      patterns: state.layers.map((layer) => ({ id: layer.id, color: layer.color })),
+    });
+  });
+  copy.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(command.textContent);
+      copy.textContent = '已复制';
+      setTimeout(() => { copy.textContent = '复制命令'; }, 1200);
+    } catch (e) {
+      const range = document.createRange();
+      range.selectNodeContents(command);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+  });
+
+  renderLayers();
+  refresh();
+  return { element: wrap, refresh };
+}
+
+function patternDirectionsEditor(file, entries, onTrial) {
+  const wrap = document.createElement('div');
+  wrap.className = 'pattern-directions';
+  wrap.id = 'claim-pattern-directions';
+  const head = document.createElement('div');
+  head.className = 'pattern-directions-head';
+  const title = document.createElement('strong');
+  title.textContent = '图案单位方向';
+  const hint = document.createElement('span');
+  hint.className = 'muted small';
+  hint.textContent = '图案只决定单位长度上的方向；颜色负责延长这些方向。方向随旗帜朝向旋转。';
   const reset = document.createElement('button');
   reset.type = 'button';
   reset.className = 'ghost';
-  reset.textContent = '全部清零';
+  reset.textContent = '恢复默认方向';
   head.append(title, hint, reset);
 
+  const note = document.createElement('div');
+  note.className = 'pattern-directions-note';
+  note.textContent = '统一采用“看旗人正面视角”：图标上方 = 北，下方 = 南，左侧 = 西，右侧 = 东。'
+      + '点 3×3 罗盘上的方向即可开关。例如“全边框”默认八向全开，用白色图案颜色就向八方各延伸 1 格，'
+      + '用黑色则各延伸 16 格；图案本身不配置距离。点“试用”可把该图案放到下方调试画布。';
+
   const grid = document.createElement('div');
-  grid.className = 'pattern-distance-grid';
-  const inputs = [];
+  grid.className = 'pattern-direction-grid';
+  const controls = [];
   for (const entry of entries) {
     const id = entry.path.split('.').pop();
-    const row = document.createElement('label');
-    row.className = 'pattern-distance-row';
+    const row = document.createElement('div');
+    row.className = 'pattern-direction-row';
+    const icon = window.SamsaraBanners
+      ? window.SamsaraBanners.icon([{ id: id, color: 15 }], 0, 40)
+      : null;
+    if (icon) {
+      icon.className = 'pattern-direction-icon';
+      icon.title = '原版 ' + id + ' 旗帜图案';
+    }
+    const meta = document.createElement('div');
+    meta.className = 'pattern-direction-meta';
     const label = document.createElement('span');
-    label.className = 'pattern-distance-name';
+    label.className = 'pattern-direction-name';
     label.textContent = CLAIM_PATTERNS[id]?.label || id;
     const code = document.createElement('code');
     code.textContent = id;
-    const input = document.createElement('input');
-    input.type = 'number';
-    input.min = '0';
-    input.max = String(entry.max == null ? 32 : entry.max);
-    input.step = '1';
-    input.value = String(Number(currentValue(file.id, entry)) || 0);
-    input.addEventListener('input', () => {
-      const value = Math.max(0, Math.min(entry.max == null ? 32 : entry.max,
-          Math.round(Number(input.value) || 0)));
-      input.value = String(value);
-      row.classList.toggle('override', value > 0);
-      markEdited(file.id, entry, value);
-    });
-    row.classList.toggle('override', Number(input.value) > 0);
-    row.append(label, code, input);
+    meta.append(label, code);
+
+    const picker = document.createElement('div');
+    picker.className = 'pattern-direction-picker';
+    const buttons = [];
+    for (let direction = 0; direction < 8; direction += 1) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'pattern-direction-cell';
+      button.textContent = CLAIM_DIRECTION_GLYPHS[direction];
+      button.title = CLAIM_DIRECTION_LABELS[direction];
+      button.style.gridColumn = String(CLAIM_DIRECTION_CELLS[direction][0]);
+      button.style.gridRow = String(CLAIM_DIRECTION_CELLS[direction][1]);
+      button.addEventListener('click', () => {
+        button.classList.toggle('active');
+        const selected = buttons
+            .map((item, index) => item.classList.contains('active')
+              ? CLAIM_DIRECTION_NAMES[index] : null)
+            .filter(Boolean);
+        row.classList.toggle('empty', selected.length === 0);
+        markEdited(file.id, entry, selected);
+      });
+      picker.append(button);
+      buttons.push(button);
+    }
+    const center = document.createElement('span');
+    center.className = 'pattern-direction-center';
+    center.textContent = '·';
+    center.style.gridColumn = '2';
+    center.style.gridRow = '2';
+    center.setAttribute('aria-hidden', 'true');
+    picker.append(center);
+
+    const setNames = (names) => {
+      const normalized = normalizeDirectionNames(names);
+      buttons.forEach((button, index) => {
+        button.classList.toggle('active', normalized.includes(CLAIM_DIRECTION_NAMES[index]));
+      });
+      row.classList.toggle('empty', normalized.length === 0);
+    };
+    setNames(currentValue(file.id, entry));
+
+    row.append(...(icon ? [icon] : []), meta, picker);
+    if (onTrial) {
+      const trial = document.createElement('button');
+      trial.type = 'button';
+      trial.className = 'ghost pattern-trial';
+      trial.textContent = '试用';
+      trial.title = '在下方调试画布中使用这个图案';
+      trial.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onTrial(id);
+      });
+      row.append(trial);
+    }
     grid.append(row);
-    inputs.push(input);
+    controls.push({ entry, row, setNames });
   }
+
   reset.addEventListener('click', () => {
-    entries.forEach((entry, index) => {
-      inputs[index].value = '0';
-      inputs[index].closest('.pattern-distance-row')?.classList.remove('override');
-      markEdited(file.id, entry, 0);
-    });
+    for (const control of controls) {
+      const defaults = control.entry.default
+        || DEFAULT_CLAIM_PATTERN_DIRECTIONS[control.entry.path.split('.').pop()]
+        || [];
+      control.setNames(defaults);
+      markEdited(file.id, control.entry, normalizeDirectionNames(defaults));
+    }
   });
 
-  wrap.append(head, grid);
+  wrap.append(head, note, grid);
   return wrap;
 }
 
@@ -685,7 +1016,7 @@ function buildIntList(file, entry, values) {
   tools.className = 'int-list-tools';
   const hint = document.createElement('span');
   hint.className = 'int-list-hint';
-  hint.textContent = '颜色 0（白）→ 15（黑）；数字为单方向延伸区块数';
+  hint.textContent = '图案颜色 0（白）→ 15（黑）；数字为单方向延伸区块数（旗面颜色只影响外观）';
   const bulk = document.createElement('input');
   bulk.type = 'number';
   bulk.min = String(entry.min == null ? 1 : entry.min);
@@ -778,9 +1109,18 @@ function claimRangePreview(file) {
   DYE_PALETTE.forEach((dye, index) => {
     const option = document.createElement('option');
     option.value = String(index);
-    option.textContent = dye.name + '（' + index + '）';
+    option.textContent = '图案 ' + dye.name + '（' + index + '）';
     colorSelect.append(option);
   });
+  const baseColorSelect = document.createElement('select');
+  DYE_PALETTE.forEach((dye, index) => {
+    const option = document.createElement('option');
+    option.value = String(index);
+    option.textContent = '旗面 ' + dye.name + '（' + index + '）';
+    baseColorSelect.append(option);
+  });
+  baseColorSelect.value = '15';
+  colorSelect.value = '0';
   const facingSelect = document.createElement('select');
   for (const facing of CLAIM_FACINGS) {
     const option = document.createElement('option');
@@ -788,7 +1128,12 @@ function claimRangePreview(file) {
     option.textContent = '朝' + facing.label;
     facingSelect.append(option);
   }
-  controls.append(patternSelect, colorSelect, facingSelect);
+  const patternIcon = document.createElement('canvas');
+  patternIcon.className = 'claim-pattern-icon';
+  patternIcon.width = 40;
+  patternIcon.height = 40;
+  patternIcon.title = '当前图案与染料颜色';
+  controls.append(patternIcon, patternSelect, baseColorSelect, colorSelect, facingSelect);
   head.append(titles, controls);
 
   const toolbar = document.createElement('div');
@@ -850,18 +1195,28 @@ function claimRangePreview(file) {
       const value = readValue('colorDistances', []);
       return Array.isArray(value) ? value.map(Number) : [];
     })(),
-    patternDistances: Object.fromEntries(patternIds.map((id) => [id,
-      Number(readValue('patternDistances.' + id, 0)) || 0])),
+    patternDirections: Object.fromEntries(patternIds.map((id) => [id,
+      normalizeDirectionNames(readValue('patternDirections.' + id,
+          DEFAULT_CLAIM_PATTERN_DIRECTIONS[id] || []))])),
   });
 
   const state = {
-    banners: [{ x: 0, z: 0, pattern: patternSelect.value, color: Number(colorSelect.value), facing: facingSelect.value }],
+    banners: [{
+      x: 0,
+      z: 0,
+      patterns: [{ id: patternSelect.value, color: Number(colorSelect.value) }],
+      baseColor: Number(baseColorSelect.value),
+      facing: facingSelect.value,
+    }],
     selected: 0,
     hover: null,
     drag: null,
     lastSummary: 0,
     zoom: 0,
   };
+
+  const firstLayer = (banner) => (banner && banner.patterns && banner.patterns[0])
+    || { id: 'border', color: 0 };
 
   const size = 560;
   const dpr = window.devicePixelRatio || 1;
@@ -872,19 +1227,46 @@ function claimRangePreview(file) {
   const ctx = canvas.getContext('2d');
   ctx.imageSmoothingEnabled = false;
 
-  const distanceOf = (banner, cfg) => {
-    const override = cfg.patternDistances[banner.pattern] || 0;
-    const color = Math.max(0, Math.min(15, Number(banner.color) || 0));
-    const base = override > 0
-        ? override
-        : (cfg.mode === 'fixed' ? cfg.fixedDistance : (cfg.colorDistances[color] ?? color + 1));
+  const iconCache = new Map();
+  const bannerIcon = (patterns, baseColor) => {
+    const key = JSON.stringify([patterns, baseColor]);
+    if (iconCache.has(key)) return iconCache.get(key);
+    const base = DYE_PALETTE[baseColor] || DYE_PALETTE[0];
+    const iconCanvas = window.SamsaraBanners
+      ? window.SamsaraBanners.icon(patterns, base.hex, 64)
+      : null;
+    iconCache.set(key, iconCanvas);
+    return iconCanvas;
+  };
+
+  const refreshPatternIcon = () => {
+    if (!window.SamsaraBanners) return;
+    const banner = selectedBanner();
+    const layers = banner ? banner.patterns : [{ id: patternSelect.value, color: Number(colorSelect.value) }];
+    const baseColor = banner ? Number(banner.baseColor ?? 0) : Number(baseColorSelect.value) || 0;
+    window.SamsaraBanners.paint(patternIcon, layers, (DYE_PALETTE[baseColor] || DYE_PALETTE[0]).hex);
+  };
+
+  const distanceOfColor = (color, cfg) => {
+    const index = Math.max(0, Math.min(15, Number(color) || 0));
+    const base = cfg.mode === 'fixed' ? cfg.fixedDistance
+      : (cfg.colorDistances[index] ?? index + 1);
     return Math.max(1, Math.min(cfg.maxDistance, Math.round(base)));
   };
 
-  const rotatedDirs = (banner) => {
-    const dirs = CLAIM_PATTERNS[banner.pattern]?.dirs || [];
-    const offset = CLAIM_FACINGS.find((item) => item.id === banner.facing)?.offset || 0;
-    return dirs.map((index) => (index + offset) % 8);
+  const distanceOf = (banner, cfg) => {
+    const layers = banner.patterns || [];
+    return layers.reduce((max, layer) => Math.max(max, distanceOfColor(layer.color, cfg)), 1);
+  };
+
+  const rotatedDirs = (patternId, facing, cfg) => {
+    const names = (cfg.patternDirections && cfg.patternDirections[patternId])
+      || DEFAULT_CLAIM_PATTERN_DIRECTIONS[patternId] || [];
+    const offset = CLAIM_FACINGS.find((item) => item.id === facing)?.offset || 0;
+    return normalizeDirectionNames(names)
+        .map((name) => CLAIM_DIRECTION_NAMES.indexOf(name))
+        .filter((index) => index >= 0)
+        .map((index) => (index + offset) % 8);
   };
 
   const viewRadius = (cfg) => {
@@ -895,32 +1277,34 @@ function claimRangePreview(file) {
   };
 
   const cellsFor = (banner, cfg) => {
-    const dirs = rotatedDirs(banner);
-    const distance = distanceOf(banner, cfg);
     const cells = new Set();
     const add = (x, z) => cells.add(x + ',' + z);
     add(banner.x, banner.z);
-    const endpoints = [];
-    for (const index of dirs) {
-      const dir = CLAIM_DIRECTIONS[index];
-      for (let step = 1; step <= distance; step += 1) {
-        add(banner.x + dir.dx * step, banner.z + dir.dz * step);
+    for (const layer of banner.patterns || []) {
+      const dirs = rotatedDirs(layer.id, banner.facing, cfg);
+      const distance = distanceOfColor(layer.color, cfg);
+      const endpoints = [];
+      for (const index of dirs) {
+        const dir = CLAIM_DIRECTIONS[index];
+        for (let step = 1; step <= distance; step += 1) {
+          add(banner.x + dir.dx * step, banner.z + dir.dz * step);
+        }
+        endpoints.push({ x: banner.x + dir.dx * distance, z: banner.z + dir.dz * distance });
       }
-      endpoints.push({ x: banner.x + dir.dx * distance, z: banner.z + dir.dz * distance });
-    }
-    if (endpoints.length >= 3) {
-      for (let i = 0; i < endpoints.length; i += 1) {
-        const a = endpoints[i];
-        const b = endpoints[(i + 1) % endpoints.length];
-        addLineCells(a.x, a.z, b.x, b.z, add);
-      }
-      const minX = Math.min(...endpoints.map((p) => p.x));
-      const maxX = Math.max(...endpoints.map((p) => p.x));
-      const minZ = Math.min(...endpoints.map((p) => p.z));
-      const maxZ = Math.max(...endpoints.map((p) => p.z));
-      for (let x = minX; x <= maxX; x += 1) {
-        for (let z = minZ; z <= maxZ; z += 1) {
-          if (pointInPolygon(x, z, endpoints)) add(x, z);
+      if (endpoints.length >= 3) {
+        for (let i = 0; i < endpoints.length; i += 1) {
+          const a = endpoints[i];
+          const b = endpoints[(i + 1) % endpoints.length];
+          addLineCells(a.x, a.z, b.x, b.z, add);
+        }
+        const minX = Math.min(...endpoints.map((p) => p.x));
+        const maxX = Math.max(...endpoints.map((p) => p.x));
+        const minZ = Math.min(...endpoints.map((p) => p.z));
+        const maxZ = Math.max(...endpoints.map((p) => p.z));
+        for (let x = minX; x <= maxX; x += 1) {
+          for (let z = minZ; z <= maxZ; z += 1) {
+            if (pointInPolygon(x, z, endpoints)) add(x, z);
+          }
         }
       }
     }
@@ -937,6 +1321,184 @@ function claimRangePreview(file) {
       }
     }
     return out;
+  };
+
+  // ---- 与 Geometry.compute 同源的“化线为面”：先合并多面旗帜的线段，再求封闭面 ----
+  const pointKey = (x, z) => x + ',' + z;
+  const keyPoint = (key) => {
+    const [x, z] = key.split(',').map(Number);
+    return { x, z };
+  };
+  const gcd = (a, b) => {
+    let x = Math.abs(a);
+    let y = Math.abs(b);
+    while (y) { const t = x % y; x = y; y = t; }
+    return x;
+  };
+  const directionIndex = (dx, dz) => {
+    const sx = Math.sign(dx);
+    const sz = Math.sign(dz);
+    const key = sx + ',' + sz;
+    return { '0,-1': 0, '1,-1': 1, '1,0': 2, '1,1': 3,
+      '0,1': 4, '-1,1': 5, '-1,0': 6, '-1,-1': 7 }[key];
+  };
+  const addGraphPoint = (points, x, z) => {
+    points.add(pointKey(x, z));
+  };
+  const addGraphEdge = (adj, x1, z1, x2, z2) => {
+    const a = pointKey(x1, z1);
+    const b = pointKey(x2, z2);
+    if (!adj.has(a)) adj.set(a, new Set());
+    if (!adj.has(b)) adj.set(b, new Set());
+    adj.get(a).add(b);
+    adj.get(b).add(a);
+  };
+  const rasterLine = (points, adj, x1, z1, x2, z2) => {
+    addGraphPoint(points, x1, z1);
+    addGraphPoint(points, x2, z2);
+    const steps = gcd(x2 - x1, z2 - z1);
+    if (steps === 0) return;
+    const sx = (x2 - x1) / steps;
+    const sz = (z2 - z1) / steps;
+    let px = x1;
+    let pz = z1;
+    for (let i = 0; i < steps; i += 1) {
+      const nx = px + sx;
+      const nz = pz + sz;
+      addGraphEdge(adj, px, pz, nx, nz);
+      px = nx;
+      pz = nz;
+    }
+  };
+  const findFaces = (points, adj) => {
+    const visited = new Set();
+    const faces = [];
+    for (const start of points) {
+      const neighbors = adj.get(start) || new Set();
+      for (const first of neighbors) {
+        const edge = start + '->' + first;
+        if (visited.has(edge)) continue;
+        const face = new Set();
+        let cur = start;
+        let nxt = first;
+        let bounded = true;
+        const maxSteps = Math.max(16, points.size * 4);
+        for (let step = 0; step < maxSteps; step += 1) {
+          visited.add(cur + '->' + nxt);
+          face.add(cur);
+          if (nxt === start) break;
+          const curPoint = keyPoint(cur);
+          const nxtPoint = keyPoint(nxt);
+          const reverse = directionIndex(curPoint.x - nxtPoint.x, curPoint.z - nxtPoint.z);
+          let nextNode = null;
+          let best = 9;
+          for (const candidate of adj.get(nxt) || []) {
+            if (candidate === cur) continue;
+            const point = keyPoint(candidate);
+            const dir = directionIndex(point.x - nxtPoint.x, point.z - nxtPoint.z);
+            const diff = (dir - reverse + 8) % 8;
+            if (diff > 0 && diff < best) {
+              best = diff;
+              nextNode = candidate;
+            }
+          }
+          if (!nextNode) { bounded = false; break; }
+          cur = nxt;
+          nxt = nextNode;
+        }
+        if (bounded && face.size >= 3) faces.push(face);
+      }
+    }
+    return faces;
+  };
+  const scanlineFill = (boundary, adj) => {
+    const interior = new Set();
+    if (boundary.size < 3) return interior;
+    const edges = new Set();
+    for (const key of boundary) {
+      for (const neighbor of adj.get(key) || []) {
+        if (!boundary.has(neighbor)) continue;
+        const a = keyPoint(key);
+        const b = keyPoint(neighbor);
+        const ordered = (a.x < b.x || (a.x === b.x && a.z <= b.z))
+          ? [a, b] : [b, a];
+        edges.add(ordered[0].x + ',' + ordered[0].z + ',' + ordered[1].x + ',' + ordered[1].z);
+      }
+    }
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+    for (const key of boundary) {
+      const point = keyPoint(key);
+      minZ = Math.min(minZ, point.z);
+      maxZ = Math.max(maxZ, point.z);
+    }
+    for (let z = minZ + 1; z < maxZ; z += 1) {
+      const intersections = [];
+      for (const edge of edges) {
+        const [x1, z1, x2, z2] = edge.split(',').map(Number);
+        if ((z1 < z && z <= z2) || (z2 < z && z <= z1)) {
+          intersections.push(Math.round(x1 + (z - z1) / (z2 - z1) * (x2 - x1)));
+        }
+      }
+      intersections.sort((a, b) => a - b);
+      for (let i = 0; i + 1 < intersections.length; i += 2) {
+        for (let x = intersections[i]; x <= intersections[i + 1]; x += 1) {
+          const key = pointKey(x, z);
+          if (!boundary.has(key)) interior.add(key);
+        }
+      }
+    }
+    return interior;
+  };
+
+  let geometryKey = '';
+  let geometryCells = new Set();
+  const claimGeometry = (banners, cfg) => {
+    const key = JSON.stringify({
+      banners,
+      mode: cfg.mode,
+      fixed: cfg.fixedDistance,
+      colors: cfg.colorDistances,
+      max: cfg.maxDistance,
+      directions: cfg.patternDirections,
+    });
+    if (key === geometryKey) return geometryCells;
+    const points = new Set();
+    const adj = new Map();
+    for (const banner of banners) {
+      addGraphPoint(points, banner.x, banner.z);
+      for (const layer of banner.patterns || []) {
+        const dirs = rotatedDirs(layer.id, banner.facing, cfg);
+        const distance = distanceOfColor(layer.color, cfg);
+        const endpoints = [];
+        for (const dir of dirs) {
+          const direction = CLAIM_DIRECTIONS[dir];
+          const ex = banner.x + direction.dx * distance;
+          const ez = banner.z + direction.dz * distance;
+          rasterLine(points, adj, banner.x, banner.z, ex, ez);
+          endpoints.push({ x: ex, z: ez });
+        }
+        if (endpoints.length >= 3) {
+          endpoints.sort((a, b) => {
+            const da = Math.atan2(a.z - banner.z, a.x - banner.x);
+            const db = Math.atan2(b.z - banner.z, b.x - banner.x);
+            return da - db;
+          });
+          for (let i = 0; i < endpoints.length; i += 1) {
+            const a = endpoints[i];
+            const b = endpoints[(i + 1) % endpoints.length];
+            rasterLine(points, adj, a.x, a.z, b.x, b.z);
+          }
+        }
+      }
+    }
+    const cells = new Set(points);
+    for (const face of findFaces(points, adj)) {
+      for (const cell of scanlineFill(face, adj)) cells.add(cell);
+    }
+    geometryKey = key;
+    geometryCells = cells;
+    return cells;
   };
 
   const cellAt = (event) => {
@@ -965,21 +1527,24 @@ function claimRangePreview(file) {
 
   const updateSummary = () => {
     const cfg = readConfig();
-    const union = new Set();
-    for (const banner of state.banners) {
-      for (const key of cellsFor(banner, cfg)) union.add(key);
-    }
+    const union = claimGeometry(state.banners, cfg);
     const boundary = boundaryOf(union);
     const banner = selectedBanner();
     let text = '已放置 ' + state.banners.length + ' 面 · 保护 ' + union.size
         + ' 区块 · 边界 ' + boundary.length + ' 格';
     if (banner) {
-      const dye = DYE_PALETTE[banner.color] || { name: '颜色 ' + banner.color };
-      const override = cfg.patternDistances[banner.pattern] || 0;
-      text += ' · 选中：' + (CLAIM_PATTERNS[banner.pattern]?.label || banner.pattern)
-          + ' · ' + dye.name + ' · 朝' + (CLAIM_FACINGS.find((f) => f.id === banner.facing)?.label || '北')
-          + ' → ' + distanceOf(banner, cfg) + ' 区块'
-          + (override > 0 ? '（图案覆盖）' : '');
+      const layers = banner.patterns || [];
+      const baseDye = DYE_PALETTE[banner.baseColor ?? 0] || { name: '颜色 ' + (banner.baseColor ?? 0) };
+      const layerText = layers.map((layer) => {
+        const dye = DYE_PALETTE[layer.color] || { name: '颜色 ' + layer.color };
+        return (CLAIM_PATTERNS[layer.id]?.label || layer.id) + '/' + dye.name;
+      }).join(' + ');
+      const dirs = [...new Set(layers.flatMap((layer) => rotatedDirs(layer.id, banner.facing, cfg)))]
+          .map((index) => CLAIM_DIRECTION_LABELS[index]).join('+') || '无方向';
+      text += ' · 选中：' + (layerText || '无图案')
+          + ' · 旗面' + baseDye.name
+          + ' · 朝' + (CLAIM_FACINGS.find((f) => f.id === banner.facing)?.label || '北')
+          + ' · ' + dirs + ' → ' + distanceOf(banner, cfg) + ' 区块';
     } else {
       text += ' · 点击网格放置第一面旗帜';
     }
@@ -1014,10 +1579,7 @@ function claimRangePreview(file) {
       ctx.stroke();
     }
 
-    const union = new Set();
-    for (const banner of state.banners) {
-      for (const key of cellsFor(banner, cfg)) union.add(key);
-    }
+    const union = claimGeometry(state.banners, cfg);
 
     ctx.fillStyle = 'rgba(45, 212, 191, .07)';
     for (const key of union) {
@@ -1060,30 +1622,41 @@ function claimRangePreview(file) {
     }
     ctx.globalAlpha = 1;
 
+    const selected = selectedBanner();
+    if (selected) {
+      const selectedCells = cellsFor(selected, cfg);
+      ctx.fillStyle = 'rgba(251, 191, 36, .14)';
+      for (const key of selectedCells) {
+        const [x, z] = key.split(',').map(Number);
+        ctx.fillRect(px(x), pz(z), cell, cell);
+      }
+      ctx.fillStyle = 'rgba(251, 191, 36, .95)';
+      for (const [x, z] of boundaryOf(selectedCells)) {
+        ctx.fillRect(Math.round(px(x) + cell * .35), Math.round(pz(z) + cell * .35),
+            Math.max(2, cell * .3), Math.max(2, cell * .3));
+      }
+    }
+
     state.banners.forEach((banner, index) => {
       const cx = px(banner.x) + cell / 2;
       const cz = pz(banner.z) + cell / 2;
-      const dye = DYE_PALETTE[banner.color] || { hex: '#2dd4bf' };
       if (index === state.selected) {
         ctx.strokeStyle = 'rgba(251, 191, 36, .95)';
         ctx.lineWidth = 2;
         ctx.strokeRect(px(banner.x) + 1.5, pz(banner.z) + 1.5, cell - 3, cell - 3);
       }
-      ctx.fillStyle = '#e2e8f0';
-      ctx.fillRect(Math.round(cx) - 1, Math.round(cz - cell * .32), 2, Math.round(cell * .64));
-      ctx.fillStyle = dye.hex;
-      ctx.beginPath();
-      ctx.moveTo(Math.round(cx) + 1, Math.round(cz - cell * .32));
-      ctx.lineTo(Math.round(cx + cell * .34), Math.round(cz - cell * .12));
-      ctx.lineTo(Math.round(cx) + 1, Math.round(cz + cell * .04));
-      ctx.closePath();
-      ctx.fill();
+      const icon = bannerIcon(banner.patterns || [], banner.baseColor ?? 0);
+      const iconSize = Math.max(12, Math.min(cell * .9, 42));
+      if (icon) {
+        ctx.drawImage(icon, Math.round(cx - iconSize / 2), Math.round(cz - iconSize / 2),
+            Math.round(iconSize), Math.round(iconSize));
+      }
       const facing = CLAIM_DIRECTIONS[(CLAIM_FACINGS.find((f) => f.id === banner.facing)?.offset || 0)];
       ctx.strokeStyle = 'rgba(226, 232, 240, .85)';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.moveTo(cx, cz + cell * .28);
-      ctx.lineTo(cx + facing.dx * cell * .55, cz + cell * .28 + facing.dz * cell * .55);
+      ctx.moveTo(cx, cz + cell * .30);
+      ctx.lineTo(cx + facing.dx * cell * .55, cz + cell * .30 + facing.dz * cell * .55);
       ctx.stroke();
     });
 
@@ -1091,7 +1664,7 @@ function claimRangePreview(file) {
     if (ghost && (state.drag || bannerAt(ghost) < 0)) {
       const ghostBanner = state.drag
         ? Object.assign({}, state.banners[state.drag.index], { x: ghost.x, z: ghost.z })
-        : { x: ghost.x, z: ghost.z, pattern: patternSelect.value, color: Number(colorSelect.value), facing: facingSelect.value };
+        : { x: ghost.x, z: ghost.z, patterns: [{ id: patternSelect.value, color: Number(colorSelect.value) }], baseColor: Number(baseColorSelect.value), facing: facingSelect.value };
       const ghostCells = cellsFor(ghostBanner, cfg);
       ctx.fillStyle = 'rgba(251, 191, 36, .08)';
       for (const key of ghostCells) {
@@ -1113,7 +1686,7 @@ function claimRangePreview(file) {
       ctx.strokeRect(gx + 1, gz + 1, cell - 2, cell - 2);
       ctx.setLineDash([]);
       ctx.globalAlpha = .45;
-      ctx.fillStyle = (DYE_PALETTE[Number(colorSelect.value)] || { hex: '#2dd4bf' }).hex;
+      ctx.fillStyle = (DYE_PALETTE[Number(baseColorSelect.value)] || { hex: '#2dd4bf' }).hex;
       ctx.fillRect(gx + cell * .3, gz + cell * .3, cell * .4, cell * .4);
       ctx.globalAlpha = 1;
     }
@@ -1137,12 +1710,19 @@ function claimRangePreview(file) {
   };
 
   patternSelect.addEventListener('change', () => {
-    const banner = selectedBanner();
-    if (banner) banner.pattern = patternSelect.value;
+    const layer = firstLayer(selectedBanner());
+    layer.id = patternSelect.value;
+    refreshPatternIcon();
   });
   colorSelect.addEventListener('change', () => {
+    const layer = firstLayer(selectedBanner());
+    layer.color = Number(colorSelect.value);
+    refreshPatternIcon();
+  });
+  baseColorSelect.addEventListener('change', () => {
     const banner = selectedBanner();
-    if (banner) banner.color = Number(colorSelect.value);
+    if (banner) banner.baseColor = Number(baseColorSelect.value);
+    refreshPatternIcon();
   });
   facingSelect.addEventListener('change', () => {
     const banner = selectedBanner();
@@ -1179,11 +1759,12 @@ function claimRangePreview(file) {
     state.banners.push({
       x: cell.x,
       z: cell.z,
-      pattern: patternSelect.value,
-      color: Number(colorSelect.value),
+      patterns: [{ id: patternSelect.value, color: Number(colorSelect.value) }],
+      baseColor: Number(baseColorSelect.value),
       facing: facingSelect.value,
     });
     state.selected = state.banners.length - 1;
+    syncSelectors();
   });
 
   canvas.addEventListener('pointermove', (event) => {
@@ -1207,13 +1788,14 @@ function claimRangePreview(file) {
       state.banners.push({
         x: cell.x,
         z: cell.z,
-        pattern: patternSelect.value,
-        color: Number(colorSelect.value),
+        patterns: [{ id: patternSelect.value, color: Number(colorSelect.value) }],
+        baseColor: Number(baseColorSelect.value),
         facing: facingSelect.value,
       });
       state.selected = state.banners.length - 1;
       state.drag = { index: state.selected, cell: { x: cell.x, z: cell.z } };
     }
+    syncSelectors();
     canvas.setPointerCapture(event.pointerId);
     canvas.focus();
   });
@@ -1255,21 +1837,76 @@ function claimRangePreview(file) {
   const syncSelectors = () => {
     const banner = selectedBanner();
     if (banner) {
-      patternSelect.value = banner.pattern;
-      colorSelect.value = String(banner.color);
+      const layer = firstLayer(banner);
+      patternSelect.value = layer.id;
+      colorSelect.value = String(layer.color);
+      baseColorSelect.value = String(banner.baseColor ?? 0);
       facingSelect.value = banner.facing;
     }
+    refreshPatternIcon();
   };
 
   syncSelectors();
   state.raf = requestAnimationFrame(draw);
   updateSummary();
 
-  state.claimPreview = {
+  const composer = createBannerComposer(
+    () => selectedBanner(),
+    (bannerData) => {
+      let banner = selectedBanner();
+      if (!banner) {
+        banner = {
+          x: 0, z: 0, patterns: [], baseColor: bannerData.baseColor,
+          facing: facingSelect.value,
+        };
+        state.banners.push(banner);
+        state.selected = state.banners.length - 1;
+      }
+      banner.baseColor = bannerData.baseColor;
+      banner.patterns = bannerData.patterns.map((layer) => ({
+        id: layer.id, color: layer.color,
+      }));
+      syncSelectors();
+      updateSummary();
+      canvas.classList.remove('claim-sim-flash');
+      void canvas.offsetWidth;
+      canvas.classList.add('claim-sim-flash');
+      setTimeout(() => canvas.classList.remove('claim-sim-flash'), 1600);
+    });
+  composer.element.id = 'claim-banner-composer';
+  section.append(composer.element);
+
+  const api = {
     redraw: () => {
       updateSummary();
+      refreshPatternIcon();
+    },
+    selectPattern: (id) => {
+      if (!CLAIM_PATTERNS[id]) return;
+      patternSelect.value = id;
+      if (!state.banners.length) {
+        state.banners.push({
+          x: 0,
+          z: 0,
+          patterns: [{ id: id, color: Number(colorSelect.value) }],
+          baseColor: Number(baseColorSelect.value),
+          facing: facingSelect.value,
+        });
+        state.selected = 0;
+      } else {
+        const banner = selectedBanner();
+        if (banner) firstLayer(banner).id = id;
+      }
+      refreshPatternIcon();
+      canvas.classList.remove('claim-sim-flash');
+      void canvas.offsetWidth;
+      canvas.classList.add('claim-sim-flash');
+      setTimeout(() => canvas.classList.remove('claim-sim-flash'), 1600);
     },
   };
+  section.claimPreview = api;
+  if (window.SamsaraUI) window.SamsaraUI.state.claimPreview = api;
+  state.claimPreview = api;
   return section;
 }
 
@@ -1578,6 +2215,8 @@ function setActiveTab(name) {
     render();
   } else if (name === 'claim-range') {
     renderClaimRange();
+  } else if (name === 'map') {
+    window.SamsaraMap?.activate();
   } else if (name === 'identity') {
     window.SamsaraIdentity?.activate();
   } else if (name === 'output') {
@@ -1607,6 +2246,11 @@ const TAB_ACTIONS = {
     hint: '保存会写入 claim-range.yml，并立即重算已有圈地',
     save: '保存并重算',
   },
+  map: {
+    title: '地图',
+    hint: '只读扫描存档；标签计数 = 全服保护区块；切世界后点“重新读取”',
+    save: null,
+  },
   identity: {
     title: '身份组',
     hint: '保存会写入 identity.yml 并热重载',
@@ -1632,12 +2276,15 @@ function updateTabActions(name) {
   const def = $('action-default');
   if (title) title.textContent = config.title;
   if (hint) hint.textContent = config.hint;
-  if (save) save.textContent = config.save;
+  if (save) {
+    save.textContent = config.save || '保存并重载';
+    save.hidden = !config.save;
+  }
   if (def) def.hidden = name !== 'output';
 }
 
 function setTabCount(panel, count) {
-  const map = { config: 'config-count', identity: 'identity-count', 'claim-range': 'claim-range-count', output: 'output-count', permissions: 'perm-count' };
+  const map = { config: 'config-count', identity: 'identity-count', 'claim-range': 'claim-range-count', output: 'output-count', permissions: 'perm-count', map: 'map-count' };
   const el = $(map[panel]);
   if (el) el.textContent = String(count == null ? 0 : count);
 }
@@ -1651,12 +2298,14 @@ function refreshCounts() {
   window.SamsaraIdentity?.refreshCount?.();
   window.SamsaraOutput?.refreshCount?.();
   window.SamsaraPermissions?.refreshCount?.();
+  window.SamsaraMap?.refreshCount?.();
 }
 
 async function saveActive() {
   if (state.tab === 'identity') return window.SamsaraIdentity?.save?.();
   if (state.tab === 'output') return window.SamsaraOutput?.save?.();
   if (state.tab === 'permissions') return window.SamsaraPermissions?.saveOwners?.();
+  if (state.tab === 'map') return window.SamsaraMap?.reload?.();
   if (state.tab === 'claim-range') return saveConfig('claim-range');
   return saveConfig();
 }
@@ -1665,6 +2314,7 @@ async function reloadActive() {
   if (state.tab === 'identity') return window.SamsaraIdentity?.reload?.();
   if (state.tab === 'output') return window.SamsaraOutput?.reload?.();
   if (state.tab === 'permissions') return window.SamsaraPermissions?.reload?.();
+  if (state.tab === 'map') return window.SamsaraMap?.reload?.();
   return reloadConfig();
 }
 
@@ -1732,12 +2382,14 @@ window.SamsaraUI = {
   onConnect,
   runConnectHooks,
   getToken: () => state.token,
+  authHeaders,
   setConnection,
   setActiveTab,
   isActiveTab: (name) => state.tab === name,
   buildNav,
   setNavActive,
   watchNav,
+  scrollToTarget,
   refreshCounts,
   setTabCount,
   effectiveValue,
@@ -1745,7 +2397,7 @@ window.SamsaraUI = {
 };
 
 const initialTab = (location.hash || '').replace('#', '');
-if (['config', 'claim-range', 'identity', 'output', 'permissions'].includes(initialTab)) {
+if (['config', 'claim-range', 'identity', 'output', 'permissions', 'map'].includes(initialTab)) {
   setActiveTab(initialTab);
 } else {
   updateTabActions('config');

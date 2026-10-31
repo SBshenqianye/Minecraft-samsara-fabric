@@ -63,13 +63,13 @@ public class GeometryStore {
     // ---- 公共 API ----
 
     /** 获取指定维度的所有受保护区块（白名单） */
-    public Set<ChunkCoord> getWhitelist(ResourceKey<Level> dim) {
+    public synchronized Set<ChunkCoord> getWhitelist(ResourceKey<Level> dim) {
         DimGeoData data = getOrCreateDim(dim);
         return new HashSet<>(data.chunkIndex.keySet());
     }
 
     /** 判断指定维度的区块是否受保护 */
-    public boolean isProtected(ResourceKey<Level> dim, int chunkX, int chunkZ) {
+    public synchronized boolean isProtected(ResourceKey<Level> dim, int chunkX, int chunkZ) {
         DimGeoData data = getOrCreateDim(dim);
         return data.chunkIndex.containsKey(new ChunkCoord(chunkX, chunkZ));
     }
