@@ -1089,6 +1089,22 @@ function claimRangePreview(file) {
 
     const ghost = state.drag ? state.drag.cell : state.hover;
     if (ghost && (state.drag || bannerAt(ghost) < 0)) {
+      const ghostBanner = state.drag
+        ? Object.assign({}, state.banners[state.drag.index], { x: ghost.x, z: ghost.z })
+        : { x: ghost.x, z: ghost.z, pattern: patternSelect.value, color: Number(colorSelect.value), facing: facingSelect.value };
+      const ghostCells = cellsFor(ghostBanner, cfg);
+      ctx.fillStyle = 'rgba(251, 191, 36, .08)';
+      for (const key of ghostCells) {
+        const [gx, gz] = key.split(',').map(Number);
+        ctx.fillRect(px(gx), pz(gz), cell, cell);
+      }
+      const ghostBoundary = boundaryOf(ghostCells);
+      ctx.fillStyle = 'rgba(251, 191, 36, .9)';
+      for (const [gx, gz] of ghostBoundary) {
+        const dot = Math.max(1, Math.round(cell * .16));
+        ctx.fillRect(Math.round(px(gx) + cell * .5), Math.round(pz(gz) + cell * .5), dot, dot);
+      }
+
       const gx = px(ghost.x);
       const gz = pz(ghost.z);
       ctx.strokeStyle = 'rgba(94, 234, 212, .85)';

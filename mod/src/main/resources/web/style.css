@@ -352,7 +352,7 @@ details[open].file-block > .file-summary { border-bottom-color: var(--line); }
 .pattern-distances { margin-top: 14px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-soft); }
 .pattern-distances-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
 .pattern-distances-head .ghost { margin-left: auto; }
-.pattern-distance-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px; }
+.pattern-distance-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(235px, 1fr)); gap: 6px; }
 .pattern-distance-row { display: flex; align-items: center; gap: 7px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
 .pattern-distance-row.override { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: var(--accent-soft); }
 .pattern-distance-name { flex: 1; min-width: 0; font-size: 12px; }
