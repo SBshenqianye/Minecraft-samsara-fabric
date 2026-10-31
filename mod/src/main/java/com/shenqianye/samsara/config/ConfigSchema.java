@@ -229,18 +229,21 @@ public final class ConfigSchema {
         entries.add(ConfigEntry.choice("mode", "dye", List.of("dye", "fixed"), "保护范围",
                 "dye = 每个染料颜色对应一个延伸距离；fixed = 所有颜色都使用 fixedDistance"));
         entries.add(ConfigEntry.integer("fixedDistance", 4, 1, 32, "保护范围",
-                "固定模式下的单方向延伸距离（区块）"));
+                "固定模式下的单方向延伸距离（区块）；仅 mode=fixed 时生效")
+                .when("mode=fixed"));
         entries.add(ConfigEntry.intList("colorDistances",
                 List.of(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16),
                 1, 32, "保护范围",
                 "染料颜色 0~15（白→黑）各自对应的单方向延伸距离（区块）；"
-                        + "Web 配置页按染料色块可视化编辑并实时预览保护形状"));
+                        + "Web 圈地范围页按染料色块可视化编辑并实时预览保护形状")
+                .when("mode=dye"));
         entries.add(ConfigEntry.integer("maxDistance", 16, 1, 32, "保护范围",
                 "所有模式下的单方向距离上限；超出会截断，用来限制最大圈地规模"));
         for (String[] pattern : CLAIM_PATTERN_LABELS) {
             entries.add(ConfigEntry.integer("patternDistances." + pattern[0], 0, 0, 32, "图案距离",
-                    pattern[1] + "（" + pattern[0] + "）：0 = 沿用染料/固定距离；"
-                            + "大于 0 时该图案固定使用这个距离（区块）"));
+                    pattern[1] + "（" + pattern[0] + "）：0 = 不覆盖，沿用染料/固定距离；"
+                            + "大于 0 = 所有使用该图案的旗帜固定用这个距离"
+                            + "（例如 border=8 时，全边框旗都按 8 格，不再看染料颜色）"));
         }
         return entries;
     }

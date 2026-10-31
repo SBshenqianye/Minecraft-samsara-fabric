@@ -614,6 +614,71 @@ body.locked .tabs, body.locked .tab-actions { opacity: .45; pointer-events: none
 }
 .back-to-top:hover { background: var(--accent-soft); }
 
+/* ---- 条件显示 / 新出现项高亮 ---- */
+.entry[hidden] { display: none !important; }
+.nav-item[hidden] { display: none !important; }
+@keyframes reveal-flash {
+  0% { box-shadow: 0 0 0 0 rgba(45, 212, 191, .55); background: color-mix(in srgb, var(--accent) 14%, var(--panel)); }
+  35% { box-shadow: 0 0 0 4px rgba(45, 212, 191, .22); background: color-mix(in srgb, var(--accent) 10%, var(--panel)); }
+  100% { box-shadow: 0 0 0 0 rgba(45, 212, 191, 0); background: transparent; }
+}
+.entry.reveal-flash { animation: reveal-flash 2.7s ease-out; }
+
+/* ---- 图案距离：原版旗帜图标 ---- */
+.pattern-distances-note {
+  margin: 0 0 9px; padding: 8px 10px; border: 1px dashed var(--line-strong);
+  border-radius: 8px; color: var(--fg-soft); font-size: 12px; line-height: 1.55;
+}
+.pattern-distance-grid { grid-template-columns: repeat(auto-fill, minmax(285px, 1fr)); }
+.pattern-distance-icon {
+  width: 28px; height: 28px; flex: 0 0 auto; image-rendering: pixelated;
+  border: 1px solid var(--line); border-radius: 6px; background: #0a1220;
+}
+.pattern-distance-row code { max-width: 92px; overflow: hidden; text-overflow: ellipsis; }
+.pattern-trial { padding: 3px 7px; font-size: 11px; }
+.claim-pattern-icon {
+  width: 32px; height: 32px; image-rendering: pixelated; border-radius: 6px;
+  border: 1px solid var(--line); background: #0a1220;
+}
+.claim-sim-flash { animation: claim-sim-flash 1.5s ease-out; }
+@keyframes claim-sim-flash {
+  0% { box-shadow: 0 0 0 0 rgba(251, 191, 36, .7); }
+  100% { box-shadow: 0 0 0 10px rgba(251, 191, 36, 0); }
+}
+
+/* ---- 地图 ---- */
+.map-panel .panel-head { margin-bottom: 10px; }
+.map-stats { margin-bottom: 10px; }
+.map-stat {
+  display: inline-flex; align-items: baseline; gap: 7px; padding: 6px 11px;
+  border: 1px solid var(--line); border-radius: 999px; background: var(--panel-soft);
+  color: var(--muted); font-size: 12px;
+}
+.map-stat strong { color: var(--fg); font-size: 12px; }
+.map-stage { position: relative; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: #0a1220; }
+.map-canvas { display: block; width: 100%; height: 560px; cursor: grab; touch-action: none; }
+.map-canvas:active { cursor: grabbing; }
+.map-tooltip {
+  position: absolute; z-index: 5; max-width: 230px; padding: 7px 9px;
+  border: 1px solid var(--line-strong); border-radius: 8px;
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  color: var(--fg); font-size: 11px; line-height: 1.45; white-space: pre-line;
+  pointer-events: none; box-shadow: var(--shadow-soft);
+}
+.map-zoom-label { min-width: 72px; color: var(--muted); font-family: var(--mono); font-size: 11px; text-align: center; }
+.map-zoom-button { min-width: 30px; padding: 6px 9px; }
+.map-footer { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 10px; }
+.map-legend { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; color: var(--muted); font-size: 11px; }
+.map-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.map-swatch { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+.map-swatch.claim { background: rgba(45, 212, 191, .45); border: 1px solid rgba(45, 212, 191, .9); }
+.map-swatch.banner { background: #f8fafc; border: 2px solid #2dd4bf; border-radius: 999px; }
+.map-selection { min-width: 240px; flex: 1; max-width: 430px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-soft); }
+.map-selection-title { font-size: 12px; font-weight: 700; margin-bottom: 6px; }
+.map-selection-list { display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 3px 8px; margin: 0 0 8px; font-size: 12px; }
+.map-selection-list dt { color: var(--muted); }
+.map-selection-list dd { margin: 0; overflow-wrap: anywhere; }
+
 /* ---- responsive ---- */
 @media (max-width: 1250px) {
   .output-grid { grid-template-columns: minmax(360px, 1fr) minmax(300px, .95fr); }

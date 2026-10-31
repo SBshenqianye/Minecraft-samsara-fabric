@@ -11,14 +11,14 @@ const state = {
   tab: 'config',
   navTargets: [],
   navScrollHandler: null,
-  scrollPositions: { config: 0, identity: 0, 'claim-range': 0, output: 0, permissions: 0 },
-  navScrollPositions: { config: 0, identity: 0, 'claim-range': 0, output: 0, permissions: 0 },
+  scrollPositions: { config: 0, identity: 0, 'claim-range': 0, output: 0, permissions: 0, map: 0 },
+  navScrollPositions: { config: 0, identity: 0, 'claim-range': 0, output: 0, permissions: 0, map: 0 },
   claimPreview: null,
 };
 
 const connectHooks = [];
-const panelIds = ['panel-identity', 'panel-config', 'panel-claim-range', 'panel-output', 'panel-permissions'];
-const tabNames = { 'panel-identity': 'identity', 'panel-config': 'config', 'panel-claim-range': 'claim-range', 'panel-output': 'output', 'panel-permissions': 'permissions' };
+const panelIds = ['panel-identity', 'panel-config', 'panel-claim-range', 'panel-output', 'panel-permissions', 'panel-map'];
+const tabNames = { 'panel-identity': 'identity', 'panel-config': 'config', 'panel-claim-range': 'claim-range', 'panel-output': 'output', 'panel-permissions': 'permissions', 'panel-map': 'map' };
 
 const $ = (id) => document.getElementById(id);
 
@@ -285,7 +285,55 @@ function buildFileBlock(file, matching, navTargets, plain) {
   }
 
   fileEl.append(body);
+  applyVisibility(fileEl, file);
+  body.addEventListener('input', () => applyVisibility(fileEl, file));
+  body.addEventListener('change', () => applyVisibility(fileEl, file));
   return { fileEl, navGroupChildren };
+}
+
+/**
+ * 通用条件显示：schema 里声明 visibleWhen="path=value" 的条目，
+ * 只有当前表单值匹配时才显示。首次从隐藏变为显示时高亮几秒。
+ */
+function applyVisibility(scope, file) {
+  for (const row of scope.querySelectorAll('.entry[data-visible-when]')) {
+    const condition = row.dataset.visibleWhen || '';
+    const split = condition.indexOf('=');
+    if (split <= 0) continue;
+    const depPath = condition.slice(0, split);
+    const expected = condition.slice(split + 1);
+    const dep = file.entries.find((item) => item.path === depPath);
+    if (!dep) continue;
+    const visible = String(currentValue(file.id, dep)) === expected;
+    const wasHidden = row.hidden;
+    row.hidden = !visible;
+    const navButton = document.querySelector(
+      '#global-nav .nav-item[data-target="' + cssEscape(row.id) + '"]');
+    if (navButton) navButton.hidden = !visible;
+    if (!visible) {
+      row.classList.remove('reveal-flash');
+      continue;
+    }
+    if (wasHidden) flashRow(row);
+  }
+}
+
+function flashRow(row) {
+  row.classList.remove('reveal-flash');
+  void row.offsetWidth;
+  row.classList.add('reveal-flash');
+  clearTimeout(Number(row.dataset.flashTimer) || 0);
+  row.dataset.flashTimer = String(setTimeout(() => {
+    row.classList.remove('reveal-flash');
+  }, 2800));
+}
+
+/** buildNav 之后再同步一次：目标行隐藏时，对应导航项也隐藏。 */
+function syncConditionalNav() {
+  for (const button of document.querySelectorAll('#global-nav .nav-item[data-target]')) {
+    const target = document.getElementById(button.dataset.target);
+    if (target) button.hidden = target.hidden;
+  }
 }
 
 function render() {
@@ -319,6 +367,7 @@ function render() {
   setTabCount('config', totalEntries());
   if (state.tab === 'config') {
     buildNav('配置导航', navItems, navTargets);
+    syncConditionalNav();
   }
 }
 
@@ -338,16 +387,22 @@ function renderClaimRange() {
     return;
   }
   const navTargets = [];
+  let previewApi = null;
   const patternEntries = file.entries.filter((entry) => entry.path.startsWith('patternDistances.'));
   const mainEntries = file.entries.filter((entry) => !entry.path.startsWith('patternDistances.'));
   const { fileEl, navGroupChildren } = buildFileBlock(file, mainEntries, navTargets, true);
   const body = fileEl.querySelector('.file-body') || fileEl;
-  const patternEditor = patternDistancesEditor(file, patternEntries);
+  const patternEditor = patternDistancesEditor(file, patternEntries, (patternId) => {
+    if (!previewApi) return;
+    previewApi.selectPattern(patternId);
+    scrollToTarget('claim-range-preview');
+  });
   body.append(patternEditor);
   navTargets.push({ id: patternEditor.id, el: patternEditor });
   const preview = claimRangePreview(file);
   preview.id = 'claim-range-preview';
   body.append(preview);
+  previewApi = preview.claimPreview;
   container.append(fileEl);
   setTabCount('claim-range', file.entries.length);
   if (state.tab === 'claim-range') {
@@ -358,6 +413,7 @@ function renderClaimRange() {
       { label: '图案距离', target: patternEditor.id },
       { label: '保护范围调试', target: preview.id },
     ], navTargets);
+    syncConditionalNav();
   }
 }
 
@@ -373,6 +429,7 @@ function renderEntry(file, entry) {
   row.className = 'entry' + (entry.restart ? ' restart' : '')
       + (entry.type === 'int-list' ? ' entry-wide' : '');
   row.id = 'cfg-entry-' + encodeURIComponent(file.id + '|' + entry.path);
+  if (entry.visibleWhen) row.dataset.visibleWhen = entry.visibleWhen;
 
   const main = document.createElement('div');
   const keyLine = document.createElement('div');
@@ -617,7 +674,7 @@ const CLAIM_FACINGS = [
   { id: 'west', label: '西', offset: 6 },
 ];
 
-function patternDistancesEditor(file, entries) {
+function patternDistancesEditor(file, entries, onTrial) {
   const wrap = document.createElement('div');
   wrap.className = 'pattern-distances';
   wrap.id = 'claim-pattern-distances';
@@ -627,12 +684,18 @@ function patternDistancesEditor(file, entries) {
   title.textContent = '图案距离';
   const hint = document.createElement('span');
   hint.className = 'muted small';
-  hint.textContent = '0 = 沿用染料/固定距离；大于 0 时该图案固定使用这个距离。';
+  hint.textContent = '0 = 不覆盖，沿用染料/固定距离；大于 0 = 该图案的旗帜固定使用这个距离。';
   const reset = document.createElement('button');
   reset.type = 'button';
   reset.className = 'ghost';
   reset.textContent = '全部清零';
   head.append(title, hint, reset);
+
+  const note = document.createElement('div');
+  note.className = 'pattern-distances-note';
+  note.textContent = '例：全边框（border）设为 8 后，所有全边框旗都向八个方向延伸 8 格，不再看染料颜色；'
+      + '其他图案仍按染料或固定距离计算。图案颜色只影响外观，距离由图案 id 的覆盖值决定。'
+      + '点“试用”可把该图案放到下方调试画布。';
 
   const grid = document.createElement('div');
   grid.className = 'pattern-distance-grid';
@@ -641,6 +704,13 @@ function patternDistancesEditor(file, entries) {
     const id = entry.path.split('.').pop();
     const row = document.createElement('label');
     row.className = 'pattern-distance-row';
+    const icon = window.SamsaraBanners
+      ? window.SamsaraBanners.icon([{ id: id, color: 15 }], 0, 40)
+      : null;
+    if (icon) {
+      icon.className = 'pattern-distance-icon';
+      icon.title = '原版 ' + id + ' 旗帜图案';
+    }
     const label = document.createElement('span');
     label.className = 'pattern-distance-name';
     label.textContent = CLAIM_PATTERNS[id]?.label || id;
@@ -660,7 +730,20 @@ function patternDistancesEditor(file, entries) {
       markEdited(file.id, entry, value);
     });
     row.classList.toggle('override', Number(input.value) > 0);
-    row.append(label, code, input);
+    row.append(...(icon ? [icon] : []), label, code, input);
+    if (onTrial) {
+      const trial = document.createElement('button');
+      trial.type = 'button';
+      trial.className = 'ghost pattern-trial';
+      trial.textContent = '试用';
+      trial.title = '在下方调试画布中使用这个图案';
+      trial.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onTrial(id);
+      });
+      row.append(trial);
+    }
     grid.append(row);
     inputs.push(input);
   }
@@ -672,7 +755,7 @@ function patternDistancesEditor(file, entries) {
     });
   });
 
-  wrap.append(head, grid);
+  wrap.append(head, note, grid);
   return wrap;
 }
 
@@ -788,7 +871,12 @@ function claimRangePreview(file) {
     option.textContent = '朝' + facing.label;
     facingSelect.append(option);
   }
-  controls.append(patternSelect, colorSelect, facingSelect);
+  const patternIcon = document.createElement('canvas');
+  patternIcon.className = 'claim-pattern-icon';
+  patternIcon.width = 40;
+  patternIcon.height = 40;
+  patternIcon.title = '当前图案与染料颜色';
+  controls.append(patternIcon, patternSelect, colorSelect, facingSelect);
   head.append(titles, controls);
 
   const toolbar = document.createElement('div');
@@ -871,6 +959,27 @@ function claimRangePreview(file) {
   canvas.style.maxWidth = size + 'px';
   const ctx = canvas.getContext('2d');
   ctx.imageSmoothingEnabled = false;
+
+  const iconCache = new Map();
+  const bannerIcon = (pattern, color) => {
+    const key = pattern + '|' + color;
+    if (iconCache.has(key)) return iconCache.get(key);
+    const base = DYE_PALETTE[color] || DYE_PALETTE[0];
+    const patternColor = Number(color) === 15 ? 0 : 15;
+    const iconCanvas = window.SamsaraBanners
+      ? window.SamsaraBanners.icon([{ id: pattern, color: patternColor }], base.hex, 64)
+      : null;
+    iconCache.set(key, iconCanvas);
+    return iconCanvas;
+  };
+
+  const refreshPatternIcon = () => {
+    if (!window.SamsaraBanners) return;
+    const color = Number(colorSelect.value) || 0;
+    window.SamsaraBanners.paint(patternIcon,
+      [{ id: patternSelect.value, color: color === 15 ? 0 : 15 }],
+      (DYE_PALETTE[color] || DYE_PALETTE[0]).hex);
+  };
 
   const distanceOf = (banner, cfg) => {
     const override = cfg.patternDistances[banner.pattern] || 0;
@@ -1063,27 +1172,23 @@ function claimRangePreview(file) {
     state.banners.forEach((banner, index) => {
       const cx = px(banner.x) + cell / 2;
       const cz = pz(banner.z) + cell / 2;
-      const dye = DYE_PALETTE[banner.color] || { hex: '#2dd4bf' };
       if (index === state.selected) {
         ctx.strokeStyle = 'rgba(251, 191, 36, .95)';
         ctx.lineWidth = 2;
         ctx.strokeRect(px(banner.x) + 1.5, pz(banner.z) + 1.5, cell - 3, cell - 3);
       }
-      ctx.fillStyle = '#e2e8f0';
-      ctx.fillRect(Math.round(cx) - 1, Math.round(cz - cell * .32), 2, Math.round(cell * .64));
-      ctx.fillStyle = dye.hex;
-      ctx.beginPath();
-      ctx.moveTo(Math.round(cx) + 1, Math.round(cz - cell * .32));
-      ctx.lineTo(Math.round(cx + cell * .34), Math.round(cz - cell * .12));
-      ctx.lineTo(Math.round(cx) + 1, Math.round(cz + cell * .04));
-      ctx.closePath();
-      ctx.fill();
+      const icon = bannerIcon(banner.pattern, banner.color);
+      const iconSize = Math.max(12, Math.min(cell * .9, 42));
+      if (icon) {
+        ctx.drawImage(icon, Math.round(cx - iconSize / 2), Math.round(cz - iconSize / 2),
+            Math.round(iconSize), Math.round(iconSize));
+      }
       const facing = CLAIM_DIRECTIONS[(CLAIM_FACINGS.find((f) => f.id === banner.facing)?.offset || 0)];
       ctx.strokeStyle = 'rgba(226, 232, 240, .85)';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.moveTo(cx, cz + cell * .28);
-      ctx.lineTo(cx + facing.dx * cell * .55, cz + cell * .28 + facing.dz * cell * .55);
+      ctx.moveTo(cx, cz + cell * .30);
+      ctx.lineTo(cx + facing.dx * cell * .55, cz + cell * .30 + facing.dz * cell * .55);
       ctx.stroke();
     });
 
@@ -1139,10 +1244,12 @@ function claimRangePreview(file) {
   patternSelect.addEventListener('change', () => {
     const banner = selectedBanner();
     if (banner) banner.pattern = patternSelect.value;
+    refreshPatternIcon();
   });
   colorSelect.addEventListener('change', () => {
     const banner = selectedBanner();
     if (banner) banner.color = Number(colorSelect.value);
+    refreshPatternIcon();
   });
   facingSelect.addEventListener('change', () => {
     const banner = selectedBanner();
@@ -1184,6 +1291,7 @@ function claimRangePreview(file) {
       facing: facingSelect.value,
     });
     state.selected = state.banners.length - 1;
+    syncSelectors();
   });
 
   canvas.addEventListener('pointermove', (event) => {
@@ -1214,6 +1322,7 @@ function claimRangePreview(file) {
       state.selected = state.banners.length - 1;
       state.drag = { index: state.selected, cell: { x: cell.x, z: cell.z } };
     }
+    syncSelectors();
     canvas.setPointerCapture(event.pointerId);
     canvas.focus();
   });
@@ -1259,6 +1368,7 @@ function claimRangePreview(file) {
       colorSelect.value = String(banner.color);
       facingSelect.value = banner.facing;
     }
+    refreshPatternIcon();
   };
 
   syncSelectors();
@@ -1268,6 +1378,29 @@ function claimRangePreview(file) {
   state.claimPreview = {
     redraw: () => {
       updateSummary();
+      refreshPatternIcon();
+    },
+    selectPattern: (id) => {
+      if (!CLAIM_PATTERNS[id]) return;
+      patternSelect.value = id;
+      if (!state.banners.length) {
+        state.banners.push({
+          x: 0,
+          z: 0,
+          pattern: id,
+          color: Number(colorSelect.value),
+          facing: facingSelect.value,
+        });
+        state.selected = 0;
+      } else {
+        const banner = selectedBanner();
+        if (banner) banner.pattern = id;
+      }
+      refreshPatternIcon();
+      canvas.classList.remove('claim-sim-flash');
+      void canvas.offsetWidth;
+      canvas.classList.add('claim-sim-flash');
+      setTimeout(() => canvas.classList.remove('claim-sim-flash'), 1600);
     },
   };
   return section;
@@ -1578,6 +1711,8 @@ function setActiveTab(name) {
     render();
   } else if (name === 'claim-range') {
     renderClaimRange();
+  } else if (name === 'map') {
+    window.SamsaraMap?.activate();
   } else if (name === 'identity') {
     window.SamsaraIdentity?.activate();
   } else if (name === 'output') {
@@ -1607,6 +1742,11 @@ const TAB_ACTIONS = {
     hint: '保存会写入 claim-range.yml，并立即重算已有圈地',
     save: '保存并重算',
   },
+  map: {
+    title: '地图',
+    hint: '只读扫描存档中的地形与圈地；切世界或改圈地后点“重新读取”',
+    save: null,
+  },
   identity: {
     title: '身份组',
     hint: '保存会写入 identity.yml 并热重载',
@@ -1632,12 +1772,15 @@ function updateTabActions(name) {
   const def = $('action-default');
   if (title) title.textContent = config.title;
   if (hint) hint.textContent = config.hint;
-  if (save) save.textContent = config.save;
+  if (save) {
+    save.textContent = config.save || '保存并重载';
+    save.hidden = !config.save;
+  }
   if (def) def.hidden = name !== 'output';
 }
 
 function setTabCount(panel, count) {
-  const map = { config: 'config-count', identity: 'identity-count', 'claim-range': 'claim-range-count', output: 'output-count', permissions: 'perm-count' };
+  const map = { config: 'config-count', identity: 'identity-count', 'claim-range': 'claim-range-count', output: 'output-count', permissions: 'perm-count', map: 'map-count' };
   const el = $(map[panel]);
   if (el) el.textContent = String(count == null ? 0 : count);
 }
@@ -1651,12 +1794,14 @@ function refreshCounts() {
   window.SamsaraIdentity?.refreshCount?.();
   window.SamsaraOutput?.refreshCount?.();
   window.SamsaraPermissions?.refreshCount?.();
+  window.SamsaraMap?.refreshCount?.();
 }
 
 async function saveActive() {
   if (state.tab === 'identity') return window.SamsaraIdentity?.save?.();
   if (state.tab === 'output') return window.SamsaraOutput?.save?.();
   if (state.tab === 'permissions') return window.SamsaraPermissions?.saveOwners?.();
+  if (state.tab === 'map') return window.SamsaraMap?.reload?.();
   if (state.tab === 'claim-range') return saveConfig('claim-range');
   return saveConfig();
 }
@@ -1665,6 +1810,7 @@ async function reloadActive() {
   if (state.tab === 'identity') return window.SamsaraIdentity?.reload?.();
   if (state.tab === 'output') return window.SamsaraOutput?.reload?.();
   if (state.tab === 'permissions') return window.SamsaraPermissions?.reload?.();
+  if (state.tab === 'map') return window.SamsaraMap?.reload?.();
   return reloadConfig();
 }
 
@@ -1732,6 +1878,7 @@ window.SamsaraUI = {
   onConnect,
   runConnectHooks,
   getToken: () => state.token,
+  authHeaders,
   setConnection,
   setActiveTab,
   isActiveTab: (name) => state.tab === name,
@@ -1745,7 +1892,7 @@ window.SamsaraUI = {
 };
 
 const initialTab = (location.hash || '').replace('#', '');
-if (['config', 'claim-range', 'identity', 'output', 'permissions'].includes(initialTab)) {
+if (['config', 'claim-range', 'identity', 'output', 'permissions', 'map'].includes(initialTab)) {
   setActiveTab(initialTab);
 } else {
   updateTabActions('config');

@@ -1,11 +1,13 @@
 package com.shenqianye.samsara.claim;
 
+import com.shenqianye.samsara.config.ConfigSchema;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 /** 圈地保护范围：染料表、固定模式与上限截断。 */
 class ClaimRangeConfigTest {
@@ -68,5 +70,17 @@ class ClaimRangeConfigTest {
     void shortTableFallsBackToColorPlusOne() {
         assertEquals(8, ClaimRangeConfig.resolveDistance(false, 4,
                 List.of(1, 2, 3), 16, 7));
+    }
+
+    @Test
+    void webOnlyShowsModeSpecificDistanceEditor() {
+        assertEquals("mode=fixed",
+                ConfigSchema.entry(ConfigSchema.CLAIM_RANGE, "fixedDistance").visibleWhen());
+        assertEquals("mode=dye",
+                ConfigSchema.entry(ConfigSchema.CLAIM_RANGE, "colorDistances").visibleWhen());
+        assertNull(ConfigSchema.entry(ConfigSchema.CLAIM_RANGE, "maxDistance").visibleWhen());
+        assertEquals("mode=fixed",
+                ConfigSchema.entry(ConfigSchema.CLAIM_RANGE, "fixedDistance").when("mode=fixed")
+                        .visibleWhen());
     }
 }

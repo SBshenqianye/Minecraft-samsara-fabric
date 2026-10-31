@@ -15,7 +15,7 @@
       </div>
       <div class="brand-text">
         <h1>samsara</h1>
-        <p>服务器配置控制台 <span id="app-version" class="version-pill">v0.22.1</span></p>
+        <p>服务器配置控制台 <span id="app-version" class="version-pill">v0.22.2</span></p>
       </div>
     </div>
 
@@ -32,6 +32,9 @@
       </button>
       <button class="tab" data-panel="panel-claim-range">
         圈地范围 <span class="tab-count" id="claim-range-count">0</span>
+      </button>
+      <button class="tab" data-panel="panel-map">
+        地图 <span class="tab-count" id="map-count">0</span>
       </button>
       <button class="tab" data-panel="panel-output">
         输出格式 <span class="tab-count" id="output-count">0</span>
@@ -123,6 +126,47 @@
           </div>
           <div id="claim-range-message" class="message" role="status"></div>
           <div id="claim-range-files" class="config-files"></div>
+        </section>
+      </div>
+
+      <div id="panel-map" class="panel-stack" hidden>
+        <section class="panel map-panel">
+          <div class="panel-head">
+            <div>
+              <h2>地图</h2>
+              <p class="panel-sub">扫描当前存档 region 文件生成地表底图，并叠加圈地保护区块与旗帜。只读展示，不加载区块、不写世界数据。</p>
+              <p class="panel-sub">地形颜色取自原版方块地图色，明暗来自南北/东西一格高度差；下界默认显示顶层基岩，圈地层仍然准确。</p>
+            </div>
+            <div class="panel-tools">
+              <label class="inline-field">
+                <span>维度</span>
+                <select id="map-dimension"></select>
+              </label>
+              <label class="check-line">
+                <input id="map-show-claims" type="checkbox" checked>
+                <span>显示圈地</span>
+              </label>
+              <button id="map-fit" class="ghost" type="button">定位全部圈地</button>
+              <button id="map-zoom-out" class="ghost map-zoom-button" type="button" title="缩小">−</button>
+              <span id="map-zoom-label" class="map-zoom-label">4 格/像素</span>
+              <button id="map-zoom-in" class="ghost map-zoom-button" type="button" title="放大">＋</button>
+              <button id="map-reload" class="ghost" type="button">重新读取</button>
+            </div>
+          </div>
+          <div id="map-message" class="message" role="status"></div>
+          <div id="map-stats" class="stat-row map-stats"></div>
+          <div id="map-stage-anchor" class="map-stage">
+            <canvas id="map-canvas" class="map-canvas" aria-label="地形与圈地地图"></canvas>
+            <div id="map-tooltip" class="map-tooltip" hidden></div>
+          </div>
+          <div class="map-footer">
+            <div class="map-legend">
+              <span><i class="map-swatch claim"></i>半透明青色 = 保护区块</span>
+              <span><i class="map-swatch banner"></i>圆点 = 旗帜（颜色取图案色）</span>
+              <span>拖动平移 · 滚轮缩放 · 点击旗帜看详情</span>
+            </div>
+            <div id="map-selection" class="map-selection"></div>
+          </div>
         </section>
       </div>
 
@@ -369,7 +413,9 @@
 
   <script src="/structured.js"></script>
   <script src="/particles.js"></script>
+  <script src="/banners.js"></script>
   <script src="/app.js"></script>
+  <script src="/map.js"></script>
   <script src="/output.js"></script>
   <script src="/identity.js"></script>
   <script src="/permissions.js"></script>
