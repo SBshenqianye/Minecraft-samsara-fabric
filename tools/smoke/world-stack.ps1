@@ -6,8 +6,8 @@
 .DESCRIPTION
   用真实 RCON + 真实停服/重启验证玩家会遇到的主流程：
     1. 世界栈 list/info 可读
-    2. new-world 周目创建 → 二次确认 → 停服
-    3. 重启后新世界生成、入栈、周目 ACTIVE、种子正确
+    2. reset new [种子] → 二次确认 → 停服
+    3. 重启后新世界生成、自动入栈、出生点历史第 1 条、种子正确
     4. world leave 回到旧世界，重启后当前世界正确
   默认会清理测试世界；加 -KeepWorld 保留现场。
 
@@ -154,28 +154,25 @@ if ($currentMatch.Success -and $topMatch.Success -and $currentMatch.Groups[1].Va
 }
 
 # 清理阻塞状态（没有可忽略）
-Invoke-RconOptional "samsara season end" | Out-Null
-Invoke-RconOptional "samsara season skip" | Out-Null
+Invoke-RconOptional "samsara debug rewind abort" | Out-Null
 
-# ---- 2. 创建 new-world 并二次确认 ----
-Info "2/6 创建 new-world 周目"
-Assert-Contains (Invoke-Rcon "samsara season create $SeasonName new-world $Seed") "已创建周目" "season create"
-$first = Invoke-Rcon "samsara season start"
-Assert-Contains $first "危险操作确认" "第一次 start 只确认"
-$second = Invoke-Rcon "samsara season start"
-Assert-Contains $second "已安排 new-world 切换" "第二次 start 执行"
+# ---- 2. 入栈生成新世界（reset new）并二次确认 ----
+Info "2/6 创建新世界（reset new）"
+$first = Invoke-Rcon "samsara reset new $Seed"
+Assert-Contains $first "危险操作确认" "第一次 reset new 只确认"
+$second = Invoke-Rcon "samsara reset new $Seed"
+Assert-Contains $second "已安排新世界切换" "第二次 reset new 执行"
 
 # ---- 3. 停服 + 重启，验证新世界 ----
 Info "3/6 等待停服并重启"
-if (-not (Wait-Rcon $false 60)) { Fail "new-world 未触发停服" }
+if (-not (Wait-Rcon $false 60)) { Fail "reset new 未触发停服" }
 Start-TestServer | Out-Null
 Info "4/6 验证新世界"
 $list2 = Invoke-Rcon "samsara world list"
 Assert-Contains $list2 "当前" "新世界已入栈"
 Assert-Contains $list2 "world_s" "新世界目录名在栈中"
-$status = Invoke-Rcon "samsara season status"
-Assert-Contains $status $SeasonName "新周目在 status 中"
-Assert-Contains $status "new-world" "新周目模式"
+$spawn = Invoke-Rcon "samsara spawn"
+Assert-Contains $spawn "历史 1 条" "新世界出生点历史第 1 条"
 $info2 = Invoke-Rcon "samsara world info"
 Assert-Contains $info2 "实际加载" "新世界 info"
 Assert-Contains $info2 "$Seed" "新世界种子"

@@ -701,6 +701,16 @@ public class RewindEngine {
         return data != null;
     }
 
+    /** 倒流是否已到时长终点、进入传送/删除阶段（重启恢复用）。 */
+    public synchronized boolean teleportPhaseDone() {
+        return data != null && data.teleportPhaseDone;
+    }
+
+    /** 最近一次倒流扫描到的受保护区块数（重置广播用）。 */
+    public synchronized int lastProtectedCount() {
+        return data == null ? 0 : data.protectedCount;
+    }
+
     /** 当前进行中倒流的周目 id（无则 -1）；供 fake 注入选择恢复源 */
     public synchronized int currentSeasonId() {
         return data != null ? data.seasonId : -1;

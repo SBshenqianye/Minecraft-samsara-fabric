@@ -11,6 +11,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Relative;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.storage.LevelData;
 
@@ -51,9 +52,13 @@ public class SeasonManager {
     private static SeasonManager instance;
     private final Path file;
     private final Path pendingFile;
+    private final Path resetPendingFile;
     private SeasonData data;
     /** 倒流完成后离线玩家的待传送（uuid → 分组出生点），上线即传送；持久化以免重启丢失 */
     private final Map<UUID, int[]> pendingTeleports = new HashMap<>();
+    /** 同世界重置进行中（倒流完成后还要选排斥点/传送/写历史）；持久化以支持重启恢复 */
+    private ResetPending resetPending;
+    private boolean completingReset;
 
     private SeasonManager() {
         Path dir = com.shenqianye.samsara.storage.StoragePaths.get().worldDataRoot();
@@ -64,8 +69,10 @@ public class SeasonManager {
         }
         file = dir.resolve("season.json");
         pendingFile = dir.resolve("pending-teleports.json");
+        resetPendingFile = dir.resolve("reset-pending.json");
         load();
         loadPendingTeleports();
+        loadResetPending();
     }
 
     public static synchronized SeasonManager getInstance() {
@@ -162,6 +169,46 @@ public class SeasonManager {
             }
         } catch (Exception e) {
             com.shenqianye.samsara.Samsara.LOGGER.warn("[周目管理 samsara] pending-teleports 解析失败: {}", e.getMessage());
+        }
+    }
+
+    // ---- 同世界重置待完成状态（重启恢复） ----
+
+    /** reset-pending.json：倒流阶段开始后写入，重新选点/传送/写历史完成后删除。 */
+    public static class ResetPending {
+        public int schemaVersion = 1;
+        public int seasonId;
+        public int oldX;
+        public int oldZ;
+        public long startedAt;
+        public String phase = "rewind";
+        public int protectedCount;
+    }
+
+    private void saveResetPending() {
+        try {
+            if (resetPending == null) {
+                Files.deleteIfExists(resetPendingFile);
+                return;
+            }
+            Files.writeString(resetPendingFile, GSON.toJson(resetPending), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            com.shenqianye.samsara.Samsara.LOGGER.error(
+                    "[周目管理 samsara] reset-pending 写入失败: {}", e.getMessage());
+        }
+    }
+
+    private void loadResetPending() {
+        resetPending = null;
+        if (!Files.exists(resetPendingFile)) {
+            return;
+        }
+        try {
+            resetPending = GSON.fromJson(
+                    Files.readString(resetPendingFile, StandardCharsets.UTF_8), ResetPending.class);
+        } catch (Exception e) {
+            com.shenqianye.samsara.Samsara.LOGGER.warn(
+                    "[周目管理 samsara] reset-pending 解析失败: {}", e.getMessage());
         }
     }
 
@@ -285,6 +332,308 @@ public class SeasonManager {
                 + s.worldName + " · 种子 " + s.seed + " · 已传送 " + t + " 名在线玩家");
         return setup + "\n已传送在线玩家 " + t + " 名（离线玩家上线后自动传送）";
     }
+
+    // ---- 新模型：同世界重置 / 入栈生成新世界 / 出生点历史 ----
+
+    /**
+     * {@code /samsara reset same}：沿用现有「倒流 + 删除未保护区块」，
+     * 结束后用排斥算法选新出生点、全员传送、设置世界重生点、追加出生点历史。
+     */
+    public synchronized String resetSame(MinecraftServer server) {
+        if (RewindEngine.getInstance().running()) {
+            return "已有进行中的时间倒流，请先 /samsara debug rewind abort 再操作";
+        }
+        if (resetPending != null) {
+            return "已有同世界重置待完成（周目 #" + resetPending.seasonId + "），请等待倒流结束或重启恢复";
+        }
+        ServerLevel overworld = server.getLevel(Level.OVERWORLD);
+        if (overworld == null) {
+            return "主世界不可用";
+        }
+        WorldStackManager stack = WorldStackManager.getInstance();
+        stack.refresh(server, null);
+        SpawnHistory history = stack.ensureSpawnHistory(server,
+                WorldStackManager.currentWorldName(server), true);
+        int oldX = history.last() == null ? overworld.getRespawnData().pos().getX() : history.last().x;
+        int oldZ = history.last() == null ? overworld.getRespawnData().pos().getZ() : history.last().z;
+
+        Season s = new Season();
+        s.id = stack.nextSeasonId();
+        s.name = "第 " + (history.size() + 1) + " 轮";
+        s.mode = "same-world";
+        s.worldName = WorldStackManager.currentWorldName(server);
+        s.state = Season.State.PENDING;
+        s.note = "reset same（排斥点重置）";
+        s.spawnCenter.x = oldX;
+        s.spawnCenter.z = oldZ;
+        data.seasons.add(s);
+        save();
+
+        resetPending = new ResetPending();
+        resetPending.seasonId = s.id;
+        resetPending.oldX = oldX;
+        resetPending.oldZ = oldZ;
+        resetPending.startedAt = System.currentTimeMillis();
+        resetPending.phase = "rewind";
+        saveResetPending();
+
+        long duration = Math.max(1L, settings().rewindDurationMs);
+        String result = RewindEngine.getInstance().start(server, s.id, duration,
+                () -> completeResetSame(server, s.id, "倒流完成"));
+        if (result.equals(RewindEngine.NO_REWINDABLE_MSG)) {
+            String done = completeResetSame(server, s.id, "世界无可倒流区块，跳过倒流");
+            return "没有需要倒流的区块，已直接执行同世界重置。\n" + done;
+        }
+        if (result.startsWith("已有进行中的倒流")) {
+            resetPending = null;
+            saveResetPending();
+            s.state = Season.State.SKIPPED;
+            s.note = "reset same 未启动：" + result;
+            save();
+            return result;
+        }
+        if (!result.startsWith("倒流已启动")) {
+            resetPending = null;
+            saveResetPending();
+            s.state = Season.State.SKIPPED;
+            s.note = "reset same 未启动：" + result;
+            save();
+            return result;
+        }
+        return "已开始同世界重置（周目 #" + s.id + "）：\n" + result
+                + "\n倒流结束并删除未保护区块后，会用排斥算法选新出生点、设置重生点并全员传送。";
+    }
+
+    /**
+     * 完成同世界重置：选排斥点 → 设置世界重生点 → 分组传送 → 追加出生点历史 → 广播。
+     * 可重复调用（完成标记/文件会清空）；重启后由 {@link #tick(MinecraftServer)} 恢复。
+     */
+    public synchronized String completeResetSame(MinecraftServer server, int seasonId, String reason) {
+        if (completingReset) {
+            return "同世界重置正在完成中";
+        }
+        ResetPending pending = resetPending;
+        if (pending == null || pending.seasonId != seasonId) {
+            return "没有待完成的同世界重置";
+        }
+        ServerLevel overworld = server.getLevel(Level.OVERWORLD);
+        if (overworld == null) {
+            return "主世界不可用，无法完成同世界重置";
+        }
+        completingReset = true;
+        try {
+            WorldStackManager stack = WorldStackManager.getInstance();
+            String worldName = WorldStackManager.currentWorldName(server);
+            SpawnHistory history = stack.ensureSpawnHistory(server, worldName, true);
+            List<int[]> centers = history.centers();
+            int refX = history.last() == null ? pending.oldX : history.last().x;
+            int refZ = history.last() == null ? pending.oldZ : history.last().z;
+            int minSep = SpawnCenterCalculator.effectiveSeparation(
+                    settings().newCenterMinDistance, history.size());
+            SpawnCenterCalculator.CenterResult center = SpawnCenterCalculator.next(
+                    refX, refZ, centers, minSep, settings(), new Random(),
+                    (x, z, minDist) -> isSafeSpawn(overworld, x, z), 24);
+
+            int y = findSafeSurfaceY(overworld, center.x(), center.z());
+            if (!center.validated()) {
+                y = prepareLandingPad(overworld, center.x(), center.z());
+            }
+            // 世界重生点（死亡后无床的默认位置）
+            setWorldSpawn(overworld, center.x(), y, center.z());
+
+            Season s = findById(seasonId);
+            if (s == null) {
+                s = new Season();
+                s.id = seasonId;
+                data.seasons.add(s);
+            }
+            // 旧 ACTIVE 收尾，新轮次置 ACTIVE（轨迹/倒流仍按季节点分目录）
+            for (Season old : data.seasons) {
+                if (old != s && old.state == Season.State.ACTIVE) {
+                    old.state = Season.State.ENDED;
+                    old.endTime = Instant.now().toEpochMilli();
+                }
+            }
+            s.name = "第 " + (history.size() + 1) + " 轮";
+            s.mode = "same-world";
+            s.worldName = worldName;
+            s.spawnCenter.x = center.x();
+            s.spawnCenter.z = center.z();
+            s.spawnCenter.radius = settings().spawnRadius;
+            s.startTime = Instant.now().toEpochMilli();
+            s.endTime = null;
+            s.state = Season.State.ACTIVE;
+            s.note = reason + " · 距最近历史出生点 " + center.minDist() + " 格";
+            buildGroups(server, s, center.x(), center.z());
+            data.currentSeasonId = s.id;
+            save();
+
+            int teleported = teleportSeasonPlayers(server, s);
+            history.append(center.x(), center.z(), "same-world-reset", System.currentTimeMillis());
+            history.save(WorldStackManager.worldDir(server, worldName));
+
+            resetPending = null;
+            saveResetPending();
+            int protectedCount = RewindEngine.getInstance().lastProtectedCount();
+            String msg = "🎉 同世界重置完成 · " + reason
+                    + "\n· 旧出生点 (" + pending.oldX + ", " + pending.oldZ + ")"
+                    + "\n· 新出生点 (" + center.x() + ", " + center.z() + ") · 距最近历史 "
+                    + center.minDist() + " 格 · 第 " + history.size() + " 轮"
+                    + "\n· 保护区块 " + protectedCount + " 个未动 · 已传送 " + teleported + " 名在线玩家"
+                    + (pendingTeleports.isEmpty() ? "" : " · " + pendingTeleports.size()
+                    + " 名离线玩家上线后自动传送");
+            broadcast(server, msg);
+            return msg;
+        } finally {
+            completingReset = false;
+        }
+    }
+
+    /**
+     * 每个 tick 的重置恢复：
+     * <ul>
+     *   <li>倒流仍在跑 → 等；</li>
+     *   <li>倒流已到传送阶段 → 补做选点/传送/写历史；</li>
+     *   <li>倒流已不存在且超过 10 秒 → 视为已中止/已完成，清掉待完成状态。</li>
+     * </ul>
+     */
+    public synchronized void tick(MinecraftServer server) {
+        if (resetPending == null || completingReset) {
+            return;
+        }
+        RewindEngine rewind = RewindEngine.getInstance();
+        if (rewind.running()) {
+            if (rewind.teleportPhaseDone()) {
+                completeResetSame(server, resetPending.seasonId, "倒流完成（重启恢复）");
+            }
+            return;
+        }
+        if (System.currentTimeMillis() - resetPending.startedAt > 10_000L) {
+            com.shenqianye.samsara.Samsara.LOGGER.warn(
+                    "[周目管理 samsara] 同世界重置未完成且倒流已不存在，清除待完成状态（周目 #{}）",
+                    resetPending.seasonId);
+            resetPending = null;
+            saveResetPending();
+        }
+    }
+
+    /** {@code /samsara reset new [种子]}：仅栈顶；安排重启后生成独立世界并自动入栈。 */
+    public synchronized String resetNew(MinecraftServer server, Long seed) {
+        WorldStackManager stack = WorldStackManager.getInstance();
+        stack.refresh(server, null);
+        int seasonId = stack.nextSeasonId();
+        String name = "世界 " + stack.newWorldName(server);
+        return stack.resetNew(server, seed, seasonId, name);
+    }
+
+    /** 当前世界出生点历史文本。 */
+    public String spawnText(MinecraftServer server, boolean history) {
+        SpawnHistory h = WorldStackManager.getInstance().currentSpawnHistory(server);
+        return history ? h.historyText()
+                : "世界 " + WorldStackManager.currentWorldName(server) + " · " + h.summaryText();
+    }
+
+    /** 纯地形/保护区校验：海洋/岩浆/陡坡/保护区内部都不适合作为新出生点。 */
+    private boolean isSafeSpawn(ServerLevel level, int x, int z) {
+        try {
+            level.getChunk(x >> 4, z >> 4); // 强制生成/加载目标区块
+        } catch (Exception e) {
+            return false;
+        }
+        if (!level.getWorldBorder().isWithinBounds(new BlockPos(x, level.dimensionType().minY() + 1, z))) {
+            return false;
+        }
+        int y = findSafeSurfaceY(level, x, z);
+        int minY = level.dimensionType().minY();
+        int maxY = minY + level.dimensionType().height();
+        if (y <= minY + 1 || y >= maxY - 1) {
+            return false;
+        }
+        BlockState ground = level.getBlockState(new BlockPos(x, y - 1, z));
+        BlockState feet = level.getBlockState(new BlockPos(x, y, z));
+        BlockState head = level.getBlockState(new BlockPos(x, y + 1, z));
+        if (!ground.isSolid() || !feet.getFluidState().isEmpty() || !head.getFluidState().isEmpty()) {
+            return false;
+        }
+        if (!feet.isAir() && !feet.canBeReplaced()) {
+            return false;
+        }
+        // 陡坡：四向 8 格内高差过大
+        int h0 = y;
+        int min = h0;
+        int max = h0;
+        int[][] offsets = {{8, 0}, {-8, 0}, {0, 8}, {0, -8}};
+        for (int[] o : offsets) {
+            int h = findSafeSurfaceY(level, x + o[0], z + o[1]);
+            min = Math.min(min, h);
+            max = Math.max(max, h);
+        }
+        if (max - min > 16) {
+            return false;
+        }
+        // 保护区：新出生点不能落在旧建筑/圈地内部，也不能紧贴边界（1 区块缓冲）
+        var area = com.shenqianye.samsara.claim.AreaService.getInstance();
+        int cx = x >> 4;
+        int cz = z >> 4;
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                if (area.isProtected(level.dimension(), cx + dx, cz + dz)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    /** 兜底落脚点：3×3 石台 + 清出 3 格高，避免直接掉进海里/岩浆。 */
+    private int prepareLandingPad(ServerLevel level, int x, int z) {
+        int y = findSafeSurfaceY(level, x, z);
+        // 兜底点若落在保护区内，绝不改动保护区块；直接站到地表
+        if (com.shenqianye.samsara.claim.AreaService.getInstance()
+                .isProtected(level.dimension(), x >> 4, z >> 4)) {
+            return y;
+        }
+        int minY = level.dimensionType().minY();
+        int maxY = minY + level.dimensionType().height();
+        if (y <= minY + 1 || y >= maxY - 2) {
+            y = Math.max(minY + 2, Math.min(maxY - 3, 64));
+        }
+        BlockState stone = net.minecraft.world.level.block.Blocks.STONE.defaultBlockState();
+        BlockState air = net.minecraft.world.level.block.Blocks.AIR.defaultBlockState();
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                level.setBlockAndUpdate(new BlockPos(x + dx, y - 1, z + dz), stone);
+                level.setBlockAndUpdate(new BlockPos(x + dx, y, z + dz), air);
+                level.setBlockAndUpdate(new BlockPos(x + dx, y + 1, z + dz), air);
+            }
+        }
+        return y;
+    }
+
+    private void setWorldSpawn(ServerLevel level, int x, int y, int z) {
+        LevelData.RespawnData data = LevelData.RespawnData.of(
+                level.dimension(), new BlockPos(x, y, z), 0.0f, 0.0f);
+        level.setRespawnData(data);
+    }
+
+    /** 围绕出生中心重新分组（reset same 与旧 flow 共用）。 */
+    private void buildGroups(MinecraftServer server, Season s, int centerX, int centerZ) {
+        List<PlayerRegistry.RegPlayer> players = dedupePlayers(
+                PlayerRegistry.getInstance().read(server));
+        GroupPlanner.Plan plan = GroupPlanner.plan(centerX, centerZ, settings().spawnRadius,
+                players, settings(), new Random());
+        s.groupSpawns.clear();
+        for (GroupPlanner.GroupSpawnPoint g : plan.groups) {
+            Season.GroupSpawn gs = new Season.GroupSpawn();
+            gs.x = g.x;
+            gs.z = g.z;
+            for (UUID u : g.playerUuids) {
+                gs.playerUuids.add(u.toString());
+            }
+            s.groupSpawns.add(gs);
+        }
+    }
+
 
     /** 世界栈清单同步到当前 season.json，供 status/info 展示。 */
     public void syncWorldStack(List<String> stack) {

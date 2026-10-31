@@ -101,6 +101,8 @@ public class Samsara implements DedicatedServerModInitializer {
             com.shenqianye.samsara.identity.IdentityService.getInstance().tick(server);
             com.shenqianye.samsara.shutdown.ShutdownAnnouncer.tick(server);
             com.shenqianye.samsara.season.WorldStackManager.tick(server);
+            com.shenqianye.samsara.season.SeasonManager.getInstance().tick(server);
+            com.shenqianye.samsara.season.WorldChainTeleport.tick(server);
             com.shenqianye.samsara.command.DebugCommand.onTick();
             if (++unloadFlushCounter[0] >= 20) {
                 unloadFlushCounter[0] = 0;
@@ -132,6 +134,7 @@ public class Samsara implements DedicatedServerModInitializer {
             RewindEngine.getInstance().onServerStarted(server);
             // 世界栈：登记实际世界并消费上一次切换（新世界开局要在玩家加入前完成）
             com.shenqianye.samsara.season.WorldStackManager.getInstance().onServerStarted(server);
+            com.shenqianye.samsara.season.WorldChainTeleport.load(server);
             com.shenqianye.samsara.track.view.ViewManager.getInstance().onServerStarted(server);
             com.shenqianye.samsara.permission.PermissionCommandPaths.capture(server);
             com.shenqianye.samsara.shutdown.ShutdownAnnouncer.onStarted();
@@ -145,6 +148,7 @@ public class Samsara implements DedicatedServerModInitializer {
             com.shenqianye.samsara.track.view.ViewManager.getInstance().shutdown(server);
             com.shenqianye.samsara.track.TrackReplay.shutdown();
             RewindEngine.getInstance().onServerStopped(server);
+            com.shenqianye.samsara.season.WorldChainTeleport.unload();
         });
 
         // 身份：账号切换同步先应用玩家数据，再让分组/待传送把玩家放到本周目位置
