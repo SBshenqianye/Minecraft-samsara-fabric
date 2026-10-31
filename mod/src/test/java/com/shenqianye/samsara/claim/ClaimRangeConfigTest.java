@@ -50,7 +50,9 @@ class ClaimRangeConfigTest {
 
     @Test
     void patternDirectionsDescribeUnitLengthShape() {
-        assertEquals(List.of("south"), ClaimRangeConfig.DEFAULT_PATTERN_DIRECTIONS.get("stripe_top"));
+        assertEquals(List.of("north"), ClaimRangeConfig.DEFAULT_PATTERN_DIRECTIONS.get("stripe_top"));
+        assertEquals(List.of("west"), ClaimRangeConfig.DEFAULT_PATTERN_DIRECTIONS.get("stripe_left"));
+        assertEquals(List.of("northeast"), ClaimRangeConfig.DEFAULT_PATTERN_DIRECTIONS.get("square_top_right"));
         assertEquals(List.of("north", "east", "south", "west"),
                 ClaimRangeConfig.DEFAULT_PATTERN_DIRECTIONS.get("straight_cross"));
         assertEquals(List.of("northeast", "southeast", "southwest", "northwest"),

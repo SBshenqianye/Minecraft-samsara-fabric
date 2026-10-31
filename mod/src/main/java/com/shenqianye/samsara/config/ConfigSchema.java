@@ -232,15 +232,15 @@ public final class ConfigSchema {
     private static List<ConfigEntry> claimRangeEntries() {
         List<ConfigEntry> entries = new ArrayList<>();
         entries.add(ConfigEntry.choice("mode", "dye", List.of("dye", "fixed"), "保护范围",
-                "dye = 每个染料颜色对应一个延伸距离；fixed = 所有颜色都使用 fixedDistance"));
+                "dye = 每个图案颜色对应一个延伸距离；fixed = 所有图案颜色都使用 fixedDistance"));
         entries.add(ConfigEntry.integer("fixedDistance", 4, 1, 32, "保护范围",
                 "固定模式下的单方向延伸距离（区块）；仅 mode=fixed 时生效")
                 .when("mode=fixed"));
         entries.add(ConfigEntry.intList("colorDistances",
                 List.of(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16),
                 1, 32, "保护范围",
-                "染料颜色 0~15（白→黑）各自对应的单方向延伸距离（区块）；"
-                        + "Web 圈地范围页按染料色块可视化编辑并实时预览保护形状")
+                "图案颜色 0~15（白→黑）各自对应的单方向延伸距离（区块）；"
+                        + "这是图案层颜色，不是旗面底色；Web 圈地范围页按色块可视化编辑并实时预览保护形状")
                 .when("mode=dye"));
         entries.add(ConfigEntry.integer("maxDistance", 16, 1, 32, "保护范围",
                 "所有模式下的单方向距离上限；超出会截断，用来限制最大圈地规模"));

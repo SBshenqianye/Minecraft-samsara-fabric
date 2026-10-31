@@ -365,6 +365,22 @@ details[open].file-block > .file-summary { border-bottom-color: var(--line); }
 .pattern-direction-cell:hover { border-color: var(--accent); color: var(--accent); }
 .pattern-direction-cell.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 .pattern-direction-center { display: grid; place-items: center; color: var(--line-strong); font-size: 14px; user-select: none; }
+
+/* ---- 旗帜选择器 / 合成器 ---- */
+.banner-composer { margin-top: 14px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-soft); }
+.banner-composer-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 9px; }
+.banner-composer-body { display: flex; align-items: flex-start; gap: 14px; flex-wrap: wrap; }
+.banner-composer-preview { width: 64px; height: 80px; flex: 0 0 auto; image-rendering: pixelated; border: 1px solid var(--line); border-radius: 8px; background: #0a1220; }
+.banner-composer-controls { flex: 1; min-width: 260px; display: flex; flex-direction: column; gap: 7px; }
+.banner-composer-layers { display: flex; flex-direction: column; gap: 4px; }
+.banner-composer-layer { display: flex; align-items: center; gap: 6px; }
+.banner-composer-layer select { min-width: 0; }
+.banner-composer-layer select:first-of-type { flex: 1; }
+.banner-composer-index { width: 18px; color: var(--muted); font-family: var(--mono); font-size: 10px; text-align: right; }
+.banner-composer-layer button { padding: 3px 7px; }
+.banner-composer-actions { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.banner-composer-command { display: flex; align-items: center; gap: 8px; margin-top: 9px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+.banner-composer-command code { flex: 1; min-width: 0; overflow-wrap: anywhere; color: var(--fg-soft); font-size: 11px; }
 .int-list-wrap { display: flex; flex-direction: column; gap: 8px; }
 .int-list-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: space-between; }
 .int-list-hint { flex: 1 1 220px; color: var(--muted); font-size: 11px; }
@@ -670,11 +686,13 @@ body.locked .tabs, body.locked .tab-actions { opacity: .45; pointer-events: none
 .map-swatch { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
 .map-swatch.claim { background: rgba(45, 212, 191, .45); border: 1px solid rgba(45, 212, 191, .9); }
 .map-swatch.banner { background: #f8fafc; border: 2px solid #2dd4bf; border-radius: 999px; }
-.map-selection { min-width: 240px; flex: 1; max-width: 430px; height: 148px; overflow: auto; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-soft); }
-.map-selection-title { font-size: 12px; font-weight: 700; margin-bottom: 6px; }
+.map-selection { position: absolute; right: 14px; top: 14px; z-index: 6; width: 270px; max-height: calc(100% - 28px); overflow: auto; padding: 11px 13px; border: 1px solid rgba(148, 163, 184, .35); border-radius: 10px; background: rgba(8, 12, 17, .82); color: #e2e8f0; box-shadow: 0 12px 30px rgba(0, 0, 0, .35); backdrop-filter: blur(8px); }
+.map-selection[hidden] { display: none !important; }
+.map-selection-title { font-size: 12px; font-weight: 700; margin-bottom: 6px; color: #f8fafc; }
 .map-selection-list { display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 3px 8px; margin: 0 0 8px; font-size: 12px; }
-.map-selection-list dt { color: var(--muted); }
-.map-selection-list dd { margin: 0; overflow-wrap: anywhere; }
+.map-selection-list dt { color: #94a3b8; }
+.map-selection-list dd { margin: 0; overflow-wrap: anywhere; color: #f1f5f9; }
+.map-dim-anchors { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overflow: hidden; }
 
 /* ---- responsive ---- */
 @media (max-width: 1250px) {

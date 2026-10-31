@@ -45,14 +45,16 @@ public final class ClaimRangeConfig {
 
     private static Map<String, List<String>> defaults() {
         Map<String, List<String>> out = new LinkedHashMap<>();
-        out.put("stripe_top", List.of("south"));
-        out.put("stripe_bottom", List.of("north"));
-        out.put("stripe_left", List.of("east"));
-        out.put("stripe_right", List.of("west"));
-        out.put("square_top_left", List.of("southeast"));
-        out.put("square_top_right", List.of("southwest"));
-        out.put("square_bottom_left", List.of("northeast"));
-        out.put("square_bottom_right", List.of("northwest"));
+        // 统一采用“看旗人正面视角”：图标的上/下/左/右 = 北/南/西/东。
+        out.put("stripe_top", List.of("north"));
+        out.put("stripe_bottom", List.of("south"));
+        out.put("stripe_left", List.of("west"));
+        out.put("stripe_right", List.of("east"));
+        out.put("square_top_left", List.of("northwest"));
+        out.put("square_top_right", List.of("northeast"));
+        out.put("square_bottom_left", List.of("southwest"));
+        out.put("square_bottom_right", List.of("southeast"));
+        // 斜纹按“图标上的斜线方向”命名：stripe_downleft = 左下↗右上，stripe_downright = 左上↘右下。
         out.put("stripe_downleft", List.of("northeast", "southwest"));
         out.put("stripe_downright", List.of("northwest", "southeast"));
         out.put("stripe_center", List.of("north", "south"));

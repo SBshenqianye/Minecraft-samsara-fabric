@@ -412,6 +412,7 @@ function renderClaimRange() {
       ...entryItems,
       { label: '图案单位方向', target: patternEditor.id },
       { label: '保护范围调试', target: preview.id },
+      { label: '旗帜合成器', target: 'claim-banner-composer' },
     ], navTargets);
     syncConditionalNav();
   }
@@ -619,22 +620,22 @@ function buildBoolean(file, entry, value) {
 // ---- 圈地保护范围：染料色块编辑 + 实时形状预览 ----
 
 const DYE_PALETTE = [
-  { name: '白', hex: '#f9fffe' },
-  { name: '橙', hex: '#f9801d' },
-  { name: '品红', hex: '#c74ebd' },
-  { name: '淡蓝', hex: '#3ab3da' },
-  { name: '黄', hex: '#fed83d' },
-  { name: '黄绿', hex: '#80c71f' },
-  { name: '粉', hex: '#f38baa' },
-  { name: '灰', hex: '#474f52' },
-  { name: '淡灰', hex: '#9d9d97' },
-  { name: '青', hex: '#169c9c' },
-  { name: '紫', hex: '#8932b8' },
-  { name: '蓝', hex: '#3c44aa' },
-  { name: '棕', hex: '#835432' },
-  { name: '绿', hex: '#5e7c16' },
-  { name: '红', hex: '#b02e26' },
-  { name: '黑', hex: '#1d1d21' },
+  { name: '白', id: 'white', hex: '#f9fffe' },
+  { name: '橙', id: 'orange', hex: '#f9801d' },
+  { name: '品红', id: 'magenta', hex: '#c74ebd' },
+  { name: '淡蓝', id: 'light_blue', hex: '#3ab3da' },
+  { name: '黄', id: 'yellow', hex: '#fed83d' },
+  { name: '黄绿', id: 'lime', hex: '#80c71f' },
+  { name: '粉', id: 'pink', hex: '#f38baa' },
+  { name: '灰', id: 'gray', hex: '#474f52' },
+  { name: '淡灰', id: 'light_gray', hex: '#9d9d97' },
+  { name: '青', id: 'cyan', hex: '#169c9c' },
+  { name: '紫', id: 'purple', hex: '#8932b8' },
+  { name: '蓝', id: 'blue', hex: '#3c44aa' },
+  { name: '棕', id: 'brown', hex: '#835432' },
+  { name: '绿', id: 'green', hex: '#5e7c16' },
+  { name: '红', id: 'red', hex: '#b02e26' },
+  { name: '黑', id: 'black', hex: '#1d1d21' },
 ];
 
 /** 8 方向，按角度顺序（北→东北→…→西北）；x 向东，z 向南。 */
@@ -679,14 +680,14 @@ const CLAIM_DIRECTION_CELLS = [
   [2, 3], [1, 3], [1, 2], [1, 1],
 ];
 const DEFAULT_CLAIM_PATTERN_DIRECTIONS = {
-  stripe_top: ['south'],
-  stripe_bottom: ['north'],
-  stripe_left: ['east'],
-  stripe_right: ['west'],
-  square_top_left: ['southeast'],
-  square_top_right: ['southwest'],
-  square_bottom_left: ['northeast'],
-  square_bottom_right: ['northwest'],
+  stripe_top: ['north'],
+  stripe_bottom: ['south'],
+  stripe_left: ['west'],
+  stripe_right: ['east'],
+  square_top_left: ['northwest'],
+  square_top_right: ['northeast'],
+  square_bottom_left: ['southwest'],
+  square_bottom_right: ['southeast'],
   stripe_downleft: ['northeast', 'southwest'],
   stripe_downright: ['northwest', 'southeast'],
   stripe_center: ['north', 'south'],
@@ -708,6 +709,186 @@ function normalizeDirectionNames(list) {
   return CLAIM_DIRECTION_NAMES.filter((name) => source.some((item) => String(item).toLowerCase() === name));
 }
 
+function createBannerComposer(getSelected, onFill) {
+  const wrap = document.createElement('div');
+  wrap.className = 'banner-composer';
+  const head = document.createElement('div');
+  head.className = 'banner-composer-head';
+  const title = document.createElement('strong');
+  title.textContent = '旗帜选择器 / 合成器';
+  const hint = document.createElement('span');
+  hint.className = 'muted small';
+  hint.textContent = '选择旗面颜色并叠加图案层；图案颜色决定保护长度。图案名/染料色已内置，织布机配方与图案物品图标暂未内置。';
+  head.append(title, hint);
+
+  const body = document.createElement('div');
+  body.className = 'banner-composer-body';
+  const preview = document.createElement('canvas');
+  preview.className = 'banner-composer-preview';
+  preview.width = 64;
+  preview.height = 80;
+  preview.title = '旗帜预览';
+
+  const controls = document.createElement('div');
+  controls.className = 'banner-composer-controls';
+  const baseWrap = document.createElement('label');
+  baseWrap.className = 'inline-field';
+  const baseLabel = document.createElement('span');
+  baseLabel.textContent = '旗面颜色';
+  const baseSelect = document.createElement('select');
+  DYE_PALETTE.forEach((dye, index) => {
+    const option = document.createElement('option');
+    option.value = String(index);
+    option.textContent = dye.name + '（' + index + '）';
+    baseSelect.append(option);
+  });
+  baseSelect.value = '15';
+  baseWrap.append(baseLabel, baseSelect);
+
+  const layers = document.createElement('div');
+  layers.className = 'banner-composer-layers';
+  const actions = document.createElement('div');
+  actions.className = 'banner-composer-actions';
+  const add = document.createElement('button');
+  add.type = 'button';
+  add.className = 'ghost';
+  add.textContent = '+ 添加图案层';
+  const load = document.createElement('button');
+  load.type = 'button';
+  load.className = 'ghost';
+  load.textContent = '载入选中旗帜';
+  const fill = document.createElement('button');
+  fill.type = 'button';
+  fill.className = 'primary';
+  fill.textContent = '填入调试画布';
+  actions.append(add, load, fill);
+  controls.append(baseWrap, layers, actions);
+
+  const commandWrap = document.createElement('div');
+  commandWrap.className = 'banner-composer-command';
+  const command = document.createElement('code');
+  const copy = document.createElement('button');
+  copy.type = 'button';
+  copy.className = 'ghost';
+  copy.textContent = '复制命令';
+  commandWrap.append(command, copy);
+
+  body.append(preview, controls);
+  wrap.append(head, body, commandWrap);
+
+  const state = { baseColor: 15, layers: [{ id: 'border', color: 0 }] };
+
+  const commandText = () => {
+    const base = DYE_PALETTE[state.baseColor] || DYE_PALETTE[0];
+    const parts = state.layers.map((layer) => {
+      const color = DYE_PALETTE[layer.color] || DYE_PALETTE[0];
+      return '{pattern:"minecraft:' + layer.id + '",color:"' + color.id + '"}';
+    });
+    return '/give @p minecraft:' + base.id + '_banner[banner_patterns=['
+      + parts.join(',') + ']] 1';
+  };
+
+  const refresh = () => {
+    if (window.SamsaraBanners) {
+      window.SamsaraBanners.paint(preview, state.layers,
+        (DYE_PALETTE[state.baseColor] || DYE_PALETTE[0]).hex);
+    }
+    command.textContent = commandText();
+  };
+
+  const renderLayers = () => {
+    layers.replaceChildren();
+    state.layers.forEach((layer, index) => {
+      const row = document.createElement('div');
+      row.className = 'banner-composer-layer';
+      const number = document.createElement('span');
+      number.className = 'banner-composer-index';
+      number.textContent = String(index + 1);
+      const pattern = document.createElement('select');
+      for (const [id, item] of Object.entries(CLAIM_PATTERNS)) {
+        const option = document.createElement('option');
+        option.value = id;
+        option.textContent = item.label;
+        pattern.append(option);
+      }
+      pattern.value = layer.id;
+      const color = document.createElement('select');
+      DYE_PALETTE.forEach((dye, colorIndex) => {
+        const option = document.createElement('option');
+        option.value = String(colorIndex);
+        option.textContent = '图案 ' + dye.name;
+        color.append(option);
+      });
+      color.value = String(layer.color);
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'ghost danger';
+      remove.textContent = '×';
+      remove.title = '删除这一层';
+      pattern.addEventListener('change', () => {
+        layer.id = pattern.value;
+        refresh();
+      });
+      color.addEventListener('change', () => {
+        layer.color = Number(color.value);
+        refresh();
+      });
+      remove.addEventListener('click', () => {
+        if (state.layers.length <= 1) return;
+        state.layers.splice(index, 1);
+        renderLayers();
+        refresh();
+      });
+      row.append(number, pattern, color, remove);
+      layers.append(row);
+    });
+  };
+
+  baseSelect.addEventListener('change', () => {
+    state.baseColor = Number(baseSelect.value);
+    refresh();
+  });
+  add.addEventListener('click', () => {
+    if (state.layers.length >= 8) return;
+    state.layers.push({ id: 'border', color: 0 });
+    renderLayers();
+    refresh();
+  });
+  load.addEventListener('click', () => {
+    const banner = getSelected();
+    if (!banner) return;
+    state.baseColor = banner.baseColor ?? 0;
+    state.layers = (banner.patterns || []).map((layer) => ({ id: layer.id, color: layer.color }));
+    if (state.layers.length === 0) state.layers = [{ id: 'border', color: 0 }];
+    baseSelect.value = String(state.baseColor);
+    renderLayers();
+    refresh();
+  });
+  fill.addEventListener('click', () => {
+    onFill({
+      baseColor: state.baseColor,
+      patterns: state.layers.map((layer) => ({ id: layer.id, color: layer.color })),
+    });
+  });
+  copy.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(command.textContent);
+      copy.textContent = '已复制';
+      setTimeout(() => { copy.textContent = '复制命令'; }, 1200);
+    } catch (e) {
+      const range = document.createRange();
+      range.selectNodeContents(command);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+  });
+
+  renderLayers();
+  refresh();
+  return { element: wrap, refresh };
+}
+
 function patternDirectionsEditor(file, entries, onTrial) {
   const wrap = document.createElement('div');
   wrap.className = 'pattern-directions';
@@ -727,8 +908,9 @@ function patternDirectionsEditor(file, entries, onTrial) {
 
   const note = document.createElement('div');
   note.className = 'pattern-directions-note';
-  note.textContent = '点 3×3 罗盘上的方向即可开关。例如“全边框”默认八向全开，用白色染料就向八方各延伸 1 格，'
-      + '用黑色染料则各延伸 16 格；图案本身不再配置距离。点“试用”可把该图案放到下方调试画布。';
+  note.textContent = '统一采用“看旗人正面视角”：图标上方 = 北，下方 = 南，左侧 = 西，右侧 = 东。'
+      + '点 3×3 罗盘上的方向即可开关。例如“全边框”默认八向全开，用白色图案颜色就向八方各延伸 1 格，'
+      + '用黑色则各延伸 16 格；图案本身不配置距离。点“试用”可把该图案放到下方调试画布。';
 
   const grid = document.createElement('div');
   grid.className = 'pattern-direction-grid';
@@ -834,7 +1016,7 @@ function buildIntList(file, entry, values) {
   tools.className = 'int-list-tools';
   const hint = document.createElement('span');
   hint.className = 'int-list-hint';
-  hint.textContent = '颜色 0（白）→ 15（黑）；数字为单方向延伸区块数';
+  hint.textContent = '图案颜色 0（白）→ 15（黑）；数字为单方向延伸区块数（旗面颜色只影响外观）';
   const bulk = document.createElement('input');
   bulk.type = 'number';
   bulk.min = String(entry.min == null ? 1 : entry.min);
@@ -927,9 +1109,18 @@ function claimRangePreview(file) {
   DYE_PALETTE.forEach((dye, index) => {
     const option = document.createElement('option');
     option.value = String(index);
-    option.textContent = dye.name + '（' + index + '）';
+    option.textContent = '图案 ' + dye.name + '（' + index + '）';
     colorSelect.append(option);
   });
+  const baseColorSelect = document.createElement('select');
+  DYE_PALETTE.forEach((dye, index) => {
+    const option = document.createElement('option');
+    option.value = String(index);
+    option.textContent = '旗面 ' + dye.name + '（' + index + '）';
+    baseColorSelect.append(option);
+  });
+  baseColorSelect.value = '15';
+  colorSelect.value = '0';
   const facingSelect = document.createElement('select');
   for (const facing of CLAIM_FACINGS) {
     const option = document.createElement('option');
@@ -942,7 +1133,7 @@ function claimRangePreview(file) {
   patternIcon.width = 40;
   patternIcon.height = 40;
   patternIcon.title = '当前图案与染料颜色';
-  controls.append(patternIcon, patternSelect, colorSelect, facingSelect);
+  controls.append(patternIcon, patternSelect, baseColorSelect, colorSelect, facingSelect);
   head.append(titles, controls);
 
   const toolbar = document.createElement('div');
@@ -1010,13 +1201,22 @@ function claimRangePreview(file) {
   });
 
   const state = {
-    banners: [{ x: 0, z: 0, pattern: patternSelect.value, color: Number(colorSelect.value), facing: facingSelect.value }],
+    banners: [{
+      x: 0,
+      z: 0,
+      patterns: [{ id: patternSelect.value, color: Number(colorSelect.value) }],
+      baseColor: Number(baseColorSelect.value),
+      facing: facingSelect.value,
+    }],
     selected: 0,
     hover: null,
     drag: null,
     lastSummary: 0,
     zoom: 0,
   };
+
+  const firstLayer = (banner) => (banner && banner.patterns && banner.patterns[0])
+    || { id: 'border', color: 0 };
 
   const size = 560;
   const dpr = window.devicePixelRatio || 1;
@@ -1028,13 +1228,12 @@ function claimRangePreview(file) {
   ctx.imageSmoothingEnabled = false;
 
   const iconCache = new Map();
-  const bannerIcon = (pattern, color) => {
-    const key = pattern + '|' + color;
+  const bannerIcon = (patterns, baseColor) => {
+    const key = JSON.stringify([patterns, baseColor]);
     if (iconCache.has(key)) return iconCache.get(key);
-    const base = DYE_PALETTE[color] || DYE_PALETTE[0];
-    const patternColor = Number(color) === 15 ? 0 : 15;
+    const base = DYE_PALETTE[baseColor] || DYE_PALETTE[0];
     const iconCanvas = window.SamsaraBanners
-      ? window.SamsaraBanners.icon([{ id: pattern, color: patternColor }], base.hex, 64)
+      ? window.SamsaraBanners.icon(patterns, base.hex, 64)
       : null;
     iconCache.set(key, iconCanvas);
     return iconCanvas;
@@ -1042,22 +1241,28 @@ function claimRangePreview(file) {
 
   const refreshPatternIcon = () => {
     if (!window.SamsaraBanners) return;
-    const color = Number(colorSelect.value) || 0;
-    window.SamsaraBanners.paint(patternIcon,
-      [{ id: patternSelect.value, color: color === 15 ? 0 : 15 }],
-      (DYE_PALETTE[color] || DYE_PALETTE[0]).hex);
+    const banner = selectedBanner();
+    const layers = banner ? banner.patterns : [{ id: patternSelect.value, color: Number(colorSelect.value) }];
+    const baseColor = banner ? Number(banner.baseColor ?? 0) : Number(baseColorSelect.value) || 0;
+    window.SamsaraBanners.paint(patternIcon, layers, (DYE_PALETTE[baseColor] || DYE_PALETTE[0]).hex);
   };
 
-  const distanceOf = (banner, cfg) => {
-    const color = Math.max(0, Math.min(15, Number(banner.color) || 0));
-    const base = cfg.mode === 'fixed' ? cfg.fixedDistance : (cfg.colorDistances[color] ?? color + 1);
+  const distanceOfColor = (color, cfg) => {
+    const index = Math.max(0, Math.min(15, Number(color) || 0));
+    const base = cfg.mode === 'fixed' ? cfg.fixedDistance
+      : (cfg.colorDistances[index] ?? index + 1);
     return Math.max(1, Math.min(cfg.maxDistance, Math.round(base)));
   };
 
-  const rotatedDirs = (banner, cfg) => {
-    const names = (cfg.patternDirections && cfg.patternDirections[banner.pattern])
-      || DEFAULT_CLAIM_PATTERN_DIRECTIONS[banner.pattern] || [];
-    const offset = CLAIM_FACINGS.find((item) => item.id === banner.facing)?.offset || 0;
+  const distanceOf = (banner, cfg) => {
+    const layers = banner.patterns || [];
+    return layers.reduce((max, layer) => Math.max(max, distanceOfColor(layer.color, cfg)), 1);
+  };
+
+  const rotatedDirs = (patternId, facing, cfg) => {
+    const names = (cfg.patternDirections && cfg.patternDirections[patternId])
+      || DEFAULT_CLAIM_PATTERN_DIRECTIONS[patternId] || [];
+    const offset = CLAIM_FACINGS.find((item) => item.id === facing)?.offset || 0;
     return normalizeDirectionNames(names)
         .map((name) => CLAIM_DIRECTION_NAMES.indexOf(name))
         .filter((index) => index >= 0)
@@ -1072,32 +1277,34 @@ function claimRangePreview(file) {
   };
 
   const cellsFor = (banner, cfg) => {
-    const dirs = rotatedDirs(banner, cfg);
-    const distance = distanceOf(banner, cfg);
     const cells = new Set();
     const add = (x, z) => cells.add(x + ',' + z);
     add(banner.x, banner.z);
-    const endpoints = [];
-    for (const index of dirs) {
-      const dir = CLAIM_DIRECTIONS[index];
-      for (let step = 1; step <= distance; step += 1) {
-        add(banner.x + dir.dx * step, banner.z + dir.dz * step);
+    for (const layer of banner.patterns || []) {
+      const dirs = rotatedDirs(layer.id, banner.facing, cfg);
+      const distance = distanceOfColor(layer.color, cfg);
+      const endpoints = [];
+      for (const index of dirs) {
+        const dir = CLAIM_DIRECTIONS[index];
+        for (let step = 1; step <= distance; step += 1) {
+          add(banner.x + dir.dx * step, banner.z + dir.dz * step);
+        }
+        endpoints.push({ x: banner.x + dir.dx * distance, z: banner.z + dir.dz * distance });
       }
-      endpoints.push({ x: banner.x + dir.dx * distance, z: banner.z + dir.dz * distance });
-    }
-    if (endpoints.length >= 3) {
-      for (let i = 0; i < endpoints.length; i += 1) {
-        const a = endpoints[i];
-        const b = endpoints[(i + 1) % endpoints.length];
-        addLineCells(a.x, a.z, b.x, b.z, add);
-      }
-      const minX = Math.min(...endpoints.map((p) => p.x));
-      const maxX = Math.max(...endpoints.map((p) => p.x));
-      const minZ = Math.min(...endpoints.map((p) => p.z));
-      const maxZ = Math.max(...endpoints.map((p) => p.z));
-      for (let x = minX; x <= maxX; x += 1) {
-        for (let z = minZ; z <= maxZ; z += 1) {
-          if (pointInPolygon(x, z, endpoints)) add(x, z);
+      if (endpoints.length >= 3) {
+        for (let i = 0; i < endpoints.length; i += 1) {
+          const a = endpoints[i];
+          const b = endpoints[(i + 1) % endpoints.length];
+          addLineCells(a.x, a.z, b.x, b.z, add);
+        }
+        const minX = Math.min(...endpoints.map((p) => p.x));
+        const maxX = Math.max(...endpoints.map((p) => p.x));
+        const minZ = Math.min(...endpoints.map((p) => p.z));
+        const maxZ = Math.max(...endpoints.map((p) => p.z));
+        for (let x = minX; x <= maxX; x += 1) {
+          for (let z = minZ; z <= maxZ; z += 1) {
+            if (pointInPolygon(x, z, endpoints)) add(x, z);
+          }
         }
       }
     }
@@ -1259,27 +1466,29 @@ function claimRangePreview(file) {
     const points = new Set();
     const adj = new Map();
     for (const banner of banners) {
-      const dirs = rotatedDirs(banner, cfg);
-      const distance = distanceOf(banner, cfg);
       addGraphPoint(points, banner.x, banner.z);
-      const endpoints = [];
-      for (const dir of dirs) {
-        const direction = CLAIM_DIRECTIONS[dir];
-        const ex = banner.x + direction.dx * distance;
-        const ez = banner.z + direction.dz * distance;
-        rasterLine(points, adj, banner.x, banner.z, ex, ez);
-        endpoints.push({ x: ex, z: ez });
-      }
-      if (endpoints.length >= 3) {
-        endpoints.sort((a, b) => {
-          const da = Math.atan2(a.z - banner.z, a.x - banner.x);
-          const db = Math.atan2(b.z - banner.z, b.x - banner.x);
-          return da - db;
-        });
-        for (let i = 0; i < endpoints.length; i += 1) {
-          const a = endpoints[i];
-          const b = endpoints[(i + 1) % endpoints.length];
-          rasterLine(points, adj, a.x, a.z, b.x, b.z);
+      for (const layer of banner.patterns || []) {
+        const dirs = rotatedDirs(layer.id, banner.facing, cfg);
+        const distance = distanceOfColor(layer.color, cfg);
+        const endpoints = [];
+        for (const dir of dirs) {
+          const direction = CLAIM_DIRECTIONS[dir];
+          const ex = banner.x + direction.dx * distance;
+          const ez = banner.z + direction.dz * distance;
+          rasterLine(points, adj, banner.x, banner.z, ex, ez);
+          endpoints.push({ x: ex, z: ez });
+        }
+        if (endpoints.length >= 3) {
+          endpoints.sort((a, b) => {
+            const da = Math.atan2(a.z - banner.z, a.x - banner.x);
+            const db = Math.atan2(b.z - banner.z, b.x - banner.x);
+            return da - db;
+          });
+          for (let i = 0; i < endpoints.length; i += 1) {
+            const a = endpoints[i];
+            const b = endpoints[(i + 1) % endpoints.length];
+            rasterLine(points, adj, a.x, a.z, b.x, b.z);
+          }
         }
       }
     }
@@ -1324,11 +1533,17 @@ function claimRangePreview(file) {
     let text = '已放置 ' + state.banners.length + ' 面 · 保护 ' + union.size
         + ' 区块 · 边界 ' + boundary.length + ' 格';
     if (banner) {
-      const dye = DYE_PALETTE[banner.color] || { name: '颜色 ' + banner.color };
-      const dirs = rotatedDirs(banner, cfg)
+      const layers = banner.patterns || [];
+      const baseDye = DYE_PALETTE[banner.baseColor ?? 0] || { name: '颜色 ' + (banner.baseColor ?? 0) };
+      const layerText = layers.map((layer) => {
+        const dye = DYE_PALETTE[layer.color] || { name: '颜色 ' + layer.color };
+        return (CLAIM_PATTERNS[layer.id]?.label || layer.id) + '/' + dye.name;
+      }).join(' + ');
+      const dirs = [...new Set(layers.flatMap((layer) => rotatedDirs(layer.id, banner.facing, cfg)))]
           .map((index) => CLAIM_DIRECTION_LABELS[index]).join('+') || '无方向';
-      text += ' · 选中：' + (CLAIM_PATTERNS[banner.pattern]?.label || banner.pattern)
-          + ' · ' + dye.name + ' · 朝' + (CLAIM_FACINGS.find((f) => f.id === banner.facing)?.label || '北')
+      text += ' · 选中：' + (layerText || '无图案')
+          + ' · 旗面' + baseDye.name
+          + ' · 朝' + (CLAIM_FACINGS.find((f) => f.id === banner.facing)?.label || '北')
           + ' · ' + dirs + ' → ' + distanceOf(banner, cfg) + ' 区块';
     } else {
       text += ' · 点击网格放置第一面旗帜';
@@ -1430,7 +1645,7 @@ function claimRangePreview(file) {
         ctx.lineWidth = 2;
         ctx.strokeRect(px(banner.x) + 1.5, pz(banner.z) + 1.5, cell - 3, cell - 3);
       }
-      const icon = bannerIcon(banner.pattern, banner.color);
+      const icon = bannerIcon(banner.patterns || [], banner.baseColor ?? 0);
       const iconSize = Math.max(12, Math.min(cell * .9, 42));
       if (icon) {
         ctx.drawImage(icon, Math.round(cx - iconSize / 2), Math.round(cz - iconSize / 2),
@@ -1449,7 +1664,7 @@ function claimRangePreview(file) {
     if (ghost && (state.drag || bannerAt(ghost) < 0)) {
       const ghostBanner = state.drag
         ? Object.assign({}, state.banners[state.drag.index], { x: ghost.x, z: ghost.z })
-        : { x: ghost.x, z: ghost.z, pattern: patternSelect.value, color: Number(colorSelect.value), facing: facingSelect.value };
+        : { x: ghost.x, z: ghost.z, patterns: [{ id: patternSelect.value, color: Number(colorSelect.value) }], baseColor: Number(baseColorSelect.value), facing: facingSelect.value };
       const ghostCells = cellsFor(ghostBanner, cfg);
       ctx.fillStyle = 'rgba(251, 191, 36, .08)';
       for (const key of ghostCells) {
@@ -1471,7 +1686,7 @@ function claimRangePreview(file) {
       ctx.strokeRect(gx + 1, gz + 1, cell - 2, cell - 2);
       ctx.setLineDash([]);
       ctx.globalAlpha = .45;
-      ctx.fillStyle = (DYE_PALETTE[Number(colorSelect.value)] || { hex: '#2dd4bf' }).hex;
+      ctx.fillStyle = (DYE_PALETTE[Number(baseColorSelect.value)] || { hex: '#2dd4bf' }).hex;
       ctx.fillRect(gx + cell * .3, gz + cell * .3, cell * .4, cell * .4);
       ctx.globalAlpha = 1;
     }
@@ -1495,13 +1710,18 @@ function claimRangePreview(file) {
   };
 
   patternSelect.addEventListener('change', () => {
-    const banner = selectedBanner();
-    if (banner) banner.pattern = patternSelect.value;
+    const layer = firstLayer(selectedBanner());
+    layer.id = patternSelect.value;
     refreshPatternIcon();
   });
   colorSelect.addEventListener('change', () => {
+    const layer = firstLayer(selectedBanner());
+    layer.color = Number(colorSelect.value);
+    refreshPatternIcon();
+  });
+  baseColorSelect.addEventListener('change', () => {
     const banner = selectedBanner();
-    if (banner) banner.color = Number(colorSelect.value);
+    if (banner) banner.baseColor = Number(baseColorSelect.value);
     refreshPatternIcon();
   });
   facingSelect.addEventListener('change', () => {
@@ -1539,8 +1759,8 @@ function claimRangePreview(file) {
     state.banners.push({
       x: cell.x,
       z: cell.z,
-      pattern: patternSelect.value,
-      color: Number(colorSelect.value),
+      patterns: [{ id: patternSelect.value, color: Number(colorSelect.value) }],
+      baseColor: Number(baseColorSelect.value),
       facing: facingSelect.value,
     });
     state.selected = state.banners.length - 1;
@@ -1568,8 +1788,8 @@ function claimRangePreview(file) {
       state.banners.push({
         x: cell.x,
         z: cell.z,
-        pattern: patternSelect.value,
-        color: Number(colorSelect.value),
+        patterns: [{ id: patternSelect.value, color: Number(colorSelect.value) }],
+        baseColor: Number(baseColorSelect.value),
         facing: facingSelect.value,
       });
       state.selected = state.banners.length - 1;
@@ -1617,8 +1837,10 @@ function claimRangePreview(file) {
   const syncSelectors = () => {
     const banner = selectedBanner();
     if (banner) {
-      patternSelect.value = banner.pattern;
-      colorSelect.value = String(banner.color);
+      const layer = firstLayer(banner);
+      patternSelect.value = layer.id;
+      colorSelect.value = String(layer.color);
+      baseColorSelect.value = String(banner.baseColor ?? 0);
       facingSelect.value = banner.facing;
     }
     refreshPatternIcon();
@@ -1627,6 +1849,32 @@ function claimRangePreview(file) {
   syncSelectors();
   state.raf = requestAnimationFrame(draw);
   updateSummary();
+
+  const composer = createBannerComposer(
+    () => selectedBanner(),
+    (bannerData) => {
+      let banner = selectedBanner();
+      if (!banner) {
+        banner = {
+          x: 0, z: 0, patterns: [], baseColor: bannerData.baseColor,
+          facing: facingSelect.value,
+        };
+        state.banners.push(banner);
+        state.selected = state.banners.length - 1;
+      }
+      banner.baseColor = bannerData.baseColor;
+      banner.patterns = bannerData.patterns.map((layer) => ({
+        id: layer.id, color: layer.color,
+      }));
+      syncSelectors();
+      updateSummary();
+      canvas.classList.remove('claim-sim-flash');
+      void canvas.offsetWidth;
+      canvas.classList.add('claim-sim-flash');
+      setTimeout(() => canvas.classList.remove('claim-sim-flash'), 1600);
+    });
+  composer.element.id = 'claim-banner-composer';
+  section.append(composer.element);
 
   const api = {
     redraw: () => {
@@ -1640,14 +1888,14 @@ function claimRangePreview(file) {
         state.banners.push({
           x: 0,
           z: 0,
-          pattern: id,
-          color: Number(colorSelect.value),
+          patterns: [{ id: id, color: Number(colorSelect.value) }],
+          baseColor: Number(baseColorSelect.value),
           facing: facingSelect.value,
         });
         state.selected = 0;
       } else {
         const banner = selectedBanner();
-        if (banner) banner.pattern = id;
+        if (banner) firstLayer(banner).id = id;
       }
       refreshPatternIcon();
       canvas.classList.remove('claim-sim-flash');

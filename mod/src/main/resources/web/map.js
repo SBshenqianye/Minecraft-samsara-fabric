@@ -53,6 +53,7 @@
       zoomOut: $('map-zoom-out'),
       claims: $('map-show-claims'),
       shading: $('map-shading'),
+      anchors: $('map-dim-anchors'),
     };
     if (els.canvas) {
       els.ctx = els.canvas.getContext('2d');
@@ -162,16 +163,28 @@
     const stats = ensureEls().stats;
     const stage = ensureEls().stage;
     const selection = ensureEls().selection;
+    const anchors = ensureEls().anchors;
+    const dimAnchors = new Map();
+    if (anchors) {
+      anchors.replaceChildren();
+      for (const dim of dimensions()) {
+        const anchor = document.createElement('span');
+        anchor.id = 'map-dim-' + dim.id.replace(/[^a-z0-9]+/gi, '-');
+        anchors.append(anchor);
+        dimAnchors.set(dim.id, anchor.id);
+      }
+    }
     if (stats) {
       const totalProtected = dimensions().reduce((sum, dim) => sum + (dim.protectedCount || 0), 0);
       targets.push({ id: 'map-overview', el: stats });
       items.push({ label: '全服统计', count: totalProtected, target: 'map-overview' });
     }
     for (const dim of dimensions()) {
+      const anchorId = dimAnchors.get(dim.id) || 'map-overview';
       items.push({
         label: dim.name,
         count: dim.protectedCount || 0,
-        target: stage ? 'map-stage-anchor' : '',
+        target: anchorId,
         onClick: () => {
           if (dim.id !== state.dimId) switchDimension(dim.id);
           const dimension = ensureEls().dimension;
@@ -204,7 +217,8 @@
     const spanZ = Math.max(1, b.maxZ - b.minZ);
     const need = Math.max(spanX / Math.max(80, width - 80),
       spanZ / Math.max(80, height - 80));
-    state.scale = [0.25, 0.5, 1, 2, 4, 8].find((value) => value >= need) || 8;
+    state.scale = [0.0625, 0.125, 0.25, 0.5, 1, 2, 4, 8, 16]
+      .find((value) => value >= need) || 16;
     state.centerX = (b.minX + b.maxX) / 2;
     state.centerZ = (b.minZ + b.maxZ) / 2;
     updateZoomLabel();
@@ -213,8 +227,8 @@
   function updateZoomLabel() {
     const { zoom, zoomIn, zoomOut } = ensureEls();
     if (zoom) zoom.textContent = state.scale + ' 格/像素';
-    if (zoomIn) zoomIn.disabled = state.scale <= 0.25;
-    if (zoomOut) zoomOut.disabled = state.scale >= 8;
+    if (zoomIn) zoomIn.disabled = state.scale <= 0.0625;
+    if (zoomOut) zoomOut.disabled = state.scale >= 16;
   }
 
   function resize() {
@@ -252,7 +266,7 @@
   }
 
   function tileScale() {
-    return state.scale < 1 ? 1 : state.scale;
+    return Math.min(8, Math.max(1, state.scale));
   }
 
   function tileKey(rx, rz) {
@@ -520,12 +534,13 @@
       const pattern = banner.patterns && banner.patterns[0];
       const color = pattern ? pattern.color : 0;
       if (state.scale <= 1 && icon) {
-        const base = icon.dyeColors[Math.max(0, Math.min(15, color))] || '#f9fffe';
-        const patternId = pattern ? pattern.id : 'border';
+        const layers = (banner.patterns || []).map((item) => ({
+          id: item.id, color: item.color,
+        }));
         const size = 26;
         ctx.save();
         ctx.globalAlpha = .98;
-        icon.draw(ctx, [{ id: patternId, color: color === 15 ? 0 : 15 }], base,
+        icon.draw(ctx, layers, '#9d9d97',
           point.x - size / 2, point.y - size * .72, size, size);
         ctx.restore();
       } else {
@@ -545,7 +560,7 @@
   }
 
   function drawScale(ctx, width, height) {
-    const options = [16, 32, 64, 128, 256, 512, 1024];
+    const options = [16, 32, 64, 128, 256, 512, 1024, 2048, 4096];
     const target = 130 * state.scale;
     const blocks = options.find((value) => value >= target) || 1024;
     const pixels = blocks / state.scale;
@@ -630,6 +645,7 @@
   function renderSelection() {
     const { selection } = ensureEls();
     if (!selection) return;
+    selection.hidden = !state.selected;
     selection.replaceChildren();
     const title = document.createElement('div');
     title.className = 'map-selection-title';
@@ -676,7 +692,7 @@
   function setScale(next, anchorX, anchorY) {
     const before = screenToWorld(anchorX == null ? state.cssWidth / 2 : anchorX,
       anchorY == null ? state.cssHeight / 2 : anchorY);
-    state.scale = Math.max(0.25, Math.min(8, next));
+    state.scale = Math.max(0.0625, Math.min(16, next));
     const after = screenToWorld(anchorX == null ? state.cssWidth / 2 : anchorX,
       anchorY == null ? state.cssHeight / 2 : anchorY);
     state.centerX += before.x - after.x;
