@@ -3,6 +3,28 @@
 > 面向玩家与服主的功能变化；实现细节、未达标项与证据见[《实现状态》](docs/实现状态.md)。
 > 每个版本按「新增 / 修复 / 优化 / 变更 / 重构 / 文档」分组，只写功能口径。
 
+## v0.24.0（2026-11-01）· 栈世界成为 world 内的真实维度
+
+### 新增
+
+- **`world` 固定是栈顶/最新**：`level-name` 永远是 `world`；vanilla/不知情的人直接打开存档看到的是最新世界，不会打开最旧世界。
+- **栈世界 = 自定义维度**：旧世界放在 `world/dimensions/samsara/stack_<n>/{overworld,the_nether,the_end}`，不再散落成服务器根下的 `world_sN`。
+- **每栈独立 seed/生成器**：每个栈层保存自己的 `world_gen_settings.dat`，用 `StackLevel` 覆写 `getSeed()`，所以`reset new` 可以选择 `flat`/`amplified`/`large_biomes` 等不同生成器。
+- **`reset new [seed] [levelType] [isolate]`**：把当前 `world` 压入 `stack_<n>`，用新种子/生成器生成新栈顶；`isolate=true` 时把旧 `data/minecraft` 归档到旧栈层。
+- **`world enter/leave` 不再停服**：直接把玩家传送到栈维度；多个玩家可以同时待在不同栈层。
+- **跨世界传送链**：主世界虚空→同层下界、下界虚空→下层栈世界、下界顶部→同层主世界、主世界顶部→上层栈世界下界，栈底保留原版死亡。
+- **目录级指针切换**：`reset new` 只做 3 个 dimensions 目录 rename + 元数据复制，不复制区块。
+
+### 变更
+
+- 旧 `world_sN` 顶层文件夹模型退役；`world/samsara/stack/stack_<n>/` 保存 `level.dat`、`world_gen_settings.dat`、`stack.json`、`spawn-history.json` 与旧栈的 claims/diff/track。
+- 玩家数据仍共享 `world/players/`；`dimensions/<dim>/data` 按维度隔离，`claims` 按栈拆分，`track` 按玩家所在栈写入。
+- 旧 `season` 命令继续兼容转调，但新用户入口是 `reset same|new`。
+
+### 文档
+
+- 需求/设计/设计规范/实现状态同步“world=栈顶、栈世界=维度、数字越大越新”。
+
 ## v0.23.0（2026-10-31）· 世界=文件夹、周目=出生点、跨世界传送链
 
 ### 新增

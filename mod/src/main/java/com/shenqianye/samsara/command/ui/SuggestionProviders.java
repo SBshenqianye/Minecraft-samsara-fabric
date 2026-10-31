@@ -529,8 +529,9 @@ public final class SuggestionProviders {
     /** 世界栈中的世界目录名 */
     public static SuggestionProvider<CommandSourceStack> worldsProvider() {
         return (ctx, builder) -> CompletionSupport.offer(builder,
-                com.shenqianye.samsara.season.WorldStackManager.getInstance().stack(),
-                s -> "世界栈中的世界（enter 会停服并切换 level-name）");
+                com.shenqianye.samsara.season.WorldStackManager.getInstance()
+                        .stack(ctx.getSource().getServer()),
+                s -> "世界栈中的世界（enter 直接传送到该栈维度）");
     }
 
     /** true / false */

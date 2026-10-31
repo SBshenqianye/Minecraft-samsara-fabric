@@ -80,6 +80,8 @@ public final class TrackRecorder {
         double hz;
         /** 当前正在写的周目目录（-1 = 尚未确定） */
         int cycleId = -1;
+        /** 当前栈层的 track 根（栈顶/旧栈隔离） */
+        Path layerRoot;
     }
 
     private TrackRecorder() {
@@ -191,8 +193,15 @@ public final class TrackRecorder {
         states.clear();
     }
 
-    private void sample(ServerPlayer player, State st, long now, SeasonData.Settings cfg) {
-        if (worldRoot == null) {
+    private Path stackTrackRoot(ServerPlayer player) {
+        var server = player.level().getServer();
+        Path dataRoot = com.shenqianye.samsara.season.StackPaths.dataRootFor(
+                com.shenqianye.samsara.season.StackPaths.worldDir(server),
+                player.level().dimension());
+        return dataRoot.resolve("track");
+    }
+
+    private void sample(ServerPlayer player, State st, long now, SeasonData.Settings cfg) {        if (worldRoot == null) {
             return;
         }
         if (st.settings == null) {
@@ -207,16 +216,19 @@ public final class TrackRecorder {
             LocalDate today = LocalDate.now();
             int cycleId = cycleIdNow();
             String dim = player.level().dimension().identifier().toString();
+            Path layerRoot = stackTrackRoot(player);
             boolean rotateDay = st.day == null || !today.equals(st.day);
             // 周目切换：目录跟着换（跨周目必须开新段，旧段留在旧周目目录）
             boolean rotateCycle = st.cycleId != cycleId;
-            boolean newSegment = rotateDay || rotateCycle || st.dimension == null
+            boolean rotateStack = st.layerRoot == null || !st.layerRoot.equals(layerRoot);
+            boolean newSegment = rotateDay || rotateCycle || rotateStack || st.dimension == null
                     || !st.dimension.equals(dim) || st.out == null;
-            if (rotateDay || rotateCycle) {
+            if (rotateDay || rotateCycle || rotateStack) {
                 closeStream(st);
                 st.cycleId = cycleId;
                 st.day = today;
-                st.file = TrackLayout.file(worldRoot, cycleId, today, st.uuid);
+                st.layerRoot = layerRoot;
+                st.file = TrackLayout.file(layerRoot, cycleId, today, st.uuid);
                 Files.createDirectories(st.file.getParent());
                 openAppend(st);
                 if (Files.size(st.file) == 0) {

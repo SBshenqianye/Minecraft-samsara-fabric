@@ -110,6 +110,13 @@ if ((Invoke-RconOptional "list") -notlike "*$BotName*") {
     Fail "假玩家 $BotName 未在 20s 内上线；list：`n$(Invoke-RconOptional 'list')"
 }
 Pass "假玩家 $BotName 已生成"
+$stackOnly = @($worlds | Where-Object { $_ -ne "world" })
+$testLayer = if ($stackOnly.Count -gt 1) { $stackOnly[$stackOnly.Count - 1] } elseif ($stackOnly.Count -eq 1) { $stackOnly[0] } else { $null }
+if ($testLayer) {
+    Info "进入测试栈层 $testLayer"
+    Assert-Contains (Invoke-Rcon "execute as $BotName run samsara world enter $testLayer") "已进入" "进入栈层"
+    Wait-Transfer
+}
 
 # F-29：主世界虚空 → 同世界下界
 Info "F-29 主世界虚空 → 同世界下界"
@@ -123,7 +130,7 @@ Invoke-Rcon "execute in minecraft:the_nether run tp $BotName 12 400 12" | Out-Nu
 Wait-Transfer
 Assert-Dimension "overworld" "F-31 目标维度" -Contains
 
-if ($current -ne $top) {
+if ($testLayer) {
     Info "F-32 主世界顶部 → 上层世界下界"
     Invoke-Rcon "execute in minecraft:overworld run tp $BotName 200 500 200" | Out-Null
     Wait-Transfer
@@ -135,7 +142,7 @@ if ($current -ne $top) {
     Write-Host "[skip] 当前就是栈顶，无法测试 F-32；先 world enter 到下层世界再跑。" -ForegroundColor Yellow
 }
 
-if ($current -ne $bottom) {
+if ($testLayer -and $stackOnly.Count -gt 1) {
     Info "F-30 下界虚空 → 下层世界主世界"
     Invoke-Rcon "execute in minecraft:the_nether run tp $BotName 50 -100 50" | Out-Null
     Wait-Transfer

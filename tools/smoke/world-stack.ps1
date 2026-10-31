@@ -177,30 +177,17 @@ $info2 = Invoke-Rcon "samsara world info"
 Assert-Contains $info2 "实际加载" "新世界 info"
 Assert-Contains $info2 "$Seed" "新世界种子"
 
-# ---- 5. 返回旧世界 ----
-Info "5/6 world leave 返回下层"
-$leave = Invoke-Rcon "samsara world leave"
-Assert-Contains $leave "已安排返回下层世界" "world leave 安排"
-if (-not (Wait-Rcon $false 60)) { Fail "world leave 未触发停服" }
-Start-TestServer | Out-Null
+# ---- 5. 验证栈层可进入（需要在线玩家） ----
+Info "5/6 验证栈层"
 $list3 = Invoke-Rcon "samsara world list"
-Assert-Contains $list3 "当前" "返回旧世界后 list"
+Assert-Contains $list3 "stack_" "旧 world 已成为 stack_<n> 维度"
+Assert-Contains $list3 "world" "world 仍是栈顶"
+Info "world enter 现在直接传送到栈维度，不再停服；请用假玩家验证：execute as <bot> run samsara world enter <stack_n>"
 
 # ---- 6. 清理 ----
-Info "6/6 清理测试现场"
+Info "6/6 保留现场（v0.24 的栈层迁移不做自动删除，避免误删维度数据）"
 if (-not $KeepWorld) {
-    Invoke-RconOptional "samsara debug world reset" | Out-Null
-    # 当前已经回到旧世界，删除测试世界目录
-    $newWorld = [regex]::Match($list2, "(world_s\d+)").Groups[1].Value
-    if ($newWorld) {
-        $path = Join-Path (Resolve-Path $ServerDir).Path $newWorld
-        if (Test-Path $path) {
-            Remove-Item $path -Recurse -Force
-            Pass "已删除测试世界 $newWorld"
-        }
-    }
-} else {
-    Info "保留测试世界（-KeepWorld）"
+    Info "如需清理，请手动删除 world/dimensions/samsara/stack_<n> 与 world/samsara/stack/stack_<n>"
 }
 
 Pass "世界栈 / new-world 场景测试全部通过"

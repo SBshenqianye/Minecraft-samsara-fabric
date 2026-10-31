@@ -3,7 +3,6 @@ package com.shenqianye.samsara.season;
 import com.shenqianye.samsara.Samsara;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -12,25 +11,24 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.Heightmap;
 
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
 /**
- * 跨世界传送链（F-29~F-34）：主世界/下界虚空与顶部阈值触发，支持连续穿越世界栈。
- *
- * <p>同世界内的下界往返只依赖原版维度；跨栈层需要 {@link MultiWorldLoader} 同时加载其它层。
- * 如果额外层加载失败，跨层传送不会静默跳过：会给玩家明确提示，并把原因写进日志/状态。
- *
- * <p>防抖：每位玩家传送后 3 秒冷却 + 目标点安全 Y，避免一次下落连续触发。
- * 保留下界传送门，不替代原版。
+ * 跨世界传送链（F-29~F-34），维度模型：
+ * <ul>
+ *   <li>主世界虚空 → 同层下界；</li>
+ *   <li>下界虚空 → 下层栈层主世界；栈底交给原版死亡；</li>
+ *   <li>下界顶部 → 同层主世界；</li>
+ *   <li>主世界顶部 → 上层栈层下界。</li>
+ * </ul>
+ * 同层下界 = 该层自己的 nether；栈顶用 minecraft:the_nether，旧层用 samsara:stack_n/the_nether。
  */
 public final class WorldChainTeleport {
     private static final int CHECK_INTERVAL_TICKS = 5;
     private static final long COOLDOWN_MS = 3000L;
 
-    private static Map<String, MultiWorldLoader.LoadedWorld> loaded = Map.of();
     private static final Map<UUID, Long> lastTeleport = new HashMap<>();
     private static final Map<UUID, String> lastNotice = new HashMap<>();
     private static int counter;
@@ -39,33 +37,16 @@ public final class WorldChainTeleport {
     }
 
     public static synchronized void load(MinecraftServer server) {
-        unload();
-        List<String> stack = WorldStackManager.getInstance().stack();
-        String current = WorldStackManager.currentWorldName(server);
-        if (stack.size() <= 1) {
-            loaded = Map.of();
-            return;
-        }
-        if (Boolean.getBoolean("samsara.multiWorld.disabled")) {
-            loaded = Map.of();
-            Samsara.LOGGER.info("[周目管理 samsara] 跨世界额外层加载已被 -Dsamsara.multiWorld.disabled 关闭");
-            return;
-        }
-        loaded = MultiWorldLoader.loadOthers(server, stack, current);
-        Samsara.LOGGER.info("[周目管理 samsara] {}", MultiWorldLoader.status(loaded));
+        Samsara.LOGGER.info("[周目管理 samsara] {}", StackDimensionLoader.status());
     }
 
     public static synchronized void unload() {
-        for (MultiWorldLoader.LoadedWorld world : loaded.values()) {
-            world.close();
-        }
-        loaded = Map.of();
         lastTeleport.clear();
         lastNotice.clear();
     }
 
     public static synchronized String statusText() {
-        return MultiWorldLoader.status(loaded);
+        return StackDimensionLoader.status();
     }
 
     public static synchronized void tick(MinecraftServer server) {
@@ -87,68 +68,70 @@ public final class WorldChainTeleport {
         if (!(player.level() instanceof ServerLevel level)) {
             return;
         }
-        String worldName = worldNameOf(server, level);
-        String dimension = dimensionOf(server, level);
-        if (worldName == null || dimension == null) {
+        StackManifest manifest = StackManifest.load(StackPaths.worldDir(server));
+        String layerId = StackPaths.layerIdOf(level.dimension());
+        StackLayer layer = layerId == null ? null : manifest.byId(layerId);
+        String dim = StackPaths.dimensionOf(level.dimension());
+        if (layer == null || dim == null) {
             return;
         }
         int minY = level.dimensionType().minY();
         double y = player.getY();
+
         if (WorldChainRules.isVoid(y, minY)) {
-            if ("overworld".equals(dimension)) {
-                // F-29：主世界虚空 → 同世界下界
-                ServerLevel nether = target(server, worldName, "the_nether");
+            if ("overworld".equals(dim)) {
+                ServerLevel nether = StackTeleport.level(server, layer, "the_nether");
                 if (nether != null) {
                     int tx = WorldChainRules.toNether(player.getX());
                     int tz = WorldChainRules.toNether(player.getZ());
-                    teleport(player, nether, tx, tz, safeY(nether, tx, tz),
-                            "虚空坠落 → 同世界下界");
+                    teleport(player, nether, tx, tz, safeNetherY(nether, tx, tz),
+                            "虚空坠落 → 同层下界");
                 }
-            } else if ("the_nether".equals(dimension)) {
-                // F-30/F-34：下界虚空 → 下层世界主世界；栈底交给原版虚空死亡
-                String lower = lowerWorld(server, worldName);
+            } else if ("the_nether".equals(dim)) {
+                StackLayer lower = manifest.below(layer);
                 if (lower == null) {
-                    return; // F-34：栈底下界再往下掉 = 真正死亡
+                    return; // F-34：栈底下界虚空 → 原版死亡
                 }
-                ServerLevel target = target(server, lower, "overworld");
+                ServerLevel target = StackTeleport.level(server, lower, "overworld");
                 if (target == null) {
-                    notice(player, "nether-void", "下层世界 " + lower
-                            + " 未被额外加载，无法跨世界传送（请查看 /samsara debug world multi）");
+                    notice(player, "nether-void", "下层世界 " + lower.id
+                            + " 未加载，无法跨世界传送（看 /samsara debug world multi）");
                     return;
                 }
                 int tx = WorldChainRules.toOverworld(player.getX());
                 int tz = WorldChainRules.toOverworld(player.getZ());
                 teleport(player, target, tx, tz, safeY(target, tx, tz),
-                        "下界虚空 → 下层世界 " + lower + " 主世界");
+                        "下界虚空 → 下层 " + lower.id + " 主世界");
             }
             return;
         }
-        if (WorldChainRules.isTop(y, minY, level.dimensionType().height(), "the_nether".equals(dimension) ? WorldChainRules.DimensionKind.NETHER : WorldChainRules.DimensionKind.OVERWORLD)) {
-            if ("the_nether".equals(dimension)) {
-                // F-31：下界顶部 → 同世界主世界
-                ServerLevel overworld = target(server, worldName, "overworld");
+
+        if (WorldChainRules.isTop(y, minY, level.dimensionType().height(),
+                "the_nether".equals(dim) ? WorldChainRules.DimensionKind.NETHER
+                        : WorldChainRules.DimensionKind.OVERWORLD)) {
+            if ("the_nether".equals(dim)) {
+                ServerLevel overworld = StackTeleport.level(server, layer, "overworld");
                 if (overworld != null) {
                     int tx = WorldChainRules.toOverworld(player.getX());
                     int tz = WorldChainRules.toOverworld(player.getZ());
                     teleport(player, overworld, tx, tz, safeY(overworld, tx, tz),
-                            "下界顶部 → 同世界主世界");
+                            "下界顶部 → 同层主世界");
                 }
-            } else if ("overworld".equals(dimension)) {
-                // F-32：主世界顶部 → 上层世界下界
-                String upper = upperWorld(server, worldName);
+            } else if ("overworld".equals(dim)) {
+                StackLayer upper = manifest.above(layer);
                 if (upper == null) {
                     return;
                 }
-                ServerLevel target = target(server, upper, "the_nether");
+                ServerLevel target = StackTeleport.level(server, upper, "the_nether");
                 if (target == null) {
-                    notice(player, "overworld-top", "上层世界 " + upper
-                            + " 未被额外加载，无法跨世界传送（请查看 /samsara debug world multi）");
+                    notice(player, "overworld-top", "上层世界 " + upper.id
+                            + " 未加载，无法跨世界传送（看 /samsara debug world multi）");
                     return;
                 }
                 int tx = WorldChainRules.toNether(player.getX());
                 int tz = WorldChainRules.toNether(player.getZ());
                 teleport(player, target, tx, tz, netherRoofY(target, tx, tz),
-                        "主世界顶部 → 上层世界 " + upper + " 下界");
+                        "主世界顶部 → 上层 " + upper.id + " 下界");
             }
         }
     }
@@ -179,79 +162,23 @@ public final class WorldChainTeleport {
         player.sendSystemMessage(Component.literal("[世界栈] " + message));
     }
 
-    private static String lowerWorld(MinecraftServer server, String worldName) {
-        List<String> stack = WorldStackManager.getInstance().stack();
-        int index = stack.indexOf(worldName);
-        return index > 0 ? stack.get(index - 1) : null;
-    }
-
-    private static String upperWorld(MinecraftServer server, String worldName) {
-        List<String> stack = WorldStackManager.getInstance().stack();
-        int index = stack.indexOf(worldName);
-        return index >= 0 && index + 1 < stack.size() ? stack.get(index + 1) : null;
-    }
-
-    private static ServerLevel target(MinecraftServer server, String worldName, String dimension) {
-        String current = WorldStackManager.currentWorldName(server);
-        if (worldName.equals(current)) {
-            return server.getLevel(dimensionKey(dimension));
-        }
-        MultiWorldLoader.LoadedWorld world = loaded.get(worldName);
-        return world == null ? null : world.levels.get(dimension);
-    }
-
-    private static ResourceKey<Level> dimensionKey(String dimension) {
-        return switch (dimension) {
-            case "the_nether" -> Level.NETHER;
-            case "the_end" -> Level.END;
-            default -> Level.OVERWORLD;
-        };
-    }
-
-    private static String worldNameOf(MinecraftServer server, ServerLevel level) {
-        String current = WorldStackManager.currentWorldName(server);
-        if (level == server.getLevel(Level.OVERWORLD)
-                || level == server.getLevel(Level.NETHER)
-                || level == server.getLevel(Level.END)) {
-            return current;
-        }
-        return MultiWorldLoader.worldNameOf(loaded, level);
-    }
-
-    private static String dimensionOf(MinecraftServer server, ServerLevel level) {
-        if (level == server.getLevel(Level.OVERWORLD)) {
-            return "overworld";
-        }
-        if (level == server.getLevel(Level.NETHER)) {
-            return "the_nether";
-        }
-        if (level == server.getLevel(Level.END)) {
-            return "the_end";
-        }
-        return MultiWorldLoader.dimensionOf(loaded, level);
-    }
-
-    /** 安全落脚 Y：强制加载区块，避开海洋/岩浆，异常高度从顶部往下扫。 */
     static int safeY(ServerLevel level, int x, int z) {
         try {
             level.getChunk(x >> 4, z >> 4);
-        } catch (Exception e) {
-            // 生成失败时退回原版高度图
+        } catch (Exception ignored) {
         }
         int minY = level.dimensionType().minY();
         int maxY = minY + level.dimensionType().height();
         int h = level.getHeight(Heightmap.Types.MOTION_BLOCKING, x, z);
         if (h <= minY || h >= maxY) {
             for (int yy = maxY - 2; yy > minY; yy--) {
-                BlockState state = level.getBlockState(new BlockPos(x, yy, z));
-                if (state.isSolid()) {
+                if (level.getBlockState(new BlockPos(x, yy, z)).isSolid()) {
                     h = yy;
                     break;
                 }
             }
         }
         int y = Math.max(minY + 2, Math.min(maxY - 2, h + 1));
-        // 目标列是水/岩浆/实心方块：就近找一个能站两人的干地
         for (int i = 0; i < 4; i++) {
             if (isDry(level, x, y, z)) {
                 return y;
@@ -262,7 +189,6 @@ public final class WorldChainTeleport {
         if (found != Integer.MIN_VALUE) {
             return found;
         }
-        // 实在找不到：从顶部往下找第一处「脚下实心、头顶两格空」的位置
         for (int yy = maxY - 3; yy > minY + 1; yy--) {
             if (isDry(level, x, yy, z)) {
                 return yy;
@@ -298,7 +224,6 @@ public final class WorldChainTeleport {
         return Integer.MIN_VALUE;
     }
 
-    /** 下界顶部目标：基岩顶上方一格；没有基岩则取地表。 */
     static int netherRoofY(ServerLevel level, int x, int z) {
         int minY = level.dimensionType().minY();
         int maxY = minY + level.dimensionType().height();
@@ -308,5 +233,22 @@ public final class WorldChainTeleport {
             }
         }
         return safeY(level, x, z);
+    }
+
+    /** 同层下界落点：优先在屋顶以下找安全地面，避免站到基岩顶。 */
+    static int safeNetherY(ServerLevel level, int x, int z) {
+        try {
+            level.getChunk(x >> 4, z >> 4);
+        } catch (Exception ignored) {
+        }
+        int minY = level.dimensionType().minY();
+        int maxY = minY + level.dimensionType().height();
+        int cap = Math.min(maxY - 3, minY + 120);
+        for (int y = cap; y > minY + 1; y--) {
+            if (isDry(level, x, y, z)) {
+                return y;
+            }
+        }
+        return Math.min(cap, safeY(level, x, z));
     }
 }

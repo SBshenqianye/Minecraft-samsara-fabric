@@ -5,13 +5,13 @@
 
 ## 当前版本
 
-**v0.23.0** · Minecraft **26.3** · Fabric Loader **0.20.1** · Java **25**
+**v0.24.0** · Minecraft **26.3** · Fabric Loader **0.20.1** · Java **25**
 
 ## 能做什么
 
 | 功能 | 状态 | 说明 |
 |---|---|---|
-| 世界与新一轮 | ✅ 可用 | 世界文件夹自动入栈；出生点历史自动定义“当前轮”，启动时检测出生点变化；不需要先注册周目 |
+| 世界与新一轮 | ✅ 可用 | `world` 固定是栈顶/最新；旧世界是 `world/dimensions/samsara/stack_<n>` 自定义维度；出生点历史自动定义“当前轮”，不需要先注册周目 |
 | 同世界重置 | ✅ 可用 | 保留圈地保护区块，倒流删除未保护区；排斥算法选新出生点（避开海洋/岩浆/陡坡/保护区），全员传送并更新世界重生点 |
 | 分组出生 | ✅ 可用 | 玩家按 3~5 人分组，围绕新出生中心分散；离线玩家上线后补传送 |
 | 时间倒流 | ✅ 可用 | 未圈地区块按设定周期逐格恢复：近处慢放、远处按曲线退场，完成后备份、删除并重新生成 |
@@ -39,7 +39,7 @@
 | 位置查询 | ✅ 可用 | `/samsara where` 查看自己的维度与坐标（可带区块、朝向），`where broadcast` 广播全服；命令启用与输出字段在 `config/samsara/commands.yml` 配置 |
 | TPA 传送 | ✅ 可用 | `/tpa`、`/tpahere` 发起请求，`/tpaccept`、`/tpdeny`、`/tpcancel` 处理；默认 60 秒过期、每人同时只有 1 个请求、仅同维度；请求消息带 `[同意] [拒绝]` / `[取消请求]` 可点击按钮 |
 | 命令短别名 | ✅ 可用 | `/season`、`/claim`、`/where`、`/version`、`/track`、`/tpa` 系列等；被其他模组占用时自动让位，只保留 `/samsara` 全名 |
-| 新世界与跨世界传送 | ✅ 可用 | 新世界独立种子/下界/末地并自动入栈，旧世界原位保留；主世界/下界虚空与顶部阈值可连续穿越世界栈，栈底下界虚空保留原版死亡；切换世界会停服并在下次启动生效 |
+| 新世界与跨世界传送 | ✅ 可用 | `reset new [种子] [levelType] [isolate]` 把当前 world 压入 `stack_<n>` 维度，新 world 用独立种子/生成器（flat/amplified 等）；旧世界原位保留；主世界/下界虚空与顶部阈值可连续穿越栈层，栈底下界虚空保留原版死亡；多个玩家可同时待在不同栈 |
 | 全员同意开新周目 | 🚧 规划中 | 无管理员时由在线玩家发起并全员同意 |
 | 身份组 | ✅ 可用 | 把正版/离线/历史账号映射到同一个 data UUID；默认关闭，关闭时不解析、不同步；组由本地 Web 的“身份组”标签页以卡片方式维护，不提供注册/登录/密码 |
 | 账号切换同步 | ✅ 可用 | 同账号重连不同步；正版 ↔ 离线账号切换时同步背包/位置/进度/统计；失败保留 journal、`.bak` 与源数据 |
@@ -56,8 +56,8 @@
 | 看当前世界/轮次/出生点 | `/samsara world info`、`/samsara spawn`、`/samsara spawn history` |
 | 看圈地 | `/samsara claim info`、`/samsara claim boundary` |
 | 同世界重置 | `/samsara reset same`（倒流 + 删未保护区 + 排斥点重生；二次确认） |
-| 新世界入栈 | `/samsara reset new [种子]`（新建独立世界并全员迁移；二次确认） |
-| 看/切换世界栈 | `/samsara world list`、`/samsara world info`；管理员 `/samsara world enter <世界名>`、`/samsara world leave`（会停服，重启后生效） |
+| 新世界入栈 | `/samsara reset new [种子] [normal\|flat\|amplified\|...] [true\|false]`（第三个参数控制 data 隔离；二次确认） |
+| 看/切换世界栈 | `/samsara world list`、`/samsara world info`；管理员 `/samsara world enter <世界名>`、`/samsara world leave`（直接传送到栈维度，不再停服） |
 | 管理/调试 | `/samsara debug ...`（owner；圈地、倒流、轨迹、配置、测试数据） |
 | 查看补全候选 | `/samsara debug completion <指令片段>`（owner；只打印候选，便于排查补全） |
 | 回放玩家轨迹 | `/samsara debug track replay <监控目标> <开始时刻> [倍速] [周目]` · `track stop [监控目标\\|all]` · `track status` |
@@ -68,7 +68,7 @@
 | 关服/重启 | `/samsara restart [秒]`（默认 10 秒倒计时；退出界面显示“服务器已关闭，请稍后重新连接”） |
 
 > 世界与出生点在 `/samsara world`、`/samsara spawn`、`/samsara reset`；调试与圈地管理在 `/samsara debug`。游戏内输入 `/samsara` 或 `/samsara help` 可看帮助（列表里的青色按钮点击即执行，黄色按钮点击只填入）。
-> `reset new`、`world enter`、`world leave` 会修改 `server.properties` 的 `level-name` 并停服，**必须由启动脚本重新开服**后才会生效；每个世界自己的栈身份在 `<世界>/samsara/stack.json`，服务器根的 `samsara/world-stack.json` 只是可重建缓存。
+> `reset new` 会修改 `server.properties` 的 `level-seed`/`level-type` 并停服，**必须由启动脚本重新开服**后才会生成新栈顶；`world enter/leave` 直接传送到栈维度，不停服。栈清单在 `world/samsara/stack.json`，旧栈元数据在 `world/samsara/stack/stack_<n>/`。
 > 所有玩家名、世界、时长、回看参数、权限路径/等级都支持 **Tab 补全**；输入不完整时按回车，也会在聊天栏列出可点击候选（一行多个，点击只填入）。回看时段列表与帮助里的危险命令只填入命令，不会直接执行。
 
 ## 安装与构建
@@ -110,12 +110,12 @@ Linux/macOS 用 `./gradlew build`。产物是 `mod/build/libs/samsara-<版本>.j
 | 层 | 默认位置 | 内容 | 随存档 |
 |---|---|---|---|
 | 配置 | `config/samsara/*.yml` | 命令开关、权限、圈地粒子、圈地范围、存储覆盖、Web、身份组 `identity.yml`、输出模板 `output.yml` | 否 |
-| 世界数据 | `<存档根>/samsara/` | 世界栈身份 `stack.json`、出生点历史 `spawn-history.json`、圈地、倒流、轨迹、回看、备份、活动、审计 | 是 |
-| 世界栈缓存 | `<服务器根>/samsara/world-stack.json` | 栈列表/当前指针/pending；启动时按各世界 `stack.json` 重建 | 否（可重建） |
+| 世界数据 | `world/samsara/` | 栈清单 `stack.json`、出生点历史、圈地、倒流、轨迹、回看、备份、活动、审计；旧栈元数据在 `world/samsara/stack/stack_<n>/` | 是 |
+| 世界维度 | `world/dimensions/` | 栈顶 `minecraft/{overworld,the_nether,the_end}`；旧栈 `samsara/stack_<n>/{...}` | 是 |
 | 身份运行时数据 | `<存档根>/samsara/identity/` | `state.json`、按 data UUID 存玩家数据、journal、archive、身份审计 | 是（固定随主存档） |
 | 全局数据 | `<存档根>/samsara/global/`（默认）或服务器级 | 跨世界审计等；`globalFollowWorld` 可改位置 | 默认是 |
 
-- `<存档根>` 在专用服务器是 `world/`，单人存档是 `saves/<存档名>/`。世界栈中每个世界目录都有自己的 `samsara/`，移动/备份单个世界会连同它的栈身份与出生点历史一起带走。
+- `<存档根>` 在专用服务器是 `world/`，单人存档是 `saves/<存档名>/`。`world` 固定是栈顶；旧栈层是它内部的 `dimensions/samsara/stack_<n>`，所以备份整个 `world` 就包含全部栈层。
 - **存档备份会包含 `samsara/` 世界数据**（轨迹与倒流记录可能较大）；配置不随存档复制。
 - **身份组配置**固定在 `config/samsara/identity.yml`，不随存档走；身份运行时数据固定在 `<存档根>/samsara/identity/`，随主存档复制/备份，不随世界栈或 `globalFollowWorld` 切换。
 - 只转移存档时 `identity/playerdata` 会一起走，但 `identity.yml` 不会；完整迁移请同时复制它，或使用 Web 导出/导入。

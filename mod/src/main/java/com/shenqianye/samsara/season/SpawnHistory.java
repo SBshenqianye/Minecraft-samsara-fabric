@@ -69,8 +69,9 @@ public final class SpawnHistory {
         return worldDir.resolve("samsara").resolve(FILE_NAME);
     }
 
-    public static SpawnHistory load(Path worldDir) {
-        Path file = file(worldDir);
+    /** 直接从元数据目录读取（栈层用；栈顶传入 {@code world/samsara}）。 */
+    public static SpawnHistory loadFrom(Path metaDir) {
+        Path file = metaDir.resolve(FILE_NAME);
         SpawnHistory history = new SpawnHistory();
         if (Files.exists(file)) {
             try {
@@ -91,8 +92,16 @@ public final class SpawnHistory {
         return history;
     }
 
+    public static SpawnHistory load(Path worldDir) {
+        return loadFrom(worldDir.resolve("samsara"));
+    }
+
     public void save(Path worldDir) {
-        Path file = file(worldDir);
+        saveTo(worldDir.resolve("samsara"));
+    }
+
+    public void saveTo(Path metaDir) {
+        Path file = metaDir.resolve(FILE_NAME);
         try {
             Files.createDirectories(file.getParent());
             Path tmp = file.resolveSibling(file.getFileName() + ".tmp");

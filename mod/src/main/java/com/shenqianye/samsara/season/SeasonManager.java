@@ -358,7 +358,7 @@ public class SeasonManager {
         int oldZ = history.last() == null ? overworld.getRespawnData().pos().getZ() : history.last().z;
 
         Season s = new Season();
-        s.id = stack.nextSeasonId();
+        s.id = stack.nextSeasonId(server);
         s.name = "第 " + (history.size() + 1) + " 轮";
         s.mode = "same-world";
         s.worldName = WorldStackManager.currentWorldName(server);
@@ -519,11 +519,16 @@ public class SeasonManager {
 
     /** {@code /samsara reset new [种子]}：仅栈顶；安排重启后生成独立世界并自动入栈。 */
     public synchronized String resetNew(MinecraftServer server, Long seed) {
+        return resetNew(server, seed, "normal", false);
+    }
+
+    public synchronized String resetNew(MinecraftServer server, Long seed, String levelType, boolean isolate) {
         WorldStackManager stack = WorldStackManager.getInstance();
         stack.refresh(server, null);
-        int seasonId = stack.nextSeasonId();
-        String name = "世界 " + stack.newWorldName(server);
-        return stack.resetNew(server, seed, seasonId, name);
+        if (!stack.isTopCurrent(server)) {
+            return "只有栈顶 world 可以生成新世界";
+        }
+        return StackBootstrap.scheduleNew(server, seed, levelType, "", isolate);
     }
 
     /** 当前世界出生点历史文本。 */

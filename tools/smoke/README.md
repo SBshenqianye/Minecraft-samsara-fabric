@@ -5,13 +5,13 @@
 
 ## world-stack.ps1
 
-验证世界栈与新世界入栈：
+验证 world=栈顶、reset new 生成栈维度：
 
 1. `world list` / `world info` 可读
-2. `reset new <种子>` → 二次确认 → 停服
-3. 用启动脚本重启后：新世界生成、自动入栈、出生点历史第 1 条、种子正确
-4. `world leave` → 停服 → 重启后回到旧世界
-5. 清理测试世界（除非 `-KeepWorld`）
+2. `reset new <种子> [levelType] [isolate]` → 二次确认 → 停服
+3. 重启后：旧 world 变成 `stack_<n>` 维度，新 `world` 生成、出生点历史第 1 条、种子正确
+4. `world` 始终是栈顶；旧栈可用 `world enter <stack_n>` 直接传送
+5. v0.24 不做自动删除，测试层默认保留（手动清理 `world/dimensions/samsara/stack_<n>` 与 `world/samsara/stack/stack_<n>`）
 
 ```powershell
 # 先确保测试服已启动、RCON 监听 25575
