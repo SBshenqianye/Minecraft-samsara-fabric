@@ -8,7 +8,7 @@
 验证 world=栈顶、reset new 生成栈维度：
 
 1. `world list` / `world info` 可读
-2. `reset new <种子> [levelType] [isolate]` → 二次确认 → 停服
+2. `reset new <种子> [levelType] [archiveData]` → 二次确认 → 停服
 3. 重启后：旧 world 变成 `stack_<n>` 维度，新 `world` 生成、出生点历史第 1 条、种子正确
 4. `world` 始终是栈顶；旧栈可用 `world enter <stack_n>` 直接传送
 5. v0.24 不做自动删除，测试层默认保留（手动清理 `world/dimensions/samsara/stack_<n>` 与 `world/samsara/stack/stack_<n>`）
@@ -34,6 +34,23 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\smoke\world-stack.ps1 
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\smoke\world-reset.ps1 -Confirm -Resets 3
+
+# 在指定栈层（假玩家当前所在层）重置：先 world enter 再以该玩家身份执行
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\smoke\world-reset.ps1 -Confirm -BotName StackBot -Layer stack_1
+```
+
+## world-legacy-migrate.ps1
+
+旧 `world` + `world_s1` + `world_s2` 布局 → v0.24（world=栈顶、旧层=stack_<n>）迁移：
+
+1. 启动服务器（要求先停服、`world/samsara/stack.json` 不存在）
+2. `world list` 出现 `stack_0 → stack_1 → world`
+3. `world/dimensions/samsara/stack_<n>` 与 `world/samsara/stack/stack_<n>/` 元数据存在
+4. `players/data`、claims/diff/track/spawn-history 保留
+5. `server.properties` 固定 `level-name=world`
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\smoke\world-legacy-migrate.ps1 -Confirm -ServerDir test-server-stack
 ```
 
 ## world-chain.ps1
@@ -50,6 +67,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\smoke\world-reset.ps1 
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\smoke\world-chain.ps1 -Confirm -BotName ChainBot
 ```
 
-> 切换世界会改写 `server.properties` 的 `level-name` 并停服；脚本按默认参数直接 `java -jar` 重启。
+> v0.24 的 `world enter/leave` 直接传送到栈维度，不再改写 `server.properties`；`reset new` 仍会改 `level-seed`/`level-type` 并停服，脚本按默认参数直接 `java -jar` 重启。
 > 若测试服用的是别的启动方式/端口，用参数覆盖：
 > `-ServerDir`、`-ServerArgs`、`-RconPort`、`-RconPassword`、`-Java`。

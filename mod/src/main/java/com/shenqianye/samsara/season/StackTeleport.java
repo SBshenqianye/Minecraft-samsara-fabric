@@ -114,7 +114,7 @@ public final class StackTeleport {
     private static void move(MinecraftServer server, ServerPlayer player, StackLayer layer,
                              ServerLevel level, int x, int z) {
         int y = layer.top ? topSpawnY(level, x, z) : layer.spawnY;
-        if (y <= level.dimensionType().minY()) {
+        if (y <= level.dimensionType().minY() || !isSafeStand(level, x, y, z)) {
             y = safeY(level, x, z);
         }
         player.teleportTo(level, x + 0.5, y, z + 0.5, Set.of(),
@@ -138,5 +138,19 @@ public final class StackTeleport {
         level.getChunk(x >> 4, z >> 4);
         return Math.max(level.dimensionType().minY() + 2,
                 level.getHeight(Heightmap.Types.MOTION_BLOCKING, x, z) + 1);
+    }
+
+    private static boolean isSafeStand(ServerLevel level, int x, int y, int z) {
+        try {
+            level.getChunk(x >> 4, z >> 4);
+        } catch (Exception e) {
+            return false;
+        }
+        BlockPos feet = new BlockPos(x, y, z);
+        var ground = level.getBlockState(feet.below());
+        var at = level.getBlockState(feet);
+        var head = level.getBlockState(feet.above());
+        return ground.isSolid() && at.getFluidState().isEmpty() && !at.isSolid()
+                && head.getFluidState().isEmpty() && !head.isSolid();
     }
 }

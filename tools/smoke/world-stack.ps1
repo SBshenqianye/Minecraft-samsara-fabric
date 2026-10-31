@@ -6,7 +6,7 @@
 .DESCRIPTION
   用真实 RCON + 真实停服/重启验证玩家会遇到的主流程：
     1. 世界栈 list/info 可读
-    2. reset new [种子] → 二次确认 → 停服
+    2. reset new [种子] [levelType] [archiveData] → 二次确认 → 停服
     3. 重启后新世界生成、自动入栈、出生点历史第 1 条、种子正确
     4. world leave 回到旧世界，重启后当前世界正确
   默认会清理测试世界；加 -KeepWorld 保留现场。
@@ -143,15 +143,9 @@ Assert-Contains $list "世界栈" "world list 标题"
 Assert-Contains $list "当前" "world list 当前标记"
 Assert-Contains (Invoke-Rcon "samsara world info") "实际加载" "world info"
 
-# new-world 只允许栈顶：如果当前不在栈顶，先 enter 回去
+# v0.24：world 固定是栈顶，不再需要（也不支持）world_sN 当前指针
 $info = Invoke-Rcon "samsara world info"
-$currentMatch = [regex]::Match($info, "清单当前：(.+)")
-$topMatch = [regex]::Match($info, "栈顶：(.+)")
-if ($currentMatch.Success -and $topMatch.Success -and $currentMatch.Groups[1].Value.Trim() -ne $topMatch.Groups[1].Value.Trim()) {
-    Info "当前不在栈顶，先 world enter 回栈顶"
-    Invoke-Rcon ("samsara world enter " + $topMatch.Groups[1].Value.Trim()) | Out-Null
-    Restart-TestServer
-}
+Assert-Contains $info "栈顶：world" "world 固定为栈顶"
 
 # 清理阻塞状态（没有可忽略）
 Invoke-RconOptional "samsara debug rewind abort" | Out-Null
@@ -161,7 +155,7 @@ Info "2/6 创建新世界（reset new）"
 $first = Invoke-Rcon "samsara reset new $Seed"
 Assert-Contains $first "危险操作确认" "第一次 reset new 只确认"
 $second = Invoke-Rcon "samsara reset new $Seed"
-Assert-Contains $second "已安排新世界切换" "第二次 reset new 执行"
+Assert-Contains $second "已安排新世界入栈" "第二次 reset new 执行"
 
 # ---- 3. 停服 + 重启，验证新世界 ----
 Info "3/6 等待停服并重启"
@@ -169,12 +163,12 @@ if (-not (Wait-Rcon $false 60)) { Fail "reset new 未触发停服" }
 Start-TestServer | Out-Null
 Info "4/6 验证新世界"
 $list2 = Invoke-Rcon "samsara world list"
-Assert-Contains $list2 "当前" "新世界已入栈"
-Assert-Contains $list2 "world_s" "新世界目录名在栈中"
+Assert-Contains $list2 "world" "world 仍是栈顶"
+Assert-Contains $list2 "stack_" "旧 world 已压入 stack_<n>"
 $spawn = Invoke-Rcon "samsara spawn"
 Assert-Contains $spawn "历史 1 条" "新世界出生点历史第 1 条"
 $info2 = Invoke-Rcon "samsara world info"
-Assert-Contains $info2 "实际加载" "新世界 info"
+Assert-Contains $info2 "实际加载：world" "新栈顶实际加载 world"
 Assert-Contains $info2 "$Seed" "新世界种子"
 
 # ---- 5. 验证栈层可进入（需要在线玩家） ----

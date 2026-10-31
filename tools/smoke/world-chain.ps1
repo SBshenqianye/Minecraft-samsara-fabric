@@ -92,7 +92,7 @@ if (-not (Test-RconPort)) { Fail "RCON 未监听；先启动测试服（端口 $
 $multi = Invoke-Rcon "samsara debug world multi"
 Info $multi
 $list = Invoke-Rcon "samsara world list"
-$worlds = @([regex]::Matches($list, "\b(\d+)\.\s+(world\S*)") | ForEach-Object { $_.Groups[2].Value } | Select-Object -Unique)
+$worlds = @([regex]::Matches($list, "\b(\d+)\.\s+([^\s]+)") | ForEach-Object { $_.Groups[2].Value } | Select-Object -Unique)
 $info = Invoke-Rcon "samsara world info"
 $current = ([regex]::Match($info, "实际加载：(\S+)")).Groups[1].Value
 $top = ([regex]::Match($info, "栈顶：(\S+)")).Groups[1].Value
@@ -112,29 +112,31 @@ if ((Invoke-RconOptional "list") -notlike "*$BotName*") {
 Pass "假玩家 $BotName 已生成"
 $stackOnly = @($worlds | Where-Object { $_ -ne "world" })
 $testLayer = if ($stackOnly.Count -gt 1) { $stackOnly[$stackOnly.Count - 1] } elseif ($stackOnly.Count -eq 1) { $stackOnly[0] } else { $null }
+$ovDim = if ($testLayer) { "samsara:$testLayer/overworld" } else { "minecraft:overworld" }
+$netherDim = if ($testLayer) { "samsara:$testLayer/the_nether" } else { "minecraft:the_nether" }
 if ($testLayer) {
-    Info "进入测试栈层 $testLayer"
+    Info "进入测试栈层 $testLayer（$ovDim）"
     Assert-Contains (Invoke-Rcon "execute as $BotName run samsara world enter $testLayer") "已进入" "进入栈层"
     Wait-Transfer
 }
 
 # F-29：主世界虚空 → 同世界下界
 Info "F-29 主世界虚空 → 同世界下界"
-Invoke-Rcon "execute in minecraft:overworld run tp $BotName 100 -100 100" | Out-Null
+Invoke-Rcon "execute in $ovDim run tp $BotName 100 -100 100" | Out-Null
 Wait-Transfer
 Assert-Dimension "the_nether" "F-29 目标维度" -Contains
 
 # F-31：下界顶部 → 同世界主世界
 Info "F-31 下界顶部 → 同世界主世界"
-Invoke-Rcon "execute in minecraft:the_nether run tp $BotName 12 400 12" | Out-Null
+Invoke-Rcon "execute in $netherDim run tp $BotName 12 400 12" | Out-Null
 Wait-Transfer
 Assert-Dimension "overworld" "F-31 目标维度" -Contains
 
 if ($testLayer) {
     Info "F-32 主世界顶部 → 上层世界下界"
-    Invoke-Rcon "execute in minecraft:overworld run tp $BotName 200 500 200" | Out-Null
+    Invoke-Rcon "execute in $ovDim run tp $BotName 200 500 200" | Out-Null
     Wait-Transfer
-    Assert-Dimension "samsara_stack_" "F-32 目标为额外层" -Contains
+    Assert-Dimension "the_nether" "F-32 目标为上层下界" -Contains
     $dim = Get-Dimension
     if ($dim -notlike "*the_nether*") { Fail "F-32 期望上层下界，实际 $dim" }
     Pass "F-32 目标为上层下界"
@@ -144,15 +146,15 @@ if ($testLayer) {
 
 if ($testLayer -and $stackOnly.Count -gt 1) {
     Info "F-30 下界虚空 → 下层世界主世界"
-    Invoke-Rcon "execute in minecraft:the_nether run tp $BotName 50 -100 50" | Out-Null
+    Invoke-Rcon "execute in $netherDim run tp $BotName 50 -100 50" | Out-Null
     Wait-Transfer
-    Assert-Dimension "samsara_stack_" "F-30 目标为额外层" -Contains
+    Assert-Dimension "samsara:stack_" "F-30 目标为额外层" -Contains
     $dim = Get-Dimension
     if ($dim -notlike "*overworld*") { Fail "F-30 期望下层主世界，实际 $dim" }
     Pass "F-30 目标为下层主世界"
 } else {
     Info "F-34 栈底下界虚空 → 原版死亡"
-    Invoke-Rcon "execute in minecraft:the_nether run tp $BotName 0 -100 0" | Out-Null
+    Invoke-Rcon "execute in $netherDim run tp $BotName 0 -100 0" | Out-Null
     Start-Sleep -Seconds 12
     $dim = Get-Dimension
     if ($dim -notlike "*overworld*") {

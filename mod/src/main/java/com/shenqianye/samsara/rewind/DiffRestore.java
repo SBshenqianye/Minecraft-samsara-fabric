@@ -4,6 +4,7 @@ import com.shenqianye.samsara.Samsara;
 import com.shenqianye.samsara.claim.AreaService;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.core.BlockPos;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -45,6 +46,42 @@ public class DiffRestore {
     private static Path dataRoot() {
         return com.shenqianye.samsara.storage.StoragePaths.get().worldDataRoot();
     }
+
+    private static Path dataRootFor(MinecraftServer server, RewindData data) {
+        Path worldDir = com.shenqianye.samsara.season.StackPaths.worldDir(server);
+        String layer = data == null || data.layerId == null || data.layerId.isBlank()
+                ? com.shenqianye.samsara.season.StackPaths.TOP_ID : data.layerId;
+        return com.shenqianye.samsara.season.StackPaths.dataRootFor(worldDir, layer);
+    }
+
+    private static ServerLevel levelForData(MinecraftServer server, RewindData data) {
+        if (server == null || data == null) {
+            return null;
+        }
+        ResourceKey<Level> key = com.shenqianye.samsara.season.StackPaths.keyFromString(data.dimension);
+        if (key != null) {
+            ServerLevel level = server.getLevel(key);
+            if (level != null) {
+                return level;
+            }
+        }
+        String layer = data.layerId == null || data.layerId.isBlank() ? data.worldKey : data.layerId;
+        var sl = com.shenqianye.samsara.season.StackManifest
+                .load(com.shenqianye.samsara.season.StackPaths.worldDir(server)).byId(layer);
+        if (sl == null) {
+            return server.getLevel(Level.OVERWORLD);
+        }
+        return sl.top ? server.getLevel(Level.OVERWORLD)
+                : com.shenqianye.samsara.season.StackDimensionLoader.level(sl, "overworld");
+    }
+
+    private static String dimensionKey(String dimension) {
+        ResourceKey<Level> key = com.shenqianye.samsara.season.StackPaths.keyFromString(dimension);
+        if (key == null) {
+            return DiffStore.OVERWORLD_DIM;
+        }
+        return key.identifier().getNamespace() + "/" + key.identifier().getPath();
+    }
     /** 每轮全局最大恢复格数上限 */
     public static final int MAX_PER_TICK = 2000;
     /** 每轮最低保底恢复格数（保证有进度） */
@@ -67,6 +104,7 @@ public class DiffRestore {
     private static DiffStore restoreStore;
     private static int restoreSeasonId = -1;
     private static String restoreWorldKey;
+    private static String restoreDimKey;
 
     private enum Tier {
         /** 远档：B = A */
@@ -90,12 +128,20 @@ public class DiffRestore {
     }
 
     /** 恢复源差异库（缓存同一世界+周目的库实例，避免每次重建内存缓存；仅主世界参与本轮倒流） */
+    /** 恢复源差异库（旧调用：主世界维度）。 */
     public static DiffStore restoreStore(Path configDir, String worldKey, int seasonId) {
+        return restoreStore(configDir, worldKey, seasonId, DiffStore.OVERWORLD_DIM);
+    }
+
+    /** 恢复源差异库（缓存同一数据根/栈层/周目/维度，避免每次重建内存缓存）。 */
+    public static DiffStore restoreStore(Path configDir, String worldKey, int seasonId, String dimKey) {
         if (restoreStore == null || restoreSeasonId != seasonId
-                || restoreWorldKey == null || !restoreWorldKey.equals(worldKey)) {
-            restoreStore = DiffStore.forSeason(configDir, worldKey, seasonId, DiffStore.OVERWORLD_DIM);
+                || restoreWorldKey == null || !restoreWorldKey.equals(worldKey)
+                || restoreDimKey == null || !restoreDimKey.equals(dimKey)) {
+            restoreStore = DiffStore.forSeason(configDir, worldKey, seasonId, dimKey);
             restoreSeasonId = seasonId;
             restoreWorldKey = worldKey;
+            restoreDimKey = dimKey;
         }
         return restoreStore;
     }
@@ -114,21 +160,22 @@ public class DiffRestore {
         }
         data.normalize();
         double A = authoritativeProgress(now, data);
-        ServerLevel overworld = server.getLevel(Level.OVERWORLD);
-        if (overworld == null) {
+        ServerLevel target = levelForData(server, data);
+        if (target == null) {
             prevA = A;
             return 0;
         }
 
         // 收集已加载区块：collectSpawningChunks 拿全部真正加载的区块（含 forceload/玩家附近）
-        Set<Long> loadedChunks = loadedChunks(overworld, server);
+        Set<Long> loadedChunks = loadedChunks(target, server);
         if (loadedChunks.isEmpty()) {
             prevA = A;
             return 0;
         }
 
-        DiffStore store = restoreStore(dataRoot(), data.worldKey, data.seasonId);
-        List<ServerPlayer> players = overworldPlayers(overworld, server);
+        DiffStore store = restoreStore(dataRootFor(server, data), data.worldKey, data.seasonId,
+                dimensionKey(data.dimension));
+        List<ServerPlayer> players = playersIn(target, server);
 
         // ① 先算每区块的档位/呈现光标/target，再按总欠账算预算
         List<Work> works = new ArrayList<>(loadedChunks.size());
@@ -136,7 +183,7 @@ public class DiffRestore {
         for (long key : loadedChunks) {
             int cx = (int) (key >>> 32);
             int cz = (int) (long) key;
-            if (isProtected(overworld, cx, cz)) {
+            if (isProtected(target, cx, cz)) {
                 continue; // 受圈地保护：不参与恢复，其待恢复量不计入预算
             }
             List<DiffStore.Edit> edits = store.readChunk(cx, cz);
@@ -147,17 +194,17 @@ public class DiffRestore {
             Pace pace = paces.computeIfAbsent(key, k -> new Pace());
             pace.lastSeenMs = now;
             updatePace(pace, now, A, nearestChunkDistance(players, cx, cz), data);
-            int target = (int) Math.ceil(edits.size() * clamp01(pace.b));
-            if (target > edits.size()) {
-                target = edits.size();
+            int goal = (int) Math.ceil(edits.size() * clamp01(pace.b));
+            if (goal > edits.size()) {
+                goal = edits.size();
             }
             int already = perChunkRestored.getOrDefault(key, 0);
-            if (already > target) {
-                already = target; // 档位回退时保持单调，不回退已恢复的格
+            if (already > goal) {
+                already = goal; // 档位回退时保持单调，不回退已恢复的格
                 perChunkRestored.put(key, already);
             }
-            totalRemaining += target - already;
-            works.add(new Work(key, cx, cz, edits, target, already));
+            totalRemaining += goal - already;
+            works.add(new Work(key, cx, cz, edits, goal, already));
         }
 
         // ② 预算 = 待恢复量 / 剩余轮数（每 2s 一轮），钳制在 [MIN, MAX]；倒流结束后取 MAX 快速收尾
@@ -187,7 +234,7 @@ public class DiffRestore {
             int i = w.already;
             for (; i < w.target && budget > 0; i++) {
                 DiffStore.Edit e = w.edits.get(i);
-                if (tryRestore(overworld, e)) {
+                if (tryRestore(target, e)) {
                     applied++;
                     budget--;
                 }
@@ -198,7 +245,7 @@ public class DiffRestore {
         for (long key : loadedChunks) {
             int cx = (int) (key >>> 32);
             int cz = (int) (long) key;
-            if (isProtected(overworld, cx, cz)) {
+            if (isProtected(target, cx, cz)) {
                 protectedSkipped++;
             }
         }
@@ -279,28 +326,28 @@ public class DiffRestore {
         return best;
     }
 
-    private static List<ServerPlayer> overworldPlayers(ServerLevel overworld, MinecraftServer server) {
+    private static List<ServerPlayer> playersIn(ServerLevel level, MinecraftServer server) {
         List<ServerPlayer> out = new ArrayList<>();
         for (ServerPlayer p : server.getPlayerList().getPlayers()) {
-            if (p.level().dimension().equals(overworld.dimension())) {
+            if (p.level().dimension().equals(level.dimension())) {
                 out.add(p);
             }
         }
         return out;
     }
 
-    private static Set<Long> loadedChunks(ServerLevel overworld, MinecraftServer server) {
+    private static Set<Long> loadedChunks(ServerLevel level, MinecraftServer server) {
         Set<Long> loadedChunks = new HashSet<>();
         try {
             List<net.minecraft.world.level.chunk.LevelChunk> chunks = new ArrayList<>();
-            overworld.getChunkSource().chunkMap.collectSpawningChunks(chunks);
+            level.getChunkSource().chunkMap.collectSpawningChunks(chunks);
             for (net.minecraft.world.level.chunk.LevelChunk c : chunks) {
                 loadedChunks.add(((long) c.getPos().x() << 32) | (c.getPos().z() & 0xFFFFFFFFL));
             }
         } catch (Exception e) {
             int view = 5;
             for (ServerPlayer pl : server.getPlayerList().getPlayers()) {
-                if (!pl.level().dimension().equals(overworld.dimension())) {
+                if (!pl.level().dimension().equals(level.dimension())) {
                     continue;
                 }
                 int pcx = pl.chunkPosition().x();
@@ -309,7 +356,7 @@ public class DiffRestore {
                     for (int dz = -view; dz <= view; dz++) {
                         int cx = pcx + dx;
                         int cz = pcz + dz;
-                        if (overworld.isLoaded(new BlockPos(cx << 4, 0, cz << 4))) {
+                        if (level.isLoaded(new BlockPos(cx << 4, 0, cz << 4))) {
                             loadedChunks.add(((long) cx << 32) | (cz & 0xFFFFFFFFL));
                         }
                     }
@@ -345,19 +392,20 @@ public class DiffRestore {
      * 本方法恒返回 false → 永不归档 → 下次开新周目被"已有进行中的倒流"挡住。
      */
     public static boolean isFinished(MinecraftServer server, RewindData data) {
-        ServerLevel overworld = server.getLevel(Level.OVERWORLD);
-        if (overworld == null) {
+        ServerLevel target = levelForData(server, data);
+        if (target == null) {
             return true;
         }
         data.normalize();
-        DiffStore store = restoreStore(dataRoot(), data.worldKey, data.seasonId);
+        DiffStore store = restoreStore(dataRootFor(server, data), data.worldKey, data.seasonId,
+                dimensionKey(data.dimension));
         try {
             List<net.minecraft.world.level.chunk.LevelChunk> chunks = new ArrayList<>();
-            overworld.getChunkSource().chunkMap.collectSpawningChunks(chunks);
+            target.getChunkSource().chunkMap.collectSpawningChunks(chunks);
             for (net.minecraft.world.level.chunk.LevelChunk c : chunks) {
                 int cx = c.getPos().x();
                 int cz = c.getPos().z();
-                if (isProtected(overworld, cx, cz)) {
+                if (isProtected(target, cx, cz)) {
                     continue; // 受保护区块本轮不参与恢复，故不参与完成判定
                 }
                 List<DiffStore.Edit> edits = store.readChunk(cx, cz);
@@ -417,5 +465,6 @@ public class DiffRestore {
         restoreStore = null;
         restoreSeasonId = -1;
         restoreWorldKey = null;
+        restoreDimKey = null;
     }
 }

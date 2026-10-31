@@ -10,10 +10,14 @@
 - **`world` 固定是栈顶/最新**：`level-name` 永远是 `world`；vanilla/不知情的人直接打开存档看到的是最新世界，不会打开最旧世界。
 - **栈世界 = 自定义维度**：旧世界放在 `world/dimensions/samsara/stack_<n>/{overworld,the_nether,the_end}`，不再散落成服务器根下的 `world_sN`。
 - **每栈独立 seed/生成器**：每个栈层保存自己的 `world_gen_settings.dat`，用 `StackLevel` 覆写 `getSeed()`，所以`reset new` 可以选择 `flat`/`amplified`/`large_biomes` 等不同生成器。
-- **`reset new [seed] [levelType] [isolate]`**：把当前 `world` 压入 `stack_<n>`，用新种子/生成器生成新栈顶；`isolate=true` 时把旧 `data/minecraft` 归档到旧栈层。
+- **`reset new [seed] [levelType] [archiveData]`**：把当前 `world` 压入 `stack_<n>`，用新种子/生成器生成新栈顶；`archiveData=true` 只把旧 `data/minecraft` 归档到旧栈层（运行期所有栈共享当前 data，不再声称运行期隔离）。
 - **`world enter/leave` 不再停服**：直接把玩家传送到栈维度；多个玩家可以同时待在不同栈层。
 - **跨世界传送链**：主世界虚空→同层下界、下界虚空→下层栈世界、下界顶部→同层主世界、主世界顶部→上层栈世界下界，栈底保留原版死亡。
 - **目录级指针切换**：`reset new` 只做 3 个 dimensions 目录 rename + 元数据复制，不复制区块。
+- **旧 `world_sN` 布局自动迁移（实测）**：启动发现 `world` + `world_s1` + `world_s2` 时，自动转成 `world=栈顶`、`stack_0/stack_1` 维度；玩家数据合并到共享 `world/players`，claims/diff/track/spawn-history 归各自栈数据根，旧目录内容保留在 `legacy-layout.migrated-*`/`legacy-root/`，迁移失败反向回滚。
+- **`reset same` 支持任意栈层（实测）**：倒流、删块、排斥点、出生点历史、广播都作用于玩家当前栈层；旧栈层不再调用全局 `setRespawnData`，只改该层玩家的个人重生点。栈顶与旧层的出生点历史互不覆盖。
+- **diff/track 按栈统一路由（实测）**：diff 写入 `world/samsara/diff` 或 `world/samsara/stack/stack_<n>/diff`，`worldKey=world|stack_<n>`；track 录制/列表/回看查找/`cutoffs.json` 都按栈数据根隔离并扫描全部栈根；`reset same` 的 freeze/merge/恢复源清理使用目标栈层的 diff 根。
+- **重启恢复（实测）**：倒流进行中停服，重启后按 `rewind.json` 的 `layerId/dimension` 继续；reset same 等待外部完成，不会在传送前提前归档，重启后可补做传送并追加历史。
 
 ### 变更
 

@@ -603,10 +603,9 @@ public class DebugCommand {
 
     // ---- 坐标语法糖辅助（坐标参数一律用原版参数类型支持 ~ / ~N）----
 
-    /** 命令执行所在的主世界（供 fakeDiffText 立即放置字画方块） */
+    /** 命令执行所在的维度（供 fakeDiffText 立即放置字画方块；支持栈维度）。 */
     private static net.minecraft.server.level.ServerLevel levelOf(CommandContext<CommandSourceStack> ctx) {
-        net.minecraft.server.MinecraftServer server = ctx.getSource().getServer();
-        return server == null ? null : server.getLevel(net.minecraft.world.level.Level.OVERWORLD);
+        return ctx.getSource().getLevel();
     }
 
     /** BlockPosArgument 的 x */

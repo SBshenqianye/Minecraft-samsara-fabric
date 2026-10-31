@@ -231,7 +231,10 @@ public class SeasonCommand {
         manager().skip();
         String result = "new-world".equals(mode)
                 ? manager().resetNew(src.getServer(), seed)
-                : manager().resetSame(src.getServer());
+                : manager().resetSame(src.getServer(),
+                        src.getPlayer() == null ? null
+                                : com.shenqianye.samsara.season.StackTeleport.layerOf(
+                                        src.getServer(), src.getPlayer()));
         return "（旧命令 /samsara season start 已转调新流程；建议改用 /samsara reset "
                 + ("new-world".equals(mode) ? "new" : "same") + "）\n" + result;
     }

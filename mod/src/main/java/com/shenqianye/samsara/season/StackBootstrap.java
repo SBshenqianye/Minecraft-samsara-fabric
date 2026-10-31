@@ -38,7 +38,15 @@ public final class StackBootstrap {
         public long newSeed;
         public String levelType = "normal";
         public String generatorSettings = "";
+        /** v0.24：true = 只把旧 data/minecraft 归档到旧栈层；运行期所有栈共享当前 data。 */
+        public boolean archiveData;
+        /** 旧字段（v0.24 WIP 曾叫 isolateData），只读兼容；不参与运行期隔离。 */
+        @Deprecated
         public boolean isolateData;
+
+        public boolean shouldArchiveData() {
+            return archiveData || isolateData;
+        }
         public long createdAt;
     }
 
@@ -48,7 +56,7 @@ public final class StackBootstrap {
 
     /** 命令阶段：写 pending，倒计时停服。 */
     public static synchronized String scheduleNew(MinecraftServer server, Long seed, String levelType,
-                                                  String generatorSettings, boolean isolateData) {
+                                                  String generatorSettings, boolean archiveData) {
         Path worldDir = StackPaths.worldDir(server);
         if (Files.exists(pendingFile(worldDir))) {
             return "已有待执行的新世界生成，请重启服务器让 StackBootstrap 完成";
@@ -65,7 +73,7 @@ public final class StackBootstrap {
         p.newSeed = seed != null ? seed : new java.util.Random().nextLong();
         p.levelType = levelType == null || levelType.isBlank() ? "normal" : levelType;
         p.generatorSettings = generatorSettings == null ? "" : generatorSettings;
-        p.isolateData = isolateData;
+        p.archiveData = archiveData;
         p.createdAt = System.currentTimeMillis();
         save(worldDir, p);
         broadcast(server, "🌍 将把当前世界 " + top.id + " 压入栈层 stack_" + top.index
@@ -76,7 +84,7 @@ public final class StackBootstrap {
         return "已安排新世界入栈：\n"
                 + "· 旧栈顶 " + top.id + " → stack_" + top.index + "\n"
                 + "· 新栈顶 world（种子 " + p.newSeed + " · level-type " + p.levelType + "）\n"
-                + "· 数据隔离：" + (p.isolateData ? "是（旧 data/minecraft 归档）" : "否（共享 data/minecraft）") + "\n"
+                + "· 数据归档：" + (p.shouldArchiveData() ? "是（旧 data/minecraft 只归档，运行期共享当前 data）" : "否（旧 data/minecraft 留在当前 data，仅归档生成器）") + "\n"
                 + "· 服务器将在 " + SWITCH_SECONDS + " 秒后停服，请启动脚本重新开服\n"
                 + "· 只有目录 rename，不复制区块";
     }
@@ -98,9 +106,10 @@ public final class StackBootstrap {
 
     /** mod init：在世界打开之前完成 demote（如果 pending 存在）。 */
     public static synchronized void prepare() {
-        Path worldDir = StackPaths.worldDir();
         // 旧布局 world_sN 一次性迁移（只做目录 rename/元数据复制）
         StackLegacyMigration.migrateIfNeeded();
+        // 迁移可能把 server.properties 的 level-name 从 world_sN 改回 world，必须重新解析
+        Path worldDir = StackPaths.worldDir();
         Path file = pendingFile(worldDir);
         if (!Files.exists(file)) {
             return;
@@ -167,9 +176,9 @@ public final class StackBootstrap {
                 moveFile(src, meta.resolve(file));
             }
         }
-        // data/minecraft 隔离
+        // data/minecraft：--archive-data=true 时把旧数据归档到旧栈层；运行期所有栈只共享当前 data。
         Path dataMinecraft = worldDir.resolve("data").resolve("minecraft");
-        if (p.isolateData) {
+        if (p.shouldArchiveData()) {
             moveDir(dataMinecraft, meta.resolve("data").resolve("minecraft"));
         } else {
             if (Files.exists(oldGen)) {
@@ -195,7 +204,8 @@ public final class StackBootstrap {
         try {
             for (String line : Files.readAllLines(props, StandardCharsets.UTF_8)) {
                 if (line.startsWith("level-type=")) {
-                    String value = line.substring("level-type=".length()).trim();
+                    String value = line.substring("level-type=".length()).trim()
+                            .replace("\\:", ":");
                     return value.isBlank() ? "normal" : value;
                 }
             }

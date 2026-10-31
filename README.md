@@ -12,7 +12,7 @@
 | 功能 | 状态 | 说明 |
 |---|---|---|
 | 世界与新一轮 | ✅ 可用 | `world` 固定是栈顶/最新；旧世界是 `world/dimensions/samsara/stack_<n>` 自定义维度；出生点历史自动定义“当前轮”，不需要先注册周目 |
-| 同世界重置 | ✅ 可用 | 保留圈地保护区块，倒流删除未保护区；排斥算法选新出生点（避开海洋/岩浆/陡坡/保护区），全员传送并更新世界重生点 |
+| 同世界重置 | ✅ 可用 | 任意栈层可执行：保留圈地保护区块，倒流删除该层未保护区；排斥算法选新出生点（避开海洋/岩浆/陡坡/保护区），只传送当前在该层/上次在该层的玩家；栈顶更新世界重生点，旧栈层只改个人重生点 |
 | 分组出生 | ✅ 可用 | 玩家按 3~5 人分组，围绕新出生中心分散；离线玩家上线后补传送 |
 | 时间倒流 | ✅ 可用 | 未圈地区块按设定周期逐格恢复：近处慢放、远处按曲线退场，完成后备份、删除并重新生成 |
 | 旗帜圈地 | ⚠ 部分可用 | 图案定方向、染料定距离，保护区域取并集；距离可按染料颜色配置或在 Web 可视化预览；图标图案校验尚未实现 |
@@ -39,7 +39,7 @@
 | 位置查询 | ✅ 可用 | `/samsara where` 查看自己的维度与坐标（可带区块、朝向），`where broadcast` 广播全服；命令启用与输出字段在 `config/samsara/commands.yml` 配置 |
 | TPA 传送 | ✅ 可用 | `/tpa`、`/tpahere` 发起请求，`/tpaccept`、`/tpdeny`、`/tpcancel` 处理；默认 60 秒过期、每人同时只有 1 个请求、仅同维度；请求消息带 `[同意] [拒绝]` / `[取消请求]` 可点击按钮 |
 | 命令短别名 | ✅ 可用 | `/season`、`/claim`、`/where`、`/version`、`/track`、`/tpa` 系列等；被其他模组占用时自动让位，只保留 `/samsara` 全名 |
-| 新世界与跨世界传送 | ✅ 可用 | `reset new [种子] [levelType] [isolate]` 把当前 world 压入 `stack_<n>` 维度，新 world 用独立种子/生成器（flat/amplified 等）；旧世界原位保留；主世界/下界虚空与顶部阈值可连续穿越栈层，栈底下界虚空保留原版死亡；多个玩家可同时待在不同栈 |
+| 新世界与跨世界传送 | ✅ 可用 | `reset new [种子] [levelType] [archiveData]` 把当前 world 压入 `stack_<n>` 维度，新 world 用独立种子/生成器（flat/amplified 等）；`archiveData=true` 只把旧 `data/minecraft` 归档到旧栈层，运行期所有栈共享当前 data；旧世界原位保留；主世界/下界虚空与顶部阈值可连续穿越栈层，栈底下界虚空保留原版死亡；多个玩家可同时待在不同栈 |
 | 全员同意开新周目 | 🚧 规划中 | 无管理员时由在线玩家发起并全员同意 |
 | 身份组 | ✅ 可用 | 把正版/离线/历史账号映射到同一个 data UUID；默认关闭，关闭时不解析、不同步；组由本地 Web 的“身份组”标签页以卡片方式维护，不提供注册/登录/密码 |
 | 账号切换同步 | ✅ 可用 | 同账号重连不同步；正版 ↔ 离线账号切换时同步背包/位置/进度/统计；失败保留 journal、`.bak` 与源数据 |
@@ -55,8 +55,8 @@
 | 管理身份组 | 本地 Web 控制台的“身份组”标签页；游戏内只读诊断 `/samsara debug identity map|preview|reload|audit`（owner） |
 | 看当前世界/轮次/出生点 | `/samsara world info`、`/samsara spawn`、`/samsara spawn history` |
 | 看圈地 | `/samsara claim info`、`/samsara claim boundary` |
-| 同世界重置 | `/samsara reset same`（倒流 + 删未保护区 + 排斥点重生；二次确认） |
-| 新世界入栈 | `/samsara reset new [种子] [normal\|flat\|amplified\|...] [true\|false]`（第三个参数控制 data 隔离；二次确认） |
+| 同世界重置 | `/samsara reset same`（在玩家当前栈层执行；倒流 + 删未保护区 + 排斥点重生；二次确认） |
+| 新世界入栈 | `/samsara reset new [种子] [normal\|flat\|amplified\|...] [true\|false]`（第三个参数 `archiveData` 只归档旧 data；二次确认） |
 | 看/切换世界栈 | `/samsara world list`、`/samsara world info`；管理员 `/samsara world enter <世界名>`、`/samsara world leave`（直接传送到栈维度，不再停服） |
 | 管理/调试 | `/samsara debug ...`（owner；圈地、倒流、轨迹、配置、测试数据） |
 | 查看补全候选 | `/samsara debug completion <指令片段>`（owner；只打印候选，便于排查补全） |
@@ -69,6 +69,8 @@
 
 > 世界与出生点在 `/samsara world`、`/samsara spawn`、`/samsara reset`；调试与圈地管理在 `/samsara debug`。游戏内输入 `/samsara` 或 `/samsara help` 可看帮助（列表里的青色按钮点击即执行，黄色按钮点击只填入）。
 > `reset new` 会修改 `server.properties` 的 `level-seed`/`level-type` 并停服，**必须由启动脚本重新开服**后才会生成新栈顶；`world enter/leave` 直接传送到栈维度，不停服。栈清单在 `world/samsara/stack.json`，旧栈元数据在 `world/samsara/stack/stack_<n>/`。
+> **data/minecraft 语义**：v0.24 采用“归档”而非运行期隔离——`archiveData=true` 只把旧 `data/minecraft` 复制/移动到旧栈层归档，新栈顶从新数据开始；运行期所有栈共享当前 `world/data/minecraft`。升级 MC/更换存档布局时必须重验 `LevelStorageAccess`、`ServerLevel` 与 `MinecraftServer.levels` 字段。
+> **旧布局迁移**：服务器根下已有 `world` + `world_s1` + `world_s2`（world 为栈底）时，启动会自动迁移为 `world=栈顶`、旧层 `stack_0/stack_1` 维度；玩家数据合并到 `world/players`，claims/diff/track 留在各自栈数据根，旧目录内容进入 `legacy-layout.migrated-*` 或栈层 `legacy-root/`，不复制区块。
 > 所有玩家名、世界、时长、回看参数、权限路径/等级都支持 **Tab 补全**；输入不完整时按回车，也会在聊天栏列出可点击候选（一行多个，点击只填入）。回看时段列表与帮助里的危险命令只填入命令，不会直接执行。
 
 ## 安装与构建

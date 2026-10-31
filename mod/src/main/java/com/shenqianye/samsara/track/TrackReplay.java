@@ -56,6 +56,7 @@ public final class TrackReplay {
         double speed;
         int cycleId;
         String dimension;
+        Path file;
         boolean captured;
 
         /** 当前轨迹时间（按墙钟 × 倍速推进，钳到区间内） */
@@ -113,8 +114,9 @@ public final class TrackReplay {
             return "轨迹维度不存在: " + seg.dimension;
         }
         // capture cutoff：捕捉后该玩家该周目从捕捉时刻起的轨迹作废（磁盘记录保留）
-        String worldKey = recorder.worldKey() == null ? "world" : recorder.worldKey();
-        Long cutoff = recorder.cuts().cutoff(worldKey, cycleId, located.owner());
+        Path trackRoot = recorder.trackRootOf(file);
+        String worldKey = recorder.worldKeyOfTrackRoot(trackRoot);
+        Long cutoff = recorder.cutsForTrackRoot(trackRoot).cutoff(worldKey, cycleId, located.owner());
         List<TrackStore.Sample> samples = cutoff == null
                 ? seg.samples
                 : TrackStore.truncate(seg.samples, cutoff);
@@ -164,6 +166,7 @@ public final class TrackReplay {
         r.speed = speed;
         r.cycleId = cycleId;
         r.dimension = seg.dimension;
+        r.file = file;
         ACTIVE.put(uuid, r);
 
         StringBuilder sb = new StringBuilder("开始回放 ").append(name)
@@ -305,10 +308,10 @@ public final class TrackReplay {
         ACTIVE.remove(r.uuid);
         entity.markCaptured();
 
-        String worldKey = TrackRecorder.getInstance().worldKey();
-        TrackRecorder.getInstance().cuts().capture(
-                worldKey == null ? DiffStore.sanitizeWorldKey("world") : worldKey,
-                r.cycleId, r.uuid, captureTrackMs);
+        TrackRecorder recorder = TrackRecorder.getInstance();
+        Path trackRoot = recorder.trackRootOf(r.file);
+        recorder.cutsForTrackRoot(trackRoot).capture(
+                recorder.worldKeyOfTrackRoot(trackRoot), r.cycleId, r.uuid, captureTrackMs);
 
         String msg = "玩家 " + player.getScoreboardName() + " 捕捉了 " + r.name + " 的人偶（周目 "
                 + r.cycleId + "）· 回放已停止，该玩家该周目从轨迹时间 "

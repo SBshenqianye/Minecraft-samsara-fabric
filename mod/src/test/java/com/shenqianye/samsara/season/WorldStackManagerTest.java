@@ -88,4 +88,35 @@ class WorldStackManagerTest {
         assertEquals("", m.top().parent);
         assertEquals(0, m.top().index);
     }
+
+    @Test
+    void dataRootAndDimensionRootFollowLayer() {
+        java.nio.file.Path world = java.nio.file.Path.of("world");
+        java.nio.file.Path topRoot = StackPaths.dataRootFor(world, StackPaths.TOP_ID);
+        java.nio.file.Path stackRoot = StackPaths.dataRootFor(world, "stack_1");
+        assertEquals(world.resolve("samsara"), topRoot);
+        assertEquals(world.resolve("samsara/stack/stack_1"), stackRoot);
+        assertEquals(world.resolve("dimensions/minecraft/overworld"),
+                StackPaths.layerDimensionFor(world, "world", "overworld"));
+        assertEquals(world.resolve("dimensions/samsara/stack_1/overworld"),
+                StackPaths.layerDimensionFor(world, "stack_1", "overworld"));
+
+        ResourceKey<Level> key = StackPaths.keyFromString("samsara:stack_1/overworld");
+        assertEquals("stack_1", StackPaths.layerIdOf(key));
+        assertEquals("overworld", StackPaths.dimensionOf(key));
+        assertEquals(stackRoot, StackPaths.dataRootFor(world, key));
+    }
+
+    @Test
+    void rewindDataDefaultsPairLayerAndDimension() {
+        com.shenqianye.samsara.rewind.RewindData old = new com.shenqianye.samsara.rewind.RewindData();
+        old.worldKey = "stack_0";
+        old.normalize();
+        assertEquals("stack_0", old.layerId);
+        assertEquals("minecraft:overworld", old.dimension);
+
+        com.shenqianye.samsara.rewind.RewindData legacy = new com.shenqianye.samsara.rewind.RewindData();
+        legacy.normalize();
+        assertEquals(StackPaths.TOP_ID, legacy.layerId);
+    }
 }

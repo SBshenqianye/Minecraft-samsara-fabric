@@ -12,12 +12,18 @@ import java.util.List;
  */
 public class RewindData {
     public int seasonId;
-    /** 本轮回流所属世界（世界栈中的世界目录名，如 world / world_s1） */
+    /** 本轮回流所属世界（栈层 id：world / stack_<n>） */
     public String worldKey;
+    /** 目标栈层 id（旧 rewind.json 缺失时为 world） */
+    public String layerId;
+    /** 目标维度 key（旧 rewind.json 缺失时为 minecraft:overworld） */
+    public String dimension;
     public long startMs;
     public long durationMs;
     /** 倒流结束后的传送阶段是否已完成（防重复传送） */
     public boolean teleportPhaseDone = false;
+    /** 是否等待外部（reset same）完成传送；重启后回调不可用，不能先归档清状态。 */
+    public boolean awaitingExternalCompletion = false;
     public int totalCount;
     public int protectedCount;
     public List<Chunk> chunks = new ArrayList<>();
@@ -32,6 +38,21 @@ public class RewindData {
 
     /** 旧 rewind.json 可能没有节奏字段（Gson 反序列化不会执行字段默认值），统一在此补默认值 */
     public void normalize() {
+        if (worldKey == null || worldKey.isBlank()) {
+            worldKey = layerId;
+        }
+        if (layerId == null || layerId.isBlank()) {
+            layerId = worldKey;
+        }
+        if (layerId == null || layerId.isBlank()) {
+            layerId = com.shenqianye.samsara.season.StackPaths.TOP_ID;
+        }
+        if (worldKey == null || worldKey.isBlank()) {
+            worldKey = layerId;
+        }
+        if (dimension == null || dimension.isBlank()) {
+            dimension = "minecraft:overworld";
+        }
         if (curveK <= 0) {
             curveK = 2.0;
         }

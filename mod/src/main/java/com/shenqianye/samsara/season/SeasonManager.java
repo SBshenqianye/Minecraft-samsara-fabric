@@ -54,11 +54,15 @@ public class SeasonManager {
     private final Path pendingFile;
     private final Path resetPendingFile;
     private SeasonData data;
-    /** 倒流完成后离线玩家的待传送（uuid → 分组出生点），上线即传送；持久化以免重启丢失 */
-    private final Map<UUID, int[]> pendingTeleports = new HashMap<>();
+    /** 倒流完成后离线玩家的待传送（uuid → 分组出生点 + 目标栈层），上线即传送；持久化以免重启丢失 */
+    private final Map<UUID, PendingTeleport> pendingTeleports = new HashMap<>();
     /** 同世界重置进行中（倒流完成后还要选排斥点/传送/写历史）；持久化以支持重启恢复 */
     private ResetPending resetPending;
     private boolean completingReset;
+
+    /** 待传送目标：坐标 + 目标栈层（v0.24 支持任意栈层重置）。 */
+    public record PendingTeleport(int x, int z, String layerId) {
+    }
 
     private SeasonManager() {
         Path dir = com.shenqianye.samsara.storage.StoragePaths.get().worldDataRoot();
@@ -133,17 +137,20 @@ public class SeasonManager {
             public String uuid;
             public int x;
             public int z;
+            /** 目标栈层；旧文件缺失 = world */
+            public String layer;
         }
     }
 
     private void savePendingTeleports() {
         try {
             PendingState s = new PendingState();
-            for (Map.Entry<UUID, int[]> e : pendingTeleports.entrySet()) {
+            for (Map.Entry<UUID, PendingTeleport> e : pendingTeleports.entrySet()) {
                 PendingState.Entry en = new PendingState.Entry();
                 en.uuid = e.getKey().toString();
-                en.x = e.getValue()[0];
-                en.z = e.getValue()[1];
+                en.x = e.getValue().x();
+                en.z = e.getValue().z();
+                en.layer = e.getValue().layerId();
                 s.entries.add(en);
             }
             Files.writeString(pendingFile, GSON.toJson(s), StandardCharsets.UTF_8);
@@ -162,7 +169,10 @@ public class SeasonManager {
             if (s != null) {
                 for (PendingState.Entry en : s.entries) {
                     try {
-                        pendingTeleports.put(UUID.fromString(en.uuid), new int[]{en.x, en.z});
+                        pendingTeleports.put(UUID.fromString(en.uuid),
+                                new PendingTeleport(en.x, en.z,
+                                        en.layer == null || en.layer.isBlank()
+                                                ? StackPaths.TOP_ID : en.layer));
                     } catch (IllegalArgumentException ignored) {
                     }
                 }
@@ -178,6 +188,8 @@ public class SeasonManager {
     public static class ResetPending {
         public int schemaVersion = 1;
         public int seasonId;
+        /** 目标栈层 id（world / stack_<n>）；旧文件缺失 = world */
+        public String layerId = StackPaths.TOP_ID;
         public int oldX;
         public int oldZ;
         public long startedAt;
@@ -340,30 +352,43 @@ public class SeasonManager {
      * 结束后用排斥算法选新出生点、全员传送、设置世界重生点、追加出生点历史。
      */
     public synchronized String resetSame(MinecraftServer server) {
+        return resetSame(server, null);
+    }
+
+    /**
+     * {@code /samsara reset same}：沿用现有「倒流 + 删除未保护区块」，
+     * 结束后用排斥算法选新出生点、传送、设置重生点、追加出生点历史。
+     * 目标是玩家当前栈层；控制台/无玩家时默认栈顶 world。
+     */
+    public synchronized String resetSame(MinecraftServer server, StackLayer requested) {
         if (RewindEngine.getInstance().running()) {
             return "已有进行中的时间倒流，请先 /samsara debug rewind abort 再操作";
         }
         if (resetPending != null) {
             return "已有同世界重置待完成（周目 #" + resetPending.seasonId + "），请等待倒流结束或重启恢复";
         }
-        ServerLevel overworld = server.getLevel(Level.OVERWORLD);
-        if (overworld == null) {
-            return "主世界不可用";
-        }
         WorldStackManager stack = WorldStackManager.getInstance();
         stack.refresh(server, null);
-        SpawnHistory history = stack.ensureSpawnHistory(server,
-                WorldStackManager.currentWorldName(server), true);
-        int oldX = history.last() == null ? overworld.getRespawnData().pos().getX() : history.last().x;
-        int oldZ = history.last() == null ? overworld.getRespawnData().pos().getZ() : history.last().z;
+        StackManifest manifest = stack.manifest(server);
+        StackLayer target = requested == null ? manifest.top() : manifest.byId(requested.id);
+        if (target == null) {
+            return "目标栈层不在栈清单中；可用 /samsara world list 查看";
+        }
+        ServerLevel level = StackTeleport.level(server, target, "overworld");
+        if (level == null) {
+            return "目标栈层 " + target.id + " 的主世界维度未加载";
+        }
+        SpawnHistory history = stack.ensureSpawnHistory(server, target.id, true);
+        int oldX = history.last() == null ? level.getRespawnData().pos().getX() : history.last().x;
+        int oldZ = history.last() == null ? level.getRespawnData().pos().getZ() : history.last().z;
 
         Season s = new Season();
         s.id = stack.nextSeasonId(server);
         s.name = "第 " + (history.size() + 1) + " 轮";
         s.mode = "same-world";
-        s.worldName = WorldStackManager.currentWorldName(server);
+        s.worldName = target.id;
         s.state = Season.State.PENDING;
-        s.note = "reset same（排斥点重置）";
+        s.note = "reset same（排斥点重置 · " + target.id + "）";
         s.spawnCenter.x = oldX;
         s.spawnCenter.z = oldZ;
         data.seasons.add(s);
@@ -371,6 +396,7 @@ public class SeasonManager {
 
         resetPending = new ResetPending();
         resetPending.seasonId = s.id;
+        resetPending.layerId = target.id;
         resetPending.oldX = oldX;
         resetPending.oldZ = oldZ;
         resetPending.startedAt = System.currentTimeMillis();
@@ -379,7 +405,7 @@ public class SeasonManager {
 
         long duration = Math.max(1L, settings().rewindDurationMs);
         String result = RewindEngine.getInstance().start(server, s.id, duration,
-                () -> completeResetSame(server, s.id, "倒流完成"));
+                () -> completeResetSame(server, s.id, "倒流完成"), target, true);
         if (result.equals(RewindEngine.NO_REWINDABLE_MSG)) {
             String done = completeResetSame(server, s.id, "世界无可倒流区块，跳过倒流");
             return "没有需要倒流的区块，已直接执行同世界重置。\n" + done;
@@ -400,8 +426,8 @@ public class SeasonManager {
             save();
             return result;
         }
-        return "已开始同世界重置（周目 #" + s.id + "）：\n" + result
-                + "\n倒流结束并删除未保护区块后，会用排斥算法选新出生点、设置重生点并全员传送。";
+        return "已开始同世界重置（周目 #" + s.id + " · " + target.label() + "）：\n" + result
+                + "\n倒流结束并删除未保护区块后，会用排斥算法选新出生点、设置重生点并传送该栈层玩家。";
     }
 
     /**
@@ -416,15 +442,20 @@ public class SeasonManager {
         if (pending == null || pending.seasonId != seasonId) {
             return "没有待完成的同世界重置";
         }
-        ServerLevel overworld = server.getLevel(Level.OVERWORLD);
-        if (overworld == null) {
-            return "主世界不可用，无法完成同世界重置";
+        WorldStackManager stack = WorldStackManager.getInstance();
+        StackManifest manifest = stack.manifest(server);
+        StackLayer target = manifest.byId(pending.layerId);
+        if (target == null) {
+            target = manifest.top();
+        }
+        ServerLevel targetLevel = target == null ? null
+                : StackTeleport.level(server, target, "overworld");
+        if (targetLevel == null) {
+            return "目标栈层主世界不可用，无法完成同世界重置";
         }
         completingReset = true;
         try {
-            WorldStackManager stack = WorldStackManager.getInstance();
-            String worldName = WorldStackManager.currentWorldName(server);
-            SpawnHistory history = stack.ensureSpawnHistory(server, worldName, true);
+            SpawnHistory history = stack.ensureSpawnHistory(server, target.id, true);
             List<int[]> centers = history.centers();
             int refX = history.last() == null ? pending.oldX : history.last().x;
             int refZ = history.last() == null ? pending.oldZ : history.last().z;
@@ -432,14 +463,20 @@ public class SeasonManager {
                     settings().newCenterMinDistance, history.size());
             SpawnCenterCalculator.CenterResult center = SpawnCenterCalculator.next(
                     refX, refZ, centers, minSep, settings(), new Random(),
-                    (x, z, minDist) -> isSafeSpawn(overworld, x, z), 24);
+                    (x, z, minDist) -> isSafeSpawn(targetLevel, x, z), 24);
 
-            int y = findSafeSurfaceY(overworld, center.x(), center.z());
+            int y = findSafeSurfaceY(targetLevel, center.x(), center.z());
             if (!center.validated()) {
-                y = prepareLandingPad(overworld, center.x(), center.z());
+                y = prepareLandingPad(targetLevel, center.x(), center.z());
             }
-            // 世界重生点（死亡后无床的默认位置）
-            setWorldSpawn(overworld, center.x(), y, center.z());
+            // 栈顶才改世界重生点；旧栈层的 ServerLevelData 与主世界共享，不能调用全局 setRespawnData。
+            if (target.top) {
+                setWorldSpawn(targetLevel, center.x(), y, center.z());
+            }
+            target.spawnX = center.x();
+            target.spawnY = y;
+            target.spawnZ = center.z();
+            manifest.save(StackPaths.worldDir(server));
 
             Season s = findById(seasonId);
             if (s == null) {
@@ -456,26 +493,27 @@ public class SeasonManager {
             }
             s.name = "第 " + (history.size() + 1) + " 轮";
             s.mode = "same-world";
-            s.worldName = worldName;
+            s.worldName = target.id;
             s.spawnCenter.x = center.x();
             s.spawnCenter.z = center.z();
             s.spawnCenter.radius = settings().spawnRadius;
             s.startTime = Instant.now().toEpochMilli();
             s.endTime = null;
             s.state = Season.State.ACTIVE;
-            s.note = reason + " · 距最近历史出生点 " + center.minDist() + " 格";
-            buildGroups(server, s, center.x(), center.z());
+            s.note = reason + " · " + target.id + " · 距最近历史出生点 " + center.minDist() + " 格";
+            buildGroups(server, s, center.x(), center.z(), resetPlayers(server, target));
             data.currentSeasonId = s.id;
             save();
 
-            int teleported = teleportSeasonPlayers(server, s);
+            int teleported = teleportSeasonPlayers(server, s, target, targetLevel);
             history.append(center.x(), center.z(), "same-world-reset", System.currentTimeMillis());
-            history.save(WorldStackManager.worldDir(server, worldName));
+            history.saveTo(StackPaths.layerMeta(StackPaths.worldDir(server), target));
 
             resetPending = null;
             saveResetPending();
+            RewindEngine.getInstance().completeExternalCompletion();
             int protectedCount = RewindEngine.getInstance().lastProtectedCount();
-            String msg = "🎉 同世界重置完成 · " + reason
+            String msg = "🎉 同世界重置完成 · " + reason + " · " + target.label()
                     + "\n· 旧出生点 (" + pending.oldX + ", " + pending.oldZ + ")"
                     + "\n· 新出生点 (" + center.x() + ", " + center.z() + ") · 距最近历史 "
                     + center.minDist() + " 格 · 第 " + history.size() + " 轮"
@@ -514,6 +552,7 @@ public class SeasonManager {
                     resetPending.seasonId);
             resetPending = null;
             saveResetPending();
+            rewind.completeExternalCompletion();
         }
     }
 
@@ -623,8 +662,12 @@ public class SeasonManager {
 
     /** 围绕出生中心重新分组（reset same 与旧 flow 共用）。 */
     private void buildGroups(MinecraftServer server, Season s, int centerX, int centerZ) {
-        List<PlayerRegistry.RegPlayer> players = dedupePlayers(
-                PlayerRegistry.getInstance().read(server));
+        buildGroups(server, s, centerX, centerZ,
+                dedupePlayers(PlayerRegistry.getInstance().read(server)));
+    }
+
+    private void buildGroups(MinecraftServer server, Season s, int centerX, int centerZ,
+                             List<PlayerRegistry.RegPlayer> players) {
         GroupPlanner.Plan plan = GroupPlanner.plan(centerX, centerZ, settings().spawnRadius,
                 players, settings(), new Random());
         s.groupSpawns.clear();
@@ -857,30 +900,42 @@ public class SeasonManager {
 
     /** 玩家加入（M2：倒流完成后的离线玩家补传送 + 重置本人出生点） */
     public void onPlayerJoin(MinecraftServer server, ServerPlayer player) {
-        ServerLevel overworld = server.getLevel(Level.OVERWORLD);
-        if (overworld == null) {
-            return;
-        }
-        int[] pos = pendingTeleports.remove(player.getUUID());
-        if (pos == null) {
+        PendingTeleport pending = pendingTeleports.remove(player.getUUID());
+        if (pending == null) {
             // 待传送按实际 UUID 保存；换号上线时按 data UUID 查找同一身份的条目。
             for (UUID key : new ArrayList<>(pendingTeleports.keySet())) {
                 if (com.shenqianye.samsara.identity.IdentityService.getInstance()
                         .sameIdentity(key, player.getUUID())) {
-                    pos = pendingTeleports.remove(key);
+                    pending = pendingTeleports.remove(key);
                     break;
                 }
             }
         }
-        if (pos != null) {
-            teleportPlayer(player, overworld, pos[0], pos[1]);
-            setPlayerBirthpoint(player, overworld, pos[0], pos[1], data.settings);
+        if (pending != null) {
+            StackManifest manifest = StackManifest.load(StackPaths.worldDir(server));
+            StackLayer layer = manifest.byId(pending.layerId());
+            if (layer == null) {
+                layer = manifest.top();
+            }
+            ServerLevel level = StackTeleport.level(server, layer, "overworld");
+            if (level == null) {
+                level = server.getLevel(Level.OVERWORLD);
+            }
+            if (level != null) {
+                teleportPlayer(player, level, pending.x(), pending.z());
+                setPlayerBirthpoint(player, level, pending.x(), pending.z(), data.settings);
+                player.sendSystemMessage(Component.literal("[周目管理] 欢迎回来！你已被传送至 "
+                        + (layer == null ? "world" : layer.label()) + " 的新出生点 ("
+                        + pending.x() + ", " + pending.z() + ")"));
+            }
             savePendingTeleports(); // 待传送被消费，落盘
-            player.sendSystemMessage(Component.literal("[周目管理] 欢迎回来！你已被传送至本周目分组出生点 ("
-                    + pos[0] + ", " + pos[1] + ")"));
             return;
         }
         // 未在待传送名单，但属于当前 ACTIVE 周目分组 → 仅重置出生点（不强制传送）
+        ServerLevel overworld = server.getLevel(Level.OVERWORLD);
+        if (overworld == null) {
+            return;
+        }
         Season s = current();
         if (s != null && s.state == Season.State.ACTIVE) {
             for (Season.GroupSpawn g : s.groupSpawns) {
@@ -897,6 +952,24 @@ public class SeasonManager {
     }
 
     /** 同一身份组的多个 alias 只保留一个分组条目。 */
+    /**
+     * 同世界重置分组用的玩家池：栈顶沿用完整名单（含离线）；旧栈层只取当前位于该层的在线玩家，
+     * 避免把其他栈层玩家一起卷入旧世界重置。
+     */
+    private static List<PlayerRegistry.RegPlayer> resetPlayers(MinecraftServer server, StackLayer target) {
+        if (target == null || target.top) {
+            return dedupePlayers(PlayerRegistry.getInstance().read(server));
+        }
+        List<PlayerRegistry.RegPlayer> out = new ArrayList<>();
+        for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+            if (target.id.equals(StackPaths.layerIdOf(p.level().dimension()))) {
+                out.add(new PlayerRegistry.RegPlayer(p.getScoreboardName(), p.getUUID(),
+                        System.currentTimeMillis()));
+            }
+        }
+        return dedupePlayers(out);
+    }
+
     private static List<PlayerRegistry.RegPlayer> dedupePlayers(
             List<PlayerRegistry.RegPlayer> players) {
         Set<UUID> seen = new HashSet<>();
@@ -1084,14 +1157,27 @@ public class SeasonManager {
 
     /** 传送周目玩家到各自分组出生点；离线玩家记入待传送。返回已传送在线人数。 */
     private int teleportSeasonPlayers(MinecraftServer server, Season s) {
-        ServerLevel overworld = server.getLevel(Level.OVERWORLD);
-        if (overworld == null) {
+        return teleportSeasonPlayers(server, s, null, server.getLevel(Level.OVERWORLD));
+    }
+
+    /**
+     * 传送目标栈层内玩家。旧栈层只影响当前位于该层的在线玩家，避免把其他层玩家拉走；
+     * 栈顶保留原有「全员 + 离线待传送」行为。
+     */
+    private int teleportSeasonPlayers(MinecraftServer server, Season s, StackLayer target,
+                                      ServerLevel level) {
+        if (level == null) {
             return 0;
         }
+        String targetLayer = target == null ? StackPaths.TOP_ID : target.id;
+        boolean top = target == null || target.top;
         // L3 修复：先清空再按当前周目名单填充，避免旧周目的残留待传送条目
         pendingTeleports.clear();
         Map<UUID, ServerPlayer> onlineByData = new HashMap<>();
         for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+            if (!top && !targetLayer.equals(StackPaths.layerIdOf(p.level().dimension()))) {
+                continue;
+            }
             onlineByData.putIfAbsent(com.shenqianye.samsara.identity.IdentityService
                     .getInstance().identityOf(p.getUUID()), p);
         }
@@ -1113,12 +1199,12 @@ public class SeasonManager {
                 int[] indiv = individualBirthpoint(identityData, g.x, g.z, data.settings);
                 ServerPlayer p = onlineByData.get(identityData);
                 if (p != null) {
-                    teleportPlayer(p, overworld, indiv[0], indiv[1]);
-                    setPlayerBirthpoint(p, overworld, indiv[0], indiv[1], data.settings);
+                    teleportPlayer(p, level, indiv[0], indiv[1]);
+                    setPlayerBirthpoint(p, level, indiv[0], indiv[1], data.settings);
                     teleported++;
-                } else {
+                } else if (top) {
                     // 归属数据写实际 UUID；上线时按 data 解析
-                    pendingTeleports.put(u, new int[]{indiv[0], indiv[1]});
+                    pendingTeleports.put(u, new PendingTeleport(indiv[0], indiv[1], targetLayer));
                 }
             }
         }
@@ -1126,8 +1212,8 @@ public class SeasonManager {
         for (ServerPlayer p : onlineByData.values()) {
             if (!assigned.contains(com.shenqianye.samsara.identity.IdentityService
                     .getInstance().identityOf(p.getUUID()))) {
-                teleportPlayer(p, overworld, s.spawnCenter.x, s.spawnCenter.z);
-                setPlayerBirthpoint(p, overworld, s.spawnCenter.x, s.spawnCenter.z, data.settings);
+                teleportPlayer(p, level, s.spawnCenter.x, s.spawnCenter.z);
+                setPlayerBirthpoint(p, level, s.spawnCenter.x, s.spawnCenter.z, data.settings);
                 teleported++;
             }
         }
@@ -1591,10 +1677,11 @@ public class SeasonManager {
                 + "（世界/维度分目录）· 当前记录数 "
                 + com.shenqianye.samsara.rewind.DiffRecorder.countCurrent();
         if (com.shenqianye.samsara.rewind.RewindEngine.getInstance().running()) {
-            int sid = com.shenqianye.samsara.rewind.RewindEngine.getInstance().currentSeasonId();
-            sb += "\n恢复源: diff/cycle" + sid + "/"
-                    + com.shenqianye.samsara.rewind.RewindEngine.getInstance().currentWorldKey()
-                    + "/minecraft/overworld（本次倒流用，含上次删块后至今的全部改动）";
+            var re = com.shenqianye.samsara.rewind.RewindEngine.getInstance();
+            String dim = re.currentDimension() == null ? "minecraft:overworld" : re.currentDimension();
+            String dimPath = dim.replace(':', '/');
+            sb += "\n恢复源: " + re.currentWorldKey() + "/diff/cycle" + re.currentSeasonId()
+                    + "/" + dimPath + "（本次倒流用，含上次删块后至今的全部改动）";
         }
         return sb;
     }

@@ -11,8 +11,13 @@
     4. 保护区块数仍 > 0（保护集没有被清空）。
   会临时把测试服的 rewind 调短、centermin/centermax 调小；结束后恢复默认 26h/15000/40000。
 
+  传 -BotName 可在假玩家当前栈层执行（v0.24 任意栈层 reset same）：
+    -BotName StackBot -Layer stack_1
+  脚本会先 world enter，再以该玩家身份发起重置，并读取该层的出生点历史。
+
 .EXAMPLE
   powershell -NoProfile -ExecutionPolicy Bypass -File tools\smoke\world-reset.ps1 -Confirm -Resets 3
+  powershell -NoProfile -ExecutionPolicy Bypass -File tools\smoke\world-reset.ps1 -Confirm -BotName StackBot -Layer stack_1
 #>
 param(
     [string]$RconHost = "127.0.0.1",
@@ -24,6 +29,8 @@ param(
     [int]$CenterMin = 500,
     [int]$CenterMax = 2000,
     [int]$Resets = 1,
+    [string]$BotName = "",
+    [string]$Layer = "",
     [int]$RewindTimeoutSeconds = 180,
     [switch]$Confirm
 )
@@ -62,6 +69,16 @@ function Invoke-Rcon([string]$command) {
 function Invoke-RconOptional([string]$command) {
     $out = & $Java "-Dstdout.encoding=UTF-8" -cp $RconClassPath RconClient $RconHost $RconPort $RconPassword $command 2>&1
     return ($out -join "`n")
+}
+
+# 指定 -BotName 时，在假玩家所在栈层执行 reset same；否则用控制台（默认栈顶 world）。
+function Invoke-ResetCommand([string]$command) {
+    if ($BotName) { return Invoke-Rcon "execute as $BotName run $command" }
+    return Invoke-Rcon $command
+}
+function Invoke-SpawnCommand([string]$suffix) {
+    if ($BotName) { return Invoke-Rcon "execute as $BotName run samsara spawn$suffix" }
+    return Invoke-Rcon "samsara spawn$suffix"
 }
 
 function Test-RconPort {
@@ -111,29 +128,43 @@ Invoke-Rcon "samsara debug config rewind $Rewind" | Out-Null
 Invoke-Rcon "samsara debug config centermin $CenterMin" | Out-Null
 Invoke-Rcon "samsara debug config centermax $CenterMax" | Out-Null
 
-$before = Get-Spawn (Invoke-Rcon "samsara spawn")
-$historyBefore = Invoke-Rcon "samsara spawn history"
+if ($BotName) {
+    Invoke-RconOptional "puppet $BotName spawn" | Out-Null
+    Start-Sleep -Seconds 3
+    if (-not (Invoke-RconOptional "list" | Select-String $BotName)) {
+        Fail "假玩家 $BotName 未上线"
+    }
+    if ($Layer) {
+        Assert-Contains (Invoke-Rcon "execute as $BotName run samsara world enter $Layer") "已进入" "进入目标栈层 $Layer"
+        Start-Sleep -Seconds 2
+    }
+    $dim = Invoke-Rcon "data get entity $BotName Dimension"
+    Info "重置目标：$BotName @ $dim"
+}
+
+$before = Get-Spawn (Invoke-SpawnCommand "")
+$historyBefore = Invoke-SpawnCommand " history"
 Info "起始出生点：($($before[0]), $($before[1]))"
 
 for ($i = 1; $i -le $Resets; $i++) {
     Info "第 $i/$Resets 次同世界重置"
-    $confirm = Invoke-Rcon "samsara reset same"
+    $confirm = Invoke-ResetCommand "samsara reset same"
     Assert-Contains $confirm "危险操作确认" "reset same 第一次只确认"
-    $started = Invoke-Rcon "samsara reset same"
+    $started = Invoke-ResetCommand "samsara reset same"
     Assert-Contains $started "已开始同世界重置" "reset same 第二次执行"
 
     if (-not (Wait-RewindDone)) {
         Fail "倒流在 ${RewindTimeoutSeconds}s 内未完成；最后状态：`n$(Invoke-RconOptional 'samsara debug rewind status')"
     }
     Start-Sleep -Seconds 2
-    $history = Invoke-Rcon "samsara spawn history"
+    $history = Invoke-SpawnCommand " history"
     $count = ([regex]::Matches($history, "same-world-reset")).Count
     if ($count -lt $i) {
         Fail "出生点历史未追加第 $i 条 same-world-reset。实际输出：`n$history"
     }
     Pass "历史已追加（same-world-reset × $i）"
 
-    $now = Get-Spawn (Invoke-Rcon "samsara spawn")
+    $now = Get-Spawn (Invoke-SpawnCommand "")
     $dist = [math]::Round([math]::Sqrt([math]::Pow($now[0] - $before[0], 2) + [math]::Pow($now[1] - $before[1], 2)))
     $required = [math]::Min(100000, $CenterMin + 2500 * ([regex]::Matches($history, 'same-world-reset')).Count)
     if ($dist -lt ($required - 1)) {

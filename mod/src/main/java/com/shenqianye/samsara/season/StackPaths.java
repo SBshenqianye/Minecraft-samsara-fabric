@@ -119,6 +119,38 @@ public final class StackPaths {
                 .resolve("world_gen_settings.dat");
     }
 
+    /** 栈层 id 对应的数据根；无法识别时回退栈顶。 */
+    public static Path dataRootFor(Path worldDir, String layerId) {
+        if (layerId == null || layerId.isBlank() || TOP_ID.equals(layerId)) {
+            return samsara(worldDir);
+        }
+        return stackMetaRoot(worldDir).resolve(layerId);
+    }
+
+    /** 旧栈层的维度根；栈顶 = {@code dimensions/minecraft}。 */
+    public static Path layerDimensionsFor(Path worldDir, String layerId) {
+        if (layerId == null || layerId.isBlank() || TOP_ID.equals(layerId)) {
+            return dimensions(worldDir).resolve("minecraft");
+        }
+        return dimensions(worldDir).resolve(NAMESPACE).resolve(layerId);
+    }
+
+    public static Path layerDimensionFor(Path worldDir, String layerId, String dim) {
+        return layerDimensionsFor(worldDir, layerId).resolve(dim);
+    }
+
+    /** 从持久化的维度字符串解析 ResourceKey；失败返回 null。 */
+    public static ResourceKey<Level> keyFromString(String dimension) {
+        if (dimension == null || dimension.isBlank()) {
+            return null;
+        }
+        try {
+            return ResourceKey.create(Registries.DIMENSION, Identifier.parse(dimension));
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     /** 某个维度所属栈层的数据根：栈顶 = {@code world/samsara}，旧层 = {@code .../stack/<id>}。 */
     public static Path dataRootFor(Path worldDir, ResourceKey<Level> key) {
         String id = layerIdOf(key);
