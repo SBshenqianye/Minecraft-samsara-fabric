@@ -4,10 +4,10 @@ import com.shenqianye.samsara.config.ConfigSchema;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /** 圈地保护范围：染料表、固定模式与上限截断。 */
 class ClaimRangeConfigTest {
@@ -49,21 +49,22 @@ class ClaimRangeConfigTest {
     }
 
     @Test
-    void patternOverrideWinsOverDyeAndFixed() {
-        Map<String, Integer> patterns = Map.of("border", 9, "cross", 2);
-        assertEquals(9, ClaimRangeConfig.resolveDistance(false, 4,
-                ClaimRangeConfig.DEFAULT_COLOR_DISTANCES, patterns, "border", 16, 0));
-        assertEquals(2, ClaimRangeConfig.resolveDistance(true, 6,
-                ClaimRangeConfig.DEFAULT_COLOR_DISTANCES, patterns, "cross", 16, 0));
-        assertEquals(6, ClaimRangeConfig.resolveDistance(true, 6,
-                ClaimRangeConfig.DEFAULT_COLOR_DISTANCES, patterns, "border2", 16, 0));
+    void patternDirectionsDescribeUnitLengthShape() {
+        assertEquals(List.of("south"), ClaimRangeConfig.DEFAULT_PATTERN_DIRECTIONS.get("stripe_top"));
+        assertEquals(List.of("north", "east", "south", "west"),
+                ClaimRangeConfig.DEFAULT_PATTERN_DIRECTIONS.get("straight_cross"));
+        assertEquals(List.of("northeast", "southeast", "southwest", "northwest"),
+                ClaimRangeConfig.DEFAULT_PATTERN_DIRECTIONS.get("cross"));
+        assertEquals(ClaimRangeConfig.DIRECTION_NAMES,
+                ClaimRangeConfig.DEFAULT_PATTERN_DIRECTIONS.get("border"));
     }
 
     @Test
-    void patternOverrideStillRespectsMaxDistance() {
-        Map<String, Integer> patterns = Map.of("border", 24);
-        assertEquals(16, ClaimRangeConfig.resolveDistance(false, 4,
-                ClaimRangeConfig.DEFAULT_COLOR_DISTANCES, patterns, "border", 16, 0));
+    void patternDoesNotOverrideColorDistance() {
+        assertEquals(6, ClaimRangeConfig.resolveDistance(true, 6,
+                ClaimRangeConfig.DEFAULT_COLOR_DISTANCES, 16, 15));
+        assertEquals(9, ClaimRangeConfig.resolveDistance(false, 4,
+                ClaimRangeConfig.DEFAULT_COLOR_DISTANCES, 16, 8));
     }
 
     @Test
@@ -82,5 +83,18 @@ class ClaimRangeConfigTest {
         assertEquals("mode=fixed",
                 ConfigSchema.entry(ConfigSchema.CLAIM_RANGE, "fixedDistance").when("mode=fixed")
                         .visibleWhen());
+    }
+
+    @Test
+    void patternDirectionValidationRejectsUnknownAndEmpty() throws Exception {
+        Object value = ConfigSchema.validate(ConfigSchema.CLAIM_RANGE,
+                "patternDirections.border", List.of("north", "east", "north"));
+        assertEquals(List.of("north", "east"), value);
+        assertThrows(com.shenqianye.samsara.config.ConfigValidationException.class,
+                () -> ConfigSchema.validate(ConfigSchema.CLAIM_RANGE,
+                        "patternDirections.border", List.of("up")));
+        assertThrows(com.shenqianye.samsara.config.ConfigValidationException.class,
+                () -> ConfigSchema.validate(ConfigSchema.CLAIM_RANGE,
+                        "patternDirections.border", List.of()));
     }
 }

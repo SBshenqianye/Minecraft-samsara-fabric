@@ -349,15 +349,22 @@ details[open].file-block > .file-summary { border-bottom-color: var(--line); }
 .claim-banner-chip { display: inline-flex; align-items: center; padding: 6px 10px; border: 1px dashed color-mix(in srgb, var(--accent) 55%, var(--line)); border-radius: 8px; color: var(--accent); background: var(--accent-soft); font-size: 12px; cursor: grab; }
 .claim-banner-chip:active { cursor: grabbing; }
 .claim-sim-canvas { touch-action: none; }
-.pattern-distances { margin-top: 14px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-soft); }
-.pattern-distances-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
-.pattern-distances-head .ghost { margin-left: auto; }
-.pattern-distance-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(235px, 1fr)); gap: 6px; }
-.pattern-distance-row { display: flex; align-items: center; gap: 7px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
-.pattern-distance-row.override { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: var(--accent-soft); }
-.pattern-distance-name { flex: 1; min-width: 0; font-size: 12px; }
-.pattern-distance-row code { color: var(--muted); font-size: 10px; }
-.pattern-distance-row input { width: 4.2em; padding: 3px 4px; text-align: center; font-family: var(--mono); font-size: 12px; }
+.pattern-directions { margin-top: 14px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-soft); }
+.pattern-directions-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.pattern-directions-head .ghost { margin-left: auto; }
+.pattern-directions-note { margin: 0 0 9px; padding: 8px 10px; border: 1px dashed var(--line-strong); border-radius: 8px; color: var(--fg-soft); font-size: 12px; line-height: 1.55; }
+.pattern-direction-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(315px, 1fr)); gap: 6px; }
+.pattern-direction-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+.pattern-direction-row.empty { border-color: color-mix(in srgb, var(--danger) 30%, var(--line)); }
+.pattern-direction-icon { width: 34px; height: 48px; flex: 0 0 auto; image-rendering: pixelated; }
+.pattern-direction-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.35; }
+.pattern-direction-name { font-size: 12px; }
+.pattern-direction-meta code { color: var(--muted); font-size: 10px; overflow: hidden; text-overflow: ellipsis; }
+.pattern-direction-picker { display: grid; grid-template-columns: repeat(3, 20px); grid-template-rows: repeat(3, 20px); gap: 2px; flex: 0 0 auto; }
+.pattern-direction-cell { width: 20px; height: 20px; padding: 0; border-radius: 5px; border: 1px solid var(--line); background: var(--panel-soft); color: var(--muted); font-size: 10px; line-height: 1; }
+.pattern-direction-cell:hover { border-color: var(--accent); color: var(--accent); }
+.pattern-direction-cell.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.pattern-direction-center { display: grid; place-items: center; color: var(--line-strong); font-size: 14px; user-select: none; }
 .int-list-wrap { display: flex; flex-direction: column; gap: 8px; }
 .int-list-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: space-between; }
 .int-list-hint { flex: 1 1 220px; color: var(--muted); font-size: 11px; }
@@ -624,17 +631,7 @@ body.locked .tabs, body.locked .tab-actions { opacity: .45; pointer-events: none
 }
 .entry.reveal-flash { animation: reveal-flash 2.7s ease-out; }
 
-/* ---- 图案距离：原版旗帜图标 ---- */
-.pattern-distances-note {
-  margin: 0 0 9px; padding: 8px 10px; border: 1px dashed var(--line-strong);
-  border-radius: 8px; color: var(--fg-soft); font-size: 12px; line-height: 1.55;
-}
-.pattern-distance-grid { grid-template-columns: repeat(auto-fill, minmax(285px, 1fr)); }
-.pattern-distance-icon {
-  width: 28px; height: 28px; flex: 0 0 auto; image-rendering: pixelated;
-  border: 1px solid var(--line); border-radius: 6px; background: #0a1220;
-}
-.pattern-distance-row code { max-width: 92px; overflow: hidden; text-overflow: ellipsis; }
+/* ---- 图案单位方向 / 原版旗帜图标 ---- */
 .pattern-trial { padding: 3px 7px; font-size: 11px; }
 .claim-pattern-icon {
   width: 32px; height: 32px; image-rendering: pixelated; border-radius: 6px;
@@ -673,7 +670,7 @@ body.locked .tabs, body.locked .tab-actions { opacity: .45; pointer-events: none
 .map-swatch { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
 .map-swatch.claim { background: rgba(45, 212, 191, .45); border: 1px solid rgba(45, 212, 191, .9); }
 .map-swatch.banner { background: #f8fafc; border: 2px solid #2dd4bf; border-radius: 999px; }
-.map-selection { min-width: 240px; flex: 1; max-width: 430px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-soft); }
+.map-selection { min-width: 240px; flex: 1; max-width: 430px; height: 148px; overflow: auto; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-soft); }
 .map-selection-title { font-size: 12px; font-weight: 700; margin-bottom: 6px; }
 .map-selection-list { display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 3px 8px; margin: 0 0 8px; font-size: 12px; }
 .map-selection-list dt { color: var(--muted); }

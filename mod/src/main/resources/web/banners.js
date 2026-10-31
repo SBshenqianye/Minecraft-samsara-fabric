@@ -94,19 +94,19 @@
     const atlasData = ensurePixels();
     if (!atlasData) return null;
     const canvas = document.createElement('canvas');
-    canvas.width = CELL;
-    canvas.height = CELL;
+    canvas.width = 20;
+    canvas.height = 40;
     const ctx = canvas.getContext('2d');
-    const output = ctx.createImageData(CELL, CELL);
+    const output = ctx.createImageData(20, 40);
     const source = atlasData.data;
     const target = output.data;
     const rgb = hexToRgb(color);
-    const sx = (slot % COLS) * CELL;
-    const sy = Math.floor(slot / COLS) * CELL;
-    for (let y = 0; y < CELL; y += 1) {
-      for (let x = 0; x < CELL; x += 1) {
+    const sx = (slot % COLS) * CELL + 1;
+    const sy = Math.floor(slot / COLS) * CELL + 1;
+    for (let y = 0; y < 40; y += 1) {
+      for (let x = 0; x < 20; x += 1) {
         const from = ((sy + y) * atlasData.width + sx + x) * 4;
-        const to = (y * CELL + x) * 4;
+        const to = (y * 20 + x) * 4;
         const shade = source[from] / 255;
         target[to] = Math.round(rgb[0] * shade);
         target[to + 1] = Math.round(rgb[1] * shade);
@@ -129,13 +129,28 @@
     if (!ready) return false;
     const base = tinted(SLOTS.base, colorHex(baseColor));
     if (!base) return false;
+
+    const poleW = Math.max(2, width * .10);
+    const poleX = x + width * .68;
+    // 木杆与横梁：贴近 MC 旗帜物品的轮廓，旗面只取方块模型正面 20×40。
+    ctx.fillStyle = '#6b4b2a';
+    ctx.fillRect(poleX, y + height * .02, poleW, height * .96);
+    ctx.fillStyle = '#8a6237';
+    ctx.fillRect(poleX, y + height * .02, Math.max(1, poleW * .28), height * .96);
+    ctx.fillStyle = '#4e3618';
+    ctx.fillRect(x + width * .12, y + height * .03, width * .68, height * .07);
+
+    const clothX = x + width * .16;
+    const clothY = y + height * .11;
+    const clothW = width * .50;
+    const clothH = height * .84;
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(base, x, y, width, height);
+    ctx.drawImage(base, clothX, clothY, clothW, clothH);
     for (const pattern of patterns || []) {
       const slot = SLOTS[pattern.id];
       if (slot == null) continue;
       const layer = tinted(slot, colorHex(pattern.color));
-      if (layer) ctx.drawImage(layer, x, y, width, height);
+      if (layer) ctx.drawImage(layer, clothX, clothY, clothW, clothH);
     }
     return true;
   }

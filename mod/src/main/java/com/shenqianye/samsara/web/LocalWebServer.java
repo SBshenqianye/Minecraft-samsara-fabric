@@ -545,7 +545,8 @@ public final class LocalWebServer {
                     json(exchange, status, Map.of("error", "scale 只能是 1、2、4、8"));
                     return;
                 }
-                byte[] png = mapService.tile(dimension, rx, rz, scale);
+                byte[] png = mapService.tile(dimension, rx, rz, scale,
+                        !"0".equals(query.get("shade")));
                 if (png == null) {
                     status = 404;
                     json(exchange, status, Map.of("error", "没有这个地图区块"));

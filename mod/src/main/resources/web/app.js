@@ -388,11 +388,11 @@ function renderClaimRange() {
   }
   const navTargets = [];
   let previewApi = null;
-  const patternEntries = file.entries.filter((entry) => entry.path.startsWith('patternDistances.'));
-  const mainEntries = file.entries.filter((entry) => !entry.path.startsWith('patternDistances.'));
+  const patternEntries = file.entries.filter((entry) => entry.path.startsWith('patternDirections.'));
+  const mainEntries = file.entries.filter((entry) => !entry.path.startsWith('patternDirections.'));
   const { fileEl, navGroupChildren } = buildFileBlock(file, mainEntries, navTargets, true);
   const body = fileEl.querySelector('.file-body') || fileEl;
-  const patternEditor = patternDistancesEditor(file, patternEntries, (patternId) => {
+  const patternEditor = patternDirectionsEditor(file, patternEntries, (patternId) => {
     if (!previewApi) return;
     previewApi.selectPattern(patternId);
     scrollToTarget('claim-range-preview');
@@ -410,7 +410,7 @@ function renderClaimRange() {
     const entryItems = navGroupChildren.flatMap((group) => group.children || []);
     buildNav('圈地范围', [
       ...entryItems,
-      { label: '图案距离', target: patternEditor.id },
+      { label: '图案单位方向', target: patternEditor.id },
       { label: '保护范围调试', target: preview.id },
     ], navTargets);
     syncConditionalNav();
@@ -650,21 +650,50 @@ const CLAIM_DIRECTIONS = [
 ];
 
 const CLAIM_PATTERNS = {
-  border: { label: '全边框 · 8 方向', dirs: [0, 1, 2, 3, 4, 5, 6, 7] },
-  cross: { label: '交叉 · 4 斜向', dirs: [1, 3, 5, 7] },
-  straight_cross: { label: '正向十字 · 4 正向', dirs: [0, 2, 4, 6] },
-  stripe_top: { label: '顶部条纹', dirs: [4] },
-  stripe_bottom: { label: '底部条纹', dirs: [0] },
-  stripe_left: { label: '左侧条纹', dirs: [2] },
-  stripe_right: { label: '右侧条纹', dirs: [6] },
-  square_top_left: { label: '左上角', dirs: [3] },
-  square_top_right: { label: '右上角', dirs: [5] },
-  square_bottom_left: { label: '左下角', dirs: [1] },
-  square_bottom_right: { label: '右下角', dirs: [7] },
-  stripe_downleft: { label: '左上斜纹', dirs: [1, 5] },
-  stripe_downright: { label: '右上斜纹', dirs: [3, 7] },
-  stripe_center: { label: '居中竖纹', dirs: [0, 4] },
-  stripe_middle: { label: '居中横纹', dirs: [2, 6] },
+  border: { label: '全边框' },
+  cross: { label: '交叉' },
+  straight_cross: { label: '正向十字' },
+  stripe_top: { label: '顶部条纹' },
+  stripe_bottom: { label: '底部条纹' },
+  stripe_left: { label: '左侧条纹' },
+  stripe_right: { label: '右侧条纹' },
+  square_top_left: { label: '左上角' },
+  square_top_right: { label: '右上角' },
+  square_bottom_left: { label: '左下角' },
+  square_bottom_right: { label: '右下角' },
+  stripe_downleft: { label: '左上斜纹' },
+  stripe_downright: { label: '右上斜纹' },
+  stripe_center: { label: '居中竖纹' },
+  stripe_middle: { label: '居中横纹' },
+};
+
+const CLAIM_DIRECTION_NAMES = [
+  'north', 'northeast', 'east', 'southeast',
+  'south', 'southwest', 'west', 'northwest',
+];
+const CLAIM_DIRECTION_LABELS = ['北', '东北', '东', '东南', '南', '西南', '西', '西北'];
+const CLAIM_DIRECTION_GLYPHS = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖'];
+// 3×3 罗盘位置：列、行（1-based）
+const CLAIM_DIRECTION_CELLS = [
+  [2, 1], [3, 1], [3, 2], [3, 3],
+  [2, 3], [1, 3], [1, 2], [1, 1],
+];
+const DEFAULT_CLAIM_PATTERN_DIRECTIONS = {
+  stripe_top: ['south'],
+  stripe_bottom: ['north'],
+  stripe_left: ['east'],
+  stripe_right: ['west'],
+  square_top_left: ['southeast'],
+  square_top_right: ['southwest'],
+  square_bottom_left: ['northeast'],
+  square_bottom_right: ['northwest'],
+  stripe_downleft: ['northeast', 'southwest'],
+  stripe_downright: ['northwest', 'southeast'],
+  stripe_center: ['north', 'south'],
+  stripe_middle: ['east', 'west'],
+  cross: ['northeast', 'southeast', 'southwest', 'northwest'],
+  straight_cross: ['north', 'east', 'south', 'west'],
+  border: ['north', 'northeast', 'east', 'southeast', 'south', 'southwest', 'west', 'northwest'],
 };
 
 const CLAIM_FACINGS = [
@@ -674,63 +703,97 @@ const CLAIM_FACINGS = [
   { id: 'west', label: '西', offset: 6 },
 ];
 
-function patternDistancesEditor(file, entries, onTrial) {
+function normalizeDirectionNames(list) {
+  const source = Array.isArray(list) ? list : [];
+  return CLAIM_DIRECTION_NAMES.filter((name) => source.some((item) => String(item).toLowerCase() === name));
+}
+
+function patternDirectionsEditor(file, entries, onTrial) {
   const wrap = document.createElement('div');
-  wrap.className = 'pattern-distances';
-  wrap.id = 'claim-pattern-distances';
+  wrap.className = 'pattern-directions';
+  wrap.id = 'claim-pattern-directions';
   const head = document.createElement('div');
-  head.className = 'pattern-distances-head';
+  head.className = 'pattern-directions-head';
   const title = document.createElement('strong');
-  title.textContent = '图案距离';
+  title.textContent = '图案单位方向';
   const hint = document.createElement('span');
   hint.className = 'muted small';
-  hint.textContent = '0 = 不覆盖，沿用染料/固定距离；大于 0 = 该图案的旗帜固定使用这个距离。';
+  hint.textContent = '图案只决定单位长度上的方向；颜色负责延长这些方向。方向随旗帜朝向旋转。';
   const reset = document.createElement('button');
   reset.type = 'button';
   reset.className = 'ghost';
-  reset.textContent = '全部清零';
+  reset.textContent = '恢复默认方向';
   head.append(title, hint, reset);
 
   const note = document.createElement('div');
-  note.className = 'pattern-distances-note';
-  note.textContent = '例：全边框（border）设为 8 后，所有全边框旗都向八个方向延伸 8 格，不再看染料颜色；'
-      + '其他图案仍按染料或固定距离计算。图案颜色只影响外观，距离由图案 id 的覆盖值决定。'
-      + '点“试用”可把该图案放到下方调试画布。';
+  note.className = 'pattern-directions-note';
+  note.textContent = '点 3×3 罗盘上的方向即可开关。例如“全边框”默认八向全开，用白色染料就向八方各延伸 1 格，'
+      + '用黑色染料则各延伸 16 格；图案本身不再配置距离。点“试用”可把该图案放到下方调试画布。';
 
   const grid = document.createElement('div');
-  grid.className = 'pattern-distance-grid';
-  const inputs = [];
+  grid.className = 'pattern-direction-grid';
+  const controls = [];
   for (const entry of entries) {
     const id = entry.path.split('.').pop();
-    const row = document.createElement('label');
-    row.className = 'pattern-distance-row';
+    const row = document.createElement('div');
+    row.className = 'pattern-direction-row';
     const icon = window.SamsaraBanners
       ? window.SamsaraBanners.icon([{ id: id, color: 15 }], 0, 40)
       : null;
     if (icon) {
-      icon.className = 'pattern-distance-icon';
+      icon.className = 'pattern-direction-icon';
       icon.title = '原版 ' + id + ' 旗帜图案';
     }
+    const meta = document.createElement('div');
+    meta.className = 'pattern-direction-meta';
     const label = document.createElement('span');
-    label.className = 'pattern-distance-name';
+    label.className = 'pattern-direction-name';
     label.textContent = CLAIM_PATTERNS[id]?.label || id;
     const code = document.createElement('code');
     code.textContent = id;
-    const input = document.createElement('input');
-    input.type = 'number';
-    input.min = '0';
-    input.max = String(entry.max == null ? 32 : entry.max);
-    input.step = '1';
-    input.value = String(Number(currentValue(file.id, entry)) || 0);
-    input.addEventListener('input', () => {
-      const value = Math.max(0, Math.min(entry.max == null ? 32 : entry.max,
-          Math.round(Number(input.value) || 0)));
-      input.value = String(value);
-      row.classList.toggle('override', value > 0);
-      markEdited(file.id, entry, value);
-    });
-    row.classList.toggle('override', Number(input.value) > 0);
-    row.append(...(icon ? [icon] : []), label, code, input);
+    meta.append(label, code);
+
+    const picker = document.createElement('div');
+    picker.className = 'pattern-direction-picker';
+    const buttons = [];
+    for (let direction = 0; direction < 8; direction += 1) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'pattern-direction-cell';
+      button.textContent = CLAIM_DIRECTION_GLYPHS[direction];
+      button.title = CLAIM_DIRECTION_LABELS[direction];
+      button.style.gridColumn = String(CLAIM_DIRECTION_CELLS[direction][0]);
+      button.style.gridRow = String(CLAIM_DIRECTION_CELLS[direction][1]);
+      button.addEventListener('click', () => {
+        button.classList.toggle('active');
+        const selected = buttons
+            .map((item, index) => item.classList.contains('active')
+              ? CLAIM_DIRECTION_NAMES[index] : null)
+            .filter(Boolean);
+        row.classList.toggle('empty', selected.length === 0);
+        markEdited(file.id, entry, selected);
+      });
+      picker.append(button);
+      buttons.push(button);
+    }
+    const center = document.createElement('span');
+    center.className = 'pattern-direction-center';
+    center.textContent = '·';
+    center.style.gridColumn = '2';
+    center.style.gridRow = '2';
+    center.setAttribute('aria-hidden', 'true');
+    picker.append(center);
+
+    const setNames = (names) => {
+      const normalized = normalizeDirectionNames(names);
+      buttons.forEach((button, index) => {
+        button.classList.toggle('active', normalized.includes(CLAIM_DIRECTION_NAMES[index]));
+      });
+      row.classList.toggle('empty', normalized.length === 0);
+    };
+    setNames(currentValue(file.id, entry));
+
+    row.append(...(icon ? [icon] : []), meta, picker);
     if (onTrial) {
       const trial = document.createElement('button');
       trial.type = 'button';
@@ -745,14 +808,17 @@ function patternDistancesEditor(file, entries, onTrial) {
       row.append(trial);
     }
     grid.append(row);
-    inputs.push(input);
+    controls.push({ entry, row, setNames });
   }
+
   reset.addEventListener('click', () => {
-    entries.forEach((entry, index) => {
-      inputs[index].value = '0';
-      inputs[index].closest('.pattern-distance-row')?.classList.remove('override');
-      markEdited(file.id, entry, 0);
-    });
+    for (const control of controls) {
+      const defaults = control.entry.default
+        || DEFAULT_CLAIM_PATTERN_DIRECTIONS[control.entry.path.split('.').pop()]
+        || [];
+      control.setNames(defaults);
+      markEdited(file.id, control.entry, normalizeDirectionNames(defaults));
+    }
   });
 
   wrap.append(head, note, grid);
@@ -938,8 +1004,9 @@ function claimRangePreview(file) {
       const value = readValue('colorDistances', []);
       return Array.isArray(value) ? value.map(Number) : [];
     })(),
-    patternDistances: Object.fromEntries(patternIds.map((id) => [id,
-      Number(readValue('patternDistances.' + id, 0)) || 0])),
+    patternDirections: Object.fromEntries(patternIds.map((id) => [id,
+      normalizeDirectionNames(readValue('patternDirections.' + id,
+          DEFAULT_CLAIM_PATTERN_DIRECTIONS[id] || []))])),
   });
 
   const state = {
@@ -982,18 +1049,19 @@ function claimRangePreview(file) {
   };
 
   const distanceOf = (banner, cfg) => {
-    const override = cfg.patternDistances[banner.pattern] || 0;
     const color = Math.max(0, Math.min(15, Number(banner.color) || 0));
-    const base = override > 0
-        ? override
-        : (cfg.mode === 'fixed' ? cfg.fixedDistance : (cfg.colorDistances[color] ?? color + 1));
+    const base = cfg.mode === 'fixed' ? cfg.fixedDistance : (cfg.colorDistances[color] ?? color + 1);
     return Math.max(1, Math.min(cfg.maxDistance, Math.round(base)));
   };
 
-  const rotatedDirs = (banner) => {
-    const dirs = CLAIM_PATTERNS[banner.pattern]?.dirs || [];
+  const rotatedDirs = (banner, cfg) => {
+    const names = (cfg.patternDirections && cfg.patternDirections[banner.pattern])
+      || DEFAULT_CLAIM_PATTERN_DIRECTIONS[banner.pattern] || [];
     const offset = CLAIM_FACINGS.find((item) => item.id === banner.facing)?.offset || 0;
-    return dirs.map((index) => (index + offset) % 8);
+    return normalizeDirectionNames(names)
+        .map((name) => CLAIM_DIRECTION_NAMES.indexOf(name))
+        .filter((index) => index >= 0)
+        .map((index) => (index + offset) % 8);
   };
 
   const viewRadius = (cfg) => {
@@ -1004,7 +1072,7 @@ function claimRangePreview(file) {
   };
 
   const cellsFor = (banner, cfg) => {
-    const dirs = rotatedDirs(banner);
+    const dirs = rotatedDirs(banner, cfg);
     const distance = distanceOf(banner, cfg);
     const cells = new Set();
     const add = (x, z) => cells.add(x + ',' + z);
@@ -1048,6 +1116,182 @@ function claimRangePreview(file) {
     return out;
   };
 
+  // ---- 与 Geometry.compute 同源的“化线为面”：先合并多面旗帜的线段，再求封闭面 ----
+  const pointKey = (x, z) => x + ',' + z;
+  const keyPoint = (key) => {
+    const [x, z] = key.split(',').map(Number);
+    return { x, z };
+  };
+  const gcd = (a, b) => {
+    let x = Math.abs(a);
+    let y = Math.abs(b);
+    while (y) { const t = x % y; x = y; y = t; }
+    return x;
+  };
+  const directionIndex = (dx, dz) => {
+    const sx = Math.sign(dx);
+    const sz = Math.sign(dz);
+    const key = sx + ',' + sz;
+    return { '0,-1': 0, '1,-1': 1, '1,0': 2, '1,1': 3,
+      '0,1': 4, '-1,1': 5, '-1,0': 6, '-1,-1': 7 }[key];
+  };
+  const addGraphPoint = (points, x, z) => {
+    points.add(pointKey(x, z));
+  };
+  const addGraphEdge = (adj, x1, z1, x2, z2) => {
+    const a = pointKey(x1, z1);
+    const b = pointKey(x2, z2);
+    if (!adj.has(a)) adj.set(a, new Set());
+    if (!adj.has(b)) adj.set(b, new Set());
+    adj.get(a).add(b);
+    adj.get(b).add(a);
+  };
+  const rasterLine = (points, adj, x1, z1, x2, z2) => {
+    addGraphPoint(points, x1, z1);
+    addGraphPoint(points, x2, z2);
+    const steps = gcd(x2 - x1, z2 - z1);
+    if (steps === 0) return;
+    const sx = (x2 - x1) / steps;
+    const sz = (z2 - z1) / steps;
+    let px = x1;
+    let pz = z1;
+    for (let i = 0; i < steps; i += 1) {
+      const nx = px + sx;
+      const nz = pz + sz;
+      addGraphEdge(adj, px, pz, nx, nz);
+      px = nx;
+      pz = nz;
+    }
+  };
+  const findFaces = (points, adj) => {
+    const visited = new Set();
+    const faces = [];
+    for (const start of points) {
+      const neighbors = adj.get(start) || new Set();
+      for (const first of neighbors) {
+        const edge = start + '->' + first;
+        if (visited.has(edge)) continue;
+        const face = new Set();
+        let cur = start;
+        let nxt = first;
+        let bounded = true;
+        const maxSteps = Math.max(16, points.size * 4);
+        for (let step = 0; step < maxSteps; step += 1) {
+          visited.add(cur + '->' + nxt);
+          face.add(cur);
+          if (nxt === start) break;
+          const curPoint = keyPoint(cur);
+          const nxtPoint = keyPoint(nxt);
+          const reverse = directionIndex(curPoint.x - nxtPoint.x, curPoint.z - nxtPoint.z);
+          let nextNode = null;
+          let best = 9;
+          for (const candidate of adj.get(nxt) || []) {
+            if (candidate === cur) continue;
+            const point = keyPoint(candidate);
+            const dir = directionIndex(point.x - nxtPoint.x, point.z - nxtPoint.z);
+            const diff = (dir - reverse + 8) % 8;
+            if (diff > 0 && diff < best) {
+              best = diff;
+              nextNode = candidate;
+            }
+          }
+          if (!nextNode) { bounded = false; break; }
+          cur = nxt;
+          nxt = nextNode;
+        }
+        if (bounded && face.size >= 3) faces.push(face);
+      }
+    }
+    return faces;
+  };
+  const scanlineFill = (boundary, adj) => {
+    const interior = new Set();
+    if (boundary.size < 3) return interior;
+    const edges = new Set();
+    for (const key of boundary) {
+      for (const neighbor of adj.get(key) || []) {
+        if (!boundary.has(neighbor)) continue;
+        const a = keyPoint(key);
+        const b = keyPoint(neighbor);
+        const ordered = (a.x < b.x || (a.x === b.x && a.z <= b.z))
+          ? [a, b] : [b, a];
+        edges.add(ordered[0].x + ',' + ordered[0].z + ',' + ordered[1].x + ',' + ordered[1].z);
+      }
+    }
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+    for (const key of boundary) {
+      const point = keyPoint(key);
+      minZ = Math.min(minZ, point.z);
+      maxZ = Math.max(maxZ, point.z);
+    }
+    for (let z = minZ + 1; z < maxZ; z += 1) {
+      const intersections = [];
+      for (const edge of edges) {
+        const [x1, z1, x2, z2] = edge.split(',').map(Number);
+        if ((z1 < z && z <= z2) || (z2 < z && z <= z1)) {
+          intersections.push(Math.round(x1 + (z - z1) / (z2 - z1) * (x2 - x1)));
+        }
+      }
+      intersections.sort((a, b) => a - b);
+      for (let i = 0; i + 1 < intersections.length; i += 2) {
+        for (let x = intersections[i]; x <= intersections[i + 1]; x += 1) {
+          const key = pointKey(x, z);
+          if (!boundary.has(key)) interior.add(key);
+        }
+      }
+    }
+    return interior;
+  };
+
+  let geometryKey = '';
+  let geometryCells = new Set();
+  const claimGeometry = (banners, cfg) => {
+    const key = JSON.stringify({
+      banners,
+      mode: cfg.mode,
+      fixed: cfg.fixedDistance,
+      colors: cfg.colorDistances,
+      max: cfg.maxDistance,
+      directions: cfg.patternDirections,
+    });
+    if (key === geometryKey) return geometryCells;
+    const points = new Set();
+    const adj = new Map();
+    for (const banner of banners) {
+      const dirs = rotatedDirs(banner, cfg);
+      const distance = distanceOf(banner, cfg);
+      addGraphPoint(points, banner.x, banner.z);
+      const endpoints = [];
+      for (const dir of dirs) {
+        const direction = CLAIM_DIRECTIONS[dir];
+        const ex = banner.x + direction.dx * distance;
+        const ez = banner.z + direction.dz * distance;
+        rasterLine(points, adj, banner.x, banner.z, ex, ez);
+        endpoints.push({ x: ex, z: ez });
+      }
+      if (endpoints.length >= 3) {
+        endpoints.sort((a, b) => {
+          const da = Math.atan2(a.z - banner.z, a.x - banner.x);
+          const db = Math.atan2(b.z - banner.z, b.x - banner.x);
+          return da - db;
+        });
+        for (let i = 0; i < endpoints.length; i += 1) {
+          const a = endpoints[i];
+          const b = endpoints[(i + 1) % endpoints.length];
+          rasterLine(points, adj, a.x, a.z, b.x, b.z);
+        }
+      }
+    }
+    const cells = new Set(points);
+    for (const face of findFaces(points, adj)) {
+      for (const cell of scanlineFill(face, adj)) cells.add(cell);
+    }
+    geometryKey = key;
+    geometryCells = cells;
+    return cells;
+  };
+
   const cellAt = (event) => {
     const rect = canvas.getBoundingClientRect();
     const cfg = readConfig();
@@ -1074,21 +1318,18 @@ function claimRangePreview(file) {
 
   const updateSummary = () => {
     const cfg = readConfig();
-    const union = new Set();
-    for (const banner of state.banners) {
-      for (const key of cellsFor(banner, cfg)) union.add(key);
-    }
+    const union = claimGeometry(state.banners, cfg);
     const boundary = boundaryOf(union);
     const banner = selectedBanner();
     let text = '已放置 ' + state.banners.length + ' 面 · 保护 ' + union.size
         + ' 区块 · 边界 ' + boundary.length + ' 格';
     if (banner) {
       const dye = DYE_PALETTE[banner.color] || { name: '颜色 ' + banner.color };
-      const override = cfg.patternDistances[banner.pattern] || 0;
+      const dirs = rotatedDirs(banner, cfg)
+          .map((index) => CLAIM_DIRECTION_LABELS[index]).join('+') || '无方向';
       text += ' · 选中：' + (CLAIM_PATTERNS[banner.pattern]?.label || banner.pattern)
           + ' · ' + dye.name + ' · 朝' + (CLAIM_FACINGS.find((f) => f.id === banner.facing)?.label || '北')
-          + ' → ' + distanceOf(banner, cfg) + ' 区块'
-          + (override > 0 ? '（图案覆盖）' : '');
+          + ' · ' + dirs + ' → ' + distanceOf(banner, cfg) + ' 区块';
     } else {
       text += ' · 点击网格放置第一面旗帜';
     }
@@ -1123,10 +1364,7 @@ function claimRangePreview(file) {
       ctx.stroke();
     }
 
-    const union = new Set();
-    for (const banner of state.banners) {
-      for (const key of cellsFor(banner, cfg)) union.add(key);
-    }
+    const union = claimGeometry(state.banners, cfg);
 
     ctx.fillStyle = 'rgba(45, 212, 191, .07)';
     for (const key of union) {
@@ -1168,6 +1406,21 @@ function claimRangePreview(file) {
       });
     }
     ctx.globalAlpha = 1;
+
+    const selected = selectedBanner();
+    if (selected) {
+      const selectedCells = cellsFor(selected, cfg);
+      ctx.fillStyle = 'rgba(251, 191, 36, .14)';
+      for (const key of selectedCells) {
+        const [x, z] = key.split(',').map(Number);
+        ctx.fillRect(px(x), pz(z), cell, cell);
+      }
+      ctx.fillStyle = 'rgba(251, 191, 36, .95)';
+      for (const [x, z] of boundaryOf(selectedCells)) {
+        ctx.fillRect(Math.round(px(x) + cell * .35), Math.round(pz(z) + cell * .35),
+            Math.max(2, cell * .3), Math.max(2, cell * .3));
+      }
+    }
 
     state.banners.forEach((banner, index) => {
       const cx = px(banner.x) + cell / 2;
@@ -1375,7 +1628,7 @@ function claimRangePreview(file) {
   state.raf = requestAnimationFrame(draw);
   updateSummary();
 
-  state.claimPreview = {
+  const api = {
     redraw: () => {
       updateSummary();
       refreshPatternIcon();
@@ -1403,6 +1656,9 @@ function claimRangePreview(file) {
       setTimeout(() => canvas.classList.remove('claim-sim-flash'), 1600);
     },
   };
+  section.claimPreview = api;
+  if (window.SamsaraUI) window.SamsaraUI.state.claimPreview = api;
+  state.claimPreview = api;
   return section;
 }
 
@@ -1744,7 +2000,7 @@ const TAB_ACTIONS = {
   },
   map: {
     title: '地图',
-    hint: '只读扫描存档中的地形与圈地；切世界或改圈地后点“重新读取”',
+    hint: '只读扫描存档；标签计数 = 全服保护区块；切世界后点“重新读取”',
     save: null,
   },
   identity: {
@@ -1885,6 +2141,7 @@ window.SamsaraUI = {
   buildNav,
   setNavActive,
   watchNav,
+  scrollToTarget,
   refreshCounts,
   setTabCount,
   effectiveValue,

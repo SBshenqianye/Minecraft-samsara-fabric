@@ -1,5 +1,6 @@
 package com.shenqianye.samsara.config;
 
+import com.shenqianye.samsara.claim.ClaimRangeConfig;
 import com.shenqianye.samsara.output.OutputCatalog;
 import com.shenqianye.samsara.output.OutputTemplate;
 import com.shenqianye.samsara.output.TemplateCodec;
@@ -42,6 +43,10 @@ public final class ConfigSchema {
             "angry_villager", "snowflake", "ash", "white_ash");
 
     /** 15 种旗帜图案的固定 ID 与中文名；与 {@code Extension.PATTERN_DIR} 对应。 */
+    private static final List<String> CLAIM_DIRECTION_NAMES = List.of(
+            "north", "northeast", "east", "southeast",
+            "south", "southwest", "west", "northwest");
+
     private static final String[][] CLAIM_PATTERN_LABELS = {
             { "border", "全边框" },
             { "cross", "交叉" },
@@ -240,10 +245,11 @@ public final class ConfigSchema {
         entries.add(ConfigEntry.integer("maxDistance", 16, 1, 32, "保护范围",
                 "所有模式下的单方向距离上限；超出会截断，用来限制最大圈地规模"));
         for (String[] pattern : CLAIM_PATTERN_LABELS) {
-            entries.add(ConfigEntry.integer("patternDistances." + pattern[0], 0, 0, 32, "图案距离",
-                    pattern[1] + "（" + pattern[0] + "）：0 = 不覆盖，沿用染料/固定距离；"
-                            + "大于 0 = 所有使用该图案的旗帜固定用这个距离"
-                            + "（例如 border=8 时，全边框旗都按 8 格，不再看染料颜色）"));
+            entries.add(ConfigEntry.stringList("patternDirections." + pattern[0],
+                    ClaimRangeConfig.DEFAULT_PATTERN_DIRECTIONS.get(pattern[0]), "图案方向",
+                    pattern[1] + "（" + pattern[0] + "）：该图案在单位长度上的延伸方向"
+                            + "（north/northeast/east/southeast/south/southwest/west/northwest）；"
+                            + "颜色只负责延长这些方向，图案本身不决定距离"));
         }
         return entries;
     }
@@ -357,6 +363,18 @@ public final class ConfigSchema {
                             values.add(item.trim());
                         }
                     }
+                }
+                if (path.startsWith("patternDirections.")) {
+                    List<String> normalized = new ArrayList<>();
+                    for (String name : CLAIM_DIRECTION_NAMES) {
+                        if (values.stream().anyMatch(item -> item.equalsIgnoreCase(name))) {
+                            normalized.add(name);
+                        }
+                    }
+                    if (normalized.isEmpty()) {
+                        throw new ConfigValidationException(path, "至少选择一个方向");
+                    }
+                    values = normalized;
                 }
                 return List.copyOf(values);
             }

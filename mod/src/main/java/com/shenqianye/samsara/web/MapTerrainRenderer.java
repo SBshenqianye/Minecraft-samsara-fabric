@@ -27,8 +27,8 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * 把一个 region 文件渲染成地形小地图 PNG。
  *
- * <p>只读存档：按 {@code Heightmaps.WORLD_SURFACE} 找到每列最高的非空气方块，
- * 取它的原版地图色，再按南北/东西一格高度差做明暗。渲染结果按 region/缩放级别缓存，
+ * <p>只读存档：按 {@code Heightmaps.MOTION_BLOCKING_NO_LEAVES}（回退 WORLD_SURFACE）
+ * 找到每列最高的非空气方块，取它的原版地图色，再按南北/东西一格高度差做轻微明暗。渲染结果按 region/缩放级别缓存，
  * 不写世界数据，也不加载区块到服务器内存。
  *
  * <p>坐标约定：图像左上角 = 区块西北角；x 向右（东），z 向下（南）。
@@ -48,7 +48,8 @@ final class MapTerrainRenderer {
     }
 
     /** 渲染一个 region 的指定缩放级别；scale = 每个像素代表多少方块。 */
-    static byte[] render(Path regionDir, int regionX, int regionZ, int scale) throws IOException {
+    static byte[] render(Path regionDir, int regionX, int regionZ, int scale, boolean shading)
+            throws IOException {
         Surface[][] surfaces = new Surface[32][32];
         Path file = regionDir.resolve("r." + regionX + "." + regionZ + ".mca");
         if (!Files.isRegularFile(file)) {
@@ -79,7 +80,9 @@ final class MapTerrainRenderer {
             for (int px = 0; px < size; px += 1) {
                 int bx = regionX * REGION_BLOCKS + px * scale + scale / 2;
                 int color = colorAt(surfaces, regionX, regionZ, bx, bz);
-                pixels[row + px] = shadeAt(surfaces, regionX, regionZ, bx, bz, color);
+                pixels[row + px] = shading
+                        ? shadeAt(surfaces, regionX, regionZ, bx, bz, color)
+                        : color;
             }
         }
         ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -112,11 +115,11 @@ final class MapTerrainRenderer {
         double factor = 1.0;
         if (north != null) {
             int nh = north.heights[localIndex(bx, bz - 1)];
-            factor *= nh > height ? 1.10 : nh < height ? 0.86 : 1.0;
+            factor *= nh > height ? 1.05 : nh < height ? 0.95 : 1.0;
         }
         if (west != null) {
             int wh = west.heights[localIndex(bx - 1, bz)];
-            factor *= wh > height ? 1.05 : wh < height ? 0.93 : 1.0;
+            factor *= wh > height ? 1.02 : wh < height ? 0.98 : 1.0;
         }
         return multiply(argb, factor);
     }
@@ -161,7 +164,9 @@ final class MapTerrainRenderer {
         int maxY = maxSectionY * 16 + 15;
 
         long[] heightmap = chunk.getCompoundOrEmpty("Heightmaps")
-                .getLongArray("WORLD_SURFACE").orElse(null);
+                .getLongArray("MOTION_BLOCKING_NO_LEAVES")
+                .orElseGet(() -> chunk.getCompoundOrEmpty("Heightmaps")
+                        .getLongArray("WORLD_SURFACE").orElse(null));
         if (heightmap == null) {
             return new Surface(heights, colors, waters);
         }
@@ -226,17 +231,15 @@ final class MapTerrainRenderer {
     }
 
     private static long unpack(long[] values, int bits, int index) {
-        long bit = (long) index * bits;
-        int longIndex = (int) (bit >>> 6);
+        // MC 26.3 的 PalettedContainer / Heightmap 使用“每个 long 内不跨边界”的
+        // 打包方式：64 / bits 个值占一个 long，剩余位留空。
+        int perLong = 64 / bits;
+        int longIndex = index / perLong;
         if (longIndex < 0 || longIndex >= values.length) {
             return 0;
         }
-        int offset = (int) (bit & 63);
-        long value = values[longIndex] >>> offset;
-        if (offset + bits > 64 && longIndex + 1 < values.length) {
-            value |= values[longIndex + 1] << (64 - offset);
-        }
-        return value & ((1L << bits) - 1);
+        int offset = (index % perLong) * bits;
+        return (values[longIndex] >>> offset) & ((1L << bits) - 1);
     }
 
     private record Surface(int[] heights, int[] colors, boolean[] waters) {

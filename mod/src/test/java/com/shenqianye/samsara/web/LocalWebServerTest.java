@@ -157,6 +157,11 @@ class LocalWebServerTest {
 
         @Override
         public byte[] tile(String dimension, int regionX, int regionZ, int scale) {
+            return tile(dimension, regionX, regionZ, scale, true);
+        }
+
+        @Override
+        public byte[] tile(String dimension, int regionX, int regionZ, int scale, boolean shading) {
             if (!"minecraft:overworld".equals(dimension) || regionX != 0 || regionZ != 0
                     || (scale != 1 && scale != 2 && scale != 4 && scale != 8)) {
                 return null;

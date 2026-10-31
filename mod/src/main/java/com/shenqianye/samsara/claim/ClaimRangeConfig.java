@@ -17,10 +17,11 @@ import java.util.Map;
  *   <li>{@code mode=dye}：每个染料颜色对应一个距离（默认 1~16，保持旧行为）；</li>
  *   <li>{@code mode=fixed}：所有颜色统一使用 {@code fixedDistance}，适合不想让染料影响范围的服；</li>
  *   <li>{@code maxDistance}：单方向距离上限，任何模式都受它约束。</li>
+ *   <li>{@code patternDirections.<pattern>}：图案在单位长度上的方向；颜色只负责延长，图案不决定距离。</li>
  * </ul>
  * <p>
- * 配置只影响“从旗帜向外延伸多少区块”，不改变图案→方向映射，也不改变「化线为面」的算法。
- * Web 配置页用染料色块 + 实时形状预览编辑同一份配置。
+ * 配置只影响“从旗帜向哪些方向延伸多少区块”，不改变「化线为面」的算法。
+ * Web 配置页用染料色块 + 3×3 方向罗盘 + 实时形状预览编辑同一份配置。
  */
 public final class ClaimRangeConfig {
     /** MC 染料颜色数量（0=白 … 15=黑）。 */
@@ -30,12 +31,37 @@ public final class ClaimRangeConfig {
             List.of(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16);
     public static final int DEFAULT_FIXED_DISTANCE = 4;
     public static final int DEFAULT_MAX_DISTANCE = 16;
-    /** 支持单独设置距离的旗帜图案；顺序与 Extension.PATTERN_DIR 一致。 */
+    /** 图案在单位长度上的方向（世界方向，facing=north）；颜色只负责延长。 */
+    public static final List<String> DIRECTION_NAMES = List.of(
+            "north", "northeast", "east", "southeast",
+            "south", "southwest", "west", "northwest");
+    public static final Map<String, List<String>> DEFAULT_PATTERN_DIRECTIONS = defaults();
+    /** 圈地支持的 15 种旗帜图案；顺序与 Web 图案方向表一致。 */
     public static final List<String> PATTERN_IDS = List.of(
             "border", "cross", "straight_cross",
             "stripe_top", "stripe_bottom", "stripe_left", "stripe_right",
             "square_top_left", "square_top_right", "square_bottom_left", "square_bottom_right",
             "stripe_downleft", "stripe_downright", "stripe_center", "stripe_middle");
+
+    private static Map<String, List<String>> defaults() {
+        Map<String, List<String>> out = new LinkedHashMap<>();
+        out.put("stripe_top", List.of("south"));
+        out.put("stripe_bottom", List.of("north"));
+        out.put("stripe_left", List.of("east"));
+        out.put("stripe_right", List.of("west"));
+        out.put("square_top_left", List.of("southeast"));
+        out.put("square_top_right", List.of("southwest"));
+        out.put("square_bottom_left", List.of("northeast"));
+        out.put("square_bottom_right", List.of("northwest"));
+        out.put("stripe_downleft", List.of("northeast", "southwest"));
+        out.put("stripe_downright", List.of("northwest", "southeast"));
+        out.put("stripe_center", List.of("north", "south"));
+        out.put("stripe_middle", List.of("east", "west"));
+        out.put("cross", List.of("northeast", "southeast", "southwest", "northwest"));
+        out.put("straight_cross", List.of("north", "east", "south", "west"));
+        out.put("border", DIRECTION_NAMES);
+        return Map.copyOf(out);
+    }
 
     private static ClaimRangeConfig instance;
 
@@ -43,7 +69,7 @@ public final class ClaimRangeConfig {
     private int fixedDistance = DEFAULT_FIXED_DISTANCE;
     private List<Integer> colorDistances = DEFAULT_COLOR_DISTANCES;
     private int maxDistance = DEFAULT_MAX_DISTANCE;
-    private Map<String, Integer> patternDistances = Map.of();
+    private Map<String, List<String>> patternDirections = DEFAULT_PATTERN_DIRECTIONS;
 
     public enum Mode {
         DYE,
@@ -79,37 +105,18 @@ public final class ClaimRangeConfig {
     public static int resolveDistance(boolean fixed, int fixedDistance,
                                       List<Integer> colorDistances, int maxDistance,
                                       int color) {
-        return resolveDistance(fixed, fixedDistance, colorDistances, Map.of(), null, maxDistance, color);
-    }
-
-    /**
-     * 带图案覆盖的换算：某图案配置了正数距离时优先使用它，否则回退到染料/固定距离。
-     */
-    public static int resolveDistance(boolean fixed, int fixedDistance,
-                                      List<Integer> colorDistances,
-                                      Map<String, Integer> patternDistances, String patternId,
-                                      int maxDistance, int color) {
         int index = Math.floorMod(color, COLOR_COUNT);
-        int override = patternId == null || patternDistances == null
-                ? 0 : patternDistances.getOrDefault(patternId, 0);
-        int base = override > 0
-                ? override
-                : fixed
-                        ? fixedDistance
-                        : (colorDistances != null && index < colorDistances.size()
-                                ? colorDistances.get(index)
-                                : index + 1);
+        int base = fixed
+                ? fixedDistance
+                : (colorDistances != null && index < colorDistances.size()
+                        ? colorDistances.get(index)
+                        : index + 1);
         int cap = Math.max(1, maxDistance);
         return Math.max(1, Math.min(base, cap));
     }
 
     public int distanceForColor(int color) {
-        return distanceForColor(color, null);
-    }
-
-    public int distanceForColor(int color, String patternId) {
-        return resolveDistance(mode == Mode.FIXED, fixedDistance, colorDistances,
-                patternDistances, patternId, maxDistance, color);
+        return resolveDistance(mode == Mode.FIXED, fixedDistance, colorDistances, maxDistance, color);
     }
 
     public Mode mode() {
@@ -124,8 +131,13 @@ public final class ClaimRangeConfig {
         return colorDistances;
     }
 
-    public Map<String, Integer> patternDistances() {
-        return patternDistances;
+    public Map<String, List<String>> patternDirections() {
+        return patternDirections;
+    }
+
+    /** 某图案在单位长度上的世界方向（facing=north）。 */
+    public List<String> directionsFor(String patternId) {
+        return patternDirections.getOrDefault(patternId, List.of());
     }
 
     public int maxDistance() {
@@ -143,21 +155,22 @@ public final class ClaimRangeConfig {
             int nextMax = clamp(config.integer(id, "maxDistance"),
                     DEFAULT_MAX_DISTANCE, 1, 32);
             List<Integer> nextDistances = normalize(config.intList(id, "colorDistances"));
-            Map<String, Integer> nextPatterns = new LinkedHashMap<>();
+            Map<String, List<String>> nextDirections = new LinkedHashMap<>();
             for (String pattern : PATTERN_IDS) {
-                nextPatterns.put(pattern, clamp(config.integer(id, "patternDistances." + pattern),
-                        0, 0, 32));
+                nextDirections.put(pattern, normalizeDirections(
+                        config.stringList(id, "patternDirections." + pattern),
+                        DEFAULT_PATTERN_DIRECTIONS.get(pattern)));
             }
             boolean changed = mode != nextMode
                     || fixedDistance != nextFixed
                     || maxDistance != nextMax
                     || !colorDistances.equals(nextDistances)
-                    || !patternDistances.equals(nextPatterns);
+                    || !patternDirections.equals(nextDirections);
             this.mode = nextMode;
             this.fixedDistance = nextFixed;
             this.maxDistance = nextMax;
             this.colorDistances = nextDistances;
-            this.patternDistances = Map.copyOf(nextPatterns);
+            this.patternDirections = Map.copyOf(nextDirections);
             return changed;
         } catch (RuntimeException e) {
             Samsara.LOGGER.warn("[周目管理 samsara] claim-range.yml 读取失败，保留默认范围: {}",
@@ -182,5 +195,20 @@ public final class ClaimRangeConfig {
             out.add(Math.max(1, Math.min(value, 32)));
         }
         return List.copyOf(out);
+    }
+
+    private static List<String> normalizeDirections(List<String> raw, List<String> fallback) {
+        if (raw == null || raw.isEmpty()) {
+            return fallback == null ? List.of() : List.copyOf(fallback);
+        }
+        List<String> out = new ArrayList<>(8);
+        for (String name : DIRECTION_NAMES) {
+            if (raw.stream().anyMatch(item -> item != null
+                    && item.trim().equalsIgnoreCase(name)) && !out.contains(name)) {
+                out.add(name);
+            }
+        }
+        return out.isEmpty() ? (fallback == null ? List.of() : List.copyOf(fallback))
+                : List.copyOf(out);
     }
 }

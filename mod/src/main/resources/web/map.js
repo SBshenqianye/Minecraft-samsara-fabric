@@ -20,7 +20,18 @@
     loading: false,
     raf: 0,
     fitPending: false,
+    shading: true,
   };
+
+  const DIRECTION_NAMES = [
+    'north', 'northeast', 'east', 'southeast',
+    'south', 'southwest', 'west', 'northwest',
+  ];
+  const DIRECTIONS = [
+    { dx: 0, dz: -1 }, { dx: 1, dz: -1 }, { dx: 1, dz: 0 }, { dx: 1, dz: 1 },
+    { dx: 0, dz: 1 }, { dx: -1, dz: 1 }, { dx: -1, dz: 0 }, { dx: -1, dz: -1 },
+  ];
+  const FACING_OFFSET = { north: 0, east: 2, south: 4, west: 6 };
 
   const $ = (id) => document.getElementById(id);
   let els = null;
@@ -41,6 +52,7 @@
       zoomIn: $('map-zoom-in'),
       zoomOut: $('map-zoom-out'),
       claims: $('map-show-claims'),
+      shading: $('map-shading'),
     };
     if (els.canvas) {
       els.ctx = els.canvas.getContext('2d');
@@ -145,25 +157,35 @@
 
   function renderNav() {
     if (!window.SamsaraUI) return;
-    const dim = currentDim();
     const targets = [];
     const items = [];
     const stats = ensureEls().stats;
     const stage = ensureEls().stage;
     const selection = ensureEls().selection;
     if (stats) {
+      const totalProtected = dimensions().reduce((sum, dim) => sum + (dim.protectedCount || 0), 0);
       targets.push({ id: 'map-overview', el: stats });
-      items.push({ label: '维度与统计', target: 'map-overview' });
+      items.push({ label: '全服统计', count: totalProtected, target: 'map-overview' });
     }
-    if (stage) {
-      targets.push({ id: 'map-stage-anchor', el: stage });
-      items.push({ label: '地形与圈地', target: 'map-stage-anchor' });
+    for (const dim of dimensions()) {
+      items.push({
+        label: dim.name,
+        count: dim.protectedCount || 0,
+        target: stage ? 'map-stage-anchor' : '',
+        onClick: () => {
+          if (dim.id !== state.dimId) switchDimension(dim.id);
+          const dimension = ensureEls().dimension;
+          if (dimension) dimension.value = dim.id;
+          if (stage) window.SamsaraUI.scrollToTarget?.('map-stage-anchor');
+        },
+      });
     }
     if (selection) {
+      targets.push({ id: 'map-stage-anchor', el: stage });
       targets.push({ id: 'map-detail', el: selection });
-      items.push({ label: dim ? '当前：' + dim.name : '当前维度', target: 'map-detail' });
+      items.push({ label: '选中旗帜', target: 'map-detail' });
     }
-    window.SamsaraUI.buildNav('地图导航', items, targets);
+    window.SamsaraUI.buildNav('地图导航', items.filter((item) => item.target), targets);
   }
 
   function fitView() {
@@ -182,15 +204,17 @@
     const spanZ = Math.max(1, b.maxZ - b.minZ);
     const need = Math.max(spanX / Math.max(80, width - 80),
       spanZ / Math.max(80, height - 80));
-    state.scale = [0.5, 1, 2, 4, 8].find((value) => value >= need) || 8;
+    state.scale = [0.25, 0.5, 1, 2, 4, 8].find((value) => value >= need) || 8;
     state.centerX = (b.minX + b.maxX) / 2;
     state.centerZ = (b.minZ + b.maxZ) / 2;
     updateZoomLabel();
   }
 
   function updateZoomLabel() {
-    const label = ensureEls().zoom;
-    if (label) label.textContent = state.scale + ' 格/像素';
+    const { zoom, zoomIn, zoomOut } = ensureEls();
+    if (zoom) zoom.textContent = state.scale + ' 格/像素';
+    if (zoomIn) zoomIn.disabled = state.scale <= 0.25;
+    if (zoomOut) zoomOut.disabled = state.scale >= 8;
   }
 
   function resize() {
@@ -232,7 +256,7 @@
   }
 
   function tileKey(rx, rz) {
-    return state.dimId + '|' + rx + '|' + rz + '|' + tileScale();
+    return state.dimId + '|' + rx + '|' + rz + '|' + tileScale() + '|' + (state.shading ? 1 : 0);
   }
 
   function ensureTile(rx, rz) {
@@ -240,7 +264,8 @@
     if (state.tiles.has(key) || state.pending.has(key)) return;
     state.pending.add(key);
     const url = '/api/map/tile?dim=' + encodeURIComponent(state.dimId)
-      + '&rx=' + rx + '&rz=' + rz + '&scale=' + tileScale();
+      + '&rx=' + rx + '&rz=' + rz + '&scale=' + tileScale()
+      + '&shade=' + (state.shading ? 1 : 0);
     fetch(url, { headers: window.SamsaraUI.authHeaders ? window.SamsaraUI.authHeaders() : {} })
       .then(async (response) => {
         if (!response.ok) throw new Error('HTTP ' + response.status);
@@ -357,6 +382,7 @@
       }
     }
 
+    drawSelectedRange(ctx);
     drawBanners(ctx, dim, width, height);
     drawScale(ctx, width, height);
     ctx.fillStyle = 'rgba(226,232,240,.65)';
@@ -371,6 +397,115 @@
       ctx.beginPath();
       ctx.arc(point.x, point.y, 10, 0, Math.PI * 2);
       ctx.stroke();
+    }
+  }
+
+  function pointInPolygon(x, z, points) {
+    let inside = false;
+    for (let i = 0, j = points.length - 1; i < points.length; j = i, i += 1) {
+      const xi = points[i].x;
+      const zi = points[i].z;
+      const xj = points[j].x;
+      const zj = points[j].z;
+      if (((zi > z) !== (zj > z))
+          && x < (xj - xi) * (z - zi) / (zj - zi) + xi) {
+        inside = !inside;
+      }
+    }
+    return inside;
+  }
+
+  function distanceForColor(color) {
+    const claimRange = state.model && state.model.claimRange;
+    if (!claimRange) return 1;
+    const index = Math.max(0, Math.min(15, Number(color) || 0));
+    const base = claimRange.mode === 'fixed'
+      ? claimRange.fixedDistance
+      : ((claimRange.colorDistances && claimRange.colorDistances[index]) ?? index + 1);
+    return Math.max(1, Math.min(claimRange.maxDistance || 16, Math.round(base)));
+  }
+
+  function bannerCells(banner) {
+    const claimRange = state.model && state.model.claimRange;
+    const cells = new Set();
+    if (!claimRange || !banner.patterns) return cells;
+    const offset = FACING_OFFSET[banner.facing] || 0;
+    const baseX = Math.floor(banner.x / 16);
+    const baseZ = Math.floor(banner.z / 16);
+    for (const pattern of banner.patterns) {
+      const names = claimRange.patternDirections && claimRange.patternDirections[pattern.id];
+      if (!Array.isArray(names) || names.length === 0) continue;
+      const distance = distanceForColor(pattern.color);
+      const dirs = names.map((name) => DIRECTION_NAMES.indexOf(name))
+        .filter((index) => index >= 0)
+        .map((index) => (index + offset) % 8);
+      const endpoints = [];
+      cells.add(baseX + ',' + baseZ);
+      for (const dir of dirs) {
+        const direction = DIRECTIONS[dir];
+        for (let step = 1; step <= distance; step += 1) {
+          cells.add((baseX + direction.dx * step) + ',' + (baseZ + direction.dz * step));
+        }
+        endpoints.push({
+          x: baseX + direction.dx * distance,
+          z: baseZ + direction.dz * distance,
+        });
+      }
+      if (endpoints.length >= 3) {
+        endpoints.sort((a, b) => Math.atan2(a.z - baseZ, a.x - baseX)
+          - Math.atan2(b.z - baseZ, b.x - baseX));
+        for (let i = 0; i < endpoints.length; i += 1) {
+          const a = endpoints[i];
+          const b = endpoints[(i + 1) % endpoints.length];
+          const steps = Math.max(Math.abs(b.x - a.x), Math.abs(b.z - a.z));
+          for (let step = 0; step <= steps; step += 1) {
+            const t = steps === 0 ? 0 : step / steps;
+            cells.add(Math.round(a.x + (b.x - a.x) * t) + ','
+              + Math.round(a.z + (b.z - a.z) * t));
+          }
+        }
+        const minX = Math.min(...endpoints.map((point) => point.x));
+        const maxX = Math.max(...endpoints.map((point) => point.x));
+        const minZ = Math.min(...endpoints.map((point) => point.z));
+        const maxZ = Math.max(...endpoints.map((point) => point.z));
+        for (let x = minX; x <= maxX; x += 1) {
+          for (let z = minZ; z <= maxZ; z += 1) {
+            if (pointInPolygon(x, z, endpoints)) cells.add(x + ',' + z);
+          }
+        }
+      }
+    }
+    return cells;
+  }
+
+  function boundaryCells(cells) {
+    const out = [];
+    for (const key of cells) {
+      const [x, z] = key.split(',').map(Number);
+      if (!cells.has((x + 1) + ',' + z) || !cells.has((x - 1) + ',' + z)
+          || !cells.has(x + ',' + (z + 1)) || !cells.has(x + ',' + (z - 1))) {
+        out.push([x, z]);
+      }
+    }
+    return out;
+  }
+
+  function drawSelectedRange(ctx) {
+    if (!state.selected) return;
+    const cells = bannerCells(state.selected);
+    if (cells.size === 0) return;
+    const chunkPixels = Math.max(1, 16 / state.scale);
+    ctx.fillStyle = 'rgba(251, 191, 36, .13)';
+    for (const key of cells) {
+      const [cx, cz] = key.split(',').map(Number);
+      const point = worldToScreen(cx * 16, cz * 16);
+      ctx.fillRect(point.x, point.y, Math.max(1, chunkPixels - .2), Math.max(1, chunkPixels - .2));
+    }
+    ctx.fillStyle = 'rgba(251, 191, 36, .95)';
+    for (const [cx, cz] of boundaryCells(cells)) {
+      const point = worldToScreen(cx * 16, cz * 16);
+      ctx.fillRect(point.x + chunkPixels * .35, point.y + chunkPixels * .35,
+        Math.max(2, chunkPixels * .3), Math.max(2, chunkPixels * .3));
     }
   }
 
@@ -514,6 +649,7 @@
       ['区块', banner.chunkX + ', ' + banner.chunkZ],
       ['朝向', facingName(banner.facing)],
       ['图案', (banner.patterns || []).map((item) => item.id + '（' + item.color + '）').join('、') || '无'],
+      ['范围', bannerCells(banner).size + ' 区块'],
     ];
     const list = document.createElement('dl');
     list.className = 'map-selection-list';
@@ -540,7 +676,7 @@
   function setScale(next, anchorX, anchorY) {
     const before = screenToWorld(anchorX == null ? state.cssWidth / 2 : anchorX,
       anchorY == null ? state.cssHeight / 2 : anchorY);
-    state.scale = Math.max(0.5, Math.min(8, next));
+    state.scale = Math.max(0.25, Math.min(8, next));
     const after = screenToWorld(anchorX == null ? state.cssWidth / 2 : anchorX,
       anchorY == null ? state.cssHeight / 2 : anchorY);
     state.centerX += before.x - after.x;
@@ -562,7 +698,7 @@
   }
 
   function bind() {
-    const { canvas, stage, dimension, reload, fit, zoomIn, zoomOut, claims } = ensureEls();
+    const { canvas, stage, dimension, reload, fit, zoomIn, zoomOut, claims, shading } = ensureEls();
     if (!canvas || !stage) return;
     new ResizeObserver(resize).observe(stage);
     resize();
@@ -579,6 +715,15 @@
     if (zoomIn) zoomIn.addEventListener('click', () => setScale(state.scale / 2));
     if (zoomOut) zoomOut.addEventListener('click', () => setScale(state.scale * 2));
     if (claims) claims.addEventListener('change', draw);
+    if (shading) {
+      state.shading = shading.checked;
+      shading.addEventListener('change', () => {
+        state.shading = shading.checked;
+        state.tiles.clear();
+        state.pending.clear();
+        draw();
+      });
+    }
 
     canvas.addEventListener('pointerdown', (event) => {
       if (event.button !== 0) return;
@@ -662,8 +807,16 @@
   }
 
   function refreshCount() {
-    const total = dimensions().reduce((sum, dim) => sum + (dim.bannerCount || 0), 0);
-    window.SamsaraUI?.setTabCount('map', total);
+    const totalProtected = dimensions()
+      .reduce((sum, dim) => sum + (dim.protectedCount || 0), 0);
+    const totalBanners = dimensions()
+      .reduce((sum, dim) => sum + (dim.bannerCount || 0), 0);
+    window.SamsaraUI?.setTabCount('map', totalProtected);
+    const tab = document.querySelector('.tab[data-panel="panel-map"]');
+    if (tab) {
+      tab.title = '全服已保护 ' + totalProtected + ' 个区块 / ' + totalBanners + ' 面旗帜';
+      tab.setAttribute('aria-label', '地图，全服已保护 ' + totalProtected + ' 个区块');
+    }
   }
 
   window.SamsaraMap = {

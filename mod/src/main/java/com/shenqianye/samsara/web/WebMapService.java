@@ -3,6 +3,7 @@ package com.shenqianye.samsara.web;
 import com.shenqianye.samsara.Samsara;
 import com.shenqianye.samsara.claim.AreaService;
 import com.shenqianye.samsara.claim.ClaimNode;
+import com.shenqianye.samsara.claim.ClaimRangeConfig;
 import com.shenqianye.samsara.claim.GeometryStore;
 import com.shenqianye.samsara.geometry.ChunkCoord;
 import com.shenqianye.samsara.storage.StoragePaths;
@@ -53,6 +54,7 @@ public class WebMapService {
         out.put("ok", true);
         out.put("worldRoot", worldRoot().toString());
         out.put("generatedAt", System.currentTimeMillis());
+        out.put("claimRange", claimRangeModel());
         List<Map<String, Object>> dimensions = new ArrayList<>();
 
         List<String> ids = new ArrayList<>(regionDirs.keySet());
@@ -74,6 +76,10 @@ public class WebMapService {
 
     /** 返回一个 region 的地形 PNG；维度/坐标/缩放非法或文件不存在时返回 null。 */
     public byte[] tile(String dimension, int regionX, int regionZ, int scale) {
+        return tile(dimension, regionX, regionZ, scale, true);
+    }
+
+    public byte[] tile(String dimension, int regionX, int regionZ, int scale, boolean shading) {
         if (!SCALES.contains(scale)) {
             return null;
         }
@@ -87,12 +93,13 @@ public class WebMapService {
         }
         try {
             long modified = Files.getLastModifiedTime(file).toMillis();
-            String key = dimension + "|" + regionX + "|" + regionZ + "|" + scale + "|" + modified;
+            String key = dimension + "|" + regionX + "|" + regionZ + "|" + scale
+                    + "|" + shading + "|" + modified;
             byte[] cached = tiles.get(key);
             if (cached != null) {
                 return cached;
             }
-            byte[] bytes = MapTerrainRenderer.render(dir, regionX, regionZ, scale);
+            byte[] bytes = MapTerrainRenderer.render(dir, regionX, regionZ, scale, shading);
             if (bytes == null) {
                 return null;
             }
@@ -109,6 +116,17 @@ public class WebMapService {
                     dimension, regionX, regionZ, e.getMessage());
             return null;
         }
+    }
+
+    private static Map<String, Object> claimRangeModel() {
+        ClaimRangeConfig config = ClaimRangeConfig.getInstance();
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("mode", config.mode().name().toLowerCase(java.util.Locale.ROOT));
+        out.put("fixedDistance", config.fixedDistance());
+        out.put("colorDistances", config.colorDistances());
+        out.put("maxDistance", config.maxDistance());
+        out.put("patternDirections", config.patternDirections());
+        return out;
     }
 
     private Map<String, Object> dimensionModel(String id, Path dir, DimClaims claims) {

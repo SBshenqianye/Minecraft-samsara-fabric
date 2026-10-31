@@ -15,7 +15,7 @@
 | 分组出生 | ✅ 可用 | 玩家按 3~5 人分组，围绕新出生中心分散；离线玩家上线后补传送 |
 | 时间倒流 | ✅ 可用 | 未圈地区块按设定周期逐格恢复：近处慢放、远处按曲线退场，完成后备份、删除并重新生成 |
 | 旗帜圈地 | ⚠ 部分可用 | 图案定方向、染料定距离，保护区域取并集；距离可按染料颜色配置或在 Web 可视化预览；图标图案校验尚未实现 |
-| 圈地范围配置 | ✅ 可用 | 独立“圈地范围”标签页：`claim-range.yml` 可设固定距离、16 种染料各自的延伸距离、15 种图案的固定距离与单方向上限；色块编辑并实时预览；固定/染料模式自动只显示当前生效的距离表，新出现的行会高亮几秒；图案距离表使用原版旗帜贴图，可直接看出每个图案对应什么旗；调试画布可拖放多面旗帜、旋转朝向并叠加显示保护区域；保存后已有圈地立即重算 |
+| 圈地范围配置 | ✅ 可用 | 独立“圈地范围”标签页：`claim-range.yml` 可设固定距离、16 种染料各自的延伸距离、15 种图案的单位方向与单方向上限；色块编辑并实时预览；固定/染料模式自动只显示当前生效的距离表，新出现的行会高亮几秒；图案方向表使用原版旗帜贴图 + 3×3 罗盘，可直接看出每个图案向哪些方向延伸；图案只定方向、颜色只定长度；调试画布可拖放多面旗帜、旋转朝向并叠加显示保护区域；保存后已有圈地立即重算 |
 | 安全删除 | ⚠ 部分可用 | 预览、备份、执行、报告；整档压缩备份尚未实现 |
 | 活动记录 | ✅ 可用 | 静默记录登录、在线时长与本次会话的原版统计增量，供事后 Web 统计 |
 | 玩家轨迹 | ✅ 可用 | 5Hz 采样位置/朝向，按「世界 + 周目 + 日期」留档并按年龄几何简化；回放为原版人偶（Mannequin），支持多人同屏、攻击/交互即捕捉 |
@@ -123,7 +123,7 @@ Linux/macOS 用 `./gradlew build`。产物是 `mod/build/libs/samsara-<版本>.j
 
 命令功能开关在 `config/samsara/commands.yml`：`where.enabled` 控制是否启用 `/samsara where`，`where.broadcast` 控制是否允许广播，`where.broadcastCooldownSeconds` 是广播冷却（0=不限），`where.showCoordinates/showDimension/showChunk/showFacing` 控制输出字段；`tpa.enabled` 控制 TPA 系列，`tpa.requestTimeoutSeconds` 是请求有效期（默认 60），`tpa.crossDimension` 控制是否允许跨维度；`view.protectViewer` 控制回看时是否免伤，`view.freeRoamRadius` 是回看时允许自由活动的半径（默认 32 格）；`completion.chatList` 控制未完成指令是否在聊天栏列出候选，`completion.fuzzy` 控制拼写近似，`completion.maxItems` 控制单页最多展示多少项（超出可翻页）；`shutdown.countdownSeconds` 控制 `/samsara restart` 默认倒计时；`output.autoContinuePrefix` 控制游戏内续行是否自动加 `  ▸ ` 前缀。改完执行 `/samsara debug reload` 生效，无需重启；也可以打开本地 Web 面板编辑。
 
-圈地保护范围在 `config/samsara/claim-range.yml`：`mode` 可选 `dye`（按染料颜色，默认保持旧行为）或 `fixed`（所有颜色同一距离）；`fixedDistance` 是固定距离；`colorDistances` 是 16 种染料颜色各自的方向延伸距离（单位：区块）；`patternDistances` 可为 15 种旗帜图案单独指定固定距离（0 = 沿用染料/固定距离）；`maxDistance` 是单方向上限。保存后已有圈地会立即按新范围重建白名单。Web 的“圈地范围”标签页把染料表画成 16 个色块，旁边实时显示保护形状预览，可切换图案与旗帜朝向（北/东/南/西）查看实际方向。
+圈地保护范围在 `config/samsara/claim-range.yml`：`mode` 可选 `dye`（按染料颜色，默认保持旧行为）或 `fixed`（所有颜色同一距离）；`fixedDistance` 是固定距离；`colorDistances` 是 16 种染料颜色各自的延伸距离（单位：区块）；`patternDirections` 为 15 种旗帜图案分别指定单位长度上的方向（north/northeast/east/...，图案只定方向，颜色只定长度）；`maxDistance` 是单方向上限。保存后已有圈地会立即按新范围重建白名单。Web 的“圈地范围”标签页把染料表画成 16 个色块，旁边实时显示保护形状预览，可切换图案与旗帜朝向（北/东/南/西）查看实际方向；图案方向表用原版旗帜图标 + 3×3 罗盘编辑/浏览单位方向。
 
 本地 Web 面板默认**关闭**；在 `config/samsara/web.yml` 勾选 `enabled` 后才会监听 `127.0.0.1:8720`，首次启动会在控制台打印访问令牌。用浏览器打开后只需在弹窗里填入一次令牌，连接成功后 header 不再显示 token；面板不会改世界数据，也不提供公网监听。开启时请只在本机使用，不要把端口暴露到公网。“圈地范围”是独立标签页，用染料色块编辑距离并实时画出保护形状。“身份组”是独立页面：可增删改身份组、设置 data/premium/offline、从在线玩家或 usercache 选 UUID、预览圈地/玩家数据/轨迹/活动影响；已有组修改 data UUID 时会自动弹出重绑确认，默认拒绝覆盖已有数据。
 
