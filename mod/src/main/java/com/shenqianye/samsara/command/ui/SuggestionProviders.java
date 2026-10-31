@@ -523,7 +523,14 @@ public final class SuggestionProviders {
     /** 周目创建模式 */
     public static SuggestionProvider<CommandSourceStack> seasonModesProvider() {
         return (ctx, builder) -> CompletionSupport.offer(builder, seasonModes(),
-                s -> "same-world：同一存档开新周目；new-world：新世界（当前仅切换出生点）");
+                s -> "same-world：同一存档开新周目；new-world：新建独立世界并入栈");
+    }
+
+    /** 世界栈中的世界目录名 */
+    public static SuggestionProvider<CommandSourceStack> worldsProvider() {
+        return (ctx, builder) -> CompletionSupport.offer(builder,
+                com.shenqianye.samsara.season.WorldStackManager.getInstance().stack(),
+                s -> "世界栈中的世界（enter 会停服并切换 level-name）");
     }
 
     /** true / false */

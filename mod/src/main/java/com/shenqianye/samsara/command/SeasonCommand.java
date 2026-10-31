@@ -1,6 +1,7 @@
 package com.shenqianye.samsara.command;
 
 import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.arguments.LongArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.shenqianye.samsara.command.ui.ChatUi;
 import com.shenqianye.samsara.command.ui.SuggestionProviders;
@@ -66,7 +67,12 @@ public class SeasonCommand {
                                         .suggests(SuggestionProviders.seasonModesProvider())
                                         .executes(ctx -> reply(ctx.getSource(), manager().create(
                                                 StringArgumentType.getString(ctx, "name"),
-                                                StringArgumentType.getString(ctx, "mode")))))))
+                                                StringArgumentType.getString(ctx, "mode"))))
+                                        .then(Commands.argument("seed", LongArgumentType.longArg())
+                                                .executes(ctx -> reply(ctx.getSource(), manager().create(
+                                                        StringArgumentType.getString(ctx, "name"),
+                                                        StringArgumentType.getString(ctx, "mode"),
+                                                        LongArgumentType.getLong(ctx, "seed"))))))))
                 .then(Commands.literal("start")
                         .requires(src -> isAdmin(src))
                         .executes(ctx -> reply(ctx.getSource(), confirmStart(ctx.getSource()))))
@@ -201,6 +207,14 @@ public class SeasonCommand {
             return manager().start(src.getServer()); // 无 PENDING 周目：交给 MANAGER 回错误文案
         }
         if (!ConfirmGuard.confirm("season.start")) {
+            if ("new-world".equals(pending.mode)) {
+                return "⚠ 危险操作确认：开启 new-world 周目 #" + pending.id + "「" + pending.name + "」\n"
+                        + "· 将创建独立新世界（旧世界完整保留在世界栈中，不执行时间倒流/删块）\n"
+                        + "· 服务器会在 5 秒后停服；请用启动脚本重新开服\n"
+                        + "· 重启后自动计算新世界出生点、分组并全员强制迁移\n"
+                        + "· 背包/末影箱/进度天然保留；旧世界可用 /samsara world enter 回去\n"
+                        + "再次输入 /samsara season start（" + ConfirmGuard.ttlSeconds() + " 秒内）才会真正执行。";
+            }
             long rewindMs = manager().settings().rewindDurationMs;
             String rewind = rewindMs > 0
                     ? "时间倒流 " + com.shenqianye.samsara.season.DurationUtil.formatMs(rewindMs)

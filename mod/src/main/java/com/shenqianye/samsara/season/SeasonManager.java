@@ -169,6 +169,11 @@ public class SeasonManager {
 
     /** /season create <name> [mode] */
     public String create(String name, String mode) {
+        return create(name, mode, null);
+    }
+
+    /** /season create <name> [mode] [seed] */
+    public String create(String name, String mode, Long seed) {
         if (currentPending() != null) {
             return "存在未开始的周目 #" + currentPending().id + "「" + currentPending().name + "」，请先 start 或 end";
         }
@@ -184,6 +189,7 @@ public class SeasonManager {
         s.id = data.seasons.isEmpty() ? 1 : data.seasons.get(data.seasons.size() - 1).id + 1;
         s.name = name;
         s.mode = mode;
+        s.seed = seed;
         data.seasons.add(s);
         save();
         return "已创建周目 #" + s.id + "「" + name + "」（" + mode + "，PENDING）";
@@ -197,6 +203,10 @@ public class SeasonManager {
      * 时启动时间倒流，倒流到期后自动传送；否则立即传送 + 广播。
      */
     public String start(MinecraftServer server) {
+        Season pending = currentPending();
+        if (pending != null && "new-world".equals(pending.mode)) {
+            return startNewWorld(server, pending);
+        }
         // 拆分：setup（准备）→ 倒流或传送，见 flow 系列命令
         String setup = setupSeason(server);
         if (!setup.startsWith("周目 #")) {
@@ -225,6 +235,67 @@ public class SeasonManager {
         broadcast(server, "🎉 周目 #" + s.id + "「" + s.name + "」已开启！出生中心 (" + s.spawnCenter.x + ", " + s.spawnCenter.z
                 + ") · 分组 " + s.groupSpawns.size() + " 组 · 已传送 " + t + " 名在线玩家");
         return setup + "\n已传送在线玩家 " + t + " 名（离线玩家上线后自动传送）";
+    }
+
+    /**
+     * new-world 第一阶段：校验栈顶、记录目标世界与种子、写 server.properties，倒计时停服。
+     * 旧世界的这份周目记录标记 SKIPPED；新世界启动后由 {@link #onNewWorldBoot} 重新创建。
+     */
+    private String startNewWorld(MinecraftServer server, Season s) {
+        if (RewindEngine.getInstance().running()) {
+            return "已有进行中的时间倒流，请先 /samsara debug rewind abort 再操作";
+        }
+        String result = WorldStackManager.getInstance().startNewWorld(server, s);
+        if (result.startsWith("已安排")) {
+            s.state = Season.State.SKIPPED;
+            s.note = "已迁移到新世界 " + s.worldName;
+            s.endTime = Instant.now().toEpochMilli();
+            save();
+        }
+        return result;
+    }
+
+    /**
+     * 新世界启动后：用待执行信息重建周目，跑 setup（新世界出生点/分组/ACTIVE）并传送。
+     */
+    public String onNewWorldBoot(MinecraftServer server, WorldStackManager.Pending pending) {
+        Season s = findById(pending.seasonId);
+        if (s == null) {
+            s = new Season();
+            s.id = pending.seasonId;
+            data.seasons.add(s);
+        }
+        // 新世界的 season.json 是空白的；同 id 的旧记录只在旧世界，不会冲突
+        s.name = pending.name == null ? "S" + pending.seasonId : pending.name;
+        s.mode = "new-world";
+        s.worldName = WorldStackManager.currentWorldName(server);
+        s.seed = pending.seed;
+        s.state = Season.State.PENDING;
+        s.startTime = null;
+        s.endTime = null;
+        s.note = "由世界栈 new-world 创建";
+        save();
+
+        String setup = setupSeason(server);
+        if (!setup.startsWith("周目 #")) {
+            return setup;
+        }
+        int t = teleportSeasonPlayers(server, s);
+        broadcast(server, "🎉 新世界已开局：周目 #" + s.id + "「" + s.name + "」· 世界 "
+                + s.worldName + " · 种子 " + s.seed + " · 已传送 " + t + " 名在线玩家");
+        return setup + "\n已传送在线玩家 " + t + " 名（离线玩家上线后自动传送）";
+    }
+
+    /** 世界栈清单同步到当前 season.json，供 status/info 展示。 */
+    public void syncWorldStack(List<String> stack) {
+        if (data.worldStack == null) {
+            data.worldStack = new ArrayList<>();
+        }
+        if (!data.worldStack.equals(stack)) {
+            data.worldStack.clear();
+            data.worldStack.addAll(stack);
+            save();
+        }
     }
 
     /**
@@ -285,6 +356,7 @@ public class SeasonManager {
         s.spawnCenter.x = centerX;
         s.spawnCenter.z = centerZ;
         s.spawnCenter.radius = cfg.spawnRadius;
+        s.worldName = WorldStackManager.currentWorldName(server);
 
         // 3) 分组 + 持久化（同一身份组只保留一个账号入口，按 data UUID 去重）
         List<PlayerRegistry.RegPlayer> players = dedupePlayers(

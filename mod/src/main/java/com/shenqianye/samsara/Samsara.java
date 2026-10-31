@@ -100,6 +100,7 @@ public class Samsara implements DedicatedServerModInitializer {
             com.shenqianye.samsara.track.view.ViewManager.getInstance().tick(server);
             com.shenqianye.samsara.identity.IdentityService.getInstance().tick(server);
             com.shenqianye.samsara.shutdown.ShutdownAnnouncer.tick(server);
+            com.shenqianye.samsara.season.WorldStackManager.tick(server);
             com.shenqianye.samsara.command.DebugCommand.onTick();
             if (++unloadFlushCounter[0] >= 20) {
                 unloadFlushCounter[0] = 0;
@@ -129,6 +130,8 @@ public class Samsara implements DedicatedServerModInitializer {
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             DiffRecorder.initWorld(server);
             RewindEngine.getInstance().onServerStarted(server);
+            // 世界栈：登记实际世界并消费上一次切换（新世界开局要在玩家加入前完成）
+            com.shenqianye.samsara.season.WorldStackManager.getInstance().onServerStarted(server);
             com.shenqianye.samsara.track.view.ViewManager.getInstance().onServerStarted(server);
             com.shenqianye.samsara.permission.PermissionCommandPaths.capture(server);
             com.shenqianye.samsara.shutdown.ShutdownAnnouncer.onStarted();

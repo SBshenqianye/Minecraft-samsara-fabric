@@ -38,12 +38,12 @@
 | 位置查询 | ✅ 可用 | `/samsara where` 查看自己的维度与坐标（可带区块、朝向），`where broadcast` 广播全服；命令启用与输出字段在 `config/samsara/commands.yml` 配置 |
 | TPA 传送 | ✅ 可用 | `/tpa`、`/tpahere` 发起请求，`/tpaccept`、`/tpdeny`、`/tpcancel` 处理；默认 60 秒过期、每人同时只有 1 个请求、仅同维度；请求消息带 `[同意] [拒绝]` / `[取消请求]` 可点击按钮 |
 | 命令短别名 | ✅ 可用 | `/season`、`/claim`、`/where`、`/version`、`/track`、`/tpa` 系列等；被其他模组占用时自动让位，只保留 `/samsara` 全名 |
-| 新世界模式 | 🚧 规划中 | 旧世界入栈、新建世界、跨世界传送、栈顶限制 |
+| 新世界模式 | ⚠ 部分可用 | 旧世界入栈、新建独立世界（独立种子/下界/末地）、栈顶限制、`world enter/leave` 已可用；切换世界会停服并在下次启动生效；跨世界传送链尚未实现 |
 | 全员同意开新周目 | 🚧 规划中 | 无管理员时由在线玩家发起并全员同意 |
 | 身份组 | ✅ 可用 | 把正版/离线/历史账号映射到同一个 data UUID；默认关闭，关闭时不解析、不同步；组由本地 Web 的“身份组”标签页以卡片方式维护，不提供注册/登录/密码 |
 | 账号切换同步 | ✅ 可用 | 同账号重连不同步；正版 ↔ 离线账号切换时同步背包/位置/进度/统计；失败保留 journal、`.bak` 与源数据 |
 | 宠物多主人 | ✅ 可用 | 保留原版主主人，额外主人写入 `samsara:owners`；所有主人可交互/坐下/染色/喂食/繁殖；跟随按主主人→最后手持驯服物品→最近在线主人 |
-| 开场流程（Fabric） | 🚧 规划中 | 新周目开场、分组与传送由 Fabric 服务端事件/代码实现；数据包暂不作为近期依赖 |
+| 开场流程（Fabric） | ✅ 可用 | 新周目开场、分组与传送由 Fabric 服务端事件/代码实现；new-world 首次生成新世界后自动计算出生点、分组并迁移；数据包不依赖 |
 | Web 面板 | 🔭 远期 | 地图、玩家数据与管理可视化 |
 
 ## 常用命令
@@ -54,7 +54,8 @@
 | 管理身份组 | 本地 Web 控制台的“身份组”标签页；游戏内只读诊断 `/samsara debug identity map|preview|reload|audit`（owner） |
 | 看当前周目 | `/samsara season status`、`/samsara season info` |
 | 看圈地 | `/samsara claim info`、`/samsara claim boundary` |
-| 开新周目 | `/samsara season create <名称>` → `/samsara season start`（开始前二次确认） |
+| 开新周目 | `/samsara season create <名称> [same-world\|new-world] [种子]` → `/samsara season start`（开始前二次确认） |
+| 看/切换世界栈 | `/samsara world list`、`/samsara world info`；管理员 `/samsara world enter <世界名>`、`/samsara world leave`（会停服，重启后生效） |
 | 管理/调试 | `/samsara debug ...`（owner；圈地、倒流、轨迹、配置、测试数据） |
 | 查看补全候选 | `/samsara debug completion <指令片段>`（owner；只打印候选，便于排查补全） |
 | 回放玩家轨迹 | `/samsara debug track replay <监控目标> <开始时刻> [倍速] [周目]` · `track stop [监控目标\\|all]` · `track status` |
@@ -65,6 +66,7 @@
 | 关服/重启 | `/samsara restart [秒]`（默认 10 秒倒计时；退出界面显示“服务器已关闭，请稍后重新连接”） |
 
 > 周目管理在 `/samsara season`，调试与圈地管理在 `/samsara debug`；游戏内输入 `/samsara` 或 `/samsara help` 可看帮助（列表里的青色按钮点击即执行，黄色按钮点击只填入）。
+> `new-world`、`world enter`、`world leave` 会修改 `server.properties` 的 `level-name` 并停服，**必须由启动脚本重新开服**后才会生效；世界栈清单保存在 `<服务器根>/samsara/world-stack.json`，不随当前存档走。
 > 所有玩家名、周目、时长、回看参数、权限路径/等级都支持 **Tab 补全**；输入不完整时按回车，也会在聊天栏列出可点击候选（一行多个，点击只填入）。回看时段列表与帮助里的危险命令只填入命令，不会直接执行。
 
 ## 安装与构建

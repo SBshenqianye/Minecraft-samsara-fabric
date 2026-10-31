@@ -31,6 +31,12 @@ public final class PermissionDefaults {
         map.put("season skip", "owner");
         map.put("season status", "user");
         map.put("season respawn-groups", "owner");
+        // world stack
+        map.put("world", "user");
+        map.put("world list", "user");
+        map.put("world info", "user");
+        map.put("world enter", "owner");
+        map.put("world leave", "owner");
 
         // 身份组（只读；组管理走本地 Web）
         map.put("identity status", "user");

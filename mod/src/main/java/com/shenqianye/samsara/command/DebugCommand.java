@@ -132,6 +132,7 @@ public class DebugCommand {
                 .then(Commands.literal("tps")
                         .executes(ctx -> reply(ctx.getSource(), tps())))
                 .then(SeasonCommand.seasonNode())
+                .then(WorldCommand.worldNode())
                 .then(ClaimCommand.claimNode())
                 .then(TrackViewCommand.trackNode())
                 .then(WhereCommand.whereNode())
@@ -160,6 +161,22 @@ public class DebugCommand {
                                 .executes(ctx -> reply(ctx.getSource(), manager().spawnInfo(
                                         ctx.getSource().getPlayerOrException(),
                                         ctx.getSource().getLevel()))))
+                        .then(Commands.literal("world")
+                                .then(Commands.literal("push")
+                                        .then(Commands.argument("world", StringArgumentType.word())
+                                                .executes(ctx -> reply(ctx.getSource(),
+                                                        com.shenqianye.samsara.season.WorldStackManager
+                                                                .getInstance().debugPush(
+                                                                        StringArgumentType.getString(ctx, "world"))))))
+                                .then(Commands.literal("pop")
+                                        .executes(ctx -> reply(ctx.getSource(),
+                                                com.shenqianye.samsara.season.WorldStackManager
+                                                        .getInstance().debugPop())))
+                                .then(Commands.literal("reset")
+                                        .executes(ctx -> reply(ctx.getSource(),
+                                                com.shenqianye.samsara.season.WorldStackManager
+                                                        .getInstance().debugReset(
+                                                                ctx.getSource().getServer())))))
                         .then(diffCmd)
                         .then(Commands.literal("flow")
                                 .then(Commands.literal("setup")
@@ -1160,6 +1177,7 @@ public class DebugCommand {
                         ChatUi.run("周目信息", "/samsara season info", "查看世界种子与出生点")),
                 ChatUi.line(ChatUi.text(cont, ChatFormatting.GRAY),
                         ChatUi.run("我的位置", "/samsara where", "查看自己的维度、坐标、区块与朝向"),
+                        ChatUi.run("世界栈", "/samsara world list", "查看栈底→栈顶与当前世界"),
                         ChatUi.run("圈地信息", "/samsara claim info", "查看当前区块的圈地信息"),
                         ChatUi.run("边界开关", "/samsara claim boundary", "切换边界持续显示")),
                 ChatUi.line(ChatUi.text(cont, ChatFormatting.GRAY),
@@ -1177,7 +1195,11 @@ public class DebugCommand {
                         ChatUi.suggestIfPermitted(src, "season end", "结束周目",
                                 "/samsara season end", "结束当前周目"),
                         ChatUi.suggestIfPermitted(src, "season skip", "跳过周目",
-                                "/samsara season skip", "跳过当前周目")),
+                                "/samsara season skip", "跳过当前周目"),
+                        ChatUi.suggestIfPermitted(src, "world enter", "进入旧世界",
+                                "/samsara world enter ", "填入 /samsara world enter <世界名>（会停服）"),
+                        ChatUi.suggestIfPermitted(src, "world leave", "返回下层",
+                                "/samsara world leave", "返回世界栈下一层（会停服）")),
                 ChatUi.line(ChatUi.text(cont, ChatFormatting.GRAY),
                         ChatUi.suggestIf(isOwner(src), "调试状态",
                                 "/samsara debug status", "查看调试总览"),
