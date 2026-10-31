@@ -338,11 +338,16 @@ function renderClaimRange() {
     return;
   }
   const navTargets = [];
-  const { fileEl, navGroupChildren } = buildFileBlock(file, file.entries, navTargets, true);
+  const patternEntries = file.entries.filter((entry) => entry.path.startsWith('patternDistances.'));
+  const mainEntries = file.entries.filter((entry) => !entry.path.startsWith('patternDistances.'));
+  const { fileEl, navGroupChildren } = buildFileBlock(file, mainEntries, navTargets, true);
+  const body = fileEl.querySelector('.file-body') || fileEl;
+  const patternEditor = patternDistancesEditor(file, patternEntries);
+  body.append(patternEditor);
+  navTargets.push({ id: patternEditor.id, el: patternEditor });
   const preview = claimRangePreview(file);
   preview.id = 'claim-range-preview';
-  const body = fileEl.querySelector('.file-body');
-  if (body) body.append(preview);
+  body.append(preview);
   container.append(fileEl);
   setTabCount('claim-range', file.entries.length);
   if (state.tab === 'claim-range') {
@@ -350,7 +355,8 @@ function renderClaimRange() {
     const entryItems = navGroupChildren.flatMap((group) => group.children || []);
     buildNav('圈地范围', [
       ...entryItems,
-      { label: '保护范围预览', target: preview.id },
+      { label: '图案距离', target: patternEditor.id },
+      { label: '保护范围调试', target: preview.id },
     ], navTargets);
   }
 }
@@ -587,12 +593,89 @@ const CLAIM_DIRECTIONS = [
 ];
 
 const CLAIM_PATTERNS = {
-  border: { label: 'border · 8 方向（实心正方形）', dirs: [0, 1, 2, 3, 4, 5, 6, 7] },
-  cross: { label: 'cross · 4 斜向（实心正方形）', dirs: [1, 3, 5, 7] },
-  straight_cross: { label: 'straight_cross · 4 正向（实心菱形）', dirs: [0, 2, 4, 6] },
-  stripe_top: { label: 'stripe_top · 单条纹（线）', dirs: [4] },
-  square_top_left: { label: 'square_top_left · 单角（线）', dirs: [3] },
+  border: { label: '全边框 · 8 方向', dirs: [0, 1, 2, 3, 4, 5, 6, 7] },
+  cross: { label: '交叉 · 4 斜向', dirs: [1, 3, 5, 7] },
+  straight_cross: { label: '正向十字 · 4 正向', dirs: [0, 2, 4, 6] },
+  stripe_top: { label: '顶部条纹', dirs: [4] },
+  stripe_bottom: { label: '底部条纹', dirs: [0] },
+  stripe_left: { label: '左侧条纹', dirs: [2] },
+  stripe_right: { label: '右侧条纹', dirs: [6] },
+  square_top_left: { label: '左上角', dirs: [3] },
+  square_top_right: { label: '右上角', dirs: [5] },
+  square_bottom_left: { label: '左下角', dirs: [1] },
+  square_bottom_right: { label: '右下角', dirs: [7] },
+  stripe_downleft: { label: '左上斜纹', dirs: [1, 5] },
+  stripe_downright: { label: '右上斜纹', dirs: [3, 7] },
+  stripe_center: { label: '居中竖纹', dirs: [0, 4] },
+  stripe_middle: { label: '居中横纹', dirs: [2, 6] },
 };
+
+const CLAIM_FACINGS = [
+  { id: 'north', label: '北', offset: 0 },
+  { id: 'east', label: '东', offset: 2 },
+  { id: 'south', label: '南', offset: 4 },
+  { id: 'west', label: '西', offset: 6 },
+];
+
+function patternDistancesEditor(file, entries) {
+  const wrap = document.createElement('div');
+  wrap.className = 'pattern-distances';
+  wrap.id = 'claim-pattern-distances';
+  const head = document.createElement('div');
+  head.className = 'pattern-distances-head';
+  const title = document.createElement('strong');
+  title.textContent = '图案距离';
+  const hint = document.createElement('span');
+  hint.className = 'muted small';
+  hint.textContent = '0 = 沿用染料/固定距离；大于 0 时该图案固定使用这个距离。';
+  const reset = document.createElement('button');
+  reset.type = 'button';
+  reset.className = 'ghost';
+  reset.textContent = '全部清零';
+  head.append(title, hint, reset);
+
+  const grid = document.createElement('div');
+  grid.className = 'pattern-distance-grid';
+  const inputs = [];
+  for (const entry of entries) {
+    const id = entry.path.split('.').pop();
+    const row = document.createElement('label');
+    row.className = 'pattern-distance-row';
+    const label = document.createElement('span');
+    label.className = 'pattern-distance-name';
+    label.textContent = CLAIM_PATTERNS[id]?.label || id;
+    const code = document.createElement('code');
+    code.textContent = id;
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.min = '0';
+    input.max = String(entry.max == null ? 32 : entry.max);
+    input.step = '1';
+    input.value = String(Number(currentValue(file.id, entry)) || 0);
+    input.addEventListener('input', () => {
+      const value = Math.max(0, Math.min(entry.max == null ? 32 : entry.max,
+          Math.round(Number(input.value) || 0)));
+      input.value = String(value);
+      row.classList.toggle('override', value > 0);
+      markEdited(file.id, entry, value);
+    });
+    row.classList.toggle('override', Number(input.value) > 0);
+    row.append(label, code, input);
+    grid.append(row);
+    inputs.push(input);
+  }
+  reset.addEventListener('click', () => {
+    entries.forEach((entry, index) => {
+      inputs[index].value = '0';
+      inputs[index].closest('.pattern-distance-row')?.classList.remove('override');
+      markEdited(file.id, entry, 0);
+    });
+  });
+
+  wrap.append(head, grid);
+  return wrap;
+}
+
 
 function buildIntList(file, entry, values) {
   const wrap = document.createElement('div');
@@ -676,10 +759,10 @@ function claimRangePreview(file) {
   head.className = 'claim-preview-head';
   const titles = document.createElement('div');
   const title = document.createElement('strong');
-  title.textContent = '保护范围可视化预览';
+  title.textContent = '保护范围调试画布';
   const sub = document.createElement('span');
   sub.className = 'muted small';
-  sub.textContent = '按当前染料距离实时计算；中心格 = 旗帜所在区块，每格 = 1 区块。';
+  sub.textContent = '点击网格放置旗帜，拖动移动；右键或“旋转”改变朝向。边界按游戏内风格用粒子点显示。';
   titles.append(title, sub);
 
   const controls = document.createElement('div');
@@ -698,53 +781,88 @@ function claimRangePreview(file) {
     option.textContent = dye.name + '（' + index + '）';
     colorSelect.append(option);
   });
-  controls.append(patternSelect, colorSelect);
+  const facingSelect = document.createElement('select');
+  for (const facing of CLAIM_FACINGS) {
+    const option = document.createElement('option');
+    option.value = facing.id;
+    option.textContent = '朝' + facing.label;
+    facingSelect.append(option);
+  }
+  controls.append(patternSelect, colorSelect, facingSelect);
   head.append(titles, controls);
 
+  const toolbar = document.createElement('div');
+  toolbar.className = 'claim-sim-toolbar';
+  const chip = document.createElement('span');
+  chip.className = 'claim-banner-chip';
+  chip.draggable = true;
+  chip.textContent = '拖到网格放置旗帜';
+  const spacer = document.createElement('span');
+  spacer.className = 'spacer';
+  const zoomWrap = document.createElement('label');
+  zoomWrap.className = 'claim-zoom';
+  const zoomText = document.createElement('span');
+  zoomText.textContent = '视野';
+  const zoomSelect = document.createElement('select');
+  for (const [value, label] of [['0', '自动'], ['7', '13 格'], ['10', '21 格'], ['14', '29 格'], ['20', '41 格']]) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    zoomSelect.append(option);
+  }
+  zoomWrap.append(zoomText, zoomSelect);
+  const rotateBtn = document.createElement('button');
+  rotateBtn.type = 'button';
+  rotateBtn.className = 'ghost';
+  rotateBtn.textContent = '旋转';
+  const deleteBtn = document.createElement('button');
+  deleteBtn.type = 'button';
+  deleteBtn.className = 'ghost';
+  deleteBtn.textContent = '删除选中';
+  const clearBtn = document.createElement('button');
+  clearBtn.type = 'button';
+  clearBtn.className = 'ghost danger';
+  clearBtn.textContent = '清空';
+  toolbar.append(chip, spacer, zoomWrap, rotateBtn, deleteBtn, clearBtn);
+
   const canvas = document.createElement('canvas');
-  canvas.className = 'claim-preview-canvas';
+  canvas.className = 'claim-preview-canvas claim-sim-canvas';
+  canvas.tabIndex = 0;
+  canvas.title = '点击放置旗帜；拖动移动；右键旋转；Delete 删除';
   const summary = document.createElement('div');
   summary.className = 'claim-preview-summary';
   const legend = document.createElement('div');
   legend.className = 'claim-preview-legend';
-  legend.textContent = '预览按当前距离缩放，并假设旗帜朝北；实际游戏内会随旗帜朝向旋转。固定模式下所有颜色使用同一距离。';
+  legend.textContent = '绿色粒子 = 保护边界；旗帜颜色 = 染料距离或图案覆盖距离。固定模式下所有颜色使用同一距离。';
 
-  section.append(head, canvas, summary, legend);
+  section.append(head, toolbar, canvas, summary, legend);
 
   const readValue = (path, fallback) => {
     const entry = file.entries.find((item) => item.path === path);
     return entry ? currentValue(file.id, entry) : fallback;
   };
+  const patternIds = Object.keys(CLAIM_PATTERNS);
+  const readConfig = () => ({
+    mode: String(readValue('mode', 'dye')),
+    fixedDistance: Number(readValue('fixedDistance', 4)) || 4,
+    maxDistance: Math.max(1, Math.min(32, Number(readValue('maxDistance', 16)) || 16)),
+    colorDistances: (() => {
+      const value = readValue('colorDistances', []);
+      return Array.isArray(value) ? value.map(Number) : [];
+    })(),
+    patternDistances: Object.fromEntries(patternIds.map((id) => [id,
+      Number(readValue('patternDistances.' + id, 0)) || 0])),
+  });
 
-  const redraw = () => {
-    const mode = String(readValue('mode', 'dye'));
-    const fixedDistance = Number(readValue('fixedDistance', 4));
-    const maxDistance = Math.max(1, Math.min(32, Number(readValue('maxDistance', 16)) || 16));
-    const table = readValue('colorDistances', []);
-    const color = Number(colorSelect.value);
-    const rawDistance = mode === 'fixed'
-      ? fixedDistance
-      : Number(Array.isArray(table) ? table[color] : NaN);
-    const distance = Math.max(1, Math.min(maxDistance,
-        Number.isFinite(rawDistance) ? Math.round(rawDistance) : color + 1));
-    const pattern = CLAIM_PATTERNS[patternSelect.value] || CLAIM_PATTERNS.border;
-    const cells = drawClaimRange(canvas, pattern.dirs, distance, maxDistance);
-    const dye = DYE_PALETTE[color] || { name: '颜色 ' + color };
-    summary.textContent = (mode === 'fixed' ? '固定模式' : '染料模式')
-      + ' · ' + pattern.label.split(' · ')[0] + ' · ' + dye.name
-      + ' → 距离 ' + distance + ' 区块，保护 ' + cells + ' 区块'
-      + (distance >= maxDistance ? '（已到上限）' : '');
+  const state = {
+    banners: [{ x: 0, z: 0, pattern: patternSelect.value, color: Number(colorSelect.value), facing: facingSelect.value }],
+    selected: 0,
+    hover: null,
+    drag: null,
+    lastSummary: 0,
+    zoom: 0,
   };
 
-  patternSelect.addEventListener('change', redraw);
-  colorSelect.addEventListener('change', redraw);
-  redraw();
-  state.claimPreview = { redraw };
-  return section;
-}
-
-/** 按与服务端一致的 8 方向射线 + 端点环规则，画出保护形状并返回区块数。 */
-function drawClaimRange(canvas, dirs, distance, maxDistance) {
   const size = 560;
   const dpr = window.devicePixelRatio || 1;
   canvas.width = Math.round(size * dpr);
@@ -752,111 +870,391 @@ function drawClaimRange(canvas, dirs, distance, maxDistance) {
   canvas.style.width = '100%';
   canvas.style.maxWidth = size + 'px';
   const ctx = canvas.getContext('2d');
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, size, size);
+  ctx.imageSmoothingEnabled = false;
 
-  const radius = Math.max(4, Math.min(maxDistance, distance + 2));
-  const pad = 24;
-  const cell = (size - pad * 2) / (2 * radius + 1);
-  const px = (x) => pad + (x + radius) * cell;
-  const pz = (z) => pad + (z + radius) * cell;
+  const distanceOf = (banner, cfg) => {
+    const override = cfg.patternDistances[banner.pattern] || 0;
+    const color = Math.max(0, Math.min(15, Number(banner.color) || 0));
+    const base = override > 0
+        ? override
+        : (cfg.mode === 'fixed' ? cfg.fixedDistance : (cfg.colorDistances[color] ?? color + 1));
+    return Math.max(1, Math.min(cfg.maxDistance, Math.round(base)));
+  };
 
-  ctx.fillStyle = '#0a1220';
-  ctx.fillRect(0, 0, size, size);
+  const rotatedDirs = (banner) => {
+    const dirs = CLAIM_PATTERNS[banner.pattern]?.dirs || [];
+    const offset = CLAIM_FACINGS.find((item) => item.id === banner.facing)?.offset || 0;
+    return dirs.map((index) => (index + offset) % 8);
+  };
 
-  const cells = new Set();
-  const add = (x, z) => cells.add(x + ',' + z);
-  add(0, 0);
-  for (const index of dirs) {
-    const dir = CLAIM_DIRECTIONS[index];
-    for (let step = 1; step <= distance; step += 1) {
-      add(dir.dx * step, dir.dz * step);
+  const viewRadius = (cfg) => {
+    if (state.zoom > 0) return state.zoom;
+    let max = 1;
+    for (const banner of state.banners) max = Math.max(max, distanceOf(banner, cfg));
+    return Math.max(6, Math.min(28, max + 4));
+  };
+
+  const cellsFor = (banner, cfg) => {
+    const dirs = rotatedDirs(banner);
+    const distance = distanceOf(banner, cfg);
+    const cells = new Set();
+    const add = (x, z) => cells.add(x + ',' + z);
+    add(banner.x, banner.z);
+    const endpoints = [];
+    for (const index of dirs) {
+      const dir = CLAIM_DIRECTIONS[index];
+      for (let step = 1; step <= distance; step += 1) {
+        add(banner.x + dir.dx * step, banner.z + dir.dz * step);
+      }
+      endpoints.push({ x: banner.x + dir.dx * distance, z: banner.z + dir.dz * distance });
     }
-  }
-
-  // 末端 ≥ 3 个时「化线为面」会填出内部；用端点按角度顺序连成的多边形近似。
-  const endpoints = dirs.map((index) => {
-    const dir = CLAIM_DIRECTIONS[index];
-    return { x: dir.dx * distance, z: dir.dz * distance };
-  });
-  if (endpoints.length >= 3) {
-    for (let i = 0; i < endpoints.length; i += 1) {
-      const a = endpoints[i];
-      const b = endpoints[(i + 1) % endpoints.length];
-      addLineCells(a.x, a.z, b.x, b.z, add);
-    }
-    for (let x = -radius; x <= radius; x += 1) {
-      for (let z = -radius; z <= radius; z += 1) {
-        if (pointInPolygon(x, z, endpoints)) add(x, z);
+    if (endpoints.length >= 3) {
+      for (let i = 0; i < endpoints.length; i += 1) {
+        const a = endpoints[i];
+        const b = endpoints[(i + 1) % endpoints.length];
+        addLineCells(a.x, a.z, b.x, b.z, add);
+      }
+      const minX = Math.min(...endpoints.map((p) => p.x));
+      const maxX = Math.max(...endpoints.map((p) => p.x));
+      const minZ = Math.min(...endpoints.map((p) => p.z));
+      const maxZ = Math.max(...endpoints.map((p) => p.z));
+      for (let x = minX; x <= maxX; x += 1) {
+        for (let z = minZ; z <= maxZ; z += 1) {
+          if (pointInPolygon(x, z, endpoints)) add(x, z);
+        }
       }
     }
-  }
+    return cells;
+  };
 
-  // 网格线
-  const gridStep = cell >= 9 ? 1 : 4;
-  ctx.strokeStyle = 'rgba(148, 163, 184, .12)';
-  ctx.lineWidth = 1;
-  for (let i = -radius; i <= radius + 1; i += gridStep) {
-    const x = pad + (i + radius) * cell;
-    const z = pad + (i + radius) * cell;
-    ctx.beginPath();
-    ctx.moveTo(x, pad);
-    ctx.lineTo(x, size - pad);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(pad, z);
-    ctx.lineTo(size - pad, z);
-    ctx.stroke();
-  }
+  const boundaryOf = (cells) => {
+    const out = [];
+    for (const key of cells) {
+      const [x, z] = key.split(',').map(Number);
+      if (!cells.has((x + 1) + ',' + z) || !cells.has((x - 1) + ',' + z)
+          || !cells.has(x + ',' + (z + 1)) || !cells.has(x + ',' + (z - 1))) {
+        out.push([x, z]);
+      }
+    }
+    return out;
+  };
 
-  // 保护格
-  for (const key of cells) {
-    const [x, z] = key.split(',').map(Number);
-    const cx = Math.floor(px(x));
-    const cz = Math.floor(pz(z));
-    const w = Math.ceil(cell) - 1;
-    ctx.fillStyle = x === 0 && z === 0
-      ? 'rgba(251, 191, 36, .82)'
-      : 'rgba(45, 212, 191, .32)';
-    ctx.fillRect(cx + 1, cz + 1, w, w);
-  }
+  const cellAt = (event) => {
+    const rect = canvas.getBoundingClientRect();
+    const cfg = readConfig();
+    const radius = viewRadius(cfg);
+    const pad = 26;
+    const cell = (size - pad * 2) / (2 * radius + 1);
+    const x = (event.clientX - rect.left) * (size / rect.width);
+    const y = (event.clientY - rect.top) * (size / rect.height);
+    const gx = Math.floor((x - pad) / cell) - radius;
+    const gz = Math.floor((y - pad) / cell) - radius;
+    if (gx < -radius || gx > radius || gz < -radius || gz > radius) return null;
+    return { x: gx, z: gz };
+  };
 
-  // 射线与端点环
-  ctx.strokeStyle = 'rgba(45, 212, 191, .55)';
-  ctx.lineWidth = 1.5;
-  for (const index of dirs) {
-    const dir = CLAIM_DIRECTIONS[index];
-    ctx.beginPath();
-    ctx.moveTo(px(0) + cell / 2, pz(0) + cell / 2);
-    ctx.lineTo(px(dir.dx * distance) + cell / 2, pz(dir.dz * distance) + cell / 2);
-    ctx.stroke();
-  }
-  if (endpoints.length >= 3) {
-    ctx.strokeStyle = 'rgba(45, 212, 191, .9)';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    endpoints.forEach((point, index) => {
-      const x = px(point.x) + cell / 2;
-      const z = pz(point.z) + cell / 2;
-      if (index === 0) ctx.moveTo(x, z);
-      else ctx.lineTo(x, z);
+  const bannerAt = (cell) => state.banners.findIndex((item) => item.x === cell.x && item.z === cell.z);
+  const selectedBanner = () => state.banners[state.selected] || null;
+
+  const rotateBanner = (banner) => {
+    if (!banner) return;
+    const index = Math.max(0, CLAIM_FACINGS.findIndex((item) => item.id === banner.facing));
+    banner.facing = CLAIM_FACINGS[(index + 1) % CLAIM_FACINGS.length].id;
+    facingSelect.value = banner.facing;
+  };
+
+  const updateSummary = () => {
+    const cfg = readConfig();
+    const union = new Set();
+    for (const banner of state.banners) {
+      for (const key of cellsFor(banner, cfg)) union.add(key);
+    }
+    const boundary = boundaryOf(union);
+    const banner = selectedBanner();
+    let text = '已放置 ' + state.banners.length + ' 面 · 保护 ' + union.size
+        + ' 区块 · 边界 ' + boundary.length + ' 格';
+    if (banner) {
+      const dye = DYE_PALETTE[banner.color] || { name: '颜色 ' + banner.color };
+      const override = cfg.patternDistances[banner.pattern] || 0;
+      text += ' · 选中：' + (CLAIM_PATTERNS[banner.pattern]?.label || banner.pattern)
+          + ' · ' + dye.name + ' · 朝' + (CLAIM_FACINGS.find((f) => f.id === banner.facing)?.label || '北')
+          + ' → ' + distanceOf(banner, cfg) + ' 区块'
+          + (override > 0 ? '（图案覆盖）' : '');
+    } else {
+      text += ' · 点击网格放置第一面旗帜';
+    }
+    summary.textContent = text;
+  };
+
+  const draw = (now) => {
+    if (!canvas.isConnected) return;
+    const cfg = readConfig();
+    const radius = viewRadius(cfg);
+    const pad = 26;
+    const cell = (size - pad * 2) / (2 * radius + 1);
+    const px = (x) => pad + (x + radius) * cell;
+    const pz = (z) => pad + (z + radius) * cell;
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, size, size);
+    ctx.fillStyle = '#0a1220';
+    ctx.fillRect(0, 0, size, size);
+
+    ctx.strokeStyle = 'rgba(148, 163, 184, .10)';
+    ctx.lineWidth = 1;
+    const step = cell >= 10 ? 1 : 2;
+    for (let i = -radius; i <= radius + 1; i += step) {
+      ctx.beginPath();
+      ctx.moveTo(px(i), pad);
+      ctx.lineTo(px(i), size - pad);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(pad, pz(i));
+      ctx.lineTo(size - pad, pz(i));
+      ctx.stroke();
+    }
+
+    const union = new Set();
+    for (const banner of state.banners) {
+      for (const key of cellsFor(banner, cfg)) union.add(key);
+    }
+
+    ctx.fillStyle = 'rgba(45, 212, 191, .07)';
+    for (const key of union) {
+      const [x, z] = key.split(',').map(Number);
+      ctx.fillRect(px(x), pz(z), cell, cell);
+    }
+
+    const time = now / 1000;
+    const boundary = boundaryOf(union);
+    for (const [x, z] of boundary) {
+      const seed = ((x * 73856093) ^ (z * 19349663)) >>> 0;
+      const baseX = px(x);
+      const baseZ = pz(z);
+      const edges = [];
+      if (!union.has((x + 1) + ',' + z)) edges.push([1, 0]);
+      if (!union.has((x - 1) + ',' + z)) edges.push([-1, 0]);
+      if (!union.has(x + ',' + (z + 1))) edges.push([0, 1]);
+      if (!union.has(x + ',' + (z - 1))) edges.push([0, -1]);
+      edges.forEach(([ex, ez], edgeIndex) => {
+        const count = 3;
+        for (let i = 0; i < count; i += 1) {
+          const wobble = ((seed >>> ((edgeIndex * 3 + i) % 16)) % 7) / 7;
+          const along = (i + .5) / count + (wobble - .5) * .25;
+          let dx = 0;
+          let dz = 0;
+          if (ex !== 0) {
+            dx = ex > 0 ? cell + 1 : -1;
+            dz = along * cell;
+          } else {
+            dx = along * cell;
+            dz = ez > 0 ? cell + 1 : -1;
+          }
+          const alpha = .35 + .45 * (0.5 + 0.5 * Math.sin(time * 3.2 + (seed % 100) / 12 + i));
+          const dot = Math.max(1, Math.round(cell * .16));
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = i === 1 ? '#a7f3d0' : (i === 2 ? '#5eead4' : '#2dd4bf');
+          ctx.fillRect(Math.round(baseX + dx), Math.round(baseZ + dz), dot, dot);
+        }
+      });
+    }
+    ctx.globalAlpha = 1;
+
+    state.banners.forEach((banner, index) => {
+      const cx = px(banner.x) + cell / 2;
+      const cz = pz(banner.z) + cell / 2;
+      const dye = DYE_PALETTE[banner.color] || { hex: '#2dd4bf' };
+      if (index === state.selected) {
+        ctx.strokeStyle = 'rgba(251, 191, 36, .95)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(px(banner.x) + 1.5, pz(banner.z) + 1.5, cell - 3, cell - 3);
+      }
+      ctx.fillStyle = '#e2e8f0';
+      ctx.fillRect(Math.round(cx) - 1, Math.round(cz - cell * .32), 2, Math.round(cell * .64));
+      ctx.fillStyle = dye.hex;
+      ctx.beginPath();
+      ctx.moveTo(Math.round(cx) + 1, Math.round(cz - cell * .32));
+      ctx.lineTo(Math.round(cx + cell * .34), Math.round(cz - cell * .12));
+      ctx.lineTo(Math.round(cx) + 1, Math.round(cz + cell * .04));
+      ctx.closePath();
+      ctx.fill();
+      const facing = CLAIM_DIRECTIONS[(CLAIM_FACINGS.find((f) => f.id === banner.facing)?.offset || 0)];
+      ctx.strokeStyle = 'rgba(226, 232, 240, .85)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(cx, cz + cell * .28);
+      ctx.lineTo(cx + facing.dx * cell * .55, cz + cell * .28 + facing.dz * cell * .55);
+      ctx.stroke();
     });
-    ctx.closePath();
-    ctx.stroke();
-  }
 
-  // 方位
-  ctx.fillStyle = 'rgba(226, 232, 240, .7)';
-  ctx.font = '12px system-ui, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText('北', size / 2, 15);
-  ctx.fillText('南', size / 2, size - 6);
-  ctx.textAlign = 'left';
-  ctx.fillText('西', 6, size / 2);
-  ctx.textAlign = 'right';
-  ctx.fillText('东', size - 6, size / 2);
+    const ghost = state.drag ? state.drag.cell : state.hover;
+    if (ghost && (state.drag || bannerAt(ghost) < 0)) {
+      const gx = px(ghost.x);
+      const gz = pz(ghost.z);
+      ctx.strokeStyle = 'rgba(94, 234, 212, .85)';
+      ctx.setLineDash([4, 3]);
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(gx + 1, gz + 1, cell - 2, cell - 2);
+      ctx.setLineDash([]);
+      ctx.globalAlpha = .45;
+      ctx.fillStyle = (DYE_PALETTE[Number(colorSelect.value)] || { hex: '#2dd4bf' }).hex;
+      ctx.fillRect(gx + cell * .3, gz + cell * .3, cell * .4, cell * .4);
+      ctx.globalAlpha = 1;
+    }
 
-  return cells.size;
+    ctx.fillStyle = 'rgba(226, 232, 240, .55)';
+    ctx.font = '12px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('北', size / 2, 16);
+    ctx.textAlign = 'left';
+    ctx.fillText('西', 6, size / 2);
+    ctx.textAlign = 'right';
+    ctx.fillText('东', size - 6, size / 2);
+    ctx.textAlign = 'center';
+    ctx.fillText('南', size / 2, size - 6);
+
+    if (now - state.lastSummary > 220) {
+      state.lastSummary = now;
+      updateSummary();
+    }
+    state.raf = requestAnimationFrame(draw);
+  };
+
+  patternSelect.addEventListener('change', () => {
+    const banner = selectedBanner();
+    if (banner) banner.pattern = patternSelect.value;
+  });
+  colorSelect.addEventListener('change', () => {
+    const banner = selectedBanner();
+    if (banner) banner.color = Number(colorSelect.value);
+  });
+  facingSelect.addEventListener('change', () => {
+    const banner = selectedBanner();
+    if (banner) banner.facing = facingSelect.value;
+  });
+
+  zoomSelect.addEventListener('change', () => {
+    state.zoom = Number(zoomSelect.value) || 0;
+  });
+  rotateBtn.addEventListener('click', () => rotateBanner(selectedBanner()));
+  deleteBtn.addEventListener('click', () => {
+    if (state.selected < 0 || !state.banners[state.selected]) return;
+    state.banners.splice(state.selected, 1);
+    state.selected = state.banners.length ? Math.min(state.selected, state.banners.length - 1) : -1;
+  });
+  clearBtn.addEventListener('click', () => {
+    state.banners = [];
+    state.selected = -1;
+  });
+
+  chip.addEventListener('dragstart', (event) => {
+    try { event.dataTransfer.setData('text/plain', 'samsara-banner'); } catch (e) { /* ignore */ }
+    event.dataTransfer.effectAllowed = 'copy';
+  });
+  canvas.addEventListener('dragover', (event) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+    state.hover = cellAt(event);
+  });
+  canvas.addEventListener('drop', (event) => {
+    event.preventDefault();
+    const cell = cellAt(event);
+    if (!cell) return;
+    state.banners.push({
+      x: cell.x,
+      z: cell.z,
+      pattern: patternSelect.value,
+      color: Number(colorSelect.value),
+      facing: facingSelect.value,
+    });
+    state.selected = state.banners.length - 1;
+  });
+
+  canvas.addEventListener('pointermove', (event) => {
+    const cell = cellAt(event);
+    state.hover = cell;
+    if (state.drag && cell) state.drag.cell = cell;
+    canvas.style.cursor = cell ? (state.drag ? 'grabbing' : 'crosshair') : 'default';
+  });
+  canvas.addEventListener('pointerleave', () => {
+    state.hover = null;
+  });
+  canvas.addEventListener('pointerdown', (event) => {
+    if (event.button === 2) return;
+    const cell = cellAt(event);
+    if (!cell) return;
+    const found = bannerAt(cell);
+    if (found >= 0) {
+      state.selected = found;
+      state.drag = { index: found, cell: { x: cell.x, z: cell.z } };
+    } else {
+      state.banners.push({
+        x: cell.x,
+        z: cell.z,
+        pattern: patternSelect.value,
+        color: Number(colorSelect.value),
+        facing: facingSelect.value,
+      });
+      state.selected = state.banners.length - 1;
+      state.drag = { index: state.selected, cell: { x: cell.x, z: cell.z } };
+    }
+    canvas.setPointerCapture(event.pointerId);
+    canvas.focus();
+  });
+  canvas.addEventListener('pointerup', (event) => {
+    if (state.drag) {
+      const cell = cellAt(event) || state.drag.cell;
+      const banner = state.banners[state.drag.index];
+      if (banner) {
+        banner.x = cell.x;
+        banner.z = cell.z;
+      }
+      state.drag = null;
+    }
+    state.hover = null;
+  });
+  canvas.addEventListener('contextmenu', (event) => {
+    event.preventDefault();
+    const cell = cellAt(event);
+    if (!cell) return;
+    const found = bannerAt(cell);
+    if (found >= 0) {
+      state.selected = found;
+      rotateBanner(state.banners[found]);
+    }
+  });
+  canvas.addEventListener('keydown', (event) => {
+    if (event.key === 'Delete' || event.key === 'Backspace') {
+      if (state.selected >= 0) {
+        state.banners.splice(state.selected, 1);
+        state.selected = state.banners.length ? Math.min(state.selected, state.banners.length - 1) : -1;
+        event.preventDefault();
+      }
+    } else if (event.key === 'r' || event.key === 'R') {
+      rotateBanner(selectedBanner());
+      event.preventDefault();
+    }
+  });
+
+  const syncSelectors = () => {
+    const banner = selectedBanner();
+    if (banner) {
+      patternSelect.value = banner.pattern;
+      colorSelect.value = String(banner.color);
+      facingSelect.value = banner.facing;
+    }
+  };
+
+  syncSelectors();
+  state.raf = requestAnimationFrame(draw);
+  updateSummary();
+
+  state.claimPreview = {
+    redraw: () => {
+      updateSummary();
+    },
+  };
+  return section;
 }
 
 /** Bresenham：把两个端点之间的区块也纳入边界，贴近服务端的“末端环”线段。 */

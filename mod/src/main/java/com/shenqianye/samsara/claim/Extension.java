@@ -71,7 +71,7 @@ public class Extension {
      * 同一方向取最大值。
      */
     public void addDirection(String patternId, int color) {
-        int strength = ClaimRangeConfig.getInstance().distanceForColor(color);
+        int strength = ClaimRangeConfig.getInstance().distanceForColor(color, patternId);
         String dir = PATTERN_DIR.get(patternId);
         if (dir == null) return;
 

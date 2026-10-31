@@ -1,122 +1,71 @@
 'use strict';
 
-// 纯像素粒子预览：不加载贴图，所有粒子用 1 CSS 像素的像素点绘制。
-// 每个粒子是一张 4~7 像素的小 sprite，带明暗层次，接近 MC 原版粒子的像素感。
+// 粒子预览：直接使用 Minecraft 26.3 客户端 particles 贴图的像素数据（打包为内嵌 atlas），
+// 按原版 8×8 纹理逐像素绘制，再做染色与透明度处理。
+// atlas 槽位布局（8 列）：
+//   0-7   generic_0..7（烟、云、传送门、雪、灰烬）
+//   8-15  glitter_0..7（末地烛）
+//   16-23 spell_0..7（女巫）
+//   24-49 sga_a..z（附魔台银河字母）
+//   50 critical_hit  51 enchanted_hit  52 flame  53 soul_fire_flame
+//   54 heart         55 note           56 angry  57 glint  58 lava
+// 贴图取自本机 26.3 客户端 jar：assets/minecraft/textures/particle/。
 
 (function () {
+  const ATLAS_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAERUlEQVR4nO1aP0tcQRCft1yadAEJnGAhAQslhaY78gWEKNwnSDApRCRt8EgpwTQpDARskjJNwOIF7KzCNUe0CIidhYVChBjEIjYTZs1e3u3b/7ueT+9++Ny3Ozu7M7OzM/veO4ABAiIiDKKSWGjDAuC6oJtctIfQi0qF0J1gY0xBN/XxVVIeT0WH61TCh24S3KaYiZ5BH9EzcZaV5pYFl/uE0qmd7m38SXBV28Q3Pqi8QC4JcJtgUihJEByiAohdPZk/i5YoQABd8PEJkqnoLEQBE62413S8Krrc1q86swniqoANNoF8eH3HMPEzudGUGwUtJH/KPD5j6Pq6jmHiz2DAYwAMehYYogoIyRop6UngknZ2dnZ4G5VVoztbTMtsoYv2YlklupNb2JhvOh2GHjDoMWAQs0Amdzad0nSnK9OpSjV5sb/Mr6qb+F3ks/Kj9ObUVZEUSDVu6DhMbvA9I9sm5pstQknZjX3HQgW0k5gQ6xlX5VlGxRzmYa4TqV4r2wZX8afeSvyRNuLJjvlOJivg+1xftcfQWqjrpESMUYeIBSbygND44HKCNI1li/C27MGgT9AJEOvuIq6EvjdkLhPECBg7Tuz8Ng9ktgliXTgVXI7cIcZiNoFtg8a87q4CWNXP6qlWX0evQZ/g8i3gKl0/dIsMDtAhj5vybNTTWIR8vnzJgzQGPJ72Yx7XMViqFUohWGygTCqMK3yNdl0eoOOvQSRM7wlcoOLVvRMU9yFvrZx5MMGPH/oJlyBnkq/mk4dT5FLfMWweYjuJDvN/qgiMns/7or3VainPEcX2Lp3/6ZG9ex+91fI8x/X1dfQyADp+NdZ9dtrY2OihU105zhIQo1aO7PMXVBnhx+Qk0qWrywZYXFz8bwT0/BGBqp/Lp2lTvTv2PiAZATR4dn6BZIRiGymKq6t4urzMlabr4+gov96OjKDKAFQ2m01eJnkYmpmZyUip6elp2N3d5XVT0CN6yuD0+/gYDre3oXN6au17cHDAy83NzbAfSqpQVJ7K4gqTkioPKEVrsfIv1XOIlX86P1+iqZT/eXHhJDuDBCiuvDBCEZ1Op2sUKqleAik+1ua3qm1Ain+6e4ffF7fBw729khcJ5V+dnNg9DCNjQKoswPf/efvy2i8bgPa/AN3LdNrvxUumn52doQiAUEUgZQAygiYQ0qqT4qpAKKBTnkCKU+ATwS8MH+5V03oRYPRvZWUF6aJ7sQJTU1NlZcfqcNvAyCXGx8eh0Whw5SkQfZ3NYW1tDXqMQKt//4HWC3pc2HKiqxLYwsIC1Ot1eLI1x6NwazXnhKOjo8sepHA+ifDoMcDYLPCS6rIhClEcluDGgLXbl0K/+PMc4LABb17PAbXRgWFiYgJg6VcGc3sZfP8GcLgFvKQ6tatARtDk8soiz3MeA8jleRr6FwNKcYBWPjCKVxrNZrOrsCoH3+YsADJu3OpF4i/ACLLN2wmpEQAAAABJRU5ErkJggg==';
+
+  const ATLAS_SLOTS = {
+    generic: 0,
+    glitter: 8,
+    spell: 16,
+    sga: 24,
+    critical_hit: 50,
+    enchanted_hit: 51,
+    flame: 52,
+    soul_fire_flame: 53,
+    heart: 54,
+    note: 55,
+    angry: 56,
+    glint: 57,
+    lava: 58,
+  };
+
+  const genericFrames = Array.from({ length: 8 }, (_, i) => ATLAS_SLOTS.generic + i);
+  const glitterFrames = Array.from({ length: 8 }, (_, i) => ATLAS_SLOTS.glitter + i);
+  const spellFrames = Array.from({ length: 8 }, (_, i) => ATLAS_SLOTS.spell + i);
+  const sgaFrames = Array.from({ length: 26 }, (_, i) => ATLAS_SLOTS.sga + i);
+
   const STYLES = {
-    crit: { colors: ['#fff7b0', '#ffe066', '#ffc21a'], sprite: 'crit', alpha: .95, drift: 13 },
-    enchant: { colors: ['#b5f5ff', '#67e8f9', '#38bdf8'], sprite: 'sparkle', alpha: .9, drift: 11 },
-    smoke: { colors: ['#9aa0a6', '#c2c7cc', '#71767c'], sprite: 'smoke', alpha: .42, drift: 11 },
-    large_smoke: { colors: ['#858b91', '#b0b5ba', '#62686e'], sprite: 'smoke', alpha: .38, drift: 14 },
-    cloud: { colors: ['#e5e7eb', '#f8fafc', '#cbd5e1'], sprite: 'smoke', alpha: .34, drift: 9 },
-    flame: { colors: ['#ffd166', '#fb923c', '#ef4444'], sprite: 'flame', alpha: .95, drift: 14 },
-    soul_fire_flame: { colors: ['#99f6e4', '#2dd4bf', '#38bdf8'], sprite: 'flame', alpha: .95, drift: 13 },
-    end_rod: { colors: ['#f5f3ff', '#ddd6fe', '#c4b5fd'], sprite: 'streak', alpha: .95, drift: 8 },
-    happy_villager: { colors: ['#86efac', '#22c55e', '#bbf7d0'], sprite: 'star', alpha: .9, drift: 11 },
-    composter: { colors: ['#a3e635', '#65a30d', '#d9f99d'], sprite: 'dot2', alpha: .7, drift: 10 },
-    portal: { colors: ['#d8b4fe', '#a855f7', '#7c3aed'], sprite: 'swirl', alpha: .95, drift: 12 },
-    witch: { colors: ['#c084fc', '#7e22ce', '#e9d5ff'], sprite: 'dot1', alpha: .8, drift: 11 },
-    note: { colors: ['#fef08a', '#facc15', '#fde68a'], sprite: 'note', alpha: .9, drift: 10 },
-    heart: { colors: ['#fb7185', '#e11d48', '#fda4af'], sprite: 'heart', alpha: .9, drift: 9 },
-    angry_villager: { colors: ['#9ca3af', '#4b5563', '#d1d5db'], sprite: 'smoke', alpha: .35, drift: 9 },
-    snowflake: { colors: ['#f0f9ff', '#bae6fd', '#e0f2fe'], sprite: 'flake', alpha: .85, drift: 8 },
-    white_ash: { colors: ['#f8fafc', '#e2e8f0', '#cbd5e1'], sprite: 'dot1', alpha: .65, drift: 7 },
-    ash: { colors: ['#a8a29e', '#78716c', '#d6d3d1'], sprite: 'dot1', alpha: .5, drift: 7 },
+    crit: { frames: [ATLAS_SLOTS.critical_hit], tint: true, colors: ['#ffffff', '#fff1a8', '#ffb84d'], alpha: .95, drift: 13, size: 8, mode: 'fixed' },
+    enchant: { frames: sgaFrames, tint: true, colors: ['#e9e4ff', '#c9b6ff', '#b18cff'], alpha: .95, drift: 10, size: 8, mode: 'cycle' },
+    smoke: { frames: genericFrames.slice().reverse(), tint: true, colors: ['#8b8b8b', '#b0b0b0', '#6d6d6d'], alpha: .5, drift: 10, size: 10, mode: 'age' },
+    large_smoke: { frames: genericFrames.slice().reverse(), tint: true, colors: ['#7e7e7e', '#a6a6a6', '#5f5f5f'], alpha: .42, drift: 12, size: 12, mode: 'age' },
+    cloud: { frames: genericFrames.slice().reverse(), tint: true, colors: ['#f5f5f5', '#dedede', '#ffffff'], alpha: .5, drift: 8, size: 12, mode: 'age' },
+    flame: { frames: [ATLAS_SLOTS.flame], tint: false, colors: ['#ffffff'], alpha: .95, drift: 12, size: 8, mode: 'fixed' },
+    soul_fire_flame: { frames: [ATLAS_SLOTS.soul_fire_flame], tint: false, colors: ['#ffffff'], alpha: .95, drift: 12, size: 8, mode: 'fixed' },
+    end_rod: { frames: glitterFrames.slice().reverse(), tint: true, colors: ['#f3ecff', '#d7c6ff', '#bfa5ff'], alpha: .95, drift: 7, size: 8, mode: 'age' },
+    happy_villager: { frames: [ATLAS_SLOTS.glint], tint: false, colors: ['#ffffff'], alpha: .9, drift: 10, size: 8, mode: 'fixed' },
+    composter: { frames: [ATLAS_SLOTS.glint], tint: false, colors: ['#ffffff'], alpha: .8, drift: 9, size: 7, mode: 'fixed' },
+    portal: { frames: genericFrames, tint: true, colors: ['#d8b4fe', '#a855f7', '#c084fc'], alpha: .8, drift: 10, size: 9, mode: 'age' },
+    witch: { frames: spellFrames.slice().reverse(), tint: true, colors: ['#e9d5ff', '#c084fc', '#a855f7'], alpha: .9, drift: 9, size: 8, mode: 'age' },
+    note: { frames: [ATLAS_SLOTS.note], tint: true, colors: ['#fde68a', '#facc15', '#fef3c7'], alpha: .9, drift: 8, size: 8, mode: 'fixed' },
+    heart: { frames: [ATLAS_SLOTS.heart], tint: false, colors: ['#ffffff'], alpha: .9, drift: 7, size: 9, mode: 'fixed' },
+    angry_villager: { frames: [ATLAS_SLOTS.angry], tint: false, colors: ['#ffffff'], alpha: .8, drift: 8, size: 9, mode: 'fixed' },
+    snowflake: { frames: genericFrames.slice().reverse(), tint: true, colors: ['#ffffff', '#e0f2fe', '#bae6fd'], alpha: .85, drift: 6, size: 8, mode: 'age' },
+    white_ash: { frames: [ATLAS_SLOTS.generic], tint: true, colors: ['#f8fafc', '#e2e8f0', '#ffffff'], alpha: .7, drift: 6, size: 6, mode: 'fixed' },
+    ash: { frames: [ATLAS_SLOTS.generic], tint: true, colors: ['#a8a29e', '#78716c', '#d6d3d1'], alpha: .6, drift: 6, size: 6, mode: 'fixed' },
   };
 
-  const DEFAULT_STYLE = { colors: ['#5eead4', '#2dd4bf', '#99f6e4'], sprite: 'dot1', alpha: .8, drift: 9 };
+  const DEFAULT_STYLE = { frames: [ATLAS_SLOTS.generic], tint: true, colors: ['#5eead4', '#2dd4bf', '#99f6e4'], alpha: .8, drift: 9, size: 8, mode: 'fixed' };
 
-  // '.' 透明，'#' 主色，'+' 亮部，'-' 暗部。
-  const SPRITES = {
-    crit: [
-      '..+..',
-      '.+#+.',
-      '+###+',
-      '.+#+.',
-      '..+..',
-    ],
-    star: [
-      '..#..',
-      '.+#+.',
-      '##+##',
-      '.+#+.',
-      '..#..',
-    ],
-    sparkle: [
-      '#...#',
-      '.+.+.',
-      '..+..',
-      '.+.+.',
-      '#...#',
-    ],
-    smoke: [
-      '..##..',
-      '.####.',
-      '##+###',
-      '######',
-      '.####.',
-      '..##..',
-    ],
-    flame: [
-      '..+..',
-      '..+..',
-      '.++#.',
-      '.##+#',
-      '#####',
-      '.###.',
-    ],
-    streak: [
-      '.+.',
-      '.#.',
-      '.#.',
-      '.#.',
-      '.-.',
-    ],
-    dot2: [
-      '.##.',
-      '#++#',
-      '#++#',
-      '.##.',
-    ],
-    dot1: ['+'],
-    note: [
-      '..##.',
-      '..#.#',
-      '..#..',
-      '###..',
-      '###..',
-      '.#...',
-    ],
-    heart: [
-      '.##.##.',
-      '#######',
-      '#######',
-      '.#####.',
-      '..###..',
-      '...#...',
-    ],
-    swirl: [
-      '..##.',
-      '.#..#',
-      '#.+.#',
-      '#..#.',
-      '.##..',
-    ],
-    flake: [
-      '#..#..#',
-      '.#.#.#.',
-      '..###..',
-      '##+#+##',
-      '..###..',
-      '.#.#.#.',
-      '#..#..#',
-    ],
-  };
+  const atlas = new Image();
+  atlas.src = 'data:image/png;base64,' + ATLAS_BASE64;
+  let atlasReady = false;
+  atlas.addEventListener('load', () => { atlasReady = true; });
 
-  const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const tintCache = new Map();
   const visibility = new WeakMap();
-  const shadeCache = new Map();
+  const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   let observer = null;
 
   function ensureObserver() {
@@ -134,53 +83,67 @@
     return min + Math.random() * (max - min);
   }
 
-  function shade(color, amount) {
-    const key = color + '|' + amount;
-    const cached = shadeCache.get(key);
+  function tinted(slot, color) {
+    if (!atlasReady) return null;
+    const key = slot + '|' + color;
+    const cached = tintCache.get(key);
     if (cached) return cached;
-    const hex = color.replace('#', '');
-    const full = hex.length === 3
-      ? hex.split('').map((ch) => ch + ch).join('')
-      : hex;
-    const value = parseInt(full, 16);
-    if (!Number.isFinite(value)) return color;
-    const target = amount > 0 ? 255 : 0;
-    const k = Math.abs(amount);
-    const parts = [(value >> 16) & 255, (value >> 8) & 255, value & 255].map((channel) =>
-      Math.round(channel + (target - channel) * k));
-    const out = '#' + parts.map((channel) => channel.toString(16).padStart(2, '0')).join('');
-    shadeCache.set(key, out);
-    return out;
+    const canvas = document.createElement('canvas');
+    canvas.width = 8;
+    canvas.height = 8;
+    const g = canvas.getContext('2d');
+    g.imageSmoothingEnabled = false;
+    const sx = (slot % 8) * 8;
+    const sy = Math.floor(slot / 8) * 8;
+    g.drawImage(atlas, sx, sy, 8, 8, 0, 0, 8, 8);
+    g.globalCompositeOperation = 'multiply';
+    g.fillStyle = color;
+    g.fillRect(0, 0, 8, 8);
+    g.globalCompositeOperation = 'destination-in';
+    g.drawImage(atlas, sx, sy, 8, 8, 0, 0, 8, 8);
+    tintCache.set(key, canvas);
+    return canvas;
   }
 
   function makeParticle(w, h, style) {
     return {
-      x: rand(2, w - 2),
-      y: rand(2, h - 2),
+      x: rand(0, w),
+      y: rand(0, h),
       vx: rand(-style.drift, style.drift),
       vy: rand(-style.drift * .7, style.drift * .2),
       color: style.colors[Math.floor(Math.random() * style.colors.length)],
+      age: rand(0, 2.6),
+      ttl: rand(1.6, 3.0),
+      frameOffset: Math.floor(Math.random() * style.frames.length),
+      scale: rand(.85, 1.15),
     };
   }
 
-  function drawSprite(ctx, cx, cy, spriteName, color, alpha) {
-    const sprite = SPRITES[spriteName] || SPRITES.dot1;
-    const height = sprite.length;
-    let width = 0;
-    for (const row of sprite) width = Math.max(width, row.length);
-    const x0 = Math.round(cx - width / 2);
-    const y0 = Math.round(cy - height / 2);
-    const light = shade(color, .45);
-    const dark = shade(color, -.38);
-    ctx.globalAlpha = alpha;
-    for (let y = 0; y < height; y++) {
-      const row = sprite[y];
-      for (let x = 0; x < row.length; x++) {
-        const ch = row.charAt(x);
-        if (ch === '.') continue;
-        ctx.fillStyle = ch === '+' ? light : ch === '-' ? dark : color;
-        ctx.fillRect(x0 + x, y0 + y, 1, 1);
-      }
+  function frameIndex(p, style, now) {
+    if (style.mode === 'cycle') {
+      return style.frames[(Math.floor(now / 180) + p.frameOffset) % style.frames.length];
+    }
+    if (style.mode === 'age') {
+      const ratio = Math.max(0, Math.min(.999, p.age / p.ttl));
+      return style.frames[Math.floor(ratio * style.frames.length)];
+    }
+    return style.frames[p.frameOffset % style.frames.length];
+  }
+
+  function drawParticle(ctx, p, style, now, alpha) {
+    if (!atlasReady) return;
+    const slot = frameIndex(p, style, now);
+    const size = Math.max(4, Math.round(style.size * p.scale));
+    const x = Math.round(p.x - size / 2);
+    const y = Math.round(p.y - size / 2);
+    ctx.globalAlpha = Math.max(0, Math.min(1, alpha * style.alpha));
+    if (style.tint) {
+      const tint = tinted(slot, p.color);
+      if (tint) ctx.drawImage(tint, x, y, size, size);
+    } else {
+      const sx = (slot % 8) * 8;
+      const sy = Math.floor(slot / 8) * 8;
+      ctx.drawImage(atlas, sx, sy, 8, 8, x, y, size, size);
     }
     ctx.globalAlpha = 1;
   }
@@ -197,7 +160,6 @@
         ctx.fillStyle = color;
         ctx.fillRect(0, Math.floor(h * start), w, Math.ceil(h * size) + 1);
       }
-      // 像素太阳
       const sx = Math.floor(w * .82);
       const sy = Math.floor(h * .18);
       ctx.fillStyle = '#fff7b0';
@@ -212,9 +174,7 @@
       ctx.fillRect(0, 0, w, h);
       ctx.fillStyle = '#dbeafe';
       for (let i = 0; i < 12; i++) {
-        const x = (i * 17 + 5) % w;
-        const y = (i * 11 + 3) % h;
-        ctx.fillRect(x, y, 1, 1);
+        ctx.fillRect((i * 17 + 5) % w, (i * 11 + 3) % h, 1, 1);
       }
       return;
     }
@@ -231,15 +191,16 @@
     const count = 14;
     for (let i = 0; i < count; i++) {
       const angle = (i / count) * Math.PI * 2 + rand(-.2, .2);
-      const speed = rand(8, 24);
+      const speed = rand(10, 28);
       out.push({
-        x: Math.round(x),
-        y: Math.round(y),
+        x, y,
         vx: Math.cos(angle) * speed,
         vy: Math.sin(angle) * speed - 4,
         color: style.colors[Math.floor(Math.random() * style.colors.length)],
         age: 0,
-        ttl: rand(.65, 1.15),
+        ttl: rand(.5, 1.0),
+        frameOffset: Math.floor(Math.random() * style.frames.length),
+        scale: rand(.8, 1.2),
       });
     }
     return out;
@@ -256,7 +217,6 @@
     const style = styleFor(name);
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     if (canvas.isConnected && !canvas.clientWidth) {
-      // 还在布局中，下一帧再量。
       requestAnimationFrame(() => attach(canvas, name, opts));
       return;
     }
@@ -303,14 +263,22 @@
 
       for (const p of particles) {
         if (!reduceMotion) {
+          p.age += dt;
+          if (p.age >= p.ttl) {
+            p.age = 0;
+            p.ttl = rand(1.6, 3.0);
+            p.x = rand(0, width);
+            p.y = rand(0, height);
+            p.color = style.colors[Math.floor(Math.random() * style.colors.length)];
+          }
           p.x += p.vx * dt;
           p.y += p.vy * dt;
-          if (p.x < -4) p.x = width + 4;
-          if (p.x > width + 4) p.x = -4;
-          if (p.y < -4) p.y = height + 4;
-          if (p.y > height + 4) p.y = -4;
+          if (p.x < -6) p.x = width + 6;
+          if (p.x > width + 6) p.x = -6;
+          if (p.y < -6) p.y = height + 6;
+          if (p.y > height + 6) p.y = -6;
         }
-        drawSprite(ctx, p.x, p.y, style.sprite, p.color, style.alpha);
+        drawParticle(ctx, p, style, now, 1);
       }
 
       for (let i = burst.length - 1; i >= 0; i--) {
@@ -322,8 +290,8 @@
         }
         p.x += p.vx * dt;
         p.y += p.vy * dt;
-        p.vy += 34 * dt;
-        drawSprite(ctx, p.x, p.y, style.sprite, p.color, style.alpha * (1 - p.age / p.ttl));
+        p.vy += 30 * dt;
+        drawParticle(ctx, p, style, now, 1 - p.age / p.ttl);
       }
       canvas.__samsaraRaf = requestAnimationFrame(frame);
     }

@@ -5,7 +5,9 @@ import com.shenqianye.samsara.config.ConfigManager;
 import com.shenqianye.samsara.config.ConfigSchema;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 圈地保护范围配置（{@code config/samsara/claim-range.yml}）。
@@ -28,6 +30,12 @@ public final class ClaimRangeConfig {
             List.of(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16);
     public static final int DEFAULT_FIXED_DISTANCE = 4;
     public static final int DEFAULT_MAX_DISTANCE = 16;
+    /** 支持单独设置距离的旗帜图案；顺序与 Extension.PATTERN_DIR 一致。 */
+    public static final List<String> PATTERN_IDS = List.of(
+            "border", "cross", "straight_cross",
+            "stripe_top", "stripe_bottom", "stripe_left", "stripe_right",
+            "square_top_left", "square_top_right", "square_bottom_left", "square_bottom_right",
+            "stripe_downleft", "stripe_downright", "stripe_center", "stripe_middle");
 
     private static ClaimRangeConfig instance;
 
@@ -35,6 +43,7 @@ public final class ClaimRangeConfig {
     private int fixedDistance = DEFAULT_FIXED_DISTANCE;
     private List<Integer> colorDistances = DEFAULT_COLOR_DISTANCES;
     private int maxDistance = DEFAULT_MAX_DISTANCE;
+    private Map<String, Integer> patternDistances = Map.of();
 
     public enum Mode {
         DYE,
@@ -70,18 +79,37 @@ public final class ClaimRangeConfig {
     public static int resolveDistance(boolean fixed, int fixedDistance,
                                       List<Integer> colorDistances, int maxDistance,
                                       int color) {
+        return resolveDistance(fixed, fixedDistance, colorDistances, Map.of(), null, maxDistance, color);
+    }
+
+    /**
+     * 带图案覆盖的换算：某图案配置了正数距离时优先使用它，否则回退到染料/固定距离。
+     */
+    public static int resolveDistance(boolean fixed, int fixedDistance,
+                                      List<Integer> colorDistances,
+                                      Map<String, Integer> patternDistances, String patternId,
+                                      int maxDistance, int color) {
         int index = Math.floorMod(color, COLOR_COUNT);
-        int base = fixed
-                ? fixedDistance
-                : (colorDistances != null && index < colorDistances.size()
-                        ? colorDistances.get(index)
-                        : index + 1);
+        int override = patternId == null || patternDistances == null
+                ? 0 : patternDistances.getOrDefault(patternId, 0);
+        int base = override > 0
+                ? override
+                : fixed
+                        ? fixedDistance
+                        : (colorDistances != null && index < colorDistances.size()
+                                ? colorDistances.get(index)
+                                : index + 1);
         int cap = Math.max(1, maxDistance);
         return Math.max(1, Math.min(base, cap));
     }
 
     public int distanceForColor(int color) {
-        return resolveDistance(mode == Mode.FIXED, fixedDistance, colorDistances, maxDistance, color);
+        return distanceForColor(color, null);
+    }
+
+    public int distanceForColor(int color, String patternId) {
+        return resolveDistance(mode == Mode.FIXED, fixedDistance, colorDistances,
+                patternDistances, patternId, maxDistance, color);
     }
 
     public Mode mode() {
@@ -94,6 +122,10 @@ public final class ClaimRangeConfig {
 
     public List<Integer> colorDistances() {
         return colorDistances;
+    }
+
+    public Map<String, Integer> patternDistances() {
+        return patternDistances;
     }
 
     public int maxDistance() {
@@ -111,14 +143,21 @@ public final class ClaimRangeConfig {
             int nextMax = clamp(config.integer(id, "maxDistance"),
                     DEFAULT_MAX_DISTANCE, 1, 32);
             List<Integer> nextDistances = normalize(config.intList(id, "colorDistances"));
+            Map<String, Integer> nextPatterns = new LinkedHashMap<>();
+            for (String pattern : PATTERN_IDS) {
+                nextPatterns.put(pattern, clamp(config.integer(id, "patternDistances." + pattern),
+                        0, 0, 32));
+            }
             boolean changed = mode != nextMode
                     || fixedDistance != nextFixed
                     || maxDistance != nextMax
-                    || !colorDistances.equals(nextDistances);
+                    || !colorDistances.equals(nextDistances)
+                    || !patternDistances.equals(nextPatterns);
             this.mode = nextMode;
             this.fixedDistance = nextFixed;
             this.maxDistance = nextMax;
             this.colorDistances = nextDistances;
+            this.patternDistances = Map.copyOf(nextPatterns);
             return changed;
         } catch (RuntimeException e) {
             Samsara.LOGGER.warn("[周目管理 samsara] claim-range.yml 读取失败，保留默认范围: {}",

@@ -41,6 +41,25 @@ public final class ConfigSchema {
             "portal", "witch", "cloud", "note", "heart",
             "angry_villager", "snowflake", "ash", "white_ash");
 
+    /** 15 种旗帜图案的固定 ID 与中文名；与 {@code Extension.PATTERN_DIR} 对应。 */
+    private static final String[][] CLAIM_PATTERN_LABELS = {
+            { "border", "全边框" },
+            { "cross", "交叉" },
+            { "straight_cross", "正向十字" },
+            { "stripe_top", "顶部条纹" },
+            { "stripe_bottom", "底部条纹" },
+            { "stripe_left", "左侧条纹" },
+            { "stripe_right", "右侧条纹" },
+            { "square_top_left", "左上角" },
+            { "square_top_right", "右上角" },
+            { "square_bottom_left", "左下角" },
+            { "square_bottom_right", "右下角" },
+            { "stripe_downleft", "左上斜纹" },
+            { "stripe_downright", "右上斜纹" },
+            { "stripe_center", "居中竖纹" },
+            { "stripe_middle", "居中横纹" },
+    };
+
     static {
         file(COMMANDS, "命令开关", List.of(
                 ConfigEntry.bool("where.enabled", true, "where",
@@ -116,20 +135,7 @@ public final class ConfigSchema {
                         "true = 不在管理区域内也显示边界；false = 仅管理区域内显示")
         ));
 
-        file(CLAIM_RANGE, "圈地范围", List.of(
-                ConfigEntry.choice("mode", "dye", List.of("dye", "fixed"), "保护范围",
-                        "dye = 每个染料颜色对应一个延伸距离；"
-                                + "fixed = 所有颜色都使用 fixedDistance"),
-                ConfigEntry.integer("fixedDistance", 4, 1, 32, "保护范围",
-                        "固定模式下的单方向延伸距离（区块）"),
-                ConfigEntry.intList("colorDistances",
-                        List.of(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16),
-                        1, 32, "保护范围",
-                        "染料颜色 0~15（白→黑）各自对应的单方向延伸距离（区块）；"
-                                + "Web 配置页按染料色块可视化编辑并实时预览保护形状"),
-                ConfigEntry.integer("maxDistance", 16, 1, 32, "保护范围",
-                        "所有模式下的单方向距离上限；超出会截断，用来限制最大圈地规模")
-        ));
+        file(CLAIM_RANGE, "圈地范围", claimRangeEntries());
 
         file(STORAGE, "存储", List.of(
                 ConfigEntry.bool("globalFollowWorld", true, "全局数据",
@@ -216,6 +222,27 @@ public final class ConfigSchema {
     public static boolean requiresRestart(String id, String path) {
         ConfigEntry entry = entry(id, path);
         return entry != null && entry.restart();
+    }
+
+    private static List<ConfigEntry> claimRangeEntries() {
+        List<ConfigEntry> entries = new ArrayList<>();
+        entries.add(ConfigEntry.choice("mode", "dye", List.of("dye", "fixed"), "保护范围",
+                "dye = 每个染料颜色对应一个延伸距离；fixed = 所有颜色都使用 fixedDistance"));
+        entries.add(ConfigEntry.integer("fixedDistance", 4, 1, 32, "保护范围",
+                "固定模式下的单方向延伸距离（区块）"));
+        entries.add(ConfigEntry.intList("colorDistances",
+                List.of(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16),
+                1, 32, "保护范围",
+                "染料颜色 0~15（白→黑）各自对应的单方向延伸距离（区块）；"
+                        + "Web 配置页按染料色块可视化编辑并实时预览保护形状"));
+        entries.add(ConfigEntry.integer("maxDistance", 16, 1, 32, "保护范围",
+                "所有模式下的单方向距离上限；超出会截断，用来限制最大圈地规模"));
+        for (String[] pattern : CLAIM_PATTERN_LABELS) {
+            entries.add(ConfigEntry.integer("patternDistances." + pattern[0], 0, 0, 32, "图案距离",
+                    pattern[1] + "（" + pattern[0] + "）：0 = 沿用染料/固定距离；"
+                            + "大于 0 时该图案固定使用这个距离（区块）"));
+        }
+        return entries;
     }
 
     // ---- 校验 ----
