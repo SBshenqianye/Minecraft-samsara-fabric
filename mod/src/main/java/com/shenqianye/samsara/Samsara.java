@@ -149,6 +149,7 @@ public class Samsara implements DedicatedServerModInitializer {
             com.shenqianye.samsara.track.TrackReplay.shutdown();
             RewindEngine.getInstance().onServerStopped(server);
             com.shenqianye.samsara.season.WorldChainTeleport.unload();
+            com.shenqianye.samsara.season.StackDimensionSpike.unload();
         });
 
         // 身份：账号切换同步先应用玩家数据，再让分组/待传送把玩家放到本周目位置

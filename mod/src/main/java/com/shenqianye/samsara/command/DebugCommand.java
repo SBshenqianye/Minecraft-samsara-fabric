@@ -2,6 +2,7 @@ package com.shenqianye.samsara.command;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.arguments.LongArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.shenqianye.samsara.command.ui.ChatUi;
@@ -184,7 +185,20 @@ public class DebugCommand {
                                 .then(Commands.literal("multi")
                                         .executes(ctx -> reply(ctx.getSource(),
                                                 com.shenqianye.samsara.season.WorldChainTeleport
-                                                        .statusText()))))
+                                                        .statusText())))
+                                .then(Commands.literal("stackspike")
+                                        .executes(ctx -> reply(ctx.getSource(),
+                                                com.shenqianye.samsara.season.StackDimensionSpike.status()))
+                                        .then(Commands.literal("create")
+                                                .then(Commands.argument("seed", LongArgumentType.longArg())
+                                                        .executes(ctx -> reply(ctx.getSource(),
+                                                                com.shenqianye.samsara.season.StackDimensionSpike.create(
+                                                                        ctx.getSource().getServer(), "stackspike",
+                                                                        LongArgumentType.getLong(ctx, "seed"))))))
+                                        .then(Commands.literal("tp")
+                                                .executes(ctx -> reply(ctx.getSource(),
+                                                        com.shenqianye.samsara.season.StackDimensionSpike.teleport(
+                                                                ctx.getSource().getPlayerOrException()))))))
                         .then(diffCmd)
                         .then(Commands.literal("flow")
                                 .then(Commands.literal("setup")
