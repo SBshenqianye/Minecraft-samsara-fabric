@@ -108,8 +108,8 @@ final class WebMapTileCache {
             return;
         }
         String key = memoryKey(stackId, dimensionKey, regionX, regionZ, scale, shading, mtime, size);
-        memory.put(key, png);
         ensureScanned();
+        memory.put(key, png);
         Path path = pathFor(stackId, dimensionKey, regionX, regionZ, scale, shading, mtime, size);
         try {
             Files.createDirectories(path.getParent());
@@ -167,7 +167,14 @@ final class WebMapTileCache {
 
     private void ensureScanned() {
         if (scanned) {
-            return;
+            // 缓存目录可能被服主手动删除；重新扫描，避免旧字节数影响后续淘汰。
+            if (Files.isDirectory(root)) {
+                return;
+            }
+            memory.clear();
+            files.clear();
+            bytes = 0;
+            scanned = false;
         }
         scanned = true;
         if (!Files.isDirectory(root)) {

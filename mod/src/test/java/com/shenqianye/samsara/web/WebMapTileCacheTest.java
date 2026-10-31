@@ -98,6 +98,25 @@ class WebMapTileCacheTest {
     }
 
     @Test
+    void deletingCacheDirectoryWhileRunningIsSafe() throws Exception {
+        Path root = temp.resolve("cache");
+        WebMapTileCache cache = new WebMapTileCache(root);
+        cache.put("world", "minecraft:overworld", 0, 0, 4, true, 1L, 1L, new byte[]{1});
+        try (Stream<Path> walk = Files.walk(root)) {
+            for (Path path : walk.sorted(java.util.Comparator.reverseOrder()).toList()) {
+                Files.deleteIfExists(path);
+            }
+        }
+        assertFalse(Files.exists(root));
+
+        cache.put("world", "minecraft:overworld", 1, 0, 4, true, 2L, 2L, new byte[]{2});
+        assertTrue(Files.isRegularFile(
+                root.resolve("world/minecraft/overworld/4/1/r.1.0.2.2.png")),
+                "删除缓存目录后应能重新写入，且不影响服务");
+        assertTrue(((Number) cache.stats().get("bytes")).longValue() > 0);
+    }
+
+    @Test
     void unsafeStackIdCannotEscapeCacheRoot() throws Exception {
         Path root = temp.resolve("cache");
         WebMapTileCache cache = new WebMapTileCache(root);
