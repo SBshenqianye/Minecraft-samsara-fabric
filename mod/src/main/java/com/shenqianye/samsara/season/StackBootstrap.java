@@ -99,6 +99,8 @@ public final class StackBootstrap {
     /** mod init：在世界打开之前完成 demote（如果 pending 存在）。 */
     public static synchronized void prepare() {
         Path worldDir = StackPaths.worldDir();
+        // 旧布局 world_sN 一次性迁移（只做目录 rename/元数据复制）
+        StackLegacyMigration.migrateIfNeeded();
         Path file = pendingFile(worldDir);
         if (!Files.exists(file)) {
             return;
