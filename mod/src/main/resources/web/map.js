@@ -207,8 +207,12 @@
     if (!canvas) return;
     const width = state.cssWidth || canvas.clientWidth || 800;
     const height = state.cssHeight || canvas.clientHeight || 520;
-    if (!dim || !dim.bounds) {
-      state.centerX = 0; state.centerZ = 0; state.scale = 4;
+    const hasClaims = dim && ((dim.protectedCount || 0) > 0 || (dim.bannerCount || 0) > 0);
+    if (!dim || !dim.bounds || !hasClaims) {
+      // 没有圈地时不要把整张世界地图塞进视口（大存档可能有几百个 region）。
+      state.centerX = 0;
+      state.centerZ = 0;
+      state.scale = 4;
       updateZoomLabel();
       return;
     }
