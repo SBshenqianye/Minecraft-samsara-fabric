@@ -3,101 +3,317 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>samsara · 配置</title>
+  <title>samsara · 控制台</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%230d9488'/%3E%3Crect x='8' y='12' width='3' height='9' rx='1.5' fill='white'/%3E%3Crect x='14.5' y='8' width='3' height='16' rx='1.5' fill='white'/%3E%3Crect x='21' y='14' width='3' height='7' rx='1.5' fill='white'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <header>
-    <h1>samsara 配置</h1>
-    <div class="toolbar">
-      <input id="token" type="password" placeholder="访问 token（web.yml）" autocomplete="off">
-      <button id="connect">连接</button>
-      <button id="reload" class="ghost">重新读取</button>
-      <button id="save">保存并重载</button>
-      <a class="ghost button-link" href="/identity">身份组</a>
+  <header class="app-header">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <span></span><span></span><span></span>
+      </div>
+      <div class="brand-text">
+        <h1>samsara</h1>
+        <p>服务器配置控制台 <span id="app-version" class="version-pill">v0.22.1</span></p>
+      </div>
     </div>
+
+    <div class="connection">
+      <label class="token-field">
+        <span>访问 token</span>
+        <input id="token" type="password" placeholder="粘贴 web.yml 里的 token" autocomplete="off">
+      </label>
+      <button id="connect" class="primary">连接</button>
+      <span id="connection-state" class="conn-state">未连接</span>
+    </div>
+
     <nav class="tabs" aria-label="页面">
-      <button class="tab active" data-panel="panel-config">配置</button>
-      <button class="tab" data-panel="panel-output">输出格式</button>
-      <button class="tab" data-panel="panel-permissions">权限</button>
+      <button class="tab" data-panel="panel-identity">
+        身份组 <span class="tab-count" id="identity-count">0</span>
+      </button>
+      <button class="tab active" data-panel="panel-config">
+        配置 <span class="tab-count" id="config-count">0</span>
+      </button>
+      <button class="tab" data-panel="panel-output">
+        输出格式 <span class="tab-count" id="output-count">0</span>
+      </button>
+      <button class="tab" data-panel="panel-permissions">
+        权限 <span class="tab-count" id="perm-count">0</span>
+      </button>
     </nav>
+
+    <div class="tab-actions" id="tab-actions">
+      <div class="tab-actions-title">
+        <strong id="action-title">配置</strong>
+        <span id="action-hint" class="muted small"></span>
+      </div>
+      <div class="tab-actions-buttons">
+        <button id="action-default" class="ghost" hidden>恢复默认</button>
+        <button id="reload" class="ghost">重新读取</button>
+        <button id="save" class="primary">保存并重载</button>
+      </div>
+    </div>
   </header>
 
-  <main>
-    <div id="panel-config">
-      <section id="status" class="panel" hidden>
-        <h2>状态</h2>
-        <dl id="status-list"></dl>
-      </section>
+  <main class="app-shell">
+    <aside id="global-nav" class="side-nav" aria-label="全局导航"></aside>
 
-      <section class="panel">
-        <div class="search-row">
-          <input id="search" type="search" placeholder="搜索配置（键名 / 说明 / 分组）">
-          <span id="summary" class="muted"></span>
-        </div>
-        <div id="message" class="message" role="status"></div>
-        <div id="files"></div>
-      </section>
-    </div>
+    <div class="content">
+      <div id="panel-config" class="panel-stack">
+        <section class="panel status-panel">
+          <div class="panel-head">
+            <div>
+              <h2>运行状态</h2>
+              <p class="panel-sub">只读信息；配置文件保存在服务器本机。</p>
+            </div>
+            <span id="status-warning" class="status-warning" hidden></span>
+          </div>
+          <div id="status-chips" class="status-chips"></div>
+        </section>
 
-    <div id="panel-output" hidden>
-      <section class="panel output-panel">
-        <div class="output-toolbar">
-          <input id="output-search" type="search" placeholder="搜索输出消息 / 分组 / 说明">
-          <button id="output-default" class="ghost">恢复默认</button>
-          <button id="output-reload" class="ghost">重新读取</button>
-          <button id="output-save">保存并重载</button>
-        </div>
-        <div id="output-message" class="message" role="status"></div>
-        <div class="output-grid">
-          <aside class="output-messages-wrap">
-            <h2 class="column-title">消息</h2>
-            <div id="output-messages" class="output-messages"></div>
-          </aside>
-          <section class="output-edit-wrap">
-            <h2 class="column-title">手动改写</h2>
-            <div id="output-disabled" class="output-disabled" hidden></div>
-            <div id="output-meta" class="output-meta"></div>
-            <div id="output-editor" class="output-editor"></div>
-            <div id="output-errors" class="output-errors"></div>
-            <h3 class="palette-title">变量</h3>
-            <div id="output-palette" class="palette"></div>
-            <h3 class="palette-title">按钮</h3>
-            <div id="output-buttons" class="palette"></div>
-          </section>
-          <section class="output-preview-wrap">
-            <h2 class="column-title">渲染预览</h2>
-            <div id="output-preview" class="output-preview"></div>
-            <p class="muted small">预览由服务端渲染，按钮只显示标签，不执行命令。</p>
-          </section>
-        </div>
-      </section>
-    </div>
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>配置项</h2>
+              <p class="panel-sub">所有输入都会写入对应 YAML；留空时仍按默认值兜底。</p>
+            </div>
+            <div class="panel-tools">
+              <label class="search-box">
+                <span aria-hidden="true">⌕</span>
+                <input id="search" type="search" placeholder="搜索配置：键名 / 说明 / 分组">
+              </label>
+              <span id="summary" class="muted small"></span>
+            </div>
+          </div>
+          <div id="message" class="message" role="status"></div>
+          <div id="files" class="config-files"></div>
+        </section>
+      </div>
 
-    <div id="panel-permissions" hidden>
-      <section class="panel">
-        <div class="output-toolbar">
-          <input id="perm-search" type="search" placeholder="搜索权限路径">
-          <button id="perm-reload" class="ghost">重新读取</button>
-        </div>
-        <div id="perm-message" class="message" role="status"></div>
-        <p class="muted small">关闭树干会级联关闭所有树枝与叶子；重新开启后恢复各节点原来的等级。叶子的实际等级取整条路径上的最高等级。</p>
-        <div id="perm-tree" class="perm-tree"></div>
-      </section>
+      <div id="panel-identity" class="panel-stack" hidden>
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>身份组</h2>
+              <p class="panel-sub">把多个账号入口映射到同一份玩家数据。卡片之间可以拖拽组合。</p>
+            </div>
+            <div class="panel-tools">
+              <button id="identity-add-group" class="ghost">新增组</button>
+              <button id="identity-audit" class="ghost">审计</button>
+            </div>
+          </div>
+          <div id="identity-message" class="message" role="status"></div>
+          <div id="identity-path" class="path-line"></div>
+          <div id="identity-root" class="path-line"></div>
+
+          <div class="settings-grid">
+            <label class="switch-card">
+              <input id="identity-enabled" type="checkbox">
+              <span class="switch-ui" aria-hidden="true"></span>
+              <span class="switch-text">
+                <strong>启用身份组</strong>
+                <small>关闭时所有账号按自身 UUID 处理，不做数据同步。</small>
+              </span>
+            </label>
+            <label class="switch-card">
+              <input id="identity-sync" type="checkbox">
+              <span class="switch-ui" aria-hidden="true"></span>
+              <span class="switch-text">
+                <strong>切换账号时同步玩家数据</strong>
+                <small>开启后，同组账号共享背包、位置、进度与统计。</small>
+              </span>
+            </label>
+            <label class="field-card">
+              <span>宠物主人上限</span>
+              <input id="identity-max-owners" type="number" min="1" max="1024" step="1">
+              <small>每个宠物的 owner 列表最多保留多少个主人。</small>
+            </label>
+          </div>
+
+          <details class="help-card">
+            <summary>data UUID 是什么？为什么它和账号 UUID 不一样？</summary>
+            <div class="help-body">
+              <p><strong>账号 UUID</strong> 是玩家登录时使用的身份：正版 UUID 由 Mojang 分配，离线 UUID 由“OfflinePlayer:名称”计算。一个组最多各放一个正版/离线入口。</p>
+              <p><strong>data UUID</strong> 是玩家数据的存储钥匙，对应 <code>identity/playerdata/&lt;data&gt;.dat</code>。它不是登录账号，所以同一把 data UUID 可以被多个组复用；复用后这些组会共享同一份背包/位置/进度。</p>
+              <p>“生成 data UUID”得到的是<strong>空白钥匙</strong>：还没有绑定任何账号，所以池子里显示为“空白 data”。把正版/离线账号映射进组、玩家上线并同步后，数据才会写进这把钥匙。池子里的“正版数据 / 离线数据”候选是用账号 UUID 当数据键，名字直接来自账号，避免出现不知道是谁的 data。</p>
+              <p>直接把已有组的 data UUID 改成另一个值，必须走“重绑”流程：程序会先备份旧数据与目标数据，再按你选择的策略复制或保留。新组没有旧数据，可以直接设置。</p>
+            </div>
+          </details>
+
+          <div id="identity-groups" class="identity-groups"></div>
+
+          <div class="pool-panel">
+            <div class="panel-head compact">
+              <div>
+                <h3>未进组 / 数据 UUID 库</h3>
+                <p class="panel-sub">把账号拖进卡片的“正版/离线”区域，把 data UUID 拖进“数据”区域。正版/离线只能在一个组；data 可以复制到多个组。</p>
+              </div>
+              <div class="panel-tools">
+                <label class="inline-field">
+                  <span>名称 / UUID</span>
+                  <input id="identity-resolve-input" type="text" placeholder="输入玩家名或 UUID" autocomplete="off">
+                </label>
+                <button id="identity-resolve-button" class="ghost">解析</button>
+                <button id="identity-generate" class="ghost">生成 data UUID</button>
+              </div>
+            </div>
+            <div id="identity-resolve-result" class="resolve-result" hidden></div>
+            <h4 class="pool-title">未进组账号</h4>
+            <div id="identity-account-pool" class="chip-pool"></div>
+            <h4 class="pool-title">数据 UUID 候选（账号派生 / 空白 data）</h4>
+            <div id="identity-data-pool" class="chip-pool"></div>
+          </div>
+
+          <details class="audit-card" id="identity-audit-card" hidden>
+            <summary>审计结果</summary>
+            <pre id="identity-audit-output" class="audit-output"></pre>
+          </details>
+        </section>
+      </div>
+
+      <div id="panel-output" class="panel-stack" hidden>
+        <section class="panel output-panel">
+          <div class="panel-head">
+            <div>
+              <h2>输出格式</h2>
+              <p class="panel-sub">最外层就是一块文本画布：文字、变量标签、按钮标签和首行前缀都在同一行内编辑；画布里换行，游戏内也换行。</p>
+              <p class="panel-sub">输出消息按“用户可见消息类型”计数，不是权限节点数：多个命令权限可能共用一条模板，部分权限没有聊天输出，所以数量不与权限树一一对应。</p>
+            </div>
+            <div class="panel-tools">
+              <label class="search-box">
+                <span aria-hidden="true">⌕</span>
+                <input id="output-search" type="search" placeholder="搜索消息 / 分组 / 说明">
+              </label>
+            </div>
+          </div>
+          <div id="output-message" class="message" role="status"></div>
+          <div class="output-grid">
+            <section class="output-edit-wrap">
+              <div class="column-title">手动改写</div>
+              <div id="output-disabled" class="output-disabled" hidden></div>
+              <div id="output-meta" class="output-meta"></div>
+              <div id="output-editor" class="rich-editor" contenteditable="true" spellcheck="false"
+                   aria-label="输出消息编辑画布"></div>
+              <div id="output-errors" class="output-errors"></div>
+              <div class="editor-hint">
+                变量和按钮是原子标签，不能改文字；按钮可以改标签文字。画布换行会保留到游戏内；续行前缀由系统自动添加，已用浅色显示。
+              </div>
+              <h3 class="palette-title">变量 <span id="output-var-count" class="count-pill">0</span></h3>
+              <div id="output-palette" class="palette"></div>
+              <h3 class="palette-title">按钮 <span id="output-button-count" class="count-pill">0</span></h3>
+              <div id="output-buttons" class="palette"></div>
+            </section>
+            <section class="output-preview-wrap">
+              <div class="column-title">渲染预览</div>
+              <div id="output-preview" class="output-preview"></div>
+              <p class="muted small">预览由服务端渲染；按钮只显示标签，不执行命令。</p>
+            </section>
+          </div>
+        </section>
+      </div>
+
+      <div id="panel-permissions" class="panel-stack" hidden>
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>权限树</h2>
+              <p class="panel-sub">关闭树干会级联关闭所有后代；重新开启后恢复各节点原来的等级。叶子的实际等级取整条路径上的最高等级。</p>
+            </div>
+            <div class="panel-tools">
+              <label class="search-box">
+                <span aria-hidden="true">⌕</span>
+                <input id="perm-search" type="search" placeholder="搜索权限路径">
+              </label>
+              <button id="perm-expand-all" class="ghost">全部展开</button>
+              <button id="perm-collapse-all" class="ghost">全部折叠</button>
+            </div>
+          </div>
+          <div id="perm-message" class="message" role="status"></div>
+          <div id="perm-stats" class="stat-row"></div>
+          <div class="perm-layout">
+            <div id="perm-tree" class="perm-tree"></div>
+            <aside class="owner-panel">
+              <h3>Owner 名单</h3>
+              <p class="muted small">这些玩家始终拥有 owner 权限，不区分大小写。节点修改会即时保存；owner 名单改完后点右上角“保存 owner 名单”。</p>
+              <div id="perm-owners"></div>
+              <div id="perm-owner-message" class="message small" role="status"></div>
+            </aside>
+          </div>
+        </section>
+      </div>
     </div>
   </main>
 
-  <template id="file-template">
-    <section class="file">
-      <h2 class="file-title"></h2>
-      <p class="file-path muted"></p>
-      <div class="groups"></div>
-    </section>
-  </template>
+  <dialog id="uuid-dialog" class="app-dialog">
+    <form method="dialog" class="dialog-body" id="uuid-form">
+      <h3 id="uuid-title">选择 UUID</h3>
+      <p id="uuid-desc" class="dialog-sub"></p>
+      <label class="field-card">
+        <span>名称 / UUID</span>
+        <input id="uuid-input" type="text" list="identity-candidates" autocomplete="off"
+               placeholder="输入玩家名、正版 UUID 或离线 UUID">
+        <small>输入名称后会自动计算离线 UUID，并尝试从 Mojang 获取正版 UUID。</small>
+      </label>
+      <div id="uuid-resolved" class="resolve-result" hidden></div>
+      <div class="dialog-actions">
+        <button type="button" id="uuid-clear" class="ghost danger">清空当前值</button>
+        <span class="spacer"></span>
+        <button type="button" id="uuid-cancel" class="ghost">取消</button>
+        <button type="button" id="uuid-apply" class="primary">确定</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="rebind-dialog" class="app-dialog">
+    <form method="dialog" class="dialog-body" id="rebind-form">
+      <h3>重绑 data UUID</h3>
+      <p class="dialog-sub">组：<strong id="rebind-group"></strong></p>
+      <p class="dialog-note">data UUID 是玩家数据的存储钥匙。重绑不会删除旧数据：程序会先备份旧数据与目标数据，再按策略写入。当前组有账号在线时会被拒绝。</p>
+      <label class="field-card">
+        <span>新的 data UUID</span>
+        <input id="rebind-input" type="text" list="identity-data-uuids" autocomplete="off">
+        <small>留空会生成一个新的随机 UUID。</small>
+      </label>
+      <button type="button" id="rebind-generate" class="ghost">生成新 UUID</button>
+      <fieldset class="mode-list">
+        <legend>目标 data UUID 已有数据时怎么处理？</legend>
+        <label class="mode-card">
+          <input type="radio" name="rebind-mode" value="reject" checked>
+          <span><strong>停止（推荐）</strong><small>发现目标已有数据就取消，最安全。</small></span>
+        </label>
+        <label class="mode-card">
+          <input type="radio" name="rebind-mode" value="merge">
+          <span><strong>保留目标数据</strong><small>目标已有数据时保留目标，只补齐缺失文件；旧数据完整备份。</small></span>
+        </label>
+        <label class="mode-card">
+          <input type="radio" name="rebind-mode" value="overwrite">
+          <span><strong>覆盖目标数据</strong><small>用当前组的数据覆盖目标数据；旧数据与目标都会先备份。</small></span>
+        </label>
+      </fieldset>
+      <label class="check-line">
+        <input id="rebind-confirm" type="checkbox">
+        <span>我已了解会先备份旧数据与目标数据</span>
+      </label>
+      <div id="rebind-error" class="message error"></div>
+      <div class="dialog-actions">
+        <span class="spacer"></span>
+        <button type="button" id="rebind-cancel" class="ghost">取消</button>
+        <button type="button" id="rebind-apply" class="primary">确认重绑</button>
+      </div>
+    </form>
+  </dialog>
+
+  <datalist id="identity-candidates"></datalist>
+  <datalist id="identity-data-uuids"></datalist>
+
+  <button id="back-to-top" class="back-to-top" type="button" title="回到顶部" hidden>↑</button>
 
   <script src="/structured.js"></script>
+  <script src="/particles.js"></script>
   <script src="/app.js"></script>
   <script src="/output.js"></script>
+  <script src="/identity.js"></script>
   <script src="/permissions.js"></script>
 </body>
 </html>

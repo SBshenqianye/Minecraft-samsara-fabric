@@ -108,10 +108,26 @@ public final class IdentityValidator {
                 if (!a.uuid.equals(b.uuid)) {
                     continue;
                 }
+                // 允许“同一个 data UUID 被多个组共享”：这表示多个显示组指向同一份
+                // 玩家数据，是 Web 卡片拖拽明确支持的用法。
+                if (a.role.equals("data") && b.role.equals("data")) {
+                    continue;
+                }
+                // 同一组内 data == premium/offline 仍然允许（主数据就是该账号本身）。
                 if (a.groupIndex == b.groupIndex
                         && (a.role.equals("data") || b.role.equals("data"))
                         && (!a.role.equals("data") || !b.role.equals("data"))) {
                     continue;
+                }
+                // 跨组时：如果该 UUID 是另一个组的“自身数据”（data == premium/offline），
+                // 那么把它作为本组 data 是同一个身份，允许共享；否则会产生解析歧义，拒绝。
+                if (a.groupIndex != b.groupIndex
+                        && (a.role.equals("data") || b.role.equals("data"))) {
+                    int accountIndex = a.role.equals("data") ? b.groupIndex : a.groupIndex;
+                    IdentityConfig.Group accountGroup = config.groups.get(accountIndex);
+                    if (accountGroup != null && a.uuid.equals(accountGroup.dataUuid())) {
+                        continue;
+                    }
                 }
                 String message = "UUID " + a.uuid + " 同时出现在 " + a.field + " 与 " + b.field;
                 issues.add(new Issue(a.field, message));

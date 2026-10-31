@@ -70,7 +70,7 @@ class LocalWebServerTest {
         start();
         HttpResponse<String> response = request("GET", "/", null, null);
         assertEquals(200, response.statusCode());
-        assertTrue(response.body().contains("samsara 配置"));
+        assertTrue(response.body().contains("samsara · 控制台"));
     }
 
     @Test

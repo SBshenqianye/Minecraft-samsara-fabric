@@ -44,11 +44,24 @@ public class PlayerRegistry {
         public final String name;
         public final UUID uuid;
         public final long lastLoginMs;
+        /**
+         * {@link #name} 是否来自真实来源（在线 / 注入池 / usercache）。
+         * <p>
+         * 仅 {@code players/data/<uuid>.dat} 存在、但 usercache 里已经没有记录时，
+         * 只能生成 {@code 玩家-<uuid 前 8 位>} 这样的占位名；这种名字不是玩家真实 ID，
+         * 不能用于命令（也不是合法的 {@code word()} 参数），补全时应跳过。
+         */
+        public final boolean nameKnown;
 
         public RegPlayer(String name, UUID uuid, long lastLoginMs) {
+            this(name, uuid, lastLoginMs, true);
+        }
+
+        public RegPlayer(String name, UUID uuid, long lastLoginMs, boolean nameKnown) {
             this.name = name;
             this.uuid = uuid;
             this.lastLoginMs = lastLoginMs;
+            this.nameKnown = nameKnown;
         }
     }
 
@@ -116,7 +129,11 @@ public class PlayerRegistry {
         Map<UUID, String> uuidName = new HashMap<>();
         Map<UUID, Long> uuidLastLogin = new HashMap<>();
         try {
-            Path uc = server.getWorldPath(LevelResource.ROOT).resolve("usercache.json");
+            // 26.x 的 usercache.json 在服务端根目录，不在存档目录；旧版本/特殊布局再回退到存档目录。
+            Path uc = server.getServerDirectory().resolve("usercache.json");
+            if (!Files.exists(uc)) {
+                uc = server.getWorldPath(LevelResource.ROOT).resolve("usercache.json");
+            }
             if (Files.exists(uc)) {
                 List<Map<String, String>> list = GSON.fromJson(Files.readString(uc, StandardCharsets.UTF_8), USER_CACHE_TYPE);
                 if (list != null) {
@@ -166,8 +183,9 @@ public class PlayerRegistry {
                         if (!byUuid.containsKey(u)) {
                             String name = uuidName.get(u);
                             long login = uuidLastLogin.getOrDefault(u, 0L);
-                            byUuid.put(u, new RegPlayer(name != null ? name : "玩家-" + uuidStr.substring(0, 8),
-                                    u, login));
+                            byUuid.put(u, new RegPlayer(
+                                    name != null ? name : "玩家-" + uuidStr.substring(0, 8),
+                                    u, login, name != null));
                         }
                     }
                 }

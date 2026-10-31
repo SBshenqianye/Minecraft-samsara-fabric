@@ -10,20 +10,39 @@ import com.shenqianye.samsara.identity.IdentityService;
 import com.shenqianye.samsara.identity.IdentityStateStore;
 import com.shenqianye.samsara.identity.IdentityValidator;
 import com.shenqianye.samsara.season.PlayerRegistry;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 
+import java.net.URI;
+import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /** 生产环境身份组 Web 服务。 */
 public final class WebIdentityService implements IdentityWebService {
     private static final DateTimeFormatter TS = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss");
+    private static final HttpClient HTTP = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(2))
+            .build();
+    /** UUID → 名称缓存；网络不可用时也缓存空结果，避免每次请求都卡住。 */
+    private static final Map<String, CachedName> NAME_CACHE = new ConcurrentHashMap<>();
+    private static final long NAME_CACHE_MS = 10 * 60_000L;
+    private static final int MAX_REMOTE_LOOKUPS = 6;
 
     @Override
     public Map<String, Object> model() {
@@ -262,6 +281,144 @@ public final class WebIdentityService implements IdentityWebService {
         return out;
     }
 
+    @Override
+    public Map<String, Object> resolve(Map<String, Object> body) {
+        IdentityService service = IdentityService.getInstance();
+        Map<UUID, String> localNames = new LinkedHashMap<>();
+        Set<UUID> online = new HashSet<>();
+        if (service.server() != null) {
+            for (PlayerRegistry.RegPlayer player : PlayerRegistry.getInstance()
+                    .read(service.server())) {
+                localNames.putIfAbsent(player.uuid, player.name);
+                if (service.server().getPlayerList().getPlayer(player.uuid) != null) {
+                    online.add(player.uuid);
+                }
+            }
+        }
+
+        String queryName = text(body.get("name"));
+        UUID premium = null;
+        UUID offline = null;
+        String premiumNote = "";
+        if (!queryName.isBlank()) {
+            offline = PlayerRegistry.offlineUuid(queryName);
+            localNames.putIfAbsent(offline, queryName);
+            premium = lookupPremiumByName(queryName);
+            if (premium != null) {
+                localNames.putIfAbsent(premium, queryName);
+            } else {
+                premiumNote = "未能从 Mojang 获取正版 UUID（可能离线或名称不存在）；"
+                        + "离线 UUID 仍可正常计算";
+            }
+        }
+
+        List<UUID> uuids = new ArrayList<>();
+        if (body.get("uuids") instanceof List<?> list) {
+            for (Object item : list) {
+                UUID uuid = uuid(item);
+                if (uuid != null) {
+                    uuids.add(uuid);
+                }
+            }
+        }
+        if (premium != null) {
+            uuids.add(premium);
+        }
+        if (offline != null) {
+            uuids.add(offline);
+        }
+
+        Map<String, String> names = new LinkedHashMap<>();
+        Map<String, Boolean> onlineMap = new LinkedHashMap<>();
+        int remoteLookups = 0;
+        for (UUID uuid : uuids) {
+            String name = localNames.get(uuid);
+            if (name == null && uuid.version() == 4 && remoteLookups < MAX_REMOTE_LOOKUPS) {
+                name = lookupNameByUuid(uuid);
+                remoteLookups++;
+            }
+            if (name != null && !name.isBlank()) {
+                names.put(uuid.toString(), name);
+            }
+            onlineMap.put(uuid.toString(), online.contains(uuid));
+        }
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ok", true);
+        out.put("name", queryName);
+        out.put("premium", premium == null ? null : premium.toString());
+        out.put("offline", offline == null ? null : offline.toString());
+        out.put("premiumNote", premiumNote);
+        out.put("names", names);
+        out.put("online", onlineMap);
+        return out;
+    }
+
+    // ---- 名称解析 ----
+
+    private static UUID lookupPremiumByName(String name) {
+        String encoded = URLEncoder.encode(name, StandardCharsets.UTF_8);
+        try {
+            HttpRequest request = HttpRequest.newBuilder(URI.create(
+                            "https://api.mojang.com/users/profiles/minecraft/" + encoded))
+                    .timeout(Duration.ofSeconds(3))
+                    .header("Accept", "application/json")
+                    .GET()
+                    .build();
+            HttpResponse<String> response = HTTP.send(request,
+                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (response.statusCode() != 200) {
+                return null;
+            }
+            JsonObject object = JsonParser.parseString(response.body()).getAsJsonObject();
+            String id = object.has("id") ? object.get("id").getAsString() : "";
+            if (id.isBlank()) {
+                return null;
+            }
+            String dashed = id.replaceFirst(
+                    "(\\w{8})(\\w{4})(\\w{4})(\\w{4})(\\w{12})", "$1-$2-$3-$4-$5");
+            UUID uuid = UUID.fromString(dashed);
+            NAME_CACHE.put(uuid.toString(), new CachedName(name, System.currentTimeMillis()));
+            return uuid;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static String lookupNameByUuid(UUID uuid) {
+        String key = uuid.toString();
+        CachedName cached = NAME_CACHE.get(key);
+        if (cached != null && System.currentTimeMillis() - cached.at < NAME_CACHE_MS) {
+            return cached.name;
+        }
+        try {
+            String id = key.replace("-", "");
+            HttpRequest request = HttpRequest.newBuilder(URI.create(
+                            "https://sessionserver.mojang.com/session/minecraft/profile/" + id))
+                    .timeout(Duration.ofSeconds(3))
+                    .header("Accept", "application/json")
+                    .GET()
+                    .build();
+            HttpResponse<String> response = HTTP.send(request,
+                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (response.statusCode() == 200) {
+                JsonObject object = JsonParser.parseString(response.body()).getAsJsonObject();
+                if (object.has("name")) {
+                    String name = object.get("name").getAsString();
+                    NAME_CACHE.put(key, new CachedName(name, System.currentTimeMillis()));
+                    return name;
+                }
+            }
+        } catch (Exception ignored) {
+            // 网络不可用时静默降级；前端仍会显示 UUID 短码。
+        }
+        NAME_CACHE.put(key, new CachedName(null, System.currentTimeMillis()));
+        return null;
+    }
+
+    private record CachedName(String name, long at) {
+    }
+
     // ---- 工具 ----
 
     private static void copyData(IdentityDataSync sync, UUID oldData, UUID newData,
@@ -314,6 +471,8 @@ public final class WebIdentityService implements IdentityWebService {
             item.put("name", player.name);
             item.put("uuid", player.uuid.toString());
             item.put("online", service.server().getPlayerList().getPlayer(player.uuid) != null);
+            item.put("type", player.uuid.equals(PlayerRegistry.offlineUuid(player.name))
+                    ? "offline" : "premium");
             out.add(item);
         }
         return out;

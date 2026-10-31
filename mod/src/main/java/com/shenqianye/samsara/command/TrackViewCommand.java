@@ -25,6 +25,7 @@ import net.minecraft.server.permissions.Permissions;
  * /samsara track view pause|resume [玩家]
  * /samsara track view speed &lt;0.1..64&gt;
  * /samsara track view reverse
+ * /samsara track view ui [接收者|broadcast]
  * /samsara track list &lt;玩家&gt; [页]
  * </pre>
  * 短别名 {@code /track ...} 仅在根节点未被其他模组占用时注册（命令谦让）。
@@ -54,7 +55,7 @@ public final class TrackViewCommand {
     public static LiteralArgumentBuilder<CommandSourceStack> listNode() {
         return Commands.literal("list")
                 .then(Commands.argument("player", StringArgumentType.word())
-                        .suggests(SuggestionProviders.knownPlayersProvider())
+                        .suggests(SuggestionProviders.knownPlayersProvider("监控目标"))
                         .executes(ctx -> list(ctx, 1))
                         .then(Commands.argument("page", IntegerArgumentType.integer(1))
                                 .executes(ctx -> list(ctx,
@@ -66,23 +67,23 @@ public final class TrackViewCommand {
                 .then(Commands.literal("stop")
                         .executes(ctx -> stop(ctx, null))
                         .then(Commands.argument("player", StringArgumentType.word())
-                                .suggests(SuggestionProviders.playersProvider())
+                                .suggests(SuggestionProviders.playersProvider("观看者"))
                                 .executes(ctx -> stop(ctx, StringArgumentType.getString(ctx, "player")))))
                 .then(Commands.literal("status")
                         .executes(ctx -> status(ctx, null))
                         .then(Commands.argument("player", StringArgumentType.word())
-                                .suggests(SuggestionProviders.playersProvider())
+                                .suggests(SuggestionProviders.playersProvider("观看者"))
                                 .executes(ctx -> status(ctx, StringArgumentType.getString(ctx, "player")))))
                 .then(Commands.literal("pause")
                         .executes(ctx -> pause(ctx, null))
                         .then(Commands.argument("player", StringArgumentType.word())
-                                .suggests(SuggestionProviders.playersProvider())
+                                .suggests(SuggestionProviders.playersProvider("观看者"))
                                 .executes(ctx -> pause(ctx,
                                         StringArgumentType.getString(ctx, "player")))))
                 .then(Commands.literal("resume")
                         .executes(ctx -> resume(ctx, null))
                         .then(Commands.argument("player", StringArgumentType.word())
-                                .suggests(SuggestionProviders.playersProvider())
+                                .suggests(SuggestionProviders.playersProvider("观看者"))
                                 .executes(ctx -> resume(ctx,
                                         StringArgumentType.getString(ctx, "player")))))
                 .then(Commands.literal("speed")
@@ -95,8 +96,16 @@ public final class TrackViewCommand {
                 .then(Commands.literal("align")
                         .executes(ctx -> align(ctx, null))
                         .then(Commands.argument("player", StringArgumentType.word())
-                                .suggests(SuggestionProviders.playersProvider())
+                                .suggests(SuggestionProviders.playersProvider("观看者"))
                                 .executes(ctx -> align(ctx,
+                                        StringArgumentType.getString(ctx, "player")))))
+                .then(Commands.literal("ui")
+                        .executes(ctx -> ui(ctx, null))
+                        .then(Commands.literal("broadcast")
+                                .executes(TrackViewCommand::uiBroadcast))
+                        .then(Commands.argument("player", StringArgumentType.word())
+                                .suggests(SuggestionProviders.playersProvider("接收者（观看者）"))
+                                .executes(ctx -> ui(ctx,
                                         StringArgumentType.getString(ctx, "player")))))
                 .then(Commands.literal("seek")
                         .then(Commands.argument("input", StringArgumentType.greedyString())
@@ -115,7 +124,7 @@ public final class TrackViewCommand {
                                 .executes(ctx -> aim(ctx,
                                         StringArgumentType.getString(ctx, "input")))))
                 .then(Commands.argument("player", StringArgumentType.word())
-                        .suggests(SuggestionProviders.knownPlayersProvider())
+                        .suggests(SuggestionProviders.knownPlayersProvider("监控目标"))
                         .then(Commands.argument("input", StringArgumentType.greedyString())
                                 .suggests(SuggestionProviders.viewGreedyProvider())
                                 .executes(TrackViewCommand::startGreedy)));
@@ -201,6 +210,26 @@ public final class TrackViewCommand {
         ServerPlayer viewer = ctx.getSource().getPlayer();
         String msg = ViewManager.getInstance().align(ctx.getSource().getServer(), viewer,
                 target, isAdmin(ctx.getSource()));
+        return reply(ctx.getSource(), msg);
+    }
+
+    /**
+     * 重新发送聊天栏控制条（按钮被聊天记录刷掉后找回）。
+     *
+     * @param target 接收者（观看者）的名字；null = 发给自己（控制台默认广播）
+     */
+    private static int ui(CommandContext<CommandSourceStack> ctx, String target) {
+        ServerPlayer actor = ctx.getSource().getPlayer();
+        String msg = ViewManager.getInstance().showControls(ctx.getSource().getServer(), actor,
+                target, isAdmin(ctx.getSource()));
+        return reply(ctx.getSource(), msg);
+    }
+
+    /** 把控制条广播给所有观看者（管理员/控制台）。 */
+    private static int uiBroadcast(CommandContext<CommandSourceStack> ctx) {
+        ServerPlayer actor = ctx.getSource().getPlayer();
+        String msg = ViewManager.getInstance().broadcastControls(ctx.getSource().getServer(), actor,
+                isAdmin(ctx.getSource()));
         return reply(ctx.getSource(), msg);
     }
 

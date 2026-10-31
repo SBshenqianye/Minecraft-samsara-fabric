@@ -308,6 +308,14 @@ public final class LocalWebServer {
                         result = identityService.generate();
                     }
                 }
+                case "/api/identity/resolve" -> {
+                    if (!"POST".equals(method)) {
+                        status = 405;
+                        result = Map.of("error", "Method Not Allowed");
+                    } else {
+                        result = identityService.resolve(body);
+                    }
+                }
                 default -> {
                     status = 404;
                     result = Map.of("error", "Not Found");

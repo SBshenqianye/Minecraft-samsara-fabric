@@ -59,6 +59,15 @@ class IdentityWebServerTest {
     }
 
     @Test
+    void resolveEndpointIsAvailable() throws Exception {
+        start();
+        HttpResponse<String> response = request("POST", "/api/identity/resolve",
+                "{\"name\":\"Test\"}", TOKEN);
+        assertEquals(200, response.statusCode());
+        assertTrue(response.body().contains("offline"));
+    }
+
+    @Test
     void modelIsServedAndSaveValidationReturnsFieldErrors() throws Exception {
         start();
         assertEquals(200, request("GET", "/api/identity", null, TOKEN).statusCode());
@@ -124,6 +133,13 @@ class IdentityWebServerTest {
         @Override
         public Map<String, Object> generate() {
             return Map.of("ok", true, "data", "4f1c2b8e-0000-0000-0000-000000000000");
+        }
+
+        @Override
+        public Map<String, Object> resolve(Map<String, Object> body) {
+            return Map.of("ok", true, "name", "Test",
+                    "offline", "4f1c2b8e-0000-0000-0000-000000000000",
+                    "premiumNote", "");
         }
     }
 

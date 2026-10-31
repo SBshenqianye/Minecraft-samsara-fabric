@@ -52,6 +52,7 @@ public final class WebSecurity {
             case "/identity", "/identity.html" -> "/web/identity.html";
             case "/identity.js" -> "/web/identity.js";
             case "/structured.js" -> "/web/structured.js";
+            case "/particles.js" -> "/web/particles.js";
             case "/output.js" -> "/web/output.js";
             case "/permissions.js" -> "/web/permissions.js";
             case "/style.css" -> "/web/style.css";
@@ -69,6 +70,7 @@ public final class WebSecurity {
                 || "/api/identity/reload".equals(path)
                 || "/api/identity/audit".equals(path)
                 || "/api/identity/generate".equals(path)
+                || "/api/identity/resolve".equals(path)
                 || "/api/output".equals(path)
                 || "/api/output/preview".equals(path)
                 || "/api/output/reload".equals(path)

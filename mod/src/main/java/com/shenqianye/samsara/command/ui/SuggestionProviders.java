@@ -73,6 +73,8 @@ public final class SuggestionProviders {
     // ---- 缓存（只缓存内存/短周期 IO 的结果，避免每次按键读盘） ----
 
     private static volatile List<String> cachedKnownPlayers = List.of();
+    /** 已知玩家名（小写）→ UUID，用于补全 hover；与 {@link #cachedKnownPlayers} 同周期刷新。 */
+    private static volatile Map<String, UUID> cachedKnownPlayerUuids = Map.of();
     private static volatile long cachedKnownPlayersAt;
     private static volatile List<String> cachedCycles = List.of();
     private static volatile long cachedCyclesAt;
@@ -102,6 +104,9 @@ public final class SuggestionProviders {
      * 在线 + 已知/离线玩家名：在线玩家 + fakeplayers 注入池 + {@code PlayerRegistry.read}
      * （usercache/playerdata）。后两者按 {@link #TTL_KNOWN_PLAYERS_MS} 缓存，
      * 不会在每次按键时重新解析 usercache。
+     *
+     * <p>只有 {@code nameKnown} 的条目才会进入候选：仅剩 {@code players/data/<uuid>.dat}
+     * 的占位名（{@code 玩家-xxxxxxxx}）不是真实玩家 ID，点了也执行不了。
      */
     public static List<String> knownPlayers(MinecraftServer server) {
         List<String> out = new ArrayList<>(players(server));
@@ -110,26 +115,86 @@ public final class SuggestionProviders {
         } catch (Exception ignored) {
             // 注入池只影响补全，读取失败不阻断
         }
-        long now = System.currentTimeMillis();
-        if (now - cachedKnownPlayersAt > TTL_KNOWN_PLAYERS_MS) {
-            try {
-                if (server != null) {
-                    List<String> fromRegistry = new ArrayList<>();
-                    for (PlayerRegistry.RegPlayer p : PlayerRegistry.getInstance().read(server)) {
-                        if (p.name != null && !p.name.isBlank()) {
-                            fromRegistry.add(p.name);
-                        }
-                    }
-                    cachedKnownPlayers = List.copyOf(fromRegistry);
-                }
-            } catch (Exception ignored) {
-                // usercache 读取失败：退回在线 + 注入池
-            } finally {
-                cachedKnownPlayersAt = now;
-            }
-        }
+        refreshKnownPlayers(server);
         out.addAll(cachedKnownPlayers);
         return CompletionSupport.dedupe(out);
+    }
+
+    /** 按 TTL 刷新已知玩家缓存（名字 + name→uuid）。 */
+    private static void refreshKnownPlayers(MinecraftServer server) {
+        if (server == null) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (now - cachedKnownPlayersAt <= TTL_KNOWN_PLAYERS_MS) {
+            return;
+        }
+        try {
+            List<String> names = new ArrayList<>();
+            Map<String, UUID> uuids = new LinkedHashMap<>();
+            for (PlayerRegistry.RegPlayer p : PlayerRegistry.getInstance().read(server)) {
+                if (p.nameKnown && p.name != null && !p.name.isBlank()) {
+                    names.add(p.name);
+                    uuids.putIfAbsent(p.name.toLowerCase(Locale.ROOT), p.uuid);
+                }
+            }
+            cachedKnownPlayers = List.copyOf(names);
+            cachedKnownPlayerUuids = Map.copyOf(uuids);
+        } catch (Exception ignored) {
+            // usercache 读取失败：退回在线 + 注入池
+        } finally {
+            cachedKnownPlayersAt = now;
+        }
+    }
+
+    /**
+     * 解析玩家名对应的 UUID（在线 → 注入池 → usercache/playerdata 缓存），
+     * 用于补全 hover；找不到时返回 null。
+     */
+    public static UUID playerUuid(MinecraftServer server, String name) {
+        if (name == null || name.isBlank()) {
+            return null;
+        }
+        if (server != null) {
+            ServerPlayer online = server.getPlayerList().getPlayerByName(name);
+            if (online != null) {
+                return online.getUUID();
+            }
+        }
+        try {
+            for (String injected : PlayerRegistry.getInstance().injectedNames()) {
+                if (injected.equalsIgnoreCase(name)) {
+                    return PlayerRegistry.offlineUuid(injected);
+                }
+            }
+        } catch (Exception ignored) {
+            // 注入池不可用时继续查缓存
+        }
+        refreshKnownPlayers(server);
+        return cachedKnownPlayerUuids.get(name.toLowerCase(Locale.ROOT));
+    }
+
+    /** 玩家名候选的 hover：保留“点击填入”提示，再补一行 UUID（不覆盖原信息）。 */
+    public static String playerTooltip(MinecraftServer server, String name) {
+        return playerTooltip(server, name, "玩家");
+    }
+
+    /**
+     * 玩家名候选的 hover，带角色说明。
+     *
+     * @param role 该参数里玩家是什么对象，例如“监控目标”“观看者”“接收者”；为空时用“玩家”
+     */
+    public static String playerTooltip(MinecraftServer server, String name, String role) {
+        UUID uuid = playerUuid(server, name);
+        String label = role == null || role.isBlank() ? "玩家" : role;
+        String base = "点击填入" + label + "：" + name;
+        return uuid == null ? base : base + "\nUUID：" + uuid;
+    }
+
+    /** 在已有 hover 文案后补一行 UUID；不是已知玩家时原样返回。 */
+    private static String appendUuid(MinecraftServer server, String name, String base) {
+        UUID uuid = playerUuid(server, name);
+        return uuid == null ? base : base + "\nUUID：" + uuid;
     }
 
     /** 周目 id → {@code cycleN}，保留传入顺序并去重。 */
@@ -399,14 +464,32 @@ public final class SuggestionProviders {
 
     // ==================== Brigadier 适配 ====================
 
-    /** 在线玩家 */
+    /** 在线玩家（hover 带 UUID） */
     public static SuggestionProvider<CommandSourceStack> playersProvider() {
-        return (ctx, builder) -> CompletionSupport.offer(builder, players(ctx.getSource().getServer()));
+        return playersProvider("玩家");
     }
 
-    /** 在线 + 已知/离线玩家（短 TTL 缓存） */
+    /** 在线玩家，hover 用指定角色说明（如“观看者”“接收者”“监控目标”）。 */
+    public static SuggestionProvider<CommandSourceStack> playersProvider(String role) {
+        return (ctx, builder) -> {
+            MinecraftServer server = ctx.getSource().getServer();
+            return CompletionSupport.offer(builder, players(server),
+                    s -> playerTooltip(server, s, role));
+        };
+    }
+
+    /** 在线 + 已知/离线玩家（短 TTL 缓存；hover 带 UUID） */
     public static SuggestionProvider<CommandSourceStack> knownPlayersProvider() {
-        return (ctx, builder) -> CompletionSupport.offer(builder, knownPlayers(ctx.getSource().getServer()));
+        return knownPlayersProvider("玩家");
+    }
+
+    /** 在线 + 已知/离线玩家，hover 用指定角色说明。 */
+    public static SuggestionProvider<CommandSourceStack> knownPlayersProvider(String role) {
+        return (ctx, builder) -> {
+            MinecraftServer server = ctx.getSource().getServer();
+            return CompletionSupport.offer(builder, knownPlayers(server),
+                    s -> playerTooltip(server, s, role));
+        };
     }
 
     /** {@code cycleN} */
@@ -480,23 +563,26 @@ public final class SuggestionProviders {
     /** fakeplayers：clear / 数量 / 已知玩家名 */
     public static SuggestionProvider<CommandSourceStack> fakePlayersProvider() {
         return (ctx, builder) -> {
+            MinecraftServer server = ctx.getSource().getServer();
             List<String> candidates = merge(FAKE_PLAYER_HINTS,
-                    knownPlayers(ctx.getSource().getServer()));
+                    knownPlayers(server));
             TokenSuggestions token = token(builder.getRemaining(), ',', candidates);
-            return offerToken(builder, token, s -> switch (s) {
+            return offerToken(builder, token, s -> appendUuid(server, s, switch (s) {
                 case "clear" -> "清空注入池";
                 case "1", "3", "5", "10", "20" -> "生成 TestPlayer1.." + s;
                 default -> "以该名字注入测试玩家（可逗号分隔多个）";
-            });
+            }));
         };
     }
 
     /** groups 的名单（逗号分隔） */
     public static SuggestionProvider<CommandSourceStack> playerListProvider() {
         return (ctx, builder) -> {
-            List<String> candidates = knownPlayers(ctx.getSource().getServer());
+            MinecraftServer server = ctx.getSource().getServer();
+            List<String> candidates = knownPlayers(server);
             TokenSuggestions token = token(builder.getRemaining(), ',', candidates);
-            return offerToken(builder, token, s -> "把 " + s + " 加入本次 dry-run 名单");
+            return offerToken(builder, token, s -> appendUuid(server, s,
+                    "把 " + s + " 加入本次 dry-run 名单"));
         };
     }
 

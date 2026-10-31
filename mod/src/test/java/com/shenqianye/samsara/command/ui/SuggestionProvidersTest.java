@@ -2,9 +2,11 @@ package com.shenqianye.samsara.command.ui;
 
 import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
+import com.shenqianye.samsara.season.PlayerRegistry;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -184,5 +186,23 @@ class SuggestionProvidersTest {
         assertNotNull(SuggestionProviders.viewTooltip("cycle3"));
         assertNotNull(SuggestionProviders.viewTooltip("30m"));
         assertNotNull(SuggestionProviders.viewTooltip("2026-10-28T21:16:42"));
+    }
+
+    @Test
+    void playerTooltipKeepsHintAndAppendsUuid() {
+        PlayerRegistry registry = PlayerRegistry.getInstance();
+        registry.inject(List.of("Alice"));
+        try {
+            UUID id = PlayerRegistry.offlineUuid("Alice");
+            assertEquals(id, SuggestionProviders.playerUuid(null, "alice"));
+            String tip = SuggestionProviders.playerTooltip(null, "Alice");
+            assertTrue(tip.contains("Alice"), "hover 必须保留玩家名");
+            assertTrue(tip.contains(id.toString()), "hover 必须补上 UUID");
+            String roleTip = SuggestionProviders.playerTooltip(null, "Alice", "监控目标");
+            assertTrue(roleTip.contains("监控目标"), "hover 必须写清玩家角色");
+            assertTrue(roleTip.contains("Alice"));
+        } finally {
+            registry.clearInjected();
+        }
     }
 }

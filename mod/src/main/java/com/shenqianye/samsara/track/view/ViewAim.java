@@ -10,6 +10,21 @@ package com.shenqianye.samsara.track.view;
  * “圈”只是抽象概念，服务端不渲染 HUD。
  */
 public final class ViewAim {
+    /**
+     * 低刷新率补偿：误差大于死区时，单次至少转过的角度（度）。
+     * <p>
+     * 以 20 tick/s 为基准：刷新变慢时按 {@code dt / 0.05} 放大最小步，
+     * 保证低刷新率下仍有可感知的角速度，而不是每次只挪零点几度。
+     */
+    public static final double MIN_STEP_DEG = 2.0;
+    /** 低刷新率补偿的基准 tick 间隔（秒，20 tick/s）。 */
+    public static final double REFERENCE_TICK_SECONDS = 0.05;
+    /**
+     * 单步量化粒度（度）：把每 tick 的转动量对齐到固定档位，
+     * 让低刷新率下的视角变化更“离散、稳定”，而不是忽大忽小。
+     */
+    public static final double STEP_QUANTUM_DEG = 0.5;
+
     /** 参数；构造时校验，非法值直接抛 {@link IllegalArgumentException}。 */
     public record Params(double deadzone, double edge, double maxDegPerSec, boolean pitch) {
         public Params {
@@ -77,6 +92,15 @@ public final class ViewAim {
                 : clamp01((error - params.deadzone()) / (params.edge() - params.deadzone()));
         double speed = params.maxDegPerSec() * smoothstep(t);
         double step = Math.min(error, speed * dtSeconds);
+        // 低刷新率补偿：刷新越慢（dt 越大），单次至少转过的角度越大，保持可感知的角速度；
+        // 同时不超过配置的最大角速度。再对齐到固定粒度，最后钳到剩余误差，
+        // 绝不越过目标，避免来回抖动（头晕）。
+        double minStep = Math.min(
+                MIN_STEP_DEG * Math.max(1.0, dtSeconds / REFERENCE_TICK_SECONDS),
+                params.maxDegPerSec() * dtSeconds);
+        step = Math.max(step, minStep);
+        step = quantizeUp(step, STEP_QUANTUM_DEG);
+        step = Math.min(error, step);
         double fraction = step / error;
         return new Delta((float) (errorYaw * fraction), (float) (errorPitch * fraction));
     }
@@ -96,6 +120,14 @@ public final class ViewAim {
     public static double smoothstep(double t) {
         double x = clamp01(t);
         return x * x * (3.0 - 2.0 * x);
+    }
+
+    /** 向上对齐到 {@code quantum} 的整数倍（{@code quantum <= 0} 时原样返回）。 */
+    static double quantizeUp(double value, double quantum) {
+        if (quantum <= 0) {
+            return value;
+        }
+        return Math.ceil(value / quantum) * quantum;
     }
 
     private static double clamp01(double v) {

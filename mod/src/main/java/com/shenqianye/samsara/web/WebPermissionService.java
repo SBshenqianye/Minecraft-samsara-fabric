@@ -19,14 +19,36 @@ public final class WebPermissionService implements PermissionWebService {
         out.put("ok", true);
         out.put("path", config.configPath());
         out.put("tree", config.tree().stream().map(WebPermissionService::node).toList());
+        out.put("owners", config.ownerNames());
         out.put("warnings", ConfigManager.getInstance().warnings());
         return out;
     }
 
     @Override
     public Map<String, Object> save(Map<String, Object> body) {
+        if (body.containsKey("owners")) {
+            Object rawOwners = body.get("owners");
+            if (!(rawOwners instanceof List<?> ownerList)) {
+                return fail("owner 名单格式不正确", Map.of("owners", "应为数组"));
+            }
+            List<String> names = new ArrayList<>();
+            for (Object item : ownerList) {
+                names.add(item == null ? "" : String.valueOf(item));
+            }
+            Map<String, String> ownerErrors = PermissionConfig.getInstance().applyOwners(names);
+            if (!ownerErrors.isEmpty()) {
+                return fail("owner 名单校验失败", ownerErrors);
+            }
+        }
         Object raw = body.get("nodes");
         if (!(raw instanceof List<?> list)) {
+            if (body.containsKey("owners")) {
+                Map<String, Object> out = new LinkedHashMap<>();
+                out.put("ok", true);
+                out.put("message", "owner 名单已保存并热重载");
+                out.put("permissions", model());
+                return out;
+            }
             return fail("请求体应为 {\"nodes\":[...]}", Map.of("nodes", "应为数组"));
         }
         List<PermissionConfig.NodeChange> changes = new ArrayList<>();

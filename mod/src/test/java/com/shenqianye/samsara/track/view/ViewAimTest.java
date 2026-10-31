@@ -22,7 +22,8 @@ class ViewAimTest {
         ViewAim.Delta d = ViewAim.step(-75, 0, 0, 64, 0, 10, 64, 0, P, 0.05);
         double step = Math.hypot(d.yaw(), d.pitch());
         // t=(15-6)/(24-6)=0.5, smoothstep=0.5, v=45°/s, dt=0.05 → 2.25°
-        assertEquals(2.25, step, 1e-3);
+        // 低刷新离散化后向上对齐到 0.5° → 2.5°
+        assertEquals(2.5, step, 1e-3);
         assertTrue(step < 15, "不能一次转到位");
     }
 
@@ -34,13 +35,27 @@ class ViewAimTest {
     }
 
     @Test
+    void lowRefreshUsesDiscreteMinimumStep() {
+        // 20 tick/s：连续步长只有约 0.59°；低刷新补偿后至少 MIN_STEP_DEG
+        ViewAim.Delta d = ViewAim.step(-80, 0, 0, 64, 0, 10, 64, 0, P, 0.05);
+        double step = Math.hypot(d.yaw(), d.pitch());
+        assertEquals(ViewAim.MIN_STEP_DEG, step, 1e-6);
+        assertEquals(0.0, step % ViewAim.STEP_QUANTUM_DEG, 1e-9, "单步应对齐到固定粒度");
+
+        // 5 tick/s（dt=0.2）：最小步按 dt 放大到 8°，不会因为刷新低而变成碎步
+        ViewAim.Delta slow = ViewAim.step(-80, 0, 0, 64, 0, 10, 64, 0, P, 0.2);
+        assertEquals(8.0, Math.hypot(slow.yaw(), slow.pitch()), 1e-6);
+    }
+
+    @Test
     void wrapsAcrossNorth() {
         assertEquals(-2, ViewAim.wrapDegrees(358), 1e-9);
         assertEquals(2, ViewAim.wrapDegrees(-358), 1e-9);
         // 目标在正北：期望 yaw=180；从 170 出发误差 10°，不能走 -350° 的长边
         ViewAim.Delta d = ViewAim.step(170, 0, 0, 64, 0, 0, 64, -10, P, 0.05);
         assertTrue(d.yaw() > 0, "应朝 180° 的短边转");
-        assertTrue(Math.hypot(d.yaw(), d.pitch()) < 2.0, "只应转一小步");
+        assertEquals(ViewAim.MIN_STEP_DEG, Math.hypot(d.yaw(), d.pitch()), 1e-3,
+                "低刷新补偿后只应转一个最小步，不能甩到目标");
     }
 
     @Test

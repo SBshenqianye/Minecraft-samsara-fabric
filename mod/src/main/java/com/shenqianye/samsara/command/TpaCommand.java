@@ -91,7 +91,7 @@ public final class TpaCommand {
                 .requires(src -> CommandConfig.getInstance().isTpaEnabled()
                         && PermissionChecker.check(src, literal))
                 .then(Commands.argument("player", StringArgumentType.word())
-                        .suggests(SuggestionProviders.playersProvider())
+                        .suggests(SuggestionProviders.playersProvider("传送请求接收者"))
                         .executes(ctx -> request(ctx, here)));
     }
 

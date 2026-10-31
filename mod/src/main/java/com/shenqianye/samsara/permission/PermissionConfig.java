@@ -132,6 +132,38 @@ public class PermissionConfig {
         return name + " 已是 owner";
     }
 
+    /** Web 权限页的 owner 名单整体保存；全部校验通过才落盘。 */
+    public synchronized Map<String, String> applyOwners(List<String> names) {
+        Map<String, String> errors = new LinkedHashMap<>();
+        Set<String> next = ConcurrentHashMap.newKeySet();
+        if (names != null) {
+            for (int i = 0; i < names.size(); i++) {
+                String name = names.get(i) == null ? "" : names.get(i).trim();
+                if (name.isEmpty()) {
+                    continue;
+                }
+                if (name.length() > 64) {
+                    errors.put("owners[" + i + "]", "玩家名不能超过 64 个字符");
+                    continue;
+                }
+                next.add(name.toLowerCase());
+            }
+        }
+        if (!errors.isEmpty()) {
+            return errors;
+        }
+        ownerNames.clear();
+        ownerNames.addAll(next);
+        save();
+        return Map.of();
+    }
+
+    public List<String> ownerNames() {
+        List<String> out = new ArrayList<>(ownerNames);
+        out.sort(String::compareTo);
+        return out;
+    }
+
     public String removeOwner(String name) {
         if (ownerNames.remove(name.toLowerCase())) {
             save();

@@ -241,7 +241,7 @@ public class DebugCommand {
                         .then(Commands.literal("track")
                                 .then(Commands.literal("replay")
                                         .then(Commands.argument("player", StringArgumentType.word())
-                                                .suggests(SuggestionProviders.knownPlayersProvider())
+                                                .suggests(SuggestionProviders.knownPlayersProvider("监控目标"))
                                                 .then(Commands.argument("start", StringArgumentType.word())
                                                         .executes(ctx -> reply(ctx.getSource(),
                                                                 debugTrackReplay(ctx, 1.0)))
@@ -259,14 +259,14 @@ public class DebugCommand {
                                         .executes(ctx -> reply(ctx.getSource(),
                                                 com.shenqianye.samsara.track.TrackReplay.stop()))
                                         .then(Commands.argument("player", StringArgumentType.word())
-                                                .suggests(SuggestionProviders.knownPlayersProvider())
+                                                .suggests(SuggestionProviders.knownPlayersProvider("监控目标"))
                                                 .executes(ctx -> reply(ctx.getSource(),
                                                         com.shenqianye.samsara.track.TrackReplay.stop(
                                                                 StringArgumentType.getString(ctx, "player"))))))
                                 .then(Commands.literal("status")
                                         .executes(ctx -> reply(ctx.getSource(), debugTrackStatus(ctx.getSource(), null)))
                                         .then(Commands.argument("player", StringArgumentType.word())
-                                                .suggests(SuggestionProviders.knownPlayersProvider())
+                                                .suggests(SuggestionProviders.knownPlayersProvider("监控目标"))
                                                 .executes(ctx -> reply(ctx.getSource(), debugTrackStatus(ctx.getSource(),
                                                         StringArgumentType.getString(ctx, "player"))))))
                                 .then(TrackViewCommand.debugViewNode())
@@ -570,7 +570,7 @@ public class DebugCommand {
                                 .suggests(SuggestionProviders.choicesWithHint("add=加入 owner 名单；remove=移出",
                                         "add", "remove"))
                                 .then(Commands.argument("name", StringArgumentType.word())
-                                        .suggests(SuggestionProviders.knownPlayersProvider())
+                                        .suggests(SuggestionProviders.knownPlayersProvider("账号"))
                                         .executes(ctx -> reply(ctx.getSource(),
                                                 permOwner(StringArgumentType.getString(ctx, "sub"),
                                                         StringArgumentType.getString(ctx, "name")))))));
@@ -719,6 +719,10 @@ public class DebugCommand {
      */
     private static int fakePlayers(CommandContext<CommandSourceStack> ctx) {
         String arg = StringArgumentType.getString(ctx, "names").trim();
+        // 聊天栏补全点击会补一个逗号（列表参数），末尾逗号不代表空名字，直接忽略。
+        while (arg.endsWith(",") || arg.endsWith("，")) {
+            arg = arg.substring(0, arg.length() - 1).trim();
+        }
         List<String> names = new ArrayList<>();
         if ("clear".equalsIgnoreCase(arg)) {
             PlayerRegistry.getInstance().clearInjected();

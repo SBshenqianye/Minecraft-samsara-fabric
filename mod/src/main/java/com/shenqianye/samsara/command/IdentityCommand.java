@@ -94,7 +94,7 @@ public final class IdentityCommand {
                                         player(ctx.getSource()) == null ? null
                                                 : player(ctx.getSource()).getUUID())))
                         .then(Commands.argument("target", StringArgumentType.word())
-                                .suggests(SuggestionProviders.knownPlayersProvider())
+                                .suggests(SuggestionProviders.knownPlayersProvider("账号"))
                                 .executes(ctx -> {
                                     UUID uuid = resolve(ctx.getSource(),
                                             StringArgumentType.getString(ctx, "target"));

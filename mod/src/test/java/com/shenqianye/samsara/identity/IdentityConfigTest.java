@@ -82,6 +82,24 @@ class IdentityConfigTest {
     }
 
     @Test
+    void dataUuidMayBeSharedByMultipleGroups() {
+        UUID shared = UUID.randomUUID();
+        IdentityConfig config = new IdentityConfig();
+        config.groups.add(new IdentityConfig.Group("A", shared, null, null, ""));
+        config.groups.add(new IdentityConfig.Group("B", shared, null, null, ""));
+        assertTrue(IdentityValidator.validate(config).isEmpty());
+    }
+
+    @Test
+    void dataMayBeSharedWhenItIsTheOtherGroupsOwnAccount() {
+        UUID self = UUID.randomUUID();
+        IdentityConfig config = new IdentityConfig();
+        config.groups.add(new IdentityConfig.Group("A", self, self, null, ""));
+        config.groups.add(new IdentityConfig.Group("B", self, null, null, ""));
+        assertTrue(IdentityValidator.validate(config).isEmpty());
+    }
+
+    @Test
     void groupNamesAreUniqueIgnoringCase() {
         IdentityConfig config = new IdentityConfig();
         config.groups.add(new IdentityConfig.Group("Steve", UUID.randomUUID(), null, null, ""));

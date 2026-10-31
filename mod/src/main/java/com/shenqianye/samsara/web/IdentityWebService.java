@@ -19,4 +19,7 @@ public interface IdentityWebService {
     Map<String, Object> audit();
 
     Map<String, Object> generate();
+
+    /** 名称/UUID 解析：名称 → 正版 + 离线 UUID；UUID → 名称（本地优先，必要时问 Mojang）。 */
+    Map<String, Object> resolve(Map<String, Object> body);
 }

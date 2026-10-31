@@ -258,6 +258,10 @@ public final class ConfigManager {
                 // 输出模板有独立变量元数据，走 /api/output，不在扁平配置表单里重复编辑
                 continue;
             }
+            if (ConfigSchema.PERMISSIONS.equals(id)) {
+                // 权限映射与关闭列表由权限树统一维护；配置文件不再在配置页重复出现
+                continue;
+            }
             Map<String, Object> values = cache.getOrDefault(id, Map.of());
             List<Map<String, Object>> entries = new ArrayList<>();
             for (ConfigEntry entry : ConfigSchema.entries(id)) {

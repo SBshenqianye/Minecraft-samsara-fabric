@@ -1267,6 +1267,70 @@ public final class ViewManager {
     }
 
     /**
+     * 重新发送聊天栏控制条（按钮）。
+     *
+     * <p>控制条只在会话开始时发送一次；聊天记录被刷掉后玩家就找不回按钮了。
+     * 该入口只重发控制条，不改变会话状态，也不重置进度。
+     *
+     * <p>{@code target} 是<b>接收者（观看者）</b>，不是被回放的监控目标。
+     * 省略时：玩家发给自己，控制台默认广播（控制台没有聊天栏可显示）。
+     */
+    public synchronized String showControls(MinecraftServer server, ServerPlayer actor,
+                                            String target, boolean allowOthers) {
+        if (target == null || target.isBlank()) {
+            if (actor == null) {
+                // 控制台无法显示按钮，默认广播给所有观看者
+                return broadcastControls(server, null, true);
+            }
+            ViewSession own = sessions.get(actor.getUUID());
+            if (own == null || own.closed()) {
+                return "你当前没有进行中的回看";
+            }
+            sendControls(own, actor);
+            return "已重新发送回看控制条（接收者：你自己）";
+        }
+        ViewSession s = findSession(server, actor, target);
+        if (s == null) {
+            return "没有该接收者的进行中回看: " + target;
+        }
+        if (actor != null && !actor.getUUID().equals(s.viewer) && !allowOthers) {
+            return "重发他人回看控制条需要管理员权限；广播请用 /samsara track view ui broadcast";
+        }
+        ServerPlayer viewer = server == null ? null : server.getPlayerList().getPlayer(s.viewer);
+        if (viewer == null) {
+            return "接收者不在线: " + s.viewerName;
+        }
+        sendControls(s, viewer);
+        return "已向接收者 " + s.viewerName + " 重新发送回看控制条";
+    }
+
+    /**
+     * 把控制条广播给所有当前观看者。
+     *
+     * <p>只有管理员（或控制台）可以广播；普通玩家请使用 {@link #showControls} 发给自己。
+     */
+    public synchronized String broadcastControls(MinecraftServer server, ServerPlayer actor,
+                                                 boolean allowOthers) {
+        if (actor != null && !allowOthers) {
+            return "广播回看控制条需要管理员权限";
+        }
+        int sent = 0;
+        for (ViewSession s : sessions.values()) {
+            if (s.closed()) {
+                continue;
+            }
+            ServerPlayer viewer = server == null ? null : server.getPlayerList().getPlayer(s.viewer);
+            if (viewer != null) {
+                sendControls(s, viewer);
+                sent++;
+            }
+        }
+        return sent == 0
+                ? "当前没有进行中的回看"
+                : "已向 " + sent + " 个观看者广播回看控制条";
+    }
+
+    /**
      * 可回看时段列表（可点击）：每个时段用 {@link ClickEvent.SuggestCommand} 填入回看命令，
      * 避免玩家手打长串时间戳/参数。
      */
