@@ -34,6 +34,7 @@ public class WorldStackWebService {
         out.put("jobs", model.jobs);
         out.put("lastReport", model.lastReport);
         out.put("files", model.files);
+        out.put("backupKeep", model.backupKeep);
         out.put("totalBytes", model.totalBytes);
         out.put("restartRequired", model.restartRequired);
         return out;

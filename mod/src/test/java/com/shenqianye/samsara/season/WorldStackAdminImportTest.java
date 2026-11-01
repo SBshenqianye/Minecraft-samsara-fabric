@@ -311,6 +311,31 @@ class WorldStackAdminImportTest {
     }
 
     @Test
+    void pruneBackupsKeepsNewestAndNeverTouchesArchive() throws Exception {
+        Path world = world();
+        Path backup = server.resolve("samsara/world-stack-backup");
+        for (int i = 0; i < 4; i++) {
+            Path dir = backup.resolve("promote-prom-" + i);
+            Files.createDirectories(dir);
+            Files.writeString(dir.resolve("marker.txt"), "x", StandardCharsets.UTF_8);
+            Files.setLastModifiedTime(dir,
+                    java.nio.file.attribute.FileTime.fromMillis(1_700_000_000_000L + i * 1000L));
+        }
+        Path archive = server.resolve("samsara/world-stack-archive/stack_0-arc-1");
+        Files.createDirectories(archive);
+        Files.writeString(archive.resolve("marker.txt"), "keep", StandardCharsets.UTF_8);
+
+        int removed = WorldStackAdmin.pruneBackups(world, 2);
+
+        assertEquals(2, removed);
+        try (var stream = Files.list(backup)) {
+            assertEquals(2, stream.count(), "只保留最新 2 份导入/提升备份");
+        }
+        assertTrue(Files.isRegularFile(archive.resolve("marker.txt")),
+                "归档是用户数据，不能被自动清理");
+    }
+
+    @Test
     void archiveQueueIsRejectedForTop() throws Exception {
         Path world = world();
         WorldStackAdmin.Preview preview = WorldStackAdmin.previewArchive(world, "world");
