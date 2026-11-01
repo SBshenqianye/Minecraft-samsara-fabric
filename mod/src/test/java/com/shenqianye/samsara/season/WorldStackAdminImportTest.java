@@ -3,6 +3,10 @@ package com.shenqianye.samsara.season;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.NbtAccounter;
+import net.minecraft.nbt.NbtIo;
+
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -288,6 +292,11 @@ class WorldStackAdminImportTest {
         WorldStackAdmin.ScheduleResult scheduled =
                 WorldStackAdmin.scheduleArchive(world, "stack_0");
         assertTrue(scheduled.ok, String.valueOf(scheduled.preview.errors));
+        assertTrue(scheduled.requiresRestart);
+        assertNotNull(scheduled.job);
+        assertTrue(scheduled.job.requiresRestart, "归档任务同样需要重启，任务卡应保持一致");
+        assertTrue(scheduled.preview.backupPath.contains("stack_0-<job>"),
+                "预览备份路径应显示占位符而不是真实文件名：" + scheduled.preview.backupPath);
         WorldStackAdmin.consumePending(world);
 
         assertNull(StackManifest.load(world).byId("stack_0"));
@@ -307,6 +316,89 @@ class WorldStackAdminImportTest {
         WorldStackAdmin.Preview preview = WorldStackAdmin.previewArchive(world, "world");
         assertFalse(preview.ok);
         assertTrue(preview.errors.stream().anyMatch(error -> error.contains("栈顶")));
+    }
+
+    @Test
+    void previewRejectsSourceWithoutWorldGenSettings() throws Exception {
+        Path world = world();
+        Path source = sourceWorld("no-gen");
+        Files.delete(source.resolve("data/minecraft/world_gen_settings.dat"));
+
+        WorldStackAdmin.Preview preview = WorldStackAdmin.previewImport(world, server,
+                List.of(), source.toString(), "bottom", "", false);
+        assertFalse(preview.ok);
+        assertFalse(preview.source.hasGenSettings);
+        assertTrue(preview.errors.stream().anyMatch(error -> error.contains("world_gen_settings")),
+                String.valueOf(preview.errors));
+    }
+
+    @Test
+    void previewRejectsWorldFromNewerVersion() throws Exception {
+        Path world = world();
+        Path source = sourceWorld("newer-version");
+        writeLevelDat(source.resolve("level.dat"), 9999);
+        writeLevelDat(world.resolve("level.dat"), 100);
+
+        WorldStackAdmin.Preview preview = WorldStackAdmin.previewImport(world, server,
+                List.of(), source.toString(), "bottom", "", false);
+        assertFalse(preview.ok);
+        assertTrue(preview.errors.stream().anyMatch(error -> error.contains("DataVersion")),
+                String.valueOf(preview.errors));
+    }
+
+    @Test
+    void previewRejectsSnapshotWorldOnReleaseServer() throws Exception {
+        Path world = world();
+        Path source = sourceWorld("snapshot-world");
+        writeLevelDat(source.resolve("level.dat"), 5000, true, "26w14a");
+        writeLevelDat(world.resolve("level.dat"), 5023, false, "26.3");
+
+        WorldStackAdmin.Preview preview = WorldStackAdmin.previewImport(world, server,
+                List.of(), source.toString(), "top", "", false);
+        assertFalse(preview.ok);
+        assertTrue(preview.errors.stream().anyMatch(error -> error.contains("快照")),
+                String.valueOf(preview.errors));
+    }
+
+    private static void writeLevelDat(Path file, int dataVersion) throws Exception {
+        writeLevelDat(file, dataVersion, false, "26.3");
+    }
+
+    private static void writeLevelDat(Path file, int dataVersion, boolean snapshot,
+                                      String name) throws Exception {
+        CompoundTag root = new CompoundTag();
+        CompoundTag data = new CompoundTag();
+        data.putInt("DataVersion", dataVersion);
+        CompoundTag version = new CompoundTag();
+        version.putBoolean("Snapshot", snapshot);
+        version.putString("Name", name);
+        data.put("Version", version);
+        root.put("Data", data);
+        NbtIo.writeCompressed(root, file);
+    }
+
+    @Test
+    void importAbortsAndKeepsWorldWhenGenSettingsMissingAtStartup() throws Exception {
+        Path world = world();
+        Path source = sourceWorld("gen-vanishes");
+        WorldStackAdmin.ScheduleResult scheduled = WorldStackAdmin.scheduleImport(world, server,
+                List.of(), source.toString(), "top", "", false);
+        assertTrue(scheduled.ok, String.valueOf(scheduled.preview.errors));
+
+        // 排队后源目录被移动/清理：启动时必须中止，而不是留下无法启动的世界
+        Files.delete(source.resolve("data/minecraft/world_gen_settings.dat"));
+        WorldStackAdmin.consumePending(world);
+
+        StackManifest manifest = StackManifest.load(world);
+        assertEquals(1, manifest.layers.size());
+        assertNotNull(manifest.byId("world"));
+        assertTrue(Files.isDirectory(world.resolve("dimensions/minecraft")),
+                "中止后原 world 维度必须保留");
+        assertFalse(Files.exists(world.resolve("samsara/pending-import.json")));
+        WorldStackAdmin.Model model = WorldStackAdmin.model(world, server, List.of());
+        assertNotNull(model.lastReport);
+        assertEquals("failed", model.lastReport.status);
+        assertTrue(model.lastReport.message.contains("world_gen_settings"));
     }
 
     @Test
