@@ -155,6 +155,7 @@ public final class ServerConfigFiles {
         switch (spec.kind()) {
             case PROPERTIES -> {
                 int lineNo = 0;
+                boolean hasKey = false;
                 for (String line : body.split("\n", -1)) {
                     lineNo++;
                     String trimmed = line.trim();
@@ -167,6 +168,11 @@ public final class ServerConfigFiles {
                                 + " 行不是 key=value：" + trimmed;
                         return text;
                     }
+                    hasKey = true;
+                }
+                if (!hasKey) {
+                    result.error = "server.properties 不能为空";
+                    return text;
                 }
                 return body.endsWith("\n") ? body : body + "\n";
             }
