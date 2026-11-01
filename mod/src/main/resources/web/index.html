@@ -15,7 +15,7 @@
       </div>
       <div class="brand-text">
         <h1>samsara</h1>
-        <p>服务器配置控制台 <span id="app-version" class="version-pill">v0.22.1</span></p>
+        <p>服务器配置控制台 <span id="app-version" class="version-pill">v0.22.2</span></p>
       </div>
     </div>
 
@@ -32,6 +32,12 @@
       </button>
       <button class="tab" data-panel="panel-claim-range">
         圈地范围 <span class="tab-count" id="claim-range-count">0</span>
+      </button>
+      <button class="tab" data-panel="panel-map">
+        地图 <span class="tab-count" id="map-count">0</span>
+      </button>
+      <button class="tab" data-panel="panel-world-stack">
+        世界栈 <span class="tab-count" id="world-stack-count">0</span>
       </button>
       <button class="tab" data-panel="panel-output">
         输出格式 <span class="tab-count" id="output-count">0</span>
@@ -123,6 +129,160 @@
           </div>
           <div id="claim-range-message" class="message" role="status"></div>
           <div id="claim-range-files" class="config-files"></div>
+        </section>
+      </div>
+
+      <div id="panel-map" class="panel-stack" hidden>
+        <section class="panel map-panel">
+          <div class="panel-head">
+            <div>
+              <h2>地图</h2>
+              <p class="panel-sub">按 v0.24 世界栈扫描各栈层的 region 文件生成地表底图，并叠加该层的圈地保护区块、旗帜与出生点历史。只读展示，不加载区块、不写世界数据；地形图缓存可安全删除。</p>
+              <p class="panel-sub">栈顶是 <code>world</code>；旧栈层按从栈底往上数（第一层、第二层…），目录在 dimensions/samsara/stack_<span class="muted">n</span>；出生点标记在末地不显示，下界按主世界坐标 /8 推算。</p>
+            </div>
+            <div class="panel-tools">
+              <label class="inline-field">
+                <span>栈层</span>
+                <select id="map-stack"></select>
+              </label>
+              <label class="inline-field">
+                <span>维度</span>
+                <select id="map-dimension"></select>
+              </label>
+              <label class="check-line">
+                <input id="map-show-claims" type="checkbox" checked>
+                <span>显示圈地</span>
+              </label>
+              <label class="check-line">
+                <input id="map-show-spawns" type="checkbox" checked>
+                <span>显示出生点</span>
+              </label>
+              <label class="check-line">
+                <input id="map-shading" type="checkbox" checked>
+                <span>高度明暗</span>
+              </label>
+              <button id="map-fit" class="ghost" type="button">定位全部圈地</button>
+              <button id="map-zoom-out" class="ghost map-zoom-button" type="button" title="缩小">−</button>
+              <span id="map-zoom-label" class="map-zoom-label">4 格/像素</span>
+              <button id="map-zoom-in" class="ghost map-zoom-button" type="button" title="放大">＋</button>
+              <button id="map-reload" class="ghost" type="button">重新读取</button>
+            </div>
+          </div>
+          <div id="map-message" class="message" role="status"></div>
+          <div id="map-stats" class="stat-row map-stats"></div>
+          <div id="map-stage-anchor" class="map-stage">
+            <canvas id="map-canvas" class="map-canvas" aria-label="地形与圈地地图"></canvas>
+            <div id="map-tooltip" class="map-tooltip" hidden></div>
+            <div id="map-dim-anchors" class="map-dim-anchors" aria-hidden="true"></div>
+            <div id="map-selection" class="map-selection map-hud"></div>
+          </div>
+          <div class="map-footer">
+            <div class="map-legend">
+              <span><i class="map-swatch claim"></i>半透明青色 = 保护区块</span>
+              <span><i class="map-swatch banner"></i>圆点 = 旗帜（颜色取图案色）</span>
+              <span><i class="map-swatch spawn"></i>菱形 = 出生点历史（独立颜色）</span>
+              <span>拖动平移 · 滚轮缩放 · 点击旗帜/出生点看详情</span>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div id="panel-world-stack" class="panel-stack" hidden>
+        <section class="panel" id="world-stack-overview">
+          <div class="panel-head">
+            <div>
+              <h2>世界栈</h2>
+              <p class="panel-sub">导入服务器本地 world 目录；导入/归档在服务器重启时执行，源目录只读保持不变。排序只改逻辑顺序，不重命名 stack_<span class="muted">n</span> 目录。</p>
+            </div>
+            <div class="panel-tools">
+              <button id="world-stack-refresh" class="ghost" type="button">重新读取</button>
+            </div>
+          </div>
+          <div id="world-stack-message" class="message" role="status"></div>
+          <div id="world-stack-stats" class="stat-row"></div>
+        </section>
+
+        <section class="panel" id="world-stack-layers">
+          <div class="panel-head">
+            <div>
+              <h2>栈层</h2>
+              <p class="panel-sub">world 固定是栈顶；旧栈层是 world 内部的自定义维度，按从栈底往上数（stack_0 是最下层）。归档只在这里发起，先备份再移除。</p>
+            </div>
+          </div>
+          <div id="world-stack-list" class="world-stack-list"></div>
+        </section>
+
+        <section class="panel" id="world-stack-order-panel">
+          <div class="panel-head">
+            <div>
+              <h2>栈位排序</h2>
+              <p class="panel-sub">拖动或上下移动，保存前先看预览。只调整栈顶以下时立即生效；把旧栈层拖到栈顶会交换 world 与该层数据，需重启并在失败时回滚。</p>
+            </div>
+            <div class="panel-tools world-stack-order-actions">
+              <span id="world-stack-order-preview" class="muted small"></span>
+              <button id="world-stack-order-save" class="primary" type="button" disabled>保存排序</button>
+            </div>
+          </div>
+          <div id="world-stack-order" class="world-stack-order"></div>
+        </section>
+
+        <section class="panel" id="world-stack-import-panel">
+          <div class="panel-head">
+            <div>
+              <h2>导入本地世界</h2>
+              <p class="panel-sub">只接受服务器本地路径；允许范围 = 服务器根目录 + <code>web.yml</code> 的 <code>importRoots</code>。第一版只复制，不移动/删除源目录。</p>
+            </div>
+          </div>
+          <div class="world-stack-form">
+            <label class="inline-field world-stack-path">
+              <span>源目录</span>
+              <input id="world-stack-import-path" type="text" placeholder="例如 C:\Games\...\saves\world 或服务器根下的目录">
+            </label>
+            <label class="inline-field">
+              <span>位置</span>
+              <select id="world-stack-import-position">
+                <option value="bottom">栈底</option>
+                <option value="between">某两层之间</option>
+                <option value="top">栈顶（替换当前 world）</option>
+              </select>
+            </label>
+            <label class="inline-field" id="world-stack-after-wrap" hidden>
+              <span>插入位置</span>
+              <select id="world-stack-import-after"></select>
+            </label>
+            <button id="world-stack-import-preview-button" class="ghost" type="button">预览导入</button>
+          </div>
+          <div id="world-stack-import-preview" class="world-stack-preview" hidden></div>
+        </section>
+
+        <section class="panel" id="world-stack-archive-panel">
+          <div class="panel-head">
+            <div>
+              <h2>归档 / 删除栈层</h2>
+              <p class="panel-sub">危险操作：从卡片上的“归档…”开始，先预览；确认后排队，重启时把维度和元数据移到 stack-archive 备份，不直接删除。</p>
+            </div>
+          </div>
+          <div id="world-stack-archive-preview" class="world-stack-preview" hidden></div>
+        </section>
+
+        <section class="panel" id="world-stack-files-panel">
+          <div class="panel-head">
+            <div>
+              <h2>文件位置</h2>
+              <p class="panel-sub">动态列出本模组创建/使用的目录。服务器级备份不随存档移动；缓存目录可安全删除；点击行或 ⧉ 可复制绝对路径。</p>
+            </div>
+          </div>
+          <div id="world-stack-files" class="world-stack-files"></div>
+        </section>
+
+        <section class="panel" id="world-stack-jobs-panel">
+          <div class="panel-head">
+            <div>
+              <h2>任务与结果</h2>
+              <p class="panel-sub">导入/归档是重启时执行的任务；这里显示排队、完成、失败与回滚说明。</p>
+            </div>
+          </div>
+          <div id="world-stack-jobs" class="world-stack-jobs"></div>
         </section>
       </div>
 
@@ -369,7 +529,10 @@
 
   <script src="/structured.js"></script>
   <script src="/particles.js"></script>
+  <script src="/banners.js"></script>
   <script src="/app.js"></script>
+  <script src="/map.js"></script>
+  <script src="/world-stack.js"></script>
   <script src="/output.js"></script>
   <script src="/identity.js"></script>
   <script src="/permissions.js"></script>

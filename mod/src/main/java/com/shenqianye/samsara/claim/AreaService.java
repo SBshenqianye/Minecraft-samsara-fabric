@@ -337,10 +337,26 @@ public class AreaService {
     }
 
     private void loadFile(Path target) {
+        for (ClaimNode node : readClaims(target)) {
+            dimNodes(node.getDimension()).put(node.getLocation(), node);
+        }
+    }
+
+    /**
+     * 只读解析一个 {@code claims.json}，不修改内存中的圈地节点。
+     *
+     * <p>Web 地图按栈层读取时使用：栈层之间不能共享 AreaService 的运行时缓存，
+     * 必须按各自的 data root 解析。解析失败返回空表并记 WARN，不影响服务端。
+     */
+    public static List<ClaimNode> readClaims(Path target) {
+        List<ClaimNode> out = new ArrayList<>();
+        if (target == null || !Files.exists(target)) {
+            return out;
+        }
         try {
             ClaimsData data = GSON.fromJson(
                     Files.readString(target, StandardCharsets.UTF_8), ClaimsData.class);
-            if (data == null || data.nodes == null) return;
+            if (data == null || data.nodes == null) return out;
             for (ClaimsData.NodeEntry ne : data.nodes) {
                 ResourceKey<Level> dim = Level.OVERWORLD;
                 if (ne.dimension != null && !ne.dimension.isEmpty()) {
@@ -385,11 +401,12 @@ public class AreaService {
                         node.addBanner(be.blockX, be.blockY, be.blockZ, beFacing, bePatterns);
                     }
                 }
-                dimNodes(dim).put(node.getLocation(), node);
+                out.add(node);
             }
         } catch (Exception e) {
             Samsara.LOGGER.warn("[周目管理 samsara] {} 解析失败: {}", target, e.getMessage());
         }
+        return out;
     }
     public String configPath() {
         return file.toAbsolutePath().normalize().toString();

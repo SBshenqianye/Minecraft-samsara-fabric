@@ -25,9 +25,17 @@ class WebSecurityTest {
     void staticPathsAreWhitelisted() {
         assertEquals("/web/index.html", WebSecurity.staticResource("/"));
         assertEquals("/web/app.js", WebSecurity.staticResource("/app.js"));
+        assertEquals("/web/banners.js", WebSecurity.staticResource("/banners.js"));
+        assertEquals("/web/map.js", WebSecurity.staticResource("/map.js"));
+        assertEquals("/web/world-stack.js", WebSecurity.staticResource("/world-stack.js"));
         assertNull(WebSecurity.staticResource("/../config/storage.yml"));
         assertNull(WebSecurity.staticResource("/api/config"));
         assertTrue(WebSecurity.safeApiPath("/api/status"));
+        assertTrue(WebSecurity.safeApiPath("/api/map"));
+        assertTrue(WebSecurity.safeApiPath("/api/map/tile"));
+        assertTrue(WebSecurity.safeApiPath("/api/world-stack"));
+        assertTrue(WebSecurity.safeApiPath("/api/world-stack/import/preview"));
+        assertTrue(WebSecurity.safeApiPath("/api/world-stack/jobs/imp-1"));
         assertFalse(WebSecurity.safeApiPath("/api/../config"));
     }
 

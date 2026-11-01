@@ -110,6 +110,8 @@ public final class StackBootstrap {
         StackLegacyMigration.migrateIfNeeded();
         // 迁移可能把 server.properties 的 level-name 从 world_sN 改回 world，必须重新解析
         Path worldDir = StackPaths.worldDir();
+        // Web 排队的导入/归档/排序：必须在世界打开前消费。
+        WorldStackAdmin.consumePending(worldDir);
         Path file = pendingFile(worldDir);
         if (!Files.exists(file)) {
             return;

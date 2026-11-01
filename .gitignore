@@ -1,13 +1,14 @@
 # Gradle
 .gradle/
 .gradle-home/
+.gradle-native-fix/
 build/
 *.class
 
 # Minecraft server
 run/
-test-server/
-test-server-stack/
+test-server*/
+mods-old-*/
 server.properties
 ops.json
 whitelist.json

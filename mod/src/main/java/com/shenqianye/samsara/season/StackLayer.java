@@ -29,6 +29,11 @@ public final class StackLayer {
     public int spawnY = 64;
     public int spawnZ;
     public boolean top;
+    /** initial | new-world | imported | legacy；旧清单为空时按栈层显示。 */
+    public String source = "";
+    /** 导入来源（仅 source=imported 时写入，便于审计；不参与运行）。 */
+    public String importedFrom = "";
+    public long importedAt;
 
     public StackLayer copy() {
         StackLayer l = new StackLayer();
@@ -45,6 +50,9 @@ public final class StackLayer {
         l.spawnY = spawnY;
         l.spawnZ = spawnZ;
         l.top = top;
+        l.source = source;
+        l.importedFrom = importedFrom;
+        l.importedAt = importedAt;
         return l;
     }
 
@@ -96,6 +104,12 @@ public final class StackLayer {
         }
         if (generatorSettings == null) {
             generatorSettings = "";
+        }
+        if (source == null) {
+            source = "";
+        }
+        if (importedFrom == null) {
+            importedFrom = "";
         }
         if (worldId == null || worldId.isBlank()) {
             worldId = UUID.nameUUIDFromBytes(("samsara:" + id).getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString();
