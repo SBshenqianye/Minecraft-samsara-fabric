@@ -110,6 +110,9 @@ public final class StackBootstrap {
         StackLegacyMigration.migrateIfNeeded();
         // 迁移可能把 server.properties 的 level-name 从 world_sN 改回 world，必须重新解析
         Path worldDir = StackPaths.worldDir();
+        // 本体存档备份/恢复：必须在世界打开前执行；恢复会替换 world。
+        // 先于世界栈 pending 消费，便于检测“恢复 + 导入/归档”冲突并拒绝恢复。
+        com.shenqianye.samsara.server.ServerBackup.prepare();
         // Web 排队的导入/归档/排序：必须在世界打开前消费。
         WorldStackAdmin.consumePending(worldDir);
         Path file = pendingFile(worldDir);

@@ -3,6 +3,7 @@ package com.shenqianye.samsara.web;
 import com.shenqianye.samsara.Samsara;
 import com.shenqianye.samsara.config.ConfigManager;
 import com.shenqianye.samsara.config.ConfigSchema;
+import net.minecraft.server.MinecraftServer;
 
 import java.security.SecureRandom;
 import java.util.HexFormat;
@@ -16,7 +17,7 @@ public final class WebLifecycle {
     private WebLifecycle() {
     }
 
-    public static synchronized void start() {
+    public static synchronized void start(MinecraftServer minecraftServer) {
         if (server != null) {
             return;
         }
@@ -38,7 +39,8 @@ public final class WebLifecycle {
         LocalWebServer candidate = new LocalWebServer(new WebConfigService(),
                 new WebIdentityService(), new WebOutputService(),
                 new WebPermissionService(), new WebMapService(),
-                new WorldStackWebService(), token, port);
+                new WorldStackWebService(), new ServerWebService(minecraftServer),
+                token, port);
         if (!candidate.start()) {
             return; // 端口占用：WARN 已记录，不阻塞服务器
         }

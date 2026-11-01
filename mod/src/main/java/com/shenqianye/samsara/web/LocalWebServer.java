@@ -18,6 +18,8 @@ import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -45,6 +47,7 @@ public final class LocalWebServer {
     private final PermissionWebService permissionService;
     private final WebMapService mapService;
     private final WorldStackWebService worldStackService;
+    private final ServerWebService serverService;
     private final String token;
     private final int port;
     private HttpServer server;
@@ -81,12 +84,24 @@ public final class LocalWebServer {
                           WebMapService mapService,
                           WorldStackWebService worldStackService,
                           String token, int port) {
+        this(service, identityService, outputService, permissionService, mapService,
+                worldStackService, null, token, port);
+    }
+
+    public LocalWebServer(ConfigService service, IdentityWebService identityService,
+                          OutputWebService outputService,
+                          PermissionWebService permissionService,
+                          WebMapService mapService,
+                          WorldStackWebService worldStackService,
+                          ServerWebService serverService,
+                          String token, int port) {
         this.service = service;
         this.identityService = identityService;
         this.outputService = outputService;
         this.permissionService = permissionService;
         this.mapService = mapService;
         this.worldStackService = worldStackService;
+        this.serverService = serverService;
         this.token = token == null ? "" : token;
         this.port = port;
     }
@@ -126,6 +141,9 @@ public final class LocalWebServer {
         }
         if (worldStackService != null) {
             server.createContext("/api/world-stack", this::handleWorldStack);
+        }
+        if (serverService != null) {
+            server.createContext("/api/server", this::handleServer);
         }
         executor = Executors.newFixedThreadPool(4, runnable -> {
             Thread thread = new Thread(runnable, "samsara-web");
@@ -582,6 +600,88 @@ public final class LocalWebServer {
         }
     }
 
+    private void handleServer(HttpExchange exchange) throws IOException {
+        long start = System.currentTimeMillis();
+        int status = 200;
+        try {
+            if (!authorized(exchange)) {
+                status = 401;
+                json(exchange, status, Map.of("error", "未授权：缺少或错误的 Bearer token"));
+                return;
+            }
+            if (serverService == null) {
+                status = 503;
+                json(exchange, status, Map.of("error", "本体服务未启动"));
+                return;
+            }
+            String path = exchange.getRequestURI().getPath();
+            String method = exchange.getRequestMethod();
+            Map<String, Object> body = Map.of();
+            if ("POST".equals(method) || "PUT".equals(method)) {
+                try {
+                    body = parseObject(readBody(exchange));
+                } catch (BodyTooLarge e) {
+                    status = 413;
+                    json(exchange, status, Map.of("error", "请求体过大"));
+                    return;
+                } catch (RuntimeException e) {
+                    status = 400;
+                    json(exchange, status, Map.of("error", "请求体应为 JSON 对象"));
+                    return;
+                }
+            }
+            Map<String, Object> result;
+            if ("GET".equals(method)) {
+                if ("/api/server".equals(path) || "/api/server/config".equals(path)
+                        || "/api/server/backups".equals(path)) {
+                    result = serverService.model();
+                } else if ("/api/server/jobs".equals(path)) {
+                    result = serverService.jobs();
+                } else if ("/api/server/backups/download".equals(path)) {
+                    String id = parseQuery(exchange.getRequestURI().getRawQuery()).get("id");
+                    var file = serverService.backupFile(id);
+                    if (file == null) {
+                        status = 404;
+                        json(exchange, status, Map.of("error", "备份不存在"));
+                        return;
+                    }
+                    sendFile(exchange, 200, "application/zip", id + ".zip", file);
+                    return;
+                } else {
+                    status = 404;
+                    result = Map.of("error", "Not Found");
+                }
+            } else if ("POST".equals(method)) {
+                switch (path) {
+                    case "/api/server/config" -> result = serverService.saveConfig(body);
+                    case "/api/server/backups/preview" -> result = serverService.previewCreate();
+                    case "/api/server/backups" -> result = serverService.createBackup(body);
+                    case "/api/server/backups/delete" -> result = serverService.deleteBackup(body);
+                    case "/api/server/backups/preview-restore" ->
+                            result = serverService.previewRestore(body);
+                    case "/api/server/backups/restore" -> result = serverService.restore(body);
+                    default -> {
+                        status = 404;
+                        result = Map.of("error", "Not Found");
+                    }
+                }
+            } else {
+                status = 405;
+                result = Map.of("error", "Method Not Allowed");
+            }
+            if (status == 200 && Boolean.FALSE.equals(result.get("ok"))) {
+                status = 400;
+            }
+            json(exchange, status, result);
+        } catch (RuntimeException e) {
+            status = 500;
+            json(exchange, status, Map.of("error", "服务器内部错误"));
+            LOG.warn("[web] 处理 {} 失败: {}", exchange.getRequestURI().getPath(), e.getMessage());
+        } finally {
+            log(exchange, status, start);
+        }
+    }
+
     private void handleWorldStack(HttpExchange exchange) throws IOException {
         long start = System.currentTimeMillis();
         int status = 200;
@@ -789,6 +889,21 @@ public final class LocalWebServer {
         exchange.sendResponseHeaders(status, body.length);
         try (OutputStream out = exchange.getResponseBody()) {
             out.write(body);
+        }
+    }
+
+    private static void sendFile(HttpExchange exchange, int status, String type, String name,
+                                 Path file) throws IOException {
+        long size = Files.size(file);
+        exchange.getResponseHeaders().set("Content-Type", type);
+        exchange.getResponseHeaders().set("Content-Disposition",
+                "attachment; filename=\"" + name.replace("\"", "") + "\"");
+        exchange.getResponseHeaders().set("Cache-Control", "no-store");
+        exchange.getResponseHeaders().set("X-Content-Type-Options", "nosniff");
+        exchange.sendResponseHeaders(status, size);
+        try (OutputStream out = exchange.getResponseBody();
+             InputStream in = Files.newInputStream(file)) {
+            in.transferTo(out);
         }
     }
 

@@ -141,7 +141,7 @@ public class Samsara implements DedicatedServerModInitializer {
             com.shenqianye.samsara.track.view.ViewManager.getInstance().onServerStarted(server);
             com.shenqianye.samsara.permission.PermissionCommandPaths.capture(server);
             com.shenqianye.samsara.shutdown.ShutdownAnnouncer.onStarted();
-            com.shenqianye.samsara.web.WebLifecycle.start();
+            com.shenqianye.samsara.web.WebLifecycle.start(server);
         });
 
         // 待删队列：区块卸载即删（不再等停服）；停服窗口兜底清空 + 归档/保留判定

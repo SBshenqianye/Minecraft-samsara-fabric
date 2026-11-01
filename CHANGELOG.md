@@ -3,6 +3,24 @@
 > 面向玩家与服主的功能变化；实现细节、未达标项与证据见[《实现状态》](docs/实现状态.md)。
 > 每个版本按「新增 / 修复 / 优化 / 变更 / 重构 / 文档」分组，只写功能口径。
 
+## v0.28.0（2026-11-01）· 本体管理：服务器配置与存档备份
+
+### 新增
+
+- **Web 一级分栏**：新增“模组 / 插件”与“本体”两个一级入口；现有配置、圈地范围、地图、世界栈、身份组、输出格式、权限仍在“模组 / 插件”下，“本体”放服务器自身配置与存档备份。
+- **本体服务器配置**：编辑 `server.properties`、`whitelist.json`、`ops.json`、`banned-players.json`、`banned-ips.json`、`eula.txt`；写入前自动备份到 `samsara/server-config-backups/`，JSON/属性/EULA 先校验再原子替换。白名单、OP、封禁保存后立即重载；`server.properties`/`eula.txt` 提示重启生效。
+- **本体存档备份**：备份 `world` + 服务器配置 + `config/samsara`，存放在服务器级 `samsara/server-backups/`；支持创建（排队到停服后、下次启动前执行）、列表、下载、删除；按 `serverBackupKeep`（默认 5）只清理本功能创建的旧备份，源 world 永不自动删除。
+- **本体存档恢复**：选择备份 → 预览（备份大小、当前 world、可用空间、步骤/警告）→ 二次确认 → 停服后、下次启动前执行；恢复前把当前 world 移到 `pre-restore-<job>/world`，失败自动回滚。`server.properties` 与 `web.yml` 不直接覆盖，另存 `*.restored-<job>` 供服主确认。
+- **安全边界**：备份排除 `session.lock` 与 `world/samsara/web-map-cache`；存在待执行的世界栈导入/归档/新世界任务时拒绝本体备份/恢复；同一时间只允许一个本体 backup/restore 任务。
+
+### 修复
+
+- 无（本轮为新增功能）。
+
+### 文档
+
+- README、CHANGELOG、设计文档、设计规范与实现状态同步“模组/插件 vs 本体”、服务器配置编辑、存档备份/恢复与回滚口径。
+
 ## v0.27.0（2026-11-01）· 跨栈自动链、加载重试与真实客户端回归
 
 ### 新增

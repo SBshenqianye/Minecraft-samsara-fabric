@@ -58,6 +58,7 @@ public final class WebSecurity {
             case "/banners.js" -> "/web/banners.js";
             case "/map.js" -> "/web/map.js";
             case "/world-stack.js" -> "/web/world-stack.js";
+            case "/server.js" -> "/web/server.js";
             case "/style.css" -> "/web/style.css";
             default -> null;
         };
@@ -85,7 +86,9 @@ public final class WebSecurity {
                 || path.startsWith("/api/world-stack/import")
                 || path.startsWith("/api/world-stack/reorder")
                 || path.startsWith("/api/world-stack/archive")
-                || path.startsWith("/api/world-stack/jobs");
+                || path.startsWith("/api/world-stack/jobs")
+                || path.equals("/api/server")
+                || path.startsWith("/api/server/");
     }
 
     public static boolean bodyWithinLimit(long length) {
