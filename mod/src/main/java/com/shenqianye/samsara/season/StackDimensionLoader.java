@@ -42,8 +42,27 @@ import java.util.Optional;
 public final class StackDimensionLoader {
     private static final List<String> DIMS = List.of("overworld", "the_nether", "the_end");
     private static Map<String, LoadedLayer> loaded = new LinkedHashMap<>();
+    private static Map<String, Failure> failures = new LinkedHashMap<>();
 
     private StackDimensionLoader() {
+    }
+
+    /** 某个栈层最近一次加载失败的信息；用于玩家提示与 {@code world info}。 */
+    public static final class Failure {
+        public final String message;
+        public final int attempts;
+        public final long lastAttemptMs;
+
+        Failure(String message, int attempts, long lastAttemptMs) {
+            this.message = message;
+            this.attempts = attempts;
+            this.lastAttemptMs = lastAttemptMs;
+        }
+
+        @Override
+        public String toString() {
+            return message + "（第 " + attempts + " 次失败，自动重试中）";
+        }
     }
 
     public static final class LoadedLayer {
@@ -61,6 +80,7 @@ public final class StackDimensionLoader {
 
     public static synchronized void load(MinecraftServer server) {
         unload();
+        failures = new LinkedHashMap<>();
         Path worldDir = StackPaths.worldDir(server);
         StackManifest manifest = StackManifest.load(worldDir);
         if (manifest.layers.isEmpty()) {
@@ -101,8 +121,7 @@ public final class StackDimensionLoader {
                             layer.id, layer.seed, String.join("/", loadedLayer.levels.keySet()));
                 }
             } catch (Throwable t) {
-                Samsara.LOGGER.warn("[周目管理 samsara] 加载栈维度 {} 失败（跨世界传送将不可用）: {}",
-                        layer.id, rootMessage(t));
+                recordFailure(layer.id, rootMessage(t), System.currentTimeMillis());
             }
         }
         Samsara.LOGGER.info("[周目管理 samsara] {}", status());
@@ -114,23 +133,108 @@ public final class StackDimensionLoader {
         LevelStorageSource.LevelStorageAccess access = storageAccess(server);
         ServerLevelData levelData = server.getWorldData().overworldData();
         Object executor = executor(server);
-        RegistryAccess registries = server.registryAccess();
         LoadedLayer out = new LoadedLayer(layer);
-        for (String dim : DIMS) {
-            ResourceKey<LevelStem> stemKey = stemKey(dim);
-            Optional<LevelStem> stem = gen.dimensions().get(stemKey);
-            if (stem.isEmpty()) {
-                throw new IllegalStateException("缺少维度 " + stemKey);
+        try {
+            for (String dim : DIMS) {
+                ResourceKey<LevelStem> stemKey = stemKey(dim);
+                Optional<LevelStem> stem = gen.dimensions().get(stemKey);
+                if (stem.isEmpty()) {
+                    throw new IllegalStateException("缺少维度 " + stemKey);
+                }
+                // 额外栈层共享 top 的 ServerLevelData；若 tickTime=true，每个维度都会推进同一个
+                // dayTime，游戏时间会变成 10 倍速并出现跳时。时间只由原版主世界推进，栈维度只 tick 区块/实体。
+                ServerLevel level = StackLevel.create(server, (java.util.concurrent.Executor) executor,
+                        access, levelData, layer.key(dim), stem.get(), false,
+                        layer.seed, List.of(), false);
+                register(server, layer.key(dim), level);
+                out.levels.put(dim, level);
             }
-            // 额外栈层共享 top 的 ServerLevelData；若 tickTime=true，每个维度都会推进同一个
-            // dayTime，游戏时间会变成 10 倍速并出现跳时。时间只由原版主世界推进，栈维度只 tick 区块/实体。
-            ServerLevel level = StackLevel.create(server, (java.util.concurrent.Executor) executor,
-                    access, levelData, layer.key(dim), stem.get(), false,
-                    layer.seed, List.of(), false);
-            register(server, layer.key(dim), level);
-            out.levels.put(dim, level);
+            return out;
+        } catch (Throwable t) {
+            // 部分维度注册成功后失败：清理已注册的 key，避免下一次重试生成重复 ServerLevel。
+            for (String dim : new ArrayList<>(out.levels.keySet())) {
+                try {
+                    unregister(server, layer.key(dim));
+                } catch (Throwable ignored) {
+                }
+            }
+            if (t instanceof Exception e) {
+                throw e;
+            }
+            throw new RuntimeException(t);
         }
-        return out;
+    }
+
+    /**
+     * 按需加载/重试某个栈层。
+     *
+     * <p>正常启动时 {@link #load(MinecraftServer)} 已经加载全部旧栈层；这里只覆盖
+     * “启动时加载失败、玩家仍沿跨栈链到达该层”以及导入/提升后新增层的边界情况。
+     * 失败后按 {@link StackLoadPolicy} 指数退避重试，失败原因可通过
+     * {@link #failureReason(String)} 返回给玩家，而不是只提示“未加载”。
+     */
+    public static synchronized ServerLevel ensureLevel(MinecraftServer server, StackLayer layer, String dim) {
+        if (layer == null) {
+            return null;
+        }
+        if (layer.top) {
+            return server.getLevel(switch (dim) {
+                case "the_nether" -> Level.NETHER;
+                case "the_end" -> Level.END;
+                default -> Level.OVERWORLD;
+            });
+        }
+        LoadedLayer current = loaded.get(layer.id);
+        if (current != null) {
+            ServerLevel existing = current.level(dim);
+            if (existing != null) {
+                return existing;
+            }
+        }
+        Failure previous = failures.get(layer.id);
+        long now = System.currentTimeMillis();
+        if (previous != null
+                && !StackLoadPolicy.shouldRetry(previous.attempts, previous.lastAttemptMs, now)) {
+            return null;
+        }
+        try {
+            LoadedLayer created = loadLayer(server, StackPaths.worldDir(server), layer);
+            loaded.put(layer.id, created);
+            failures.remove(layer.id);
+            Samsara.LOGGER.info("[周目管理 samsara] 已按需加载栈维度 {}（seed {}）：{}",
+                    layer.id, layer.seed, String.join("/", created.levels.keySet()));
+            return created.level(dim);
+        } catch (Throwable t) {
+            recordFailure(layer.id, rootMessage(t), now);
+            return null;
+        }
+    }
+
+    private static void recordFailure(String id, String message, long now) {
+        Failure previous = failures.get(id);
+        int attempts = previous == null ? 1 : previous.attempts + 1;
+        failures.put(id, new Failure(message, attempts, now));
+        if (previous == null || !message.equals(previous.message)) {
+            Samsara.LOGGER.warn("[周目管理 samsara] 加载栈维度 {} 失败（第 {} 次，{} ms 后允许重试）: {}",
+                    id, attempts, StackLoadPolicy.nextDelayMs(attempts), message);
+        } else {
+            Samsara.LOGGER.debug("[周目管理 samsara] 加载栈维度 {} 仍失败（第 {} 次）: {}",
+                    id, attempts, message);
+        }
+    }
+
+    /** 某层最近一次加载失败的可读原因；从未失败时返回一个中性的兜底说明。 */
+    public static synchronized String failureReason(String id) {
+        Failure failure = failures.get(id);
+        if (failure == null) {
+            return "维度未加载，服务器日志中没有记录到具体失败原因";
+        }
+        return failure.toString();
+    }
+
+    /** 是否有失败记录（供 world info / 调试使用）。 */
+    public static synchronized boolean hasFailure(String id) {
+        return failures.containsKey(id);
     }
 
     private static WorldGenSettings readWorldGen(MinecraftServer server, Path worldDir, StackLayer layer) {
@@ -175,6 +279,15 @@ public final class StackDimensionLoader {
         levels.put(key, level);
     }
 
+    @SuppressWarnings("unchecked")
+    private static void unregister(MinecraftServer server, ResourceKey<Level> key) throws Exception {
+        Field field = MinecraftServer.class.getDeclaredField("levels");
+        field.setAccessible(true);
+        Map<ResourceKey<Level>, ServerLevel> levels =
+                (Map<ResourceKey<Level>, ServerLevel>) field.get(server);
+        levels.remove(key);
+    }
+
     private static LevelStorageSource.LevelStorageAccess storageAccess(MinecraftServer server)
             throws Exception {
         Field field = MinecraftServer.class.getDeclaredField("storageSource");
@@ -198,6 +311,7 @@ public final class StackDimensionLoader {
 
     public static synchronized void unload() {
         loaded = new LinkedHashMap<>();
+        failures = new LinkedHashMap<>();
     }
 
     public static synchronized LoadedLayer layer(String id) {
@@ -217,12 +331,15 @@ public final class StackDimensionLoader {
     }
 
     public static synchronized String status() {
-        if (loaded.isEmpty()) {
+        if (loaded.isEmpty() && failures.isEmpty()) {
             return "栈维度：未加载";
         }
         List<String> parts = new ArrayList<>();
         for (LoadedLayer l : loaded.values()) {
             parts.add(l.layer.id + "=" + String.join("/", l.levels.keySet()));
+        }
+        for (Map.Entry<String, Failure> entry : failures.entrySet()) {
+            parts.add(entry.getKey() + " 加载失败（" + entry.getValue() + "）");
         }
         return "栈维度：" + String.join(" · ", parts);
     }

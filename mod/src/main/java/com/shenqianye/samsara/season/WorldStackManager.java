@@ -87,6 +87,9 @@ public final class WorldStackManager {
             if (count > 0) {
                 sb.append(" · 在线 ").append(count);
             }
+            if (!l.top && StackDimensionLoader.hasFailure(l.id)) {
+                sb.append(" · 加载失败：").append(StackDimensionLoader.failureReason(l.id));
+            }
         }
         return sb.toString();
     }

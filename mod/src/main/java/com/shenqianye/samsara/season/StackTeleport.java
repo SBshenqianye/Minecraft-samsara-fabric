@@ -26,7 +26,7 @@ public final class StackTeleport {
         }
         ServerLevel level = level(server, target, "overworld");
         if (level == null) {
-            return "栈世界 " + targetId + " 的维度未加载（查看服务器日志）";
+            return "栈世界 " + targetId + " 加载失败：" + StackDimensionLoader.failureReason(targetId);
         }
         ServerPlayer player;
         try {
@@ -57,7 +57,7 @@ public final class StackTeleport {
         }
         ServerLevel level = level(server, below, "overworld");
         if (level == null) {
-            return "下层世界 " + below.id + " 的维度未加载";
+            return "下层世界 " + below.id + " 加载失败：" + StackDimensionLoader.failureReason(below.id);
         }
         move(server, player, below, level, below.spawnX, below.spawnZ);
         return "已返回 " + below.label() + " · " + level.dimension().identifier();
@@ -75,7 +75,7 @@ public final class StackTeleport {
         }
         ServerLevel level = level(server, target, "overworld");
         if (level == null) {
-            return "维度未加载";
+            return "栈世界 " + target.id + " 加载失败：" + StackDimensionLoader.failureReason(target.id);
         }
         move(server, player, target, level, target.spawnX, target.spawnZ);
         return "已进入 " + target.label();
@@ -108,7 +108,12 @@ public final class StackTeleport {
                 default -> Level.OVERWORLD;
             });
         }
-        return StackDimensionLoader.level(layer, dim);
+        ServerLevel level = StackDimensionLoader.level(layer, dim);
+        if (level != null) {
+            return level;
+        }
+        // 目标栈层启动时加载失败：按需自动加载/重试，失败原因由调用方展示。
+        return StackDimensionLoader.ensureLevel(server, layer, dim);
     }
 
     private static void move(MinecraftServer server, ServerPlayer player, StackLayer layer,

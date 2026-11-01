@@ -86,6 +86,9 @@ public final class WorldChainTeleport {
                     int tz = WorldChainRules.toNether(player.getZ());
                     teleport(player, nether, tx, tz, safeNetherY(nether, tx, tz),
                             "虚空坠落 → 同层下界");
+                } else {
+                    notice(player, "void-nether:" + layer.id, "同层下界（" + layer.id
+                            + "）加载失败：" + StackDimensionLoader.failureReason(layer.id));
                 }
             } else if ("the_nether".equals(dim)) {
                 StackLayer lower = manifest.below(layer);
@@ -94,8 +97,8 @@ public final class WorldChainTeleport {
                 }
                 ServerLevel target = StackTeleport.level(server, lower, "overworld");
                 if (target == null) {
-                    notice(player, "nether-void", "下层世界 " + lower.id
-                            + " 未加载，无法跨世界传送（看 /samsara debug world multi）");
+                    notice(player, "nether-void:" + lower.id, "下层世界 " + lower.id
+                            + " 加载失败：" + StackDimensionLoader.failureReason(lower.id));
                     return;
                 }
                 int tx = WorldChainRules.toOverworld(player.getX());
@@ -116,6 +119,9 @@ public final class WorldChainTeleport {
                     int tz = WorldChainRules.toOverworld(player.getZ());
                     teleport(player, overworld, tx, tz, safeY(overworld, tx, tz),
                             "下界顶部 → 同层主世界");
+                } else {
+                    notice(player, "top-overworld:" + layer.id, "同层主世界（" + layer.id
+                            + "）加载失败：" + StackDimensionLoader.failureReason(layer.id));
                 }
             } else if ("overworld".equals(dim)) {
                 StackLayer upper = manifest.above(layer);
@@ -124,8 +130,8 @@ public final class WorldChainTeleport {
                 }
                 ServerLevel target = StackTeleport.level(server, upper, "the_nether");
                 if (target == null) {
-                    notice(player, "overworld-top", "上层世界 " + upper.id
-                            + " 未加载，无法跨世界传送（看 /samsara debug world multi）");
+                    notice(player, "overworld-top:" + upper.id, "上层世界 " + upper.id
+                            + " 加载失败：" + StackDimensionLoader.failureReason(upper.id));
                     return;
                 }
                 int tx = WorldChainRules.toNether(player.getX());
