@@ -2206,7 +2206,7 @@ function setActiveTab(name) {
     const el = document.getElementById(panel);
     if (el) el.hidden = panel !== 'panel-' + name;
   }
-  for (const tab of document.querySelectorAll('.tab')) {
+  for (const tab of document.querySelectorAll('.tab[data-panel]')) {
     tab.classList.toggle('active', tab.dataset.panel === 'panel-' + name);
   }
   try { history.replaceState(null, '', '#' + name); } catch (e) { /* file:// 等场景忽略 */ }
@@ -2365,7 +2365,7 @@ if (backToTop) {
   }, { passive: true });
 }
 
-for (const tab of document.querySelectorAll('.tab')) {
+for (const tab of document.querySelectorAll('.tab[data-panel]')) {
   tab.addEventListener('click', () => setActiveTab(tabNames[tab.dataset.panel] || 'config'));
 }
 

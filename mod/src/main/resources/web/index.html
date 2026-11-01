@@ -52,6 +52,15 @@
       </button>
     </nav>
 
+    <nav id="server-tabs" class="tabs" aria-label="本体页面" hidden>
+      <button class="tab active" type="button" data-server-panel="server-config-panel">
+        服务器配置 <span class="tab-count" id="server-config-count">0</span>
+      </button>
+      <button class="tab" type="button" data-server-panel="server-backup-panel">
+        存档备份 <span class="tab-count" id="server-backup-count">0</span>
+      </button>
+    </nav>
+
     <div class="tab-actions" id="mods-actions">
       <div class="tab-actions-title">
         <strong id="action-title">配置</strong>
@@ -61,6 +70,18 @@
         <button id="action-default" class="ghost" hidden>恢复默认</button>
         <button id="reload" class="ghost">重新读取</button>
         <button id="save" class="primary">保存并重载</button>
+      </div>
+    </div>
+
+    <div class="tab-actions" id="server-actions" hidden>
+      <div class="tab-actions-title">
+        <strong id="server-action-title">服务器配置</strong>
+        <span id="server-action-hint" class="muted small"></span>
+      </div>
+      <div class="tab-actions-buttons">
+        <button id="server-reload" class="ghost" type="button">重新读取</button>
+        <button id="server-save" class="primary" type="button">保存当前文件</button>
+        <button id="server-backup-create" class="primary" type="button" hidden>创建备份</button>
       </div>
     </div>
   </header>
@@ -450,11 +471,6 @@
       </div>
 
       <div id="panel-server" class="panel-stack" hidden>
-        <nav class="server-subtabs" aria-label="本体">
-          <button class="sub-tab active" type="button" data-server-panel="server-config-panel">服务器配置</button>
-          <button class="sub-tab" type="button" data-server-panel="server-backup-panel">存档备份</button>
-        </nav>
-
         <div id="server-config-panel" class="server-panel">
           <section class="panel">
             <div class="panel-head">
@@ -462,21 +478,24 @@
                 <h2>服务器配置</h2>
                 <p class="panel-sub">编辑 server.properties、白名单、OP、封禁列表与 eula。写入前自动备份到 samsara/server-config-backups；server.properties/eula 需重启生效，其余保存后立即重载。</p>
               </div>
-              <div class="panel-tools">
-                <button id="server-config-refresh" class="ghost" type="button">重新读取</button>
-                <button id="server-config-save" class="primary" type="button">保存当前文件</button>
-              </div>
             </div>
             <div id="server-config-message" class="message" role="status"></div>
             <div class="server-config-layout">
-              <div id="server-config-list" class="server-config-list"></div>
+              <aside class="server-config-side">
+                <div class="nav-title">配置文件</div>
+                <div id="server-config-list" class="server-config-list"></div>
+              </aside>
               <div class="server-config-edit">
-                <div class="server-config-meta">
-                  <strong id="server-config-title">server.properties</strong>
-                  <span id="server-config-path" class="muted small"></span>
+                <div class="file-block">
+                  <div class="file-summary">
+                    <h3 id="server-config-title" class="file-title">server.properties</h3>
+                    <p id="server-config-path" class="file-path"></p>
+                  </div>
+                  <div class="file-body">
+                    <p id="server-config-warning" class="muted small"></p>
+                    <textarea id="server-config-editor" class="server-config-editor" spellcheck="false" autocomplete="off"></textarea>
+                  </div>
                 </div>
-                <p id="server-config-warning" class="muted small"></p>
-                <textarea id="server-config-editor" class="server-config-editor" spellcheck="false" autocomplete="off"></textarea>
               </div>
             </div>
           </section>
@@ -488,10 +507,6 @@
               <div>
                 <h2>存档备份</h2>
                 <p class="panel-sub">备份 world + 服务器配置 + config/samsara。创建与恢复都在停服后、下次启动前执行；恢复前会自动保留当前 world，失败回滚。源 world 永不自动删除。</p>
-              </div>
-              <div class="panel-tools">
-                <button id="server-backup-refresh" class="ghost" type="button">重新读取</button>
-                <button id="server-backup-create" class="primary" type="button">创建备份（停服后执行）</button>
               </div>
             </div>
             <div id="server-backup-message" class="message" role="status"></div>
