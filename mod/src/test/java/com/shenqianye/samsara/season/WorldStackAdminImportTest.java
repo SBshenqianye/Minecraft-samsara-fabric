@@ -11,6 +11,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** 本地世界导入：布局校验、复制导入、源目录不变、栈清单/index 更新。 */
@@ -201,6 +202,39 @@ class WorldStackAdminImportTest {
                 .contains("\"new\""), "栈顶导入应带走源目录的 claims");
         assertTrue(Files.isRegularFile(
                 source.resolve("dimensions/minecraft/overworld/region/r.0.0.mca")));
+    }
+
+    @Test
+    void archiveMovesLayerToBackupAndRemovesFromManifest() throws Exception {
+        Path world = world();
+        StackManifest manifest = StackManifest.load(world);
+        StackLayer old = new StackLayer();
+        old.id = "stack_0";
+        old.index = 0;
+        old.seed = 1;
+        manifest.layers.add(0, old);
+        manifest.normalize();
+        manifest.save(world);
+        Path dims = world.resolve("dimensions/samsara/stack_0/overworld/region");
+        Files.createDirectories(dims);
+        Files.writeString(dims.resolve("r.0.0.mca"), "old", StandardCharsets.UTF_8);
+        Files.writeString(world.resolve("samsara/stack/stack_0/marker.txt"), "meta",
+                StandardCharsets.UTF_8);
+
+        WorldStackAdmin.ScheduleResult scheduled =
+                WorldStackAdmin.scheduleArchive(world, "stack_0");
+        assertTrue(scheduled.ok, String.valueOf(scheduled.preview.errors));
+        WorldStackAdmin.consumePending(world);
+
+        assertNull(StackManifest.load(world).byId("stack_0"));
+        Path archive = world.resolve("samsara/stack-archive");
+        try (var stream = Files.list(archive)) {
+            Path backup = stream.filter(Files::isDirectory).findFirst().orElseThrow();
+            assertTrue(Files.isRegularFile(backup.resolve(
+                    "dimensions/overworld/region/r.0.0.mca")));
+            assertTrue(Files.isRegularFile(backup.resolve("meta/marker.txt")));
+        }
+        assertFalse(Files.exists(world.resolve("dimensions/samsara/stack_0")));
     }
 
     @Test

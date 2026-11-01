@@ -554,6 +554,11 @@ public final class WorldStackAdmin {
             job = newJob(pending.jobId, "archive", pending.id);
         }
         Path file = stackFile(worldDir, PENDING_ARCHIVE);
+        Path archive = null;
+        Path dims = null;
+        Path meta = null;
+        boolean movedDims = false;
+        boolean movedMeta = false;
         try {
             job.status = "running";
             job.stage = "校验栈层";
@@ -564,12 +569,14 @@ public final class WorldStackAdmin {
             if (layer == null || layer.top) {
                 throw new IOException("栈层不存在或为栈顶：" + pending.id);
             }
-            Path archive = Path.of(pending.archivePath);
+            archive = Path.of(pending.archivePath);
             Files.createDirectories(archive);
-            Path dims = StackPaths.layerDimensions(worldDir, layer);
-            Path meta = layer.metaDir(worldDir);
+            dims = StackPaths.layerDimensions(worldDir, layer);
+            meta = layer.metaDir(worldDir);
             moveIfExists(dims, archive.resolve("dimensions"));
+            movedDims = true;
             moveIfExists(meta, archive.resolve("meta"));
+            movedMeta = true;
             manifest.removeBelowTop(layer.id);
             manifest.save(worldDir);
             if (StackManifest.load(worldDir).byId(layer.id) != null) {
@@ -585,6 +592,17 @@ public final class WorldStackAdmin {
             writeJob(worldDir, job);
             Samsara.LOGGER.info("[世界栈] {}", job.message);
         } catch (Exception e) {
+            try {
+                if (movedMeta && archive != null && meta != null) {
+                    moveIfExists(archive.resolve("meta"), meta);
+                }
+                if (movedDims && archive != null && dims != null) {
+                    moveIfExists(archive.resolve("dimensions"), dims);
+                }
+                job.log.add("已回滚归档目录移动，原栈层保持可用");
+            } catch (Exception rollback) {
+                job.log.add("归档回滚失败：" + rollback.getMessage());
+            }
             job.status = "failed";
             job.stage = "失败";
             job.finishedAt = System.currentTimeMillis();
