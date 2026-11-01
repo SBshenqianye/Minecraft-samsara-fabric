@@ -116,6 +116,10 @@ button.icon-btn:hover { background: var(--panel-soft); color: var(--fg); }
   color: var(--accent-ink);
   box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 25%, transparent);
 }
+.segmented.compact { padding: 2px; border-radius: 7px; }
+.segmented.compact .segmented-btn { padding: 2px 8px; font-size: 11px; border-radius: 5px; }
+.inline-toggle { display: inline-flex; align-items: center; gap: 8px; }
+.segmented-host { display: inline-flex; align-items: center; margin-left: auto; align-self: center; }
 
 input, select, textarea {
   width: 100%;

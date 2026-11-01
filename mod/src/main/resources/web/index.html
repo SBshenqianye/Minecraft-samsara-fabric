@@ -329,22 +329,20 @@
           <div id="identity-root" class="path-line"></div>
 
           <div class="settings-grid">
-            <label class="switch-card">
-              <input id="identity-enabled" type="checkbox">
-              <span class="switch-ui" aria-hidden="true"></span>
+            <div class="switch-card">
               <span class="switch-text">
                 <strong>启用身份组</strong>
                 <small>关闭时所有账号按自身 UUID 处理，不做数据同步。</small>
               </span>
-            </label>
-            <label class="switch-card">
-              <input id="identity-sync" type="checkbox">
-              <span class="switch-ui" aria-hidden="true"></span>
+              <span id="identity-enabled" class="segmented-host"></span>
+            </div>
+            <div class="switch-card">
               <span class="switch-text">
                 <strong>切换账号时同步玩家数据</strong>
                 <small>开启后，同组账号共享背包、位置、进度与统计。</small>
               </span>
-            </label>
+              <span id="identity-sync" class="segmented-host"></span>
+            </div>
             <label class="field-card">
               <span>宠物主人上限</span>
               <input id="identity-max-owners" type="number" min="1" max="1024" step="1">
@@ -408,10 +406,10 @@
                 <span aria-hidden="true">⌕</span>
                 <input id="output-search" type="search" placeholder="搜索消息 / 分组 / 说明">
               </label>
-              <label class="check-line">
-                <input id="output-auto-continue" type="checkbox">
-                <span>自动续行前缀</span>
-              </label>
+              <span class="inline-toggle">
+                <span class="muted small">自动续行前缀</span>
+                <span id="output-auto-continue"></span>
+              </span>
             </div>
           </div>
           <div id="output-message" class="message" role="status"></div>

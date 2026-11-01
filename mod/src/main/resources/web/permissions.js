@@ -211,19 +211,33 @@ function renderNode(node, depth, query) {
     row.append(childCount);
   }
 
-  const toggle = document.createElement('label');
-  toggle.className = 'perm-toggle';
-  const checkbox = document.createElement('input');
-  checkbox.type = 'checkbox';
-  checkbox.checked = !node.disabled && !blocked;
-  checkbox.disabled = blocked || P.busy;
-  checkbox.title = blocked
-    ? '被祖先 ' + node.disabledBy + ' 关闭；先开启祖先'
-    : (node.disabled ? '已关闭' : '已启用');
-  checkbox.addEventListener('change', () => {
-    savePermissionNode(node.path, { disabled: !checkbox.checked });
-  });
-  toggle.append(checkbox, document.createTextNode('启用'));
+  const KIT = window.SamsaraUIKit;
+  let toggle;
+  const toggleTitle = blocked
+      ? '被祖先 ' + node.disabledBy + ' 关闭；先开启祖先'
+      : (node.disabled ? '已关闭' : '已启用');
+  if (KIT) {
+    toggle = KIT.toggle(!node.disabled && !blocked, (enabled) => {
+      if (blocked || P.busy) return;
+      savePermissionNode(node.path, { disabled: !enabled });
+    }, { onLabel: '启用', offLabel: '关闭', title: toggleTitle });
+    toggle.classList.add('compact');
+    for (const button of toggle.querySelectorAll('button')) {
+      button.disabled = blocked || P.busy;
+    }
+  } else {
+    toggle = document.createElement('label');
+    toggle.className = 'perm-toggle';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = !node.disabled && !blocked;
+    checkbox.disabled = blocked || P.busy;
+    checkbox.title = toggleTitle;
+    checkbox.addEventListener('change', () => {
+      savePermissionNode(node.path, { disabled: !checkbox.checked });
+    });
+    toggle.append(checkbox, document.createTextNode('启用'));
+  }
   row.append(toggle);
 
   const select = document.createElement('select');

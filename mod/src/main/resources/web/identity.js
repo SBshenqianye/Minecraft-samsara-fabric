@@ -138,13 +138,28 @@ function renderSettings() {
   const enabled = $i('identity-enabled');
   const sync = $i('identity-sync');
   const maxOwners = $i('identity-max-owners');
-  if (enabled) enabled.checked = I.settings.enabled;
-  if (sync) sync.checked = I.settings.sync;
+  renderSettingToggle(enabled, I.settings.enabled, (value) => {
+    I.settings.enabled = value;
+    I.dirty = true;
+  });
+  renderSettingToggle(sync, I.settings.sync, (value) => {
+    I.settings.sync = value;
+    I.dirty = true;
+  });
   if (maxOwners) maxOwners.value = String(I.settings.maxOwners);
   const path = $i('identity-path');
   const root = $i('identity-root');
   if (path) path.textContent = '配置文件：' + (I.model?.path || '—');
   if (root) root.textContent = '运行时数据：' + (I.model?.identityRoot || '—');
+}
+
+function renderSettingToggle(host, value, onChange) {
+  if (!host || !window.SamsaraUIKit) return;
+  host.textContent = '';
+  const toggle = window.SamsaraUIKit.toggle(value === true, onChange,
+      { onLabel: '启用', offLabel: '关闭' });
+  toggle.classList.add('compact');
+  host.appendChild(toggle);
 }
 
 function findExisting(group) {
@@ -1110,11 +1125,7 @@ function activate() {
 }
 
 function wireEvents() {
-  const enabled = $i('identity-enabled');
-  const sync = $i('identity-sync');
   const maxOwners = $i('identity-max-owners');
-  if (enabled) enabled.addEventListener('change', () => { I.settings.enabled = enabled.checked; I.dirty = true; });
-  if (sync) sync.addEventListener('change', () => { I.settings.sync = sync.checked; I.dirty = true; });
   if (maxOwners) maxOwners.addEventListener('input', () => {
     I.settings.maxOwners = Number(maxOwners.value || 32);
     I.dirty = true;

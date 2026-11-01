@@ -134,7 +134,7 @@ function renderOutputEditor() {
   $o('output-meta').textContent = message.key + ' · ' + message.description
       + ' · 变量 ' + (message.variables || []).length + ' · 按钮 ' + (message.buttons || []).length;
   const auto = $o('output-auto-continue');
-  if (auto) auto.checked = O.autoContinuePrefix;
+  if (auto) renderAutoContinue();
   const editable = message.editable !== false;
   disabled.hidden = editable;
   editor.hidden = !editable;
@@ -830,10 +830,19 @@ function editorDrop(event) {
   scheduleOutputPreview();
 }
 
-async function saveAutoContinue() {
-  const checkbox = $o('output-auto-continue');
-  if (!checkbox) return;
-  const checked = checkbox.checked;
+function renderAutoContinue() {
+  const host = $o('output-auto-continue');
+  if (!host) return;
+  host.textContent = '';
+  if (!window.SamsaraUIKit) return;
+  const toggle = window.SamsaraUIKit.toggle(O.autoContinuePrefix,
+      (enabled) => saveAutoContinue(enabled), { onLabel: '开', offLabel: '关' });
+  toggle.classList.add('compact');
+  toggle.title = '消息第一行是否自动加续行前缀';
+  host.appendChild(toggle);
+}
+
+async function saveAutoContinue(checked) {
   try {
     await window.SamsaraUI.api('/api/config', {
       method: 'PUT',
@@ -847,7 +856,7 @@ async function saveAutoContinue() {
     outputMessage('已' + (checked ? '开启' : '关闭') + '自动续行前缀', 'ok');
     await renderOutputPreview();
   } catch (e) {
-    checkbox.checked = !checked;
+    renderAutoContinue();
     outputMessage(window.SamsaraUI.authMessage(e, '保存自动续行前缀失败'), 'error');
   }
 }
@@ -855,8 +864,6 @@ async function saveAutoContinue() {
 function wireEvents() {
   const editor = $o('output-editor');
   if (!editor) return;
-  const auto = $o('output-auto-continue');
-  if (auto) auto.addEventListener('change', saveAutoContinue);
   editor.addEventListener('beforeinput', () => {
     if (!O.filling) recordHistory();
   });
