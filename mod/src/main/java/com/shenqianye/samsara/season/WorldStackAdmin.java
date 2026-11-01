@@ -237,6 +237,13 @@ public final class WorldStackAdmin {
                 "栈层归档备份（不随存档；用户数据，不自动删除）", true);
         addFile(out, 1, "samsara/world-stack-backup/", backupRoot(worldDir),
                 "导入/提升栈顶的备份（不随存档，保留最近 " + backupKeep() + " 份）", true);
+        addFile(out, 1, "samsara/server-backups/", server.resolve("samsara/server-backups"),
+                "本体存档备份（world + 服务器配置，不随存档）", false);
+        addFile(out, 1, "samsara/server-backup-jobs/", server.resolve("samsara/server-backup-jobs"),
+                "本体备份/恢复任务报告", false);
+        addFile(out, 1, "samsara/server-config-backups/",
+                server.resolve("samsara/server-config-backups"),
+                "服务器配置写入前备份", false);
         addFile(out, 1, "samsara/global/（服务器级）", server.resolve("samsara/global"),
                 "globalFollowWorld=false 时使用", false);
         Path legacyArchive = worldDir.resolve("samsara/stack-archive");
