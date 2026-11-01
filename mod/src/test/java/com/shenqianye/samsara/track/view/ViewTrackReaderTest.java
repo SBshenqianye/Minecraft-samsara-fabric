@@ -51,4 +51,40 @@ class ViewTrackReaderTest {
         assertEquals(d1 + 1_000, cursor.segments().get(1).lastMs());
         assertEquals("minecraft:the_nether", cursor.segments().get(1).dimension());
     }
+
+    @Test
+    void loadsAcrossStackRootsAndAppliesPerRootCutoff(@TempDir Path dir) throws Exception {
+        UUID uuid = UUID.randomUUID();
+        Path top = dir.resolve("world/samsara/track");
+        Path stack = dir.resolve("world/samsara/stack/stack_1/track");
+        long d0 = LocalDate.of(2026, 11, 1).atStartOfDay(ZoneId.systemDefault())
+                .toInstant().toEpochMilli();
+
+        TrackStore.Segment a = new TrackStore.Segment(uuid, "minecraft:overworld", d0 + 1_000, 5);
+        a.samples.add(new TrackStore.Sample(d0 + 1_000, 0, 64, 0, 0, 0, 0));
+        a.samples.add(new TrackStore.Sample(d0 + 2_000, 1, 64, 0, 0, 0, 0));
+        TrackStore.write(TrackLayout.file(top, 4, LocalDate.of(2026, 11, 1), uuid), List.of(a));
+
+        TrackStore.Segment b = new TrackStore.Segment(uuid, "samsara:stack_1/overworld", d0 + 1_000, 5);
+        b.samples.add(new TrackStore.Sample(d0 + 1_000, 10, 64, 0, 0, 0, 0));
+        b.samples.add(new TrackStore.Sample(d0 + 2_000, 11, 64, 0, 0, 0, 0));
+        b.samples.add(new TrackStore.Sample(d0 + 3_000, 12, 64, 0, 0, 0, 0));
+        TrackStore.write(TrackLayout.file(stack, 4, LocalDate.of(2026, 11, 1), uuid), List.of(b));
+
+        List<Path> roots = List.of(top, stack);
+        ViewTrackReader.LoadResult result = ViewTrackReader.load(roots, 4, List.of(uuid),
+                d0, d0 + 10_000,
+                (root, owner, cycle) -> root.equals(stack) ? d0 + 2_000 : null);
+        assertEquals(2, result.files().size(), "两个栈根都要被扫描");
+        assertEquals(2, result.segments().size());
+        assertTrue(result.cutoffApplied());
+        // 栈顶不受 stack 根 cutoff 影响；stack_1 被截到第 2 个样本。
+        assertEquals(2, result.segments().get(0).samples().size());
+        assertEquals(2, result.segments().get(1).samples().size());
+
+        List<ViewTrackReader.Available> available = ViewTrackReader.available(roots, List.of(uuid),
+                (root, owner, cycle) -> root.equals(stack) ? d0 + 2_000 : null);
+        assertEquals(2, available.size(), "list 也要聚合两个栈根");
+        assertTrue(available.stream().anyMatch(x -> x.cutoffApplied()));
+    }
 }

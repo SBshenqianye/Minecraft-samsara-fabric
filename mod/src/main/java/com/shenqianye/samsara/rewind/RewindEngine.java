@@ -4,7 +4,13 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.shenqianye.samsara.Samsara;
 import net.fabricmc.loader.api.FabricLoader;
+import com.shenqianye.samsara.season.StackLayer;
+import com.shenqianye.samsara.season.StackManifest;
+import com.shenqianye.samsara.season.StackPaths;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
@@ -173,8 +179,8 @@ public class RewindEngine {
         onComplete = null;
         DiffRestore.reset();
         restorePauseSetting();
-        // 倒流已走完：恢复源不再需要，删除 diff/cycle<id>/<世界>，避免按周目无限累积
-        DiffRecorder.deleteRecovery(seasonId, worldKey);
+        // 倒流已走完：恢复源不再需要，删除 diff/cycle<id>/<栈层>，避免按周目无限累积
+        DiffRecorder.deleteRecovery(seasonId, dataRootForWorldKey(worldKey), worldKey);
     }
 
     // ---- 空服暂停控制（倒流必须按墙钟走完） ----
@@ -240,8 +246,20 @@ public class RewindEngine {
      *
      * @return [namespace, path] 或 null（解析失败）
      */
+    /** 维度根 → 存档 world 根：向上找到名为 {@code dimensions} 的目录，取其父目录。 */
+    private static Path worldRootOf(Path dimRoot) {
+        Path p = dimRoot;
+        while (p != null) {
+            Path name = p.getFileName();
+            if (name != null && "dimensions".equals(name.toString())) {
+                return p.getParent();
+            }
+            p = p.getParent();
+        }
+        return dimRoot == null ? null : dimRoot.getParent();
+    }
+
     private static String[] parseResourceKey(String keyStr) {
-        // 找最后一个冒号（namespace:path）
         int colonIdx = keyStr.lastIndexOf(':');
         if (colonIdx < 0) return null;
         // ns: 从 [ 或空格后到冒号前
@@ -295,14 +313,42 @@ public class RewindEngine {
      * @return 概要文本；无可倒流区块时返回 {@link #NO_REWINDABLE_MSG}
      */
     public synchronized String start(MinecraftServer server, int seasonId, long durationMs, Runnable onComplete) {
+        StackLayer top = StackManifest.load(StackPaths.worldDir(server)).top();
+        return start(server, seasonId, durationMs, onComplete, top);
+    }
+
+    /**
+     * 在指定栈层启动倒流。目标层决定：ServerLevel、维度目录、diff 数据根与 worldKey。
+     * 栈顶为 world；旧层为 {@code samsara:stack_<n>/overworld}。
+     */
+    public synchronized String start(MinecraftServer server, int seasonId, long durationMs,
+                                     Runnable onComplete, StackLayer targetLayer) {
+        return start(server, seasonId, durationMs, onComplete, targetLayer, false);
+    }
+
+    /** 在指定栈层启动倒流；awaitingExternal=true 表示完成后由 reset same 等外部流程收尾。 */
+    public synchronized String start(MinecraftServer server, int seasonId, long durationMs,
+                                     Runnable onComplete, StackLayer targetLayer,
+                                     boolean awaitingExternal) {
         if (data != null) {
             return "已有进行中的倒流（周目 #" + data.seasonId + "），请先 /samsara debug rewind abort";
         }
         if (durationMs <= 0) {
             return "倒流时长必须 &gt; 0";
         }
+        StackLayer layer = targetLayer;
+        if (layer == null) {
+            layer = StackManifest.load(StackPaths.worldDir(server)).top();
+        }
+        ServerLevel level = levelOf(server, layer);
+        if (level == null || layer == null) {
+            return "目标栈层主世界未加载，无法倒流";
+        }
         ensureTicking(server);
-        ScanResult scan = scan(server);
+        Path dimRoot = dimensionRoot(server, layer);
+        Path dataRoot = StackPaths.dataRootFor(StackPaths.worldDir(server), level.dimension());
+        String dimKey = dimensionKey(level.dimension());
+        ScanResult scan = scan(level, dimRoot);
         if (scan.toRewind.isEmpty()) {
             restorePauseSetting();
             return NO_REWINDABLE_MSG;
@@ -311,15 +357,18 @@ public class RewindEngine {
             DiffRecorder.initWorld(server);
         }
         // 冻结当前记录窗口为本次倒流的恢复源（设计规范 §11：窗口 = 上次删块完成后至本次倒流开始）
-        DiffRecorder.freezeCurrent(seasonId);
+        DiffRecorder.freezeCurrent(seasonId, dataRoot, layer.id);
         long now = System.currentTimeMillis();
         RewindData d = new RewindData();
         d.seasonId = seasonId;
-        d.worldKey = currentWorldKey(server);
+        d.worldKey = layer.id;
+        d.layerId = layer.id;
+        d.dimension = level.dimension().identifier().toString();
         d.startMs = now;
         d.durationMs = durationMs;
         d.totalCount = scan.total;
         d.protectedCount = scan.protectedCount;
+        d.awaitingExternalCompletion = awaitingExternal;
         // 节奏参数随本次倒流持久化（重启后仍按同一组参数播完）
         com.shenqianye.samsara.season.SeasonData.Settings cfg =
                 com.shenqianye.samsara.season.SeasonManager.getInstance().settings();
@@ -339,16 +388,24 @@ public class RewindEngine {
         this.onComplete = onComplete;
         save();
         lastSaveMs = now;
-        broadcast(server, "⏳ 周目 #" + seasonId + " 开幕仪式：世界倒流即将开始（时长 "
-                + fmtDuration(durationMs) + "）。未圈地区块将在期间依次退场，倒流完成后全员传送至新出生区。");
+        broadcast(server, "⏳ 周目 #" + seasonId + " 开幕仪式：" + layer.label()
+                + " 世界倒流即将开始（时长 " + fmtDuration(durationMs)
+                + "）。未圈地区块将在期间依次退场，倒流完成后传送至新出生区。");
         return summaryText(d);
     }
 
     /** dry-run 预览：只扫描与统计，不落盘、不启动 */
     public synchronized String preview(MinecraftServer server) {
-        ScanResult scan = scan(server);
+        StackLayer layer = StackManifest.load(StackPaths.worldDir(server)).top();
+        ServerLevel level = levelOf(server, layer);
+        if (level == null) {
+            return "主世界不可用";
+        }
+        ScanResult scan = scan(level, dimensionRoot(server, layer));
         StringBuilder sb = new StringBuilder();
         sb.append("倒流 dry-run 预览（未启动，仅统计）：\n");
+        sb.append("目标：").append(layer == null ? "world" : layer.label())
+                .append(" · ").append(level.dimension().identifier()).append('\n');
         if (data != null) {
             sb.append("⚠ 当前已有进行中的倒流（周目 #").append(data.seasonId).append("），预览将按当前周目+保护集估算\n");
         }
@@ -418,7 +475,7 @@ public class RewindEngine {
             data.teleportPhaseDone = true;
             save();
             lastSaveMs = now;
-            DiffRecorder.resetWindow(); // 丢弃倒流期间改动，重新累计下个窗口
+            DiffRecorder.resetWindow(dataRootForWorldKey(data.worldKey), data.worldKey); // 丢弃倒流期间改动，重新累计下个窗口
             Samsara.LOGGER.info("[周目管理 samsara] 倒流完成（{} 区块到倒流时刻），进入传送+删除阶段",
                     data.markedCount());
             Runnable cb = onComplete;
@@ -435,7 +492,9 @@ public class RewindEngine {
             }
         }
         // ④ 归档兜底：传送完成 && 恢复完成 → 尝试再删已卸载的排队区块 → 归档
-        if (data != null && data.teleportPhaseDone && DiffRestore.isFinished(server, data)) {
+        // 外部收尾（reset same）未完成时不要归档，否则重启后 SeasonManager 看不到 teleportPhaseDone。
+        if (data != null && data.teleportPhaseDone && !data.awaitingExternalCompletion
+                && DiffRestore.isFinished(server, data)) {
             try {
                 applyPhysicalDeletion(server);
             } catch (Exception e) {
@@ -457,7 +516,7 @@ public class RewindEngine {
             return;
         }
         Path worldRoot = server.getWorldPath(LevelResource.ROOT);
-        Path dimRoot = McaRegion.overworldDimensionRoot(worldRoot);
+        Path dimRoot = dimensionRoot(server, data);
         List<int[]> marked = new ArrayList<>();
         for (RewindData.Chunk c : data.chunks) {
             if (c.marked && McaRegion.chunkExists(dimRoot, c.x, c.z)) {
@@ -473,11 +532,11 @@ public class RewindEngine {
         Samsara.LOGGER.info("[周目管理 samsara] 物理删除：已标记 {} 个，磁盘存在 {} 个（维度根 {}）",
                 data.markedCount(), marked.size(), dimRoot.toAbsolutePath().normalize());
         pruneBackupDirs(configDir.resolve("backups"), "purge_", KEEP_PURGE_BACKUPS);
-        ServerLevel overworld = server.getLevel(Level.OVERWORLD);
+        ServerLevel target = levelForData(server, data);
         List<int[]> toQueue = new ArrayList<>();
         List<int[]> toDeleteNow = new ArrayList<>();
         for (int[] c : marked) {
-            boolean loaded = overworld != null && overworld.getChunkSource().getChunkNow(c[0], c[1]) != null;
+            boolean loaded = target != null && target.getChunkSource().getChunkNow(c[0], c[1]) != null;
             if (loaded) {
                 toQueue.add(c);
             } else {
@@ -485,7 +544,7 @@ public class RewindEngine {
             }
         }
         if (!toQueue.isEmpty()) {
-            pendingQueue.enqueue(toQueue, overworld);
+            pendingQueue.enqueue(toQueue, target);
             Samsara.LOGGER.info("[周目管理 samsara] 待删队列 +{} 个仍加载的区块（卸载即删/停服兜底），累计 {}",
                     toQueue.size(), pendingQueue.queuedCount());
         }
@@ -550,7 +609,9 @@ public class RewindEngine {
      */
     public synchronized int enqueueClaimDelete(List<QueuedChunk> items, ServerLevel level) {
         Path worldRoot = level.getServer().getWorldPath(LevelResource.ROOT);
-        Path dimRoot = McaRegion.overworldDimensionRoot(worldRoot);
+        String[] nsDim = parseResourceKey(level.dimension().toString());
+        Path dimRoot = nsDim == null ? McaRegion.overworldDimensionRoot(worldRoot)
+                : worldRoot.resolve("dimensions").resolve(nsDim[0]).resolve(nsDim[1]);
         pendingQueue.beginCycle(dimRoot, configDir.resolve("backups"), pendingQueue.seasonIdOr(-1));
         return pendingQueue.enqueueNoCheck(items);
     }
@@ -579,6 +640,7 @@ public class RewindEngine {
         }
         if (data != null && (data.worldKey == null || data.worldKey.isBlank())) {
             data.worldKey = currentWorldKey(server);
+            data.layerId = data.worldKey;
             data.normalize();
             save();
             DiffRestore.reset();
@@ -586,8 +648,8 @@ public class RewindEngine {
         if (pendingQueue.isEmpty()) {
             return;
         }
-        Path worldRoot = server.getWorldPath(LevelResource.ROOT);
-        Path dimRoot = McaRegion.overworldDimensionRoot(worldRoot);
+        Path dimRoot = data != null ? dimensionRoot(server, data)
+                : McaRegion.overworldDimensionRoot(server.getWorldPath(LevelResource.ROOT));
         pendingQueue.beginCycle(dimRoot, configDir.resolve("backups"), pendingQueue.seasonIdOr(-1));
         int removed = pendingQueue.drainNonLoaded(server);
         if (removed > 0) {
@@ -631,9 +693,10 @@ public class RewindEngine {
             // —— 全空 .mca 直接删除 + 残留孤儿数据压缩重写（真正回收磁盘空间）
             // 备份位置：config/samsara/backups/（模组专属目录，不落存档内，设计规范 §15）
             try {
+                Path compactRoot = data != null ? dimensionRoot(server, data)
+                        : McaRegion.overworldDimensionRoot(server.getWorldPath(LevelResource.ROOT));
                 McaRegion.CompactStats st = McaRegion.compact(
-                        McaRegion.overworldDimensionRoot(server.getWorldPath(LevelResource.ROOT)),
-                        configDir.resolve("backups"));
+                        compactRoot, configDir.resolve("backups"));
                 if (st.filesScanned() > 0) {
                     Samsara.LOGGER.info("[周目管理 samsara] 停服瘦身: 扫描 {} · 全空删除 {} · 压缩重写 {} · 释放约 {} MB",
                             st.filesScanned(), st.filesDeleted(), st.filesRewritten(),
@@ -691,7 +754,7 @@ public class RewindEngine {
         pendingQueue.drop(); // 中止 = 一切保留；尚未删除的区块不再删除
         restorePauseSetting();
         // 中止不重置记录窗口：把冻结恢复源并回 current，下次倒流仍能看到中止前的改动
-        DiffRecorder.mergeFrozenBack(seasonId, worldKey);
+        DiffRecorder.mergeFrozenBack(seasonId, dataRootForWorldKey(worldKey), worldKey);
         return "已中止倒流（周目 #" + seasonId + "）。所有区块保持原样，不会删除任何区块"
                 + "（包括已到倒流时刻、已打退场标记但尚未删除的区块）"
                 + "。世界维持当前状态；如需重新倒流请再次 /season start";
@@ -699,6 +762,25 @@ public class RewindEngine {
 
     public synchronized boolean running() {
         return data != null;
+    }
+
+    /** 外部（reset same）已完成传送收尾：允许后续 tick 正常归档。 */
+    public synchronized void completeExternalCompletion() {
+        if (data != null) {
+            data.awaitingExternalCompletion = false;
+            data.teleportPhaseDone = true;
+            save();
+        }
+    }
+
+    /** 倒流是否已到时长终点、进入传送/删除阶段（重启恢复用）。 */
+    public synchronized boolean teleportPhaseDone() {
+        return data != null && data.teleportPhaseDone;
+    }
+
+    /** 最近一次倒流扫描到的受保护区块数（重置广播用）。 */
+    public synchronized int lastProtectedCount() {
+        return data == null ? 0 : data.protectedCount;
     }
 
     /** 当前进行中倒流的周目 id（无则 -1）；供 fake 注入选择恢复源 */
@@ -711,10 +793,14 @@ public class RewindEngine {
         return data != null ? data.worldKey : null;
     }
 
-    /** 从服务器世界路径推导世界键（世界栈中的世界目录名） */
+    /** 当前进行中倒流所属维度（无则 null） */
+    public synchronized String currentDimension() {
+        return data != null ? data.dimension : null;
+    }
+
+    /** 从服务器世界路径推导世界键（v0.24 栈顶固定 world）。 */
     public static String currentWorldKey(MinecraftServer server) {
-        return DiffStore.sanitizeWorldKey(
-                server.getWorldPath(LevelResource.ROOT).getFileName().toString());
+        return StackPaths.TOP_ID;
     }
 
     /**
@@ -742,10 +828,11 @@ public class RewindEngine {
         if (data == null) {
             return "当前没有进行中的倒流";
         }
-        DiffStore store = DiffRestore.restoreStore(configDir, data.worldKey, data.seasonId);
-        ServerLevel overworld = server.getLevel(Level.OVERWORLD);
+        DiffStore store = DiffRestore.restoreStore(dataRootForWorldKey(data.worldKey),
+                data.worldKey, data.seasonId, dimensionKey(data.dimension));
+        ServerLevel overworld = levelForData(server, data);
         if (overworld == null) {
-            return "主世界不可用";
+            return "目标栈层主世界不可用";
         }
         // 保护集一致性（2026-09-10 修复）：强制恢复同样不得越过圈地保护，
         // 否则 debug 命令会把生产路径刚堵上的"保护区块被逐格抹除"重新打开。
@@ -1229,7 +1316,7 @@ public class RewindEngine {
                 if (perRegion.isEmpty()) continue;
                 String[] nsDim = parseResourceKey(dimKey.toString());
                 if (nsDim == null) continue;
-                Path worldRoot = defaultDimRoot.getParent().getParent().getParent();
+                Path worldRoot = worldRootOf(defaultDimRoot);
                 if (worldRoot == null) continue;
                 Path dimRoot = worldRoot.resolve("dimensions").resolve(nsDim[0]).resolve(nsDim[1]).toAbsolutePath().normalize();
                 result.put(dimRoot, perRegion);
@@ -1283,16 +1370,76 @@ public class RewindEngine {
 
     // ---- 内部 ----
 
+    private static ServerLevel levelOf(MinecraftServer server, StackLayer layer) {
+        if (server == null || layer == null) {
+            return null;
+        }
+        if (layer.top) {
+            return server.getLevel(Level.OVERWORLD);
+        }
+        return com.shenqianye.samsara.season.StackDimensionLoader.level(layer, "overworld");
+    }
+
+    /** 目标栈层主世界维度目录（region/entities/poi 的父目录）。 */
+    static Path dimensionRoot(MinecraftServer server, StackLayer layer) {
+        Path worldDir = StackPaths.worldDir(server);
+        return StackPaths.layerDimensionFor(worldDir, layer == null ? StackPaths.TOP_ID : layer.id,
+                "overworld");
+    }
+
+    private static Path dimensionRoot(MinecraftServer server, RewindData d) {
+        Path worldDir = StackPaths.worldDir(server);
+        String layer = d == null || d.layerId == null || d.layerId.isBlank()
+                ? StackPaths.TOP_ID : d.layerId;
+        String dim = d == null ? "overworld" : StackPaths.dimensionOf(
+                StackPaths.keyFromString(d.dimension));
+        if (dim == null || dim.isBlank()) {
+            dim = "overworld";
+        }
+        return StackPaths.layerDimensionFor(worldDir, layer, dim);
+    }
+
+    private static ServerLevel levelForData(MinecraftServer server, RewindData d) {
+        if (server == null || d == null) {
+            return null;
+        }
+        ResourceKey<Level> key = StackPaths.keyFromString(d.dimension);
+        if (key != null) {
+            ServerLevel level = server.getLevel(key);
+            if (level != null) {
+                return level;
+            }
+        }
+        String layer = d.layerId == null || d.layerId.isBlank() ? d.worldKey : d.layerId;
+        StackLayer sl = StackManifest.load(StackPaths.worldDir(server)).byId(layer);
+        return levelOf(server, sl);
+    }
+
+    private static String dimensionKey(ResourceKey<Level> key) {
+        return key.identifier().getNamespace() + "/" + key.identifier().getPath();
+    }
+
+    private static String dimensionKey(String dimension) {
+        ResourceKey<Level> key = StackPaths.keyFromString(dimension);
+        return key == null ? DiffStore.OVERWORLD_DIM : dimensionKey(key);
+    }
+
+    private Path dataRootForWorldKey(String layerId) {
+        Path worldDir = configDir == null ? null : configDir.getParent();
+        if (worldDir == null) {
+            return configDir;
+        }
+        return StackPaths.dataRootFor(worldDir, layerId);
+    }
+
     private record ScanResult(int total, int protectedCount, List<int[]> toRewind) {
     }
 
-    private ScanResult scan(MinecraftServer server) {
-        ServerLevel overworld = server.getLevel(Level.OVERWORLD);
+    private ScanResult scan(ServerLevel level, Path dimRoot) {
         // 使用 AreaService 的旗帜圈地白名单
-        var whitelist = overworld != null
-                ? com.shenqianye.samsara.claim.AreaService.getInstance().getWhitelist(overworld.dimension())
+        var whitelist = level != null
+                ? com.shenqianye.samsara.claim.AreaService.getInstance().getWhitelist(level.dimension())
                 : java.util.Collections.<com.shenqianye.samsara.geometry.ChunkCoord>emptySet();
-        Path dimRoot = McaRegion.overworldDimensionRoot(server.getWorldPath(LevelResource.ROOT));
         Path regionDir = dimRoot.resolve("region");
         List<int[]> toRewind = new ArrayList<>();
         int total = 0;
@@ -1301,7 +1448,7 @@ public class RewindEngine {
             List<int[]> exist = McaRegion.scanExisting(f);
             for (int[] c : exist) {
                 total++;
-                if (overworld != null && whitelist.contains(new com.shenqianye.samsara.geometry.ChunkCoord(c[0], c[1]))) {
+                if (level != null && whitelist.contains(new com.shenqianye.samsara.geometry.ChunkCoord(c[0], c[1]))) {
                     protectedCount++;
                 } else {
                     toRewind.add(c);

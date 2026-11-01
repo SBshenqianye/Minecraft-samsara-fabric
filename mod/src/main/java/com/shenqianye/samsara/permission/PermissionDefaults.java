@@ -37,6 +37,12 @@ public final class PermissionDefaults {
         map.put("world info", "user");
         map.put("world enter", "owner");
         map.put("world leave", "owner");
+        // 世界重置 / 出生点
+        map.put("reset", "owner");
+        map.put("reset same", "owner");
+        map.put("reset new", "owner");
+        map.put("spawn", "user");
+        map.put("spawn history", "user");
 
         // 身份组（只读；组管理走本地 Web）
         map.put("identity status", "user");

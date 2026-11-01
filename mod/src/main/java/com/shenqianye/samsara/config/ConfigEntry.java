@@ -14,69 +14,77 @@ import java.util.List;
  * @param description 说明，用于生成注释与 Web 提示
  * @param group       页面分组
  * @param restart     修改后是否需要重启（Web 显示）
+ * @param visibleWhen 仅当另一项取指定值时显示，格式 {@code path=value}；空表示始终显示
  */
 public record ConfigEntry(String path, ConfigType type, Object defaultValue,
                           Double min, Double max, List<String> choices,
-                          String description, String group, boolean restart) {
+                          String description, String group, boolean restart,
+                          String visibleWhen) {
 
     public ConfigEntry {
         choices = choices == null ? List.of() : List.copyOf(choices);
     }
 
+    /** 追加“仅当某配置项取指定值时显示”的 Web 显示条件。 */
+    public ConfigEntry when(String condition) {
+        return new ConfigEntry(path, type, defaultValue, min, max, choices,
+                description, group, restart, condition);
+    }
+
     public static ConfigEntry bool(String path, boolean defaultValue, String group,
                                    String description) {
         return new ConfigEntry(path, ConfigType.BOOLEAN, defaultValue, null, null,
-                List.of(), description, group, false);
+                List.of(), description, group, false, null);
     }
 
     public static ConfigEntry integer(String path, int defaultValue, int min, int max,
                                       String group, String description) {
         return new ConfigEntry(path, ConfigType.INT, defaultValue, (double) min, (double) max,
-                List.of(), description, group, false);
+                List.of(), description, group, false, null);
     }
 
     public static ConfigEntry decimal(String path, double defaultValue, double min, double max,
                                       String group, String description) {
         return new ConfigEntry(path, ConfigType.DOUBLE, defaultValue, min, max,
-                List.of(), description, group, false);
+                List.of(), description, group, false, null);
     }
 
     public static ConfigEntry string(String path, String defaultValue, String group,
                                      String description) {
         return new ConfigEntry(path, ConfigType.STRING, defaultValue, null, null,
-                List.of(), description, group, false);
+                List.of(), description, group, false, null);
     }
 
     public static ConfigEntry choice(String path, String defaultValue, List<String> choices,
                                      String group, String description) {
         return new ConfigEntry(path, ConfigType.ENUM, defaultValue, null, null,
-                choices, description, group, false);
+                choices, description, group, false, null);
     }
 
     public static ConfigEntry stringList(String path, List<String> defaultValue, String group,
                                          String description) {
         return new ConfigEntry(path, ConfigType.STRING_LIST, List.copyOf(defaultValue), null, null,
-                List.of(), description, group, false);
+                List.of(), description, group, false, null);
     }
 
     /** 定长整数表（如 16 种染料颜色 → 距离）；Web 用可视化控件编辑。 */
     public static ConfigEntry intList(String path, List<Integer> defaultValue, int min, int max,
                                       String group, String description) {
         return new ConfigEntry(path, ConfigType.INT_LIST, List.copyOf(defaultValue),
-                (double) min, (double) max, List.of(), description, group, false);
+                (double) min, (double) max, List.of(), description, group, false, null);
     }
 
     public static ConfigEntry levelMap(String path, java.util.Map<String, String> defaultValue,
                                        String group, String description) {
         return new ConfigEntry(path, ConfigType.LEVEL_MAP,
                 new java.util.LinkedHashMap<>(defaultValue), null, null,
-                List.of(), description, group, false);
+                List.of(), description, group, false, null);
     }
 
     /** 结构化输出模板：有序片段列表。 */
     public static ConfigEntry template(String path, java.util.List<java.util.Map<String, Object>> defaultValue,
                                        String group, String description) {
         return new ConfigEntry(path, ConfigType.TEMPLATE, defaultValue, null, null,
-                List.of(), description, group, false);
+                List.of(), description, group, false, null);
     }
 }

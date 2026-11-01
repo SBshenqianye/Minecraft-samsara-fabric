@@ -1,5 +1,6 @@
 package com.shenqianye.samsara.config;
 
+import com.shenqianye.samsara.claim.ClaimRangeConfig;
 import com.shenqianye.samsara.output.OutputCatalog;
 import com.shenqianye.samsara.output.OutputTemplate;
 import com.shenqianye.samsara.output.TemplateCodec;
@@ -42,6 +43,10 @@ public final class ConfigSchema {
             "angry_villager", "snowflake", "ash", "white_ash");
 
     /** 15 种旗帜图案的固定 ID 与中文名；与 {@code Extension.PATTERN_DIR} 对应。 */
+    private static final List<String> CLAIM_DIRECTION_NAMES = List.of(
+            "north", "northeast", "east", "southeast",
+            "south", "southwest", "west", "northwest");
+
     private static final String[][] CLAIM_PATTERN_LABELS = {
             { "border", "全边框" },
             { "cross", "交叉" },
@@ -159,7 +164,14 @@ public final class ConfigSchema {
                 ConfigEntry.integer("port", 8720, 1024, 65_535, "服务",
                         "本地面板端口"),
                 ConfigEntry.string("token", "", "鉴权",
-                        "访问令牌，由程序在首次启动时生成；请求需 Authorization: Bearer <token>")
+                        "访问令牌，由程序在首次启动时生成；请求需 Authorization: Bearer <token>"),
+                ConfigEntry.stringList("importRoots", List.of(), "世界栈",
+                        "允许 Web 导入世界栈的服务器本地目录（绝对路径）；服务器根目录始终允许。"
+                                + "留空时只允许服务器根目录下的 world；来源目录只读，不会被修改"),
+                ConfigEntry.integer("backupKeep", 5, 0, 100, "世界栈",
+                        "服务器级世界栈备份保留份数：只清理 samsara/world-stack-backup 下的"
+                                + "导入/提升栈顶备份，按时间保留最新 N 份；0 表示不自动清理；"
+                                + "world-stack-archive 是用户数据，永不自动删除")
         ));
 
         List<ConfigEntry> outputEntries = new ArrayList<>();
@@ -227,20 +239,24 @@ public final class ConfigSchema {
     private static List<ConfigEntry> claimRangeEntries() {
         List<ConfigEntry> entries = new ArrayList<>();
         entries.add(ConfigEntry.choice("mode", "dye", List.of("dye", "fixed"), "保护范围",
-                "dye = 每个染料颜色对应一个延伸距离；fixed = 所有颜色都使用 fixedDistance"));
+                "dye = 每个图案颜色对应一个延伸距离；fixed = 所有图案颜色都使用 fixedDistance"));
         entries.add(ConfigEntry.integer("fixedDistance", 4, 1, 32, "保护范围",
-                "固定模式下的单方向延伸距离（区块）"));
+                "固定模式下的单方向延伸距离（区块）；仅 mode=fixed 时生效")
+                .when("mode=fixed"));
         entries.add(ConfigEntry.intList("colorDistances",
                 List.of(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16),
                 1, 32, "保护范围",
-                "染料颜色 0~15（白→黑）各自对应的单方向延伸距离（区块）；"
-                        + "Web 配置页按染料色块可视化编辑并实时预览保护形状"));
+                "图案颜色 0~15（白→黑）各自对应的单方向延伸距离（区块）；"
+                        + "这是图案层颜色，不是旗面底色；Web 圈地范围页按色块可视化编辑并实时预览保护形状")
+                .when("mode=dye"));
         entries.add(ConfigEntry.integer("maxDistance", 16, 1, 32, "保护范围",
                 "所有模式下的单方向距离上限；超出会截断，用来限制最大圈地规模"));
         for (String[] pattern : CLAIM_PATTERN_LABELS) {
-            entries.add(ConfigEntry.integer("patternDistances." + pattern[0], 0, 0, 32, "图案距离",
-                    pattern[1] + "（" + pattern[0] + "）：0 = 沿用染料/固定距离；"
-                            + "大于 0 时该图案固定使用这个距离（区块）"));
+            entries.add(ConfigEntry.stringList("patternDirections." + pattern[0],
+                    ClaimRangeConfig.DEFAULT_PATTERN_DIRECTIONS.get(pattern[0]), "图案方向",
+                    pattern[1] + "（" + pattern[0] + "）：该图案在单位长度上的延伸方向"
+                            + "（north/northeast/east/southeast/south/southwest/west/northwest）；"
+                            + "颜色只负责延长这些方向，图案本身不决定距离"));
         }
         return entries;
     }
@@ -354,6 +370,18 @@ public final class ConfigSchema {
                             values.add(item.trim());
                         }
                     }
+                }
+                if (path.startsWith("patternDirections.")) {
+                    List<String> normalized = new ArrayList<>();
+                    for (String name : CLAIM_DIRECTION_NAMES) {
+                        if (values.stream().anyMatch(item -> item.equalsIgnoreCase(name))) {
+                            normalized.add(name);
+                        }
+                    }
+                    if (normalized.isEmpty()) {
+                        throw new ConfigValidationException(path, "至少选择一个方向");
+                    }
+                    values = normalized;
                 }
                 return List.copyOf(values);
             }

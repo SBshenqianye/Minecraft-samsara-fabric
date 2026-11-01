@@ -34,8 +34,10 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class DiffRecorder {
     private static Path configDir;
+    /** 服务器世界目录（world/），用于按维度解析栈数据根；启动前为 null */
+    private static volatile Path worldRoot;
     private static volatile Path currentRoot;
-    /** 当前世界键（世界栈中的世界目录名）；服务器启动前为 null */
+    /** 栈顶世界键（旧层为 stack_<n>）；服务器启动前为 null */
     private static volatile String worldKey;
     /** 每个维度一个常开窗口库；常开窗口不缓存新写入（避免常开窗口内存无界增长） */
     private static final Map<String, DiffStore> stores = new ConcurrentHashMap<>();
@@ -46,13 +48,13 @@ public class DiffRecorder {
     private DiffRecorder() {
     }
 
-    /** 服务器启动时初始化：开启常开记录窗口（diff/live），并迁移旧的无维度/无世界布局 */
+    /** 服务器启动时初始化：记录数据根；真正的维度/栈路由在 {@link #initWorld(MinecraftServer)}。 */
     public static synchronized void init(Path dataRoot) {
         if (currentRoot != null) {
             flush(); // 内置服务器重启：先把上一个窗口的缓冲落盘
         }
         configDir = dataRoot;
-        // 新布局已在数据根之上，不再带世界层；世界键只保留用于日志。
+        worldRoot = dataRoot == null ? null : dataRoot.getParent();
         currentRoot = null;
         worldKey = null;
         stores.clear();
@@ -62,29 +64,52 @@ public class DiffRecorder {
     }
 
     /**
-     * 服务器启动：确定当前世界目录名，把窗口根切到 {@code diff/live/<世界>}，
-     * 并把旧窗口名（current→live、s&lt;id&gt;→cycle&lt;id&gt;）与旧世界层迁入新布局。
+     * 服务器启动：按栈层确定每个维度的数据根。栈顶数据根 = {@code world/samsara}，
+     * 旧栈 = {@code world/samsara/stack/stack_<n>}；每个数据根内仍是
+     * {@code diff/live/<命名空间>/<维度>}。旧世界层会在各栈根内一次性剥离。
      */
     public static synchronized void initWorld(MinecraftServer server) {
         if (configDir == null) {
             return;
         }
-        String key = DiffStore.sanitizeWorldKey(
-                server.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT)
-                        .getFileName().toString());
-        if (key.equals(worldKey) && currentRoot != null) {
+        Path root = com.shenqianye.samsara.season.StackPaths.worldDir(server);
+        if (root.equals(worldRoot) && currentRoot != null) {
             return;
         }
         flush();
-        worldKey = key;
-        currentRoot = DiffStore.liveWorldRoot(configDir, key);
-        // 旧窗口名 + 所有窗口的旧布局一次性迁移（幂等、不丢数据）
-        Path diffRoot = configDir.resolve("diff");
-        DiffStore.migrateLayout(diffRoot, key);
+        worldRoot = root;
+        configDir = com.shenqianye.samsara.season.StackPaths.samsara(root);
+        worldKey = com.shenqianye.samsara.season.StackPaths.TOP_ID;
+        for (Path dataRoot : com.shenqianye.samsara.season.StackPaths.dataRoots(root)) {
+            String key = worldKeyOf(dataRoot);
+            DiffStore.migrateLayout(dataRoot.resolve("diff"), key);
+        }
+        currentRoot = DiffStore.liveWorldRoot(configDir, worldKey);
         stores.clear();
         storeFor(DiffStore.OVERWORLD_DIM);
         clearEditContext();
-        Samsara.LOGGER.info("[samsara] 差异记录已开启（常开窗口 diff/live/{}，按维度分目录）", key);
+        Samsara.LOGGER.info("[samsara] 差异记录已开启（常开窗口 {}，按栈/维度路由）", currentRoot);
+    }
+
+    /** 数据根 → 栈层 worldKey（栈顶 world，旧层 stack_<n>）。 */
+    public static String worldKeyOf(Path dataRoot) {
+        if (dataRoot == null || configDir == null || dataRoot.equals(configDir)) {
+            return com.shenqianye.samsara.season.StackPaths.TOP_ID;
+        }
+        Path name = dataRoot.getFileName();
+        return name == null ? com.shenqianye.samsara.season.StackPaths.TOP_ID
+                : name.toString();
+    }
+
+    private static Path dataRootFor(MinecraftServer server, ResourceKey<Level> dimension) {
+        Path root = worldRoot;
+        if (root == null && server != null) {
+            root = com.shenqianye.samsara.season.StackPaths.worldDir(server);
+        }
+        if (root == null) {
+            return configDir;
+        }
+        return com.shenqianye.samsara.season.StackPaths.dataRootFor(root, dimension);
     }
 
     /** 当前世界键（世界栈中的世界目录名；服务器启动前为 null） */
@@ -98,32 +123,39 @@ public class DiffRecorder {
      * 把 live 合并进目标而不是丢弃旧数据。其他世界的数据留在 live，不受影响。
      */
     public static synchronized void freezeCurrent(int seasonId) {
-        if (configDir == null || currentRoot == null) {
+        freezeCurrent(seasonId, configDir, worldKey);
+    }
+
+    /** 冻结指定栈层的 live 窗口（reset same 目标可能不是栈顶）。 */
+    public static synchronized void freezeCurrent(int seasonId, Path dataRoot, String wk) {
+        if (dataRoot == null) {
             return;
         }
+        String key = sanitize(wk);
+        Path liveRoot = DiffStore.liveWorldRoot(dataRoot, key);
         flush();
-        Path dst = DiffStore.cycleWorldRoot(configDir, seasonId, worldKey);
+        Path dst = DiffStore.cycleWorldRoot(dataRoot, seasonId, key);
         try {
-            if (Files.exists(currentRoot)) {
+            if (Files.exists(liveRoot)) {
                 if (Files.exists(dst)) {
-                    DiffStore.mergeWindows(currentRoot, dst);
-                    deleteRecursively(currentRoot);
+                    DiffStore.mergeWindows(liveRoot, dst);
+                    deleteRecursively(liveRoot);
                     Samsara.LOGGER.warn("[周目管理 samsara] 冻结时目标恢复库已存在，已合并 live（不丢弃旧窗口）");
                 } else {
-                    Files.createDirectories(currentRoot.getParent());
+                    Files.createDirectories(liveRoot.getParent());
                     Files.createDirectories(dst.getParent());
-                    Files.move(currentRoot, dst);
+                    Files.move(liveRoot, dst);
                 }
             }
-            Files.createDirectories(currentRoot);
+            Files.createDirectories(liveRoot);
             stores.clear();
-            storeFor(DiffStore.OVERWORLD_DIM);
-            Samsara.LOGGER.info("[周目管理 samsara] 差异库冻结: diff/live/{} → diff/cycle{}/{}（本次倒流恢复源，窗口=上次删块后至今）",
-                    worldKey, seasonId, worldKey);
+            storeFor(dataRoot, DiffStore.OVERWORLD_DIM);
+            Samsara.LOGGER.info("[周目管理 samsara] 差异库冻结: {}/diff/live → {}/diff/cycle{}（本次倒流恢复源）",
+                    key, key, seasonId);
         } catch (IOException e) {
             Samsara.LOGGER.error("[周目管理 samsara] 差异库冻结失败（保留 live 继续记录）: {}", e.getMessage());
             stores.clear();
-            storeFor(DiffStore.OVERWORLD_DIM);
+            storeFor(dataRoot, DiffStore.OVERWORLD_DIM);
         }
     }
 
@@ -132,20 +164,27 @@ public class DiffRecorder {
      * 开启新窗口（下次倒流的恢复源将从此刻起累计）。
      */
     public static synchronized void resetWindow() {
-        if (configDir == null || currentRoot == null) {
+        resetWindow(configDir, worldKey);
+    }
+
+    /** 重置指定栈层的记录窗口（倒流完成、物理删除执行时）。 */
+    public static synchronized void resetWindow(Path dataRoot, String wk) {
+        if (dataRoot == null) {
             return;
         }
+        String key = sanitize(wk);
+        Path liveRoot = DiffStore.liveWorldRoot(dataRoot, key);
         flush();
         try {
-            deleteRecursively(currentRoot);
-            Files.createDirectories(currentRoot);
+            deleteRecursively(liveRoot);
+            Files.createDirectories(liveRoot);
         } catch (IOException e) {
             Samsara.LOGGER.warn("[周目管理 samsara] 重置记录窗口失败: {}", e.getMessage());
         }
         stores.clear();
         enabled = true;
-        storeFor(DiffStore.OVERWORLD_DIM);
-        Samsara.LOGGER.info("[周目管理 samsara] 差异记录窗口已重置（丢弃倒流期间改动，重新累计）");
+        storeFor(dataRoot, DiffStore.OVERWORLD_DIM);
+        Samsara.LOGGER.info("[周目管理 samsara] 差异记录窗口已重置（{}，丢弃倒流期间改动，重新累计）", key);
     }
 
     /**
@@ -159,33 +198,35 @@ public class DiffRecorder {
 
     /** 指定世界的中止合并（重启后 rewind.json 的世界可能与当前世界不同时用） */
     public static synchronized void mergeFrozenBack(int seasonId, String wk) {
-        if (configDir == null || currentRoot == null || seasonId <= 0) {
+        mergeFrozenBack(seasonId, configDir, wk);
+    }
+
+    /** 指定栈层的恢复库并回 live（reset same 目标层）。 */
+    public static synchronized void mergeFrozenBack(int seasonId, Path dataRoot, String wk) {
+        if (dataRoot == null || seasonId <= 0) {
             return;
         }
-        String key = wk == null || wk.isBlank() ? worldKey : wk;
-        if (key == null) {
-            key = "world";
-        }
-        Path frozen = DiffStore.cycleWorldRoot(configDir, seasonId, key);
+        String key = sanitize(wk);
+        Path frozen = DiffStore.cycleWorldRoot(dataRoot, seasonId, key);
         if (!Files.exists(frozen)) {
             return;
         }
         flush();
         try {
-            Path current = DiffStore.liveWorldRoot(configDir, key);
+            Path current = DiffStore.liveWorldRoot(dataRoot, key);
             Files.createDirectories(current);
             DiffStore.mergeWindows(frozen, current);
             deleteRecursively(frozen);
-            deleteEmptyCycleDir(seasonId);
+            deleteEmptyCycleDir(dataRoot, seasonId);
             stores.clear();
-            storeFor(DiffStore.OVERWORLD_DIM);
-            Samsara.LOGGER.info("[周目管理 samsara] 中止倒流：恢复库 diff/cycle{}/{} 已并回记录窗口（下次倒流仍可见）",
+            storeFor(dataRoot, DiffStore.OVERWORLD_DIM);
+            Samsara.LOGGER.info("[周目管理 samsara] 中止倒流：恢复库 cycle{}/{} 已并回记录窗口（下次倒流仍可见）",
                     seasonId, key);
         } catch (IOException e) {
             Samsara.LOGGER.error("[周目管理 samsara] 中止倒流：恢复库并回失败（保留 diff/cycle{} 供下次冻结合并）: {}",
                     seasonId, e.getMessage());
             stores.clear();
-            storeFor(DiffStore.OVERWORLD_DIM);
+            storeFor(dataRoot, DiffStore.OVERWORLD_DIM);
         }
     }
 
@@ -196,17 +237,19 @@ public class DiffRecorder {
 
     /** 指定世界的恢复源清理（重启后 rewind.json 的世界可能与当前世界不同时用） */
     public static synchronized void deleteRecovery(int seasonId, String wk) {
-        if (configDir == null || seasonId <= 0) {
+        deleteRecovery(seasonId, configDir, wk);
+    }
+
+    /** 指定栈层的恢复源清理。 */
+    public static synchronized void deleteRecovery(int seasonId, Path dataRoot, String wk) {
+        if (dataRoot == null || seasonId <= 0) {
             return;
         }
-        String key = wk == null || wk.isBlank() ? worldKey : wk;
-        if (key == null) {
-            key = "world";
-        }
-        Path frozen = DiffStore.cycleWorldRoot(configDir, seasonId, key);
+        String key = sanitize(wk);
+        Path frozen = DiffStore.cycleWorldRoot(dataRoot, seasonId, key);
         try {
             deleteRecursively(frozen);
-            deleteEmptyCycleDir(seasonId);
+            deleteEmptyCycleDir(dataRoot, seasonId);
             Samsara.LOGGER.info("[周目管理 samsara] 恢复源已清理: diff/cycle{}/{}", seasonId, key);
         } catch (IOException e) {
             Samsara.LOGGER.warn("[周目管理 samsara] 恢复源清理失败 diff/cycle{}: {}", seasonId, e.getMessage());
@@ -214,8 +257,8 @@ public class DiffRecorder {
     }
 
     /** 周目目录下已无任何世界数据时删除空目录（世界栈下其他世界可能还在用） */
-    private static void deleteEmptyCycleDir(int seasonId) {
-        Path seasonDir = DiffStore.cycleRoot(configDir, seasonId);
+    private static void deleteEmptyCycleDir(Path dataRoot, int seasonId) {
+        Path seasonDir = DiffStore.cycleRoot(dataRoot, seasonId);
         try (var entries = Files.newDirectoryStream(seasonDir)) {
             if (!entries.iterator().hasNext()) {
                 Files.deleteIfExists(seasonDir);
@@ -223,6 +266,11 @@ public class DiffRecorder {
         } catch (IOException ignored) {
             // 目录不存在或有数据：保留
         }
+    }
+
+    private static String sanitize(String key) {
+        return DiffStore.sanitizeWorldKey(
+                key == null || key.isBlank() ? com.shenqianye.samsara.season.StackPaths.TOP_ID : key);
     }
 
     /** 把当前窗口所有维度的缓冲区落盘（停服/定期 flush 调用） */
@@ -308,15 +356,26 @@ public class DiffRecorder {
     }
 
     private static DiffStore storeFor(String dimKey) {
-        if (currentRoot == null) {
+        return storeFor(configDir, dimKey);
+    }
+
+    private static DiffStore storeFor(Path dataRoot, String dimKey) {
+        if (dataRoot == null) {
             return null;
         }
-        return stores.computeIfAbsent(dimKey, k -> DiffStore.open(currentRoot.resolve(k), false));
+        String key = dataRoot.toAbsolutePath().normalize() + "|" + dimKey;
+        return stores.computeIfAbsent(key, k -> DiffStore.open(
+                DiffStore.liveWorldRoot(dataRoot, worldKeyOf(dataRoot)).resolve(dimKey), false));
     }
 
     private static String dimensionKey(ResourceKey<Level> key) {
         // 26.2 起 ResourceLocation 更名为 Identifier，ResourceKey#location() 改为 identifier()
         return key.identifier().getNamespace() + "/" + key.identifier().getPath();
+    }
+
+    private static String stackKey(ResourceKey<Level> key) {
+        String id = com.shenqianye.samsara.season.StackPaths.layerIdOf(key);
+        return id == null ? com.shenqianye.samsara.season.StackPaths.TOP_ID : id;
     }
 
     /**
@@ -351,7 +410,8 @@ public class DiffRecorder {
         if (stateId < 0) {
             return;
         }
-        DiffStore s = storeFor(dimensionKey(level.dimension()));
+        DiffStore s = storeFor(dataRootFor(level.getServer(), level.dimension()),
+                dimensionKey(level.dimension()));
         if (s != null) {
             s.record(pos.getX(), pos.getY(), pos.getZ(), stateId, System.currentTimeMillis());
         }
@@ -378,14 +438,14 @@ public class DiffRecorder {
         }
         RewindEngine re = RewindEngine.getInstance();
         String dim = level == null ? DiffStore.OVERWORLD_DIM : dimensionKey(level.dimension());
-        if (re.running() && re.currentSeasonId() > 0) {
-            String wk = re.currentWorldKey();
-            if (wk == null || wk.isBlank()) {
-                wk = worldKey == null ? "world" : worldKey;
-            }
-            return DiffStore.forSeason(configDir, wk, re.currentSeasonId(), dim);
+        Path dataRoot = level == null ? configDir : dataRootFor(level.getServer(), level.dimension());
+        String stackKey = level == null
+                ? com.shenqianye.samsara.season.StackPaths.TOP_ID : stackKey(level.dimension());
+        if (re.running() && re.currentSeasonId() > 0
+                && stackKey.equals(sanitize(re.currentWorldKey()))) {
+            return DiffStore.forSeason(dataRoot, stackKey, re.currentSeasonId(), dim);
         }
-        return storeFor(dim);
+        return storeFor(dataRoot, dim);
     }
 
     /** fake 写盘后让恢复侧重新读盘（否则已缓存的区块看不到新注入/索引会错位） */

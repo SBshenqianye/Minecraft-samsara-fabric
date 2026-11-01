@@ -28,7 +28,9 @@ import java.util.UUID;
  * 渲染（含玩家皮肤）。
  * <p>
  * <b>回放期间</b>：无重力、每 tick 由 {@link TrackReplay} 直接 snapTo 轨迹位置，
- * 无 AI、不自己走；可以被玩家攻击/交互（第一次即触发<b>捕捉</b>）。
+ * 无 AI、不自己走；可见姿态每 tick 由 {@link TrackMannequin#applyTrackFlags(int)}
+ * 按当前轨迹点的 flags 应用（潜行/疾跑/游泳/飞行/骑乘/受伤/死亡）。
+ * 可以被玩家攻击/交互（第一次即触发<b>捕捉</b>）。
  * <p>
  * <b>捕捉后</b>：变成普通实体——恢复重力与碰撞、可被推/活塞搬运/拴绳牵引、可被攻击杀死。
  * 注意 Mannequin 继承 {@code Avatar → LivingEntity}，<b>不是 Mob</b>，因此没有
@@ -38,7 +40,7 @@ import java.util.UUID;
  * 捕捉只影响该实体与该玩家的轨迹回放：不保护所在区块、不写 trophies.json、
  * 不做区块删除后重建，方块逆熵完全照旧。
  */
-public class ReplayMannequin extends Mannequin implements Leashable {
+public class ReplayMannequin extends TrackMannequin implements Leashable {
     /** 捕捉回调：由 TrackReplay 注入（停止回放、记录 cutoff、广播） */
     public interface CaptureHandler {
         void onCaptured(ReplayMannequin mannequin, ServerPlayer player);
@@ -91,6 +93,9 @@ public class ReplayMannequin extends Mannequin implements Leashable {
     /** 捕捉：停在原地、清空速度、恢复重力/碰撞，之后就是普通实体 */
     public void markCaptured() {
         captured = true;
+        // 回放姿态（潜行/游泳/飞行/骑乘/死亡）只是回放表现；捕捉后回到站立，
+        // 避免人偶作为普通实体永久保持倒地/平飞姿态
+        applyTrackFlags(0);
         setNoGravity(false);
         setDeltaMovement(Vec3.ZERO);
         setCustomNameVisible(true);

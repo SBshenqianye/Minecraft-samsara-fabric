@@ -1,7 +1,5 @@
 package com.shenqianye.samsara.claim;
 
-import java.util.Map;
-
 /**
  * 旗帜方向扩展（设计文档 §6.2.1）——**8 方向模型**。
  * <p>
@@ -38,60 +36,27 @@ public class Extension {
     private int downLeft;   // 后左 → 西南
     private int upLeft;     // 前左 → 西北
 
-    // ---- MC 26.2 图案 asset_id → Extension 字段映射（共 15 种） ----
-    // pattern ID = 观看者视角；Extension 字段 = 纹章学视角（180° 点对称）
-    private static final Map<String, String> PATTERN_DIR;
-    static {
-        var b = new java.util.HashMap<String, String>();
-        // 4 条单向条纹：观看者前/后/左/右 → 纹章学 后/前/右/左
-        b.put("stripe_top", "down");
-        b.put("stripe_bottom", "up");
-        b.put("stripe_left", "right");
-        b.put("stripe_right", "left");
-        // 4 个角图案：观看者 前左/前右/后左/后右 → 纹章学 后右/后左/前右/前左
-        b.put("square_top_left", "downRight");
-        b.put("square_top_right", "downLeft");
-        b.put("square_bottom_left", "upRight");
-        b.put("square_bottom_right", "upLeft");
-        // 2 条斜向条纹：关于中心点对称，集合不变
-        b.put("stripe_downleft", "slash");          // 后左 + 前右
-        b.put("stripe_downright", "backslash");    // 前左 + 后右
-        // 组合图案
-        b.put("stripe_center", "center");           // 竖条：前 + 后
-        b.put("stripe_middle", "middle");           // 横条：左 + 右
-        b.put("cross", "cross");                    // 4 个斜方向
-        b.put("straight_cross", "straightCross");   // 4 个正方向
-        b.put("border", "border");                  // 全部 8 方向
-        PATTERN_DIR = java.util.Map.copyOf(b);
-    }
+    // ---- 方向配置来自 claim-range.yml 的 patternDirections ----
 
     /**
      * 添加一个图案的方向扩展。color 为 MC NBT Color 字段值（0-15）。
-     * 延伸距离由 {@link ClaimRangeConfig} 决定（默认仍为 color + 1，1~16 区块）；
+     * 图案只决定单位长度的方向，延伸距离只由颜色/固定距离决定；
      * 同一方向取最大值。
      */
     public void addDirection(String patternId, int color) {
-        int strength = ClaimRangeConfig.getInstance().distanceForColor(color, patternId);
-        String dir = PATTERN_DIR.get(patternId);
-        if (dir == null) return;
-
-        switch (dir) {
-            case "up"            -> setUp(strength);
-            case "upRight"       -> setUpRight(strength);
-            case "right"         -> setRight(strength);
-            case "downRight"     -> setDownRight(strength);
-            case "down"          -> setDown(strength);
-            case "downLeft"      -> setDownLeft(strength);
-            case "left"          -> setLeft(strength);
-            case "upLeft"        -> setUpLeft(strength);
-            case "center"        -> { setUp(strength); setDown(strength); }          // 竖条
-            case "middle"        -> { setLeft(strength); setRight(strength); }        // 横条
-            case "slash"         -> { setDownLeft(strength); setUpRight(strength); }  // ↙↗
-            case "backslash"     -> { setUpLeft(strength); setDownRight(strength); }  // ↖↘
-            case "cross"         -> { setSlash(strength); setBackslash(strength); }   // 4 斜
-            case "straightCross" -> { setCenter(strength); setMiddle(strength); }     // 4 正
-            case "border"        -> { setCross(strength); setStraightCross(strength); } // 全部 8
-            default -> { }
+        int strength = ClaimRangeConfig.getInstance().distanceForColor(color);
+        for (String dir : ClaimRangeConfig.getInstance().directionsFor(patternId)) {
+            switch (dir) {
+                case "north"     -> setUp(strength);
+                case "northeast" -> setUpRight(strength);
+                case "east"      -> setRight(strength);
+                case "southeast" -> setDownRight(strength);
+                case "south"     -> setDown(strength);
+                case "southwest" -> setDownLeft(strength);
+                case "west"      -> setLeft(strength);
+                case "northwest" -> setUpLeft(strength);
+                default -> { }
+            }
         }
     }
 

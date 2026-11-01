@@ -86,6 +86,12 @@ public final class ViewTrackReader {
     private record CacheKey(Path path, long size, long mtime) {
     }
 
+    /** 按栈根解析捕捉截断（每个栈根有自己的 cutoffs.json）。 */
+    @FunctionalInterface
+    public interface CutoffResolver {
+        Long resolve(Path trackRoot, UUID owner, int cycleId);
+    }
+
     // ---- 单文件 ----
 
     public static ParsedFile read(Path file) throws IOException {
@@ -223,6 +229,12 @@ public final class ViewTrackReader {
      */
     public static LoadResult load(Path worldRoot, int cycleId, UUID uuid,
                                   long from, long to, Long cutoff) throws IOException {
+        return load(List.of(worldRoot), cycleId, uuid, from, to, cutoff);
+    }
+
+    /** 多栈层版本：按 roots 顺序查找同一天的文件（同一栈层内不会重复）。 */
+    public static LoadResult load(List<Path> roots, int cycleId, UUID uuid,
+                                  long from, long to, Long cutoff) throws IOException {
         List<ViewCursor.Segment> segments = new ArrayList<>();
         List<Path> files = new ArrayList<>();
         boolean truncated = false;
@@ -232,30 +244,32 @@ public final class ViewTrackReader {
         LocalDate day = ViewTime.dayOf(from);
         LocalDate lastDay = ViewTime.dayOf(Math.max(from, to - 1));
         for (LocalDate d = day; !d.isAfter(lastDay); d = d.plusDays(1)) {
-            Path file = TrackLayout.file(worldRoot, cycleId, d, uuid);
-            if (!Files.isRegularFile(file)) {
-                continue;
-            }
-            ParsedFile parsed = read(file);
-            files.add(file);
-            truncated |= parsed.truncated();
-            for (TrackStore.Segment seg : parsed.segments()) {
-                if (seg.samples.isEmpty()) {
+            for (Path worldRoot : roots) {
+                Path file = TrackLayout.file(worldRoot, cycleId, d, uuid);
+                if (!Files.isRegularFile(file) || files.contains(file)) {
                     continue;
                 }
-                List<TrackStore.Sample> samples = seg.samples;
-                if (cutoff != null) {
-                    List<TrackStore.Sample> cut = TrackStore.truncate(samples, cutoff);
-                    if (cut.size() != samples.size()) {
-                        cutoffApplied = true;
+                ParsedFile parsed = read(file);
+                files.add(file);
+                truncated |= parsed.truncated();
+                for (TrackStore.Segment seg : parsed.segments()) {
+                    if (seg.samples.isEmpty()) {
+                        continue;
                     }
-                    samples = cut;
+                    List<TrackStore.Sample> samples = seg.samples;
+                    if (cutoff != null) {
+                        List<TrackStore.Sample> cut = TrackStore.truncate(samples, cutoff);
+                        if (cut.size() != samples.size()) {
+                            cutoffApplied = true;
+                        }
+                        samples = cut;
+                    }
+                    if (samples.isEmpty()) {
+                        continue;
+                    }
+                    segments.add(new ViewCursor.Segment(seg.dimension, samples));
+                    total += samples.size();
                 }
-                if (samples.isEmpty()) {
-                    continue;
-                }
-                segments.add(new ViewCursor.Segment(seg.dimension, samples));
-                total += samples.size();
             }
         }
         if (files.isEmpty()) {
@@ -272,6 +286,20 @@ public final class ViewTrackReader {
                                   long from, long to,
                                   java.util.function.BiFunction<UUID, Integer, Long> cutoffFor)
             throws IOException {
+        return load(List.of(worldRoot), cycleId, uuids, from, to, cutoffFor);
+    }
+
+    public static LoadResult load(List<Path> roots, int cycleId, java.util.Collection<UUID> uuids,
+                                  long from, long to,
+                                  java.util.function.BiFunction<UUID, Integer, Long> cutoffFor)
+            throws IOException {
+        return load(roots, cycleId, uuids, from, to,
+                (root, owner, cycle) -> cutoffFor == null ? null : cutoffFor.apply(owner, cycle));
+    }
+
+    public static LoadResult load(List<Path> roots, int cycleId, java.util.Collection<UUID> uuids,
+                                  long from, long to, CutoffResolver cutoffFor)
+            throws IOException {
         List<ViewCursor.Segment> segments = new ArrayList<>();
         List<Path> files = new ArrayList<>();
         boolean truncated = false;
@@ -281,32 +309,35 @@ public final class ViewTrackReader {
         LocalDate lastDay = ViewTime.dayOf(Math.max(from, to - 1));
         if (uuids != null) {
             for (UUID uuid : uuids) {
-                Long cutoff = cutoffFor == null ? null : cutoffFor.apply(uuid, cycleId);
                 for (LocalDate d = day; !d.isAfter(lastDay); d = d.plusDays(1)) {
-                    Path file = TrackLayout.file(worldRoot, cycleId, d, uuid);
-                    if (!Files.isRegularFile(file) || files.contains(file)) {
-                        continue;
-                    }
-                    ParsedFile parsed = read(file);
-                    files.add(file);
-                    truncated |= parsed.truncated();
-                    for (TrackStore.Segment seg : parsed.segments()) {
-                        if (seg.samples.isEmpty()) {
+                    for (Path worldRoot : roots) {
+                        Path file = TrackLayout.file(worldRoot, cycleId, d, uuid);
+                        if (!Files.isRegularFile(file) || files.contains(file)) {
                             continue;
                         }
-                        List<TrackStore.Sample> samples = seg.samples;
-                        if (cutoff != null) {
-                            List<TrackStore.Sample> cut = TrackStore.truncate(samples, cutoff);
-                            if (cut.size() != samples.size()) {
-                                cutoffApplied = true;
+                        Long cutoff = cutoffFor == null ? null
+                                : cutoffFor.resolve(worldRoot, uuid, cycleId);
+                        ParsedFile parsed = read(file);
+                        files.add(file);
+                        truncated |= parsed.truncated();
+                        for (TrackStore.Segment seg : parsed.segments()) {
+                            if (seg.samples.isEmpty()) {
+                                continue;
                             }
-                            samples = cut;
+                            List<TrackStore.Sample> samples = seg.samples;
+                            if (cutoff != null) {
+                                List<TrackStore.Sample> cut = TrackStore.truncate(samples, cutoff);
+                                if (cut.size() != samples.size()) {
+                                    cutoffApplied = true;
+                                }
+                                samples = cut;
+                            }
+                            if (samples.isEmpty()) {
+                                continue;
+                            }
+                            segments.add(new ViewCursor.Segment(seg.dimension, samples));
+                            total += samples.size();
                         }
-                        if (samples.isEmpty()) {
-                            continue;
-                        }
-                        segments.add(new ViewCursor.Segment(seg.dimension, samples));
-                        total += samples.size();
                     }
                 }
             }
@@ -322,16 +353,31 @@ public final class ViewTrackReader {
     /** 扫描同一身份组多个账号入口的轨迹文件（按 data UUID 聚合）。 */
     public static List<Available> available(Path worldRoot, java.util.Collection<UUID> uuids,
                                             java.util.function.BiFunction<UUID, Integer, Long> cutoffFor) {
+        return available(List.of(worldRoot), uuids, cutoffFor);
+    }
+
+    /** 多栈层版本：聚合所有 roots 下的可回看时段。 */
+    public static List<Available> available(List<Path> roots, java.util.Collection<UUID> uuids,
+                                            java.util.function.BiFunction<UUID, Integer, Long> cutoffFor) {
+        return available(roots, uuids,
+                (root, owner, cycle) -> cutoffFor == null ? null : cutoffFor.apply(owner, cycle));
+    }
+
+    /** 多栈层版本：每个根使用自己的 cutoffs.json。 */
+    public static List<Available> available(List<Path> roots, java.util.Collection<UUID> uuids,
+                                            CutoffResolver cutoffFor) {
         Map<Path, Available> merged = new LinkedHashMap<>();
         if (uuids != null) {
             for (UUID uuid : uuids) {
                 if (uuid == null) {
                     continue;
                 }
-                List<Available> one = available(worldRoot, uuid,
-                        cycle -> cutoffFor == null ? null : cutoffFor.apply(uuid, cycle));
-                for (Available available : one) {
-                    merged.putIfAbsent(available.file(), available);
+                for (Path worldRoot : roots) {
+                    List<Available> one = available(worldRoot, uuid,
+                            cycle -> cutoffFor == null ? null : cutoffFor.resolve(worldRoot, uuid, cycle));
+                    for (Available available : one) {
+                        merged.putIfAbsent(available.file(), available);
+                    }
                 }
             }
         }

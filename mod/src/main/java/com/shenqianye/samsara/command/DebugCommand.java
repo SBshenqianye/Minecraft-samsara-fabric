@@ -133,6 +133,8 @@ public class DebugCommand {
                         .executes(ctx -> reply(ctx.getSource(), tps())))
                 .then(SeasonCommand.seasonNode())
                 .then(WorldCommand.worldNode())
+                .then(ResetCommand.resetNode())
+                .then(SpawnCommand.spawnNode())
                 .then(ClaimCommand.claimNode())
                 .then(TrackViewCommand.trackNode())
                 .then(WhereCommand.whereNode())
@@ -167,16 +169,38 @@ public class DebugCommand {
                                                 .executes(ctx -> reply(ctx.getSource(),
                                                         com.shenqianye.samsara.season.WorldStackManager
                                                                 .getInstance().debugPush(
+                                                                        ctx.getSource().getServer(),
                                                                         StringArgumentType.getString(ctx, "world"))))))
                                 .then(Commands.literal("pop")
                                         .executes(ctx -> reply(ctx.getSource(),
                                                 com.shenqianye.samsara.season.WorldStackManager
-                                                        .getInstance().debugPop())))
+                                                        .getInstance().debugPop(
+                                                                ctx.getSource().getServer()))))
                                 .then(Commands.literal("reset")
                                         .executes(ctx -> reply(ctx.getSource(),
                                                 com.shenqianye.samsara.season.WorldStackManager
                                                         .getInstance().debugReset(
-                                                                ctx.getSource().getServer())))))
+                                                                ctx.getSource().getServer()))))
+                                .then(Commands.literal("multi")
+                                        .executes(ctx -> reply(ctx.getSource(),
+                                                com.shenqianye.samsara.season.WorldChainTeleport
+                                                        .statusText())))
+                                // 测试/演示：强制某栈层加载失败，或立即重试（不等待退避）
+                                .then(Commands.literal("failstack")
+                                        .then(Commands.argument("world", StringArgumentType.word())
+                                                .then(Commands.argument("state", StringArgumentType.word())
+                                                        .executes(ctx -> reply(ctx.getSource(),
+                                                                com.shenqianye.samsara.season.StackDimensionLoader
+                                                                        .setDebugFailure(
+                                                                                StringArgumentType.getString(ctx, "world"),
+                                                                                !"off".equalsIgnoreCase(
+                                                                                        StringArgumentType.getString(ctx, "state"))))))))
+                                .then(Commands.literal("retrystack")
+                                        .then(Commands.argument("world", StringArgumentType.word())
+                                                .executes(ctx -> reply(ctx.getSource(),
+                                                        com.shenqianye.samsara.season.StackDimensionLoader
+                                                                .retryNow(ctx.getSource().getServer(),
+                                                                        StringArgumentType.getString(ctx, "world")))))))
                         .then(diffCmd)
                         .then(Commands.literal("flow")
                                 .then(Commands.literal("setup")
@@ -595,10 +619,9 @@ public class DebugCommand {
 
     // ---- 坐标语法糖辅助（坐标参数一律用原版参数类型支持 ~ / ~N）----
 
-    /** 命令执行所在的主世界（供 fakeDiffText 立即放置字画方块） */
+    /** 命令执行所在的维度（供 fakeDiffText 立即放置字画方块；支持栈维度）。 */
     private static net.minecraft.server.level.ServerLevel levelOf(CommandContext<CommandSourceStack> ctx) {
-        net.minecraft.server.MinecraftServer server = ctx.getSource().getServer();
-        return server == null ? null : server.getLevel(net.minecraft.world.level.Level.OVERWORLD);
+        return ctx.getSource().getLevel();
     }
 
     /** BlockPosArgument 的 x */
@@ -1173,11 +1196,10 @@ public class DebugCommand {
                         ChatUi.run("MSPT", "/samsara mspt", "查看服务器 MSPT"),
                         ChatUi.run("TPS", "/samsara tps", "查看服务器 TPS")),
                 ChatUi.line(ChatUi.text(cont, ChatFormatting.GRAY),
-                        ChatUi.run("周目状态", "/samsara season status", "查看当前周目与周目列表"),
-                        ChatUi.run("周目信息", "/samsara season info", "查看世界种子与出生点")),
-                ChatUi.line(ChatUi.text(cont, ChatFormatting.GRAY),
                         ChatUi.run("我的位置", "/samsara where", "查看自己的维度、坐标、区块与朝向"),
                         ChatUi.run("世界栈", "/samsara world list", "查看栈底→栈顶与当前世界"),
+                        ChatUi.run("出生点", "/samsara spawn", "当前世界 / 当前轮 / 出生点"),
+                        ChatUi.run("出生点历史", "/samsara spawn history", "查看同世界历次出生点"),
                         ChatUi.run("圈地信息", "/samsara claim info", "查看当前区块的圈地信息"),
                         ChatUi.run("边界开关", "/samsara claim boundary", "切换边界持续显示")),
                 ChatUi.line(ChatUi.text(cont, ChatFormatting.GRAY),
@@ -1188,14 +1210,10 @@ public class DebugCommand {
                         ChatUi.suggest("请玩家过来", "/samsara tpahere ", "填入 /samsara tpahere <玩家>")),
                 ChatUi.text(cont + "管理员（点击只填入，仍受权限检查）：", ChatFormatting.GRAY),
                 ChatUi.line(ChatUi.text(cont, ChatFormatting.GRAY),
-                        ChatUi.suggestIfPermitted(src, "season create", "新周目",
-                                "/samsara season create ", "填入 /samsara season create <名称> [模式]"),
-                        ChatUi.suggestIfPermitted(src, "season start", "开始周目",
-                                "/samsara season start", "危险：需二次确认"),
-                        ChatUi.suggestIfPermitted(src, "season end", "结束周目",
-                                "/samsara season end", "结束当前周目"),
-                        ChatUi.suggestIfPermitted(src, "season skip", "跳过周目",
-                                "/samsara season skip", "跳过当前周目"),
+                        ChatUi.suggestIfPermitted(src, "reset same", "同世界重置",
+                                "/samsara reset same", "倒流删未保护区 + 排斥点重生（需二次确认）"),
+                        ChatUi.suggestIfPermitted(src, "reset new", "新世界入栈",
+                                "/samsara reset new ", "填入 /samsara reset new [种子]（会停服）"),
                         ChatUi.suggestIfPermitted(src, "world enter", "进入旧世界",
                                 "/samsara world enter ", "填入 /samsara world enter <世界名>（会停服）"),
                         ChatUi.suggestIfPermitted(src, "world leave", "返回下层",

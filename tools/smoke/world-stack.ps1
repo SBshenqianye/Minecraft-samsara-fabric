@@ -6,8 +6,8 @@
 .DESCRIPTION
   用真实 RCON + 真实停服/重启验证玩家会遇到的主流程：
     1. 世界栈 list/info 可读
-    2. new-world 周目创建 → 二次确认 → 停服
-    3. 重启后新世界生成、入栈、周目 ACTIVE、种子正确
+    2. reset new [种子] [levelType] [archiveData] → 二次确认 → 停服
+    3. 重启后新世界生成、自动入栈、出生点历史第 1 条、种子正确
     4. world leave 回到旧世界，重启后当前世界正确
   默认会清理测试世界；加 -KeepWorld 保留现场。
 
@@ -143,67 +143,45 @@ Assert-Contains $list "世界栈" "world list 标题"
 Assert-Contains $list "当前" "world list 当前标记"
 Assert-Contains (Invoke-Rcon "samsara world info") "实际加载" "world info"
 
-# new-world 只允许栈顶：如果当前不在栈顶，先 enter 回去
+# v0.24：world 固定是栈顶，不再需要（也不支持）world_sN 当前指针
 $info = Invoke-Rcon "samsara world info"
-$currentMatch = [regex]::Match($info, "清单当前：(.+)")
-$topMatch = [regex]::Match($info, "栈顶：(.+)")
-if ($currentMatch.Success -and $topMatch.Success -and $currentMatch.Groups[1].Value.Trim() -ne $topMatch.Groups[1].Value.Trim()) {
-    Info "当前不在栈顶，先 world enter 回栈顶"
-    Invoke-Rcon ("samsara world enter " + $topMatch.Groups[1].Value.Trim()) | Out-Null
-    Restart-TestServer
-}
+Assert-Contains $info "栈顶：world" "world 固定为栈顶"
 
 # 清理阻塞状态（没有可忽略）
-Invoke-RconOptional "samsara season end" | Out-Null
-Invoke-RconOptional "samsara season skip" | Out-Null
+Invoke-RconOptional "samsara debug rewind abort" | Out-Null
 
-# ---- 2. 创建 new-world 并二次确认 ----
-Info "2/6 创建 new-world 周目"
-Assert-Contains (Invoke-Rcon "samsara season create $SeasonName new-world $Seed") "已创建周目" "season create"
-$first = Invoke-Rcon "samsara season start"
-Assert-Contains $first "危险操作确认" "第一次 start 只确认"
-$second = Invoke-Rcon "samsara season start"
-Assert-Contains $second "已安排 new-world 切换" "第二次 start 执行"
+# ---- 2. 入栈生成新世界（reset new）并二次确认 ----
+Info "2/6 创建新世界（reset new）"
+$first = Invoke-Rcon "samsara reset new $Seed"
+Assert-Contains $first "危险操作确认" "第一次 reset new 只确认"
+$second = Invoke-Rcon "samsara reset new $Seed"
+Assert-Contains $second "已安排新世界入栈" "第二次 reset new 执行"
 
 # ---- 3. 停服 + 重启，验证新世界 ----
 Info "3/6 等待停服并重启"
-if (-not (Wait-Rcon $false 60)) { Fail "new-world 未触发停服" }
+if (-not (Wait-Rcon $false 60)) { Fail "reset new 未触发停服" }
 Start-TestServer | Out-Null
 Info "4/6 验证新世界"
 $list2 = Invoke-Rcon "samsara world list"
-Assert-Contains $list2 "当前" "新世界已入栈"
-Assert-Contains $list2 "world_s" "新世界目录名在栈中"
-$status = Invoke-Rcon "samsara season status"
-Assert-Contains $status $SeasonName "新周目在 status 中"
-Assert-Contains $status "new-world" "新周目模式"
+Assert-Contains $list2 "world" "world 仍是栈顶"
+Assert-Contains $list2 "stack_" "旧 world 已压入 stack_<n>"
+$spawn = Invoke-Rcon "samsara spawn"
+Assert-Contains $spawn "历史 1 条" "新世界出生点历史第 1 条"
 $info2 = Invoke-Rcon "samsara world info"
-Assert-Contains $info2 "实际加载" "新世界 info"
+Assert-Contains $info2 "实际加载：world" "新栈顶实际加载 world"
 Assert-Contains $info2 "$Seed" "新世界种子"
 
-# ---- 5. 返回旧世界 ----
-Info "5/6 world leave 返回下层"
-$leave = Invoke-Rcon "samsara world leave"
-Assert-Contains $leave "已安排返回下层世界" "world leave 安排"
-if (-not (Wait-Rcon $false 60)) { Fail "world leave 未触发停服" }
-Start-TestServer | Out-Null
+# ---- 5. 验证栈层可进入（需要在线玩家） ----
+Info "5/6 验证栈层"
 $list3 = Invoke-Rcon "samsara world list"
-Assert-Contains $list3 "当前" "返回旧世界后 list"
+Assert-Contains $list3 "stack_" "旧 world 已成为 stack_<n> 维度"
+Assert-Contains $list3 "world" "world 仍是栈顶"
+Info "world enter 现在直接传送到栈维度，不再停服；请用假玩家验证：execute as <bot> run samsara world enter <stack_n>"
 
 # ---- 6. 清理 ----
-Info "6/6 清理测试现场"
+Info "6/6 保留现场（v0.24 的栈层迁移不做自动删除，避免误删维度数据）"
 if (-not $KeepWorld) {
-    Invoke-RconOptional "samsara debug world reset" | Out-Null
-    # 当前已经回到旧世界，删除测试世界目录
-    $newWorld = [regex]::Match($list2, "(world_s\d+)").Groups[1].Value
-    if ($newWorld) {
-        $path = Join-Path (Resolve-Path $ServerDir).Path $newWorld
-        if (Test-Path $path) {
-            Remove-Item $path -Recurse -Force
-            Pass "已删除测试世界 $newWorld"
-        }
-    }
-} else {
-    Info "保留测试世界（-KeepWorld）"
+    Info "如需清理，请手动删除 world/dimensions/samsara/stack_<n> 与 world/samsara/stack/stack_<n>"
 }
 
 Pass "世界栈 / new-world 场景测试全部通过"

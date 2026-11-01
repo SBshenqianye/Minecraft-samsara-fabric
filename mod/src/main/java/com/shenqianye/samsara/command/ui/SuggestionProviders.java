@@ -264,8 +264,8 @@ public final class SuggestionProviders {
             return List.of();
         }
         TrackRecorder recorder = TrackRecorder.getInstance();
-        Path root = recorder.worldRoot();
-        if (root == null) {
+        List<Path> roots = recorder.trackRoots();
+        if (roots.isEmpty()) {
             return List.of();
         }
         String worldKey = recorder.worldKey();
@@ -273,8 +273,9 @@ public final class SuggestionProviders {
                 ? com.shenqianye.samsara.rewind.DiffStore.sanitizeWorldKey("world")
                 : worldKey;
         recorder.cuts().load();
-        List<ViewTrackReader.Available> available = ViewTrackReader.available(root, uuid,
-                cycle -> recorder.cuts().cutoff(key, cycle, uuid));
+        List<ViewTrackReader.Available> available = ViewTrackReader.available(roots, List.of(uuid),
+                (root, owner, cycle) -> recorder.cutsForTrackRoot(root)
+                        .cutoff(recorder.worldKeyOfTrackRoot(root), cycle, owner));
         List<String> out = new ArrayList<>();
         for (ViewTrackReader.Available a : available) {
             if (a.error() != null) {
@@ -529,8 +530,9 @@ public final class SuggestionProviders {
     /** 世界栈中的世界目录名 */
     public static SuggestionProvider<CommandSourceStack> worldsProvider() {
         return (ctx, builder) -> CompletionSupport.offer(builder,
-                com.shenqianye.samsara.season.WorldStackManager.getInstance().stack(),
-                s -> "世界栈中的世界（enter 会停服并切换 level-name）");
+                com.shenqianye.samsara.season.WorldStackManager.getInstance()
+                        .stack(ctx.getSource().getServer()),
+                s -> "世界栈中的世界（enter 直接传送到该栈维度）");
     }
 
     /** true / false */

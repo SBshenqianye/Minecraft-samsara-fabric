@@ -155,13 +155,14 @@ public final class ViewManager {
         }
 
         TrackRecorder recorder = TrackRecorder.getInstance();
-        Path worldRoot = recorder.worldRoot();
-        if (worldRoot == null) {
+        List<Path> roots = recorder.trackRoots();
+        if (roots.isEmpty()) {
             return "世界轨迹目录尚未初始化，请等服务器启动完成后再试";
         }
         String worldKey = recorder.worldKey() == null ? DiffStore.sanitizeWorldKey("world") : recorder.worldKey();
-        recorder.cuts().load();
-        Long cutoff = recorder.cuts().cutoff(worldKey, cycleId, targetUuid);
+        Path topRoot = roots.get(0);
+        Long cutoff = recorder.cutsForTrackRoot(topRoot)
+                .cutoff(recorder.worldKeyOfTrackRoot(topRoot), cycleId, targetUuid);
         final List<UUID> loadIds = targetIds;
         String summary = "cycle" + cycleId + " · " + ViewTime.format(startMs) + " → "
                 + ViewTime.format(options.endMs());
@@ -186,8 +187,9 @@ public final class ViewManager {
 
         CompletableFuture<ViewTrackReader.LoadResult> future = CompletableFuture.supplyAsync(() -> {
             try {
-                return ViewTrackReader.load(worldRoot, cycle, loadIds, start, end,
-                        (owner, ignored) -> recorder.cuts().cutoff(worldKey, cycle, owner));
+                return ViewTrackReader.load(roots, cycle, loadIds, start, end,
+                        (root, owner, ignored) -> recorder.cutsForTrackRoot(root)
+                                .cutoff(recorder.worldKeyOfTrackRoot(root), cycle, owner));
             } catch (IOException e) {
                 throw new CompletionException(e);
             }
@@ -350,7 +352,6 @@ public final class ViewManager {
         entity.setYBodyRot(first.yaw());
         entity.yHeadRotO = first.yaw();
         entity.yBodyRotO = first.yaw();
-        entity.applyTrackFlags(first.flags());
         entity.walkAnimation.stop();
         s.prevMannequinX = first.x();
         s.prevMannequinY = first.y();
@@ -362,6 +363,8 @@ public final class ViewManager {
             fail(server, p, "人偶生成失败（区块未加载）");
             return;
         }
+        // 加入世界后再应用：受伤闪烁需要广播给已追踪该实体的玩家
+        entity.applyTrackFlags(first.flags());
 
         // 2) 旧会话先结束（同观看者替换，不叠加实体）
         if (p.old != null) {
@@ -1341,16 +1344,16 @@ public final class ViewManager {
         }
         String display = displayName(server, uuid, targetName);
         TrackRecorder recorder = TrackRecorder.getInstance();
-        Path root = recorder.worldRoot();
-        if (root == null) {
+        List<Path> roots = recorder.trackRoots();
+        if (roots.isEmpty()) {
             return Component.literal("[周目管理] ▸ 世界轨迹目录尚未初始化");
         }
         String worldKey = recorder.worldKey() == null ? DiffStore.sanitizeWorldKey("world") : recorder.worldKey();
-        recorder.cuts().load();
         List<UUID> ids = com.shenqianye.samsara.identity.IdentityService.getInstance()
                 .aliasesOf(uuid);
-        List<ViewTrackReader.Available> all = ViewTrackReader.available(root, ids,
-                (owner, cycle) -> recorder.cuts().cutoff(worldKey, cycle, owner));
+        List<ViewTrackReader.Available> all = ViewTrackReader.available(roots, ids,
+                (root, owner, cycle) -> recorder.cutsForTrackRoot(root)
+                        .cutoff(recorder.worldKeyOfTrackRoot(root), cycle, owner));
         if (all.isEmpty()) {
             return Component.literal("[周目管理] ▸ " + display + " 没有可回看的轨迹（可用时段：无）");
         }

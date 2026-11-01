@@ -263,65 +263,105 @@ public class AreaService {
     // ---- 持久化 ----
 
     private void save() {
-        ClaimsData data = new ClaimsData();
+        Path worldRoot = com.shenqianye.samsara.storage.StoragePaths.get().worldRoot();
+        Map<Path, ClaimsData> byRoot = new LinkedHashMap<>();
         for (var dimEntry : nodes.entrySet()) {
-            String dimKey = dimEntry.getKey().toString();
-            for (Map.Entry<ChunkCoord, ClaimNode> e : dimEntry.getValue().entrySet()) {
-                ClaimNode n = e.getValue();
-                ClaimsData.NodeEntry ne = new ClaimsData.NodeEntry();
-                ne.dimension = dimKey;
-                ne.x = n.getLocation().x;
-                ne.z = n.getLocation().z;
-                ne.y = n.getBannerY();
-                ne.facing = n.getFacing();
-                if (n.getOwnerUUID() != null) ne.ownerUUID = n.getOwnerUUID().toString();
-                if (n.getOwnerName() != null) ne.ownerName = n.getOwnerName();
-                ne.patterns = new ArrayList<>();
-                for (ClaimNode.PatternEntry pe : n.getPatterns()) {
-                    ClaimsData.PatternEntry pe2 = new ClaimsData.PatternEntry();
-                    pe2.id = pe.patternId();
-                    pe2.color = pe.color();
-                    ne.patterns.add(pe2);
-                }
-                ne.banners = new ArrayList<>();
-                for (ClaimNode.BannerEntry be : n.getBanners()) {
-                    ClaimsData.BannerEntry be2 = new ClaimsData.BannerEntry();
-                    be2.blockX = be.blockX();
-                    be2.blockY = be.blockY();
-                    be2.blockZ = be.blockZ();
-                    be2.facing = be.facing();
-                    be2.patterns = new ArrayList<>();
-                    for (ClaimNode.PatternEntry pe : be.patterns()) {
-                        ClaimsData.PatternEntry pe2 = new ClaimsData.PatternEntry();
-                        pe2.id = pe.patternId();
-                        pe2.color = pe.color();
-                        be2.patterns.add(pe2);
-                    }
-                    ne.banners.add(be2);
-                }
-                data.nodes.add(ne);
+            ResourceKey<Level> dim = dimEntry.getKey();
+            Path root = com.shenqianye.samsara.season.StackPaths.dataRootFor(worldRoot, dim);
+            ClaimsData data = byRoot.computeIfAbsent(root, r -> new ClaimsData());
+            for (ClaimNode n : dimEntry.getValue().values()) {
+                addNodeEntry(data, dim, n);
             }
         }
-        try {
-            Files.writeString(file, GSON.toJson(data), StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            Samsara.LOGGER.warn("[周目管理 samsara] claims.json 写入失败: {}", e.getMessage());
+        for (Path root : com.shenqianye.samsara.season.StackPaths.dataRoots(worldRoot)) {
+            Path target = root.resolve("claims").resolve("claims.json");
+            ClaimsData data = byRoot.getOrDefault(root, new ClaimsData());
+            try {
+                Files.createDirectories(target.getParent());
+                Files.writeString(target, GSON.toJson(data), StandardCharsets.UTF_8);
+            } catch (IOException e) {
+                Samsara.LOGGER.warn("[周目管理 samsara] {} 写入失败: {}", target, e.getMessage());
+            }
         }
     }
 
+    private static void addNodeEntry(ClaimsData data, ResourceKey<Level> dim, ClaimNode n) {
+        ClaimsData.NodeEntry ne = new ClaimsData.NodeEntry();
+        ne.dimension = dim.toString();
+        ne.x = n.getLocation().x;
+        ne.z = n.getLocation().z;
+        ne.y = n.getBannerY();
+        ne.facing = n.getFacing();
+        if (n.getOwnerUUID() != null) ne.ownerUUID = n.getOwnerUUID().toString();
+        if (n.getOwnerName() != null) ne.ownerName = n.getOwnerName();
+        ne.patterns = new ArrayList<>();
+        for (ClaimNode.PatternEntry pe : n.getPatterns()) {
+            ClaimsData.PatternEntry pe2 = new ClaimsData.PatternEntry();
+            pe2.id = pe.patternId();
+            pe2.color = pe.color();
+            ne.patterns.add(pe2);
+        }
+        ne.banners = new ArrayList<>();
+        for (ClaimNode.BannerEntry be : n.getBanners()) {
+            ClaimsData.BannerEntry be2 = new ClaimsData.BannerEntry();
+            be2.blockX = be.blockX();
+            be2.blockY = be.blockY();
+            be2.blockZ = be.blockZ();
+            be2.facing = be.facing();
+            be2.patterns = new ArrayList<>();
+            for (ClaimNode.PatternEntry pe : be.patterns()) {
+                ClaimsData.PatternEntry pe2 = new ClaimsData.PatternEntry();
+                pe2.id = pe.patternId();
+                pe2.color = pe.color();
+                be2.patterns.add(pe2);
+            }
+            ne.banners.add(be2);
+        }
+        data.nodes.add(ne);
+    }
+
     private void load() {
-        if (!Files.exists(file)) return;
+        Path worldRoot = com.shenqianye.samsara.storage.StoragePaths.get().worldRoot();
+        for (Path root : com.shenqianye.samsara.season.StackPaths.dataRoots(worldRoot)) {
+            Path target = root.resolve("claims").resolve("claims.json");
+            if (Files.exists(target)) {
+                loadFile(target);
+            }
+        }
+        for (ResourceKey<Level> dim : nodes.keySet()) {
+            rebuildGeometry(dim);
+        }
+        int totalNodes = nodes.values().stream().mapToInt(Map::size).sum();
+        Samsara.LOGGER.info("[周目管理 samsara] 加载 {} 个圈地旗（{} 个维度）",
+                totalNodes, nodes.size());
+    }
+
+    private void loadFile(Path target) {
+        for (ClaimNode node : readClaims(target)) {
+            dimNodes(node.getDimension()).put(node.getLocation(), node);
+        }
+    }
+
+    /**
+     * 只读解析一个 {@code claims.json}，不修改内存中的圈地节点。
+     *
+     * <p>Web 地图按栈层读取时使用：栈层之间不能共享 AreaService 的运行时缓存，
+     * 必须按各自的 data root 解析。解析失败返回空表并记 WARN，不影响服务端。
+     */
+    public static List<ClaimNode> readClaims(Path target) {
+        List<ClaimNode> out = new ArrayList<>();
+        if (target == null || !Files.exists(target)) {
+            return out;
+        }
         try {
             ClaimsData data = GSON.fromJson(
-                    Files.readString(file, StandardCharsets.UTF_8), ClaimsData.class);
-            if (data == null || data.nodes == null) return;
+                    Files.readString(target, StandardCharsets.UTF_8), ClaimsData.class);
+            if (data == null || data.nodes == null) return out;
             for (ClaimsData.NodeEntry ne : data.nodes) {
-                // 维度：兼容旧数据（无 dimension 字段 → overworld）
                 ResourceKey<Level> dim = Level.OVERWORLD;
                 if (ne.dimension != null && !ne.dimension.isEmpty()) {
                     dim = dimensionFromString(ne.dimension);
                 }
-
                 List<ClaimNode.PatternEntry> pes = new ArrayList<>();
                 if (ne.patterns != null) {
                     for (ClaimsData.PatternEntry pe : ne.patterns) {
@@ -361,20 +401,13 @@ public class AreaService {
                         node.addBanner(be.blockX, be.blockY, be.blockZ, beFacing, bePatterns);
                     }
                 }
-                dimNodes(dim).put(node.getLocation(), node);
+                out.add(node);
             }
-            // 重建所有维度的几何图形
-            for (ResourceKey<Level> dim : nodes.keySet()) {
-                rebuildGeometry(dim);
-            }
-            int totalNodes = nodes.values().stream().mapToInt(Map::size).sum();
-            Samsara.LOGGER.info("[周目管理 samsara] 加载 {} 个圈地旗（{} 个维度）",
-                    totalNodes, nodes.size());
         } catch (Exception e) {
-            Samsara.LOGGER.warn("[周目管理 samsara] claims.json 解析失败: {}", e.getMessage());
+            Samsara.LOGGER.warn("[周目管理 samsara] {} 解析失败: {}", target, e.getMessage());
         }
+        return out;
     }
-
     public String configPath() {
         return file.toAbsolutePath().normalize().toString();
     }
@@ -419,7 +452,11 @@ public class AreaService {
     private static ResourceKey<Level> dimensionFromString(String s) {
         ResourceKey<Level> key = DIMENSION_MAP.get(s);
         if (key != null) return key;
-        // 未知维度 → 默认 overworld
+        try {
+            return ResourceKey.create(net.minecraft.core.registries.Registries.DIMENSION,
+                    net.minecraft.resources.Identifier.parse(s));
+        } catch (Exception ignored) {
+        }
         Samsara.LOGGER.warn("[周目管理 samsara] 未知维度 '{}'，归入 overworld", s);
         return Level.OVERWORLD;
     }

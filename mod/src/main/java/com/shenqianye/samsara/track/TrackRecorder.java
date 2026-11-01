@@ -58,8 +58,12 @@ public final class TrackRecorder {
     private volatile String worldKey;
     /** track 根（无世界层） */
     private volatile Path worldRoot;
+    /** 服务器世界目录（用于枚举各栈层 track 根） */
+    private volatile Path worldDir;
     /** 捕捉截断点（capture cutoff，周目隔离） */
     private volatile TrackCuts cuts;
+    /** 每个栈根自己的 cutoffs（旧栈的捕捉截断不再写到栈顶） */
+    private final Map<Path, TrackCuts> cutsByRoot = new ConcurrentHashMap<>();
     private final Map<UUID, State> states = new ConcurrentHashMap<>();
     /** 正在被在线玩家追加的文件：保留扫描不要碰 */
     private final java.util.Set<Path> openFiles = ConcurrentHashMap.newKeySet();
@@ -80,6 +84,8 @@ public final class TrackRecorder {
         double hz;
         /** 当前正在写的周目目录（-1 = 尚未确定） */
         int cycleId = -1;
+        /** 当前栈层的 track 根（栈顶/旧栈隔离） */
+        Path layerRoot;
     }
 
     private TrackRecorder() {
@@ -103,6 +109,8 @@ public final class TrackRecorder {
         }
         this.cuts = new TrackCuts(root.resolve("cutoffs.json"));
         this.cuts.load();
+        this.cutsByRoot.clear();
+        this.cutsByRoot.put(root, this.cuts);
         this.worldRoot = root;
     }
 
@@ -126,27 +134,77 @@ public final class TrackRecorder {
         if (root == null) {
             return;
         }
-        String key = DiffStore.sanitizeWorldKey(
-                server.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT)
-                        .getFileName().toString());
+        worldDir = com.shenqianye.samsara.season.StackPaths.worldDir(server);
         Path target = root;
-        try {
-            Files.createDirectories(target);
-            int cycle = cycleIdNow();
-            int legacy = TrackLayout.migrateLegacyRoot(root, target, cycle);
-            int worldLevel = TrackLayout.migrateWorldLayout(target, cycle);
-            int worldLayer = com.shenqianye.samsara.storage.StorageMigration.stripTrackWorldLayer(root);
-            if (legacy + worldLevel + worldLayer > 0) {
-                Samsara.LOGGER.info("[周目管理 samsara] 轨迹旧布局已迁移：{} 个日期目录 → {}/"
-                                + "（旧数据归入当前周目；无周目写 cycle0）",
-                        legacy + worldLevel + worldLayer, TrackLayout.cycleDirName(cycle));
+        int cycle = cycleIdNow();
+        for (Path trackRoot : trackRoots()) {
+            try {
+                Files.createDirectories(trackRoot);
+                int legacy = TrackLayout.migrateLegacyRoot(trackRoot, trackRoot, cycle);
+                int worldLevel = TrackLayout.migrateWorldLayout(trackRoot, cycle);
+                int worldLayer = 0;
+                if (trackRoot.equals(root)) {
+                    worldLayer = com.shenqianye.samsara.storage.StorageMigration.stripTrackWorldLayer(root);
+                }
+                if (legacy + worldLevel + worldLayer > 0) {
+                    Samsara.LOGGER.info("[周目管理 samsara] 轨迹旧布局已迁移 {}：{} 项 → {}",
+                            trackRoot.getFileName(), legacy + worldLevel + worldLayer,
+                            TrackLayout.cycleDirName(cycle));
+                }
+            } catch (IOException e) {
+                Samsara.LOGGER.warn("[周目管理 samsara] track 根初始化失败 {}: {}",
+                        trackRoot, e.getMessage());
             }
-        } catch (IOException e) {
-            Samsara.LOGGER.warn("[周目管理 samsara] track 根初始化失败: {}", e.getMessage());
         }
-        worldKey = key;
+        worldKey = DiffStore.sanitizeWorldKey(
+                com.shenqianye.samsara.season.StackPaths.TOP_ID);
         worldRoot = target;
+        cutsByRoot.clear();
+        cuts = cutsForTrackRoot(root);
         cuts.load();
+    }
+
+    /** 栈层 track 根对应的 cutoffs（每个根一份，互不覆盖）。 */
+    public TrackCuts cutsForTrackRoot(Path trackRoot) {
+        Path rootKey = trackRoot.toAbsolutePath().normalize();
+        return cutsByRoot.computeIfAbsent(rootKey, r -> {
+            TrackCuts c = new TrackCuts(r.resolve("cutoffs.json"));
+            c.load();
+            return c;
+        });
+    }
+
+    /** track 根 → 栈层 worldKey（栈顶 world / 旧层 stack_<n>）。 */
+    public String worldKeyOfTrackRoot(Path trackRoot) {
+        if (trackRoot == null) {
+            return worldKey == null ? com.shenqianye.samsara.season.StackPaths.TOP_ID : worldKey;
+        }
+        Path dataRoot = trackRoot.toAbsolutePath().normalize().getParent();
+        if (dataRoot == null) {
+            return com.shenqianye.samsara.season.StackPaths.TOP_ID;
+        }
+        if (root != null && trackRoot.toAbsolutePath().normalize().equals(root)) {
+            return com.shenqianye.samsara.season.StackPaths.TOP_ID;
+        }
+        Path name = dataRoot.getFileName();
+        return name == null ? com.shenqianye.samsara.season.StackPaths.TOP_ID : name.toString();
+    }
+
+    /** 所有栈层的 track 根（栈顶 world 在前，旧栈 stack_<n> 其后）。 */
+    public List<Path> trackRoots() {
+        List<Path> roots = new ArrayList<>();
+        if (root != null) {
+            roots.add(root);
+        }
+        if (worldDir != null) {
+            for (Path dataRoot : com.shenqianye.samsara.season.StackPaths.dataRoots(worldDir)) {
+                Path trackRoot = dataRoot.resolve("track").toAbsolutePath().normalize();
+                if (!roots.contains(trackRoot)) {
+                    roots.add(trackRoot);
+                }
+            }
+        }
+        return roots;
     }
 
     private void tick(MinecraftServer server) {
@@ -191,8 +249,15 @@ public final class TrackRecorder {
         states.clear();
     }
 
-    private void sample(ServerPlayer player, State st, long now, SeasonData.Settings cfg) {
-        if (worldRoot == null) {
+    private Path stackTrackRoot(ServerPlayer player) {
+        var server = player.level().getServer();
+        Path dataRoot = com.shenqianye.samsara.season.StackPaths.dataRootFor(
+                com.shenqianye.samsara.season.StackPaths.worldDir(server),
+                player.level().dimension());
+        return dataRoot.resolve("track");
+    }
+
+    private void sample(ServerPlayer player, State st, long now, SeasonData.Settings cfg) {        if (worldRoot == null) {
             return;
         }
         if (st.settings == null) {
@@ -207,16 +272,19 @@ public final class TrackRecorder {
             LocalDate today = LocalDate.now();
             int cycleId = cycleIdNow();
             String dim = player.level().dimension().identifier().toString();
+            Path layerRoot = stackTrackRoot(player);
             boolean rotateDay = st.day == null || !today.equals(st.day);
             // 周目切换：目录跟着换（跨周目必须开新段，旧段留在旧周目目录）
             boolean rotateCycle = st.cycleId != cycleId;
-            boolean newSegment = rotateDay || rotateCycle || st.dimension == null
+            boolean rotateStack = st.layerRoot == null || !st.layerRoot.equals(layerRoot);
+            boolean newSegment = rotateDay || rotateCycle || rotateStack || st.dimension == null
                     || !st.dimension.equals(dim) || st.out == null;
-            if (rotateDay || rotateCycle) {
+            if (rotateDay || rotateCycle || rotateStack) {
                 closeStream(st);
                 st.cycleId = cycleId;
                 st.day = today;
-                st.file = TrackLayout.file(worldRoot, cycleId, today, st.uuid);
+                st.layerRoot = layerRoot;
+                st.file = TrackLayout.file(layerRoot, cycleId, today, st.uuid);
                 Files.createDirectories(st.file.getParent());
                 openAppend(st);
                 if (Files.size(st.file) == 0) {
@@ -329,20 +397,22 @@ public final class TrackRecorder {
             SeasonData.Settings cfg = SeasonManager.getInstance().settings();
             int skeleton = Math.max(100, cfg.trackSkeletonPerDay);
             LocalDate today = LocalDate.now();
-            if (!Files.isDirectory(root)) {
-                return;
-            }
-            try (var top = Files.list(root)) {
-                for (Path child : (Iterable<Path>) top::iterator) {
-                    if (!Files.isDirectory(child)) {
-                        continue;
+            for (Path trackRoot : trackRoots()) {
+                if (!Files.isDirectory(trackRoot)) {
+                    continue;
+                }
+                try (var top = Files.list(trackRoot)) {
+                    for (Path child : (Iterable<Path>) top::iterator) {
+                        if (!Files.isDirectory(child)) {
+                            continue;
+                        }
+                        // 更早的无世界层布局：track/<日期>/
+                        if (TrackLayout.isDateDir(child.getFileName().toString())) {
+                            sweepDay(child, today, skeleton);
+                            continue;
+                        }
+                        sweepWorldLevel(child, today, skeleton);
                     }
-                    // 更早的无世界层布局：track/<日期>/
-                    if (TrackLayout.isDateDir(child.getFileName().toString())) {
-                        sweepDay(child, today, skeleton);
-                        continue;
-                    }
-                    sweepWorldLevel(child, today, skeleton);
                 }
             }
         } catch (Exception e) {
@@ -460,17 +530,19 @@ public final class TrackRecorder {
         if (uuids == null || uuids.isEmpty()) {
             return null;
         }
-        Path base = worldRoot;
-        if (base == null) {
-            base = TrackLayout.worldRoot(root, worldKey == null ? "world" : worldKey);
+        List<Path> bases = trackRoots();
+        if (bases.isEmpty()) {
+            bases = List.of(TrackLayout.worldRoot(root, worldKey == null ? "world" : worldKey));
         }
         LocalDate d = Instant.ofEpochMilli(timeMs)
                 .atZone(ZoneId.systemDefault()).toLocalDate();
-        for (UUID uuid : uuids) {
-            for (int i = 0; i <= 2; i++) {
-                Path f = TrackLayout.dayDir(base, cycleId, d.minusDays(i)).resolve(uuid + ".bin");
-                if (Files.isRegularFile(f)) {
-                    return new LocatedFile(f, uuid);
+        for (Path base : bases) {
+            for (UUID uuid : uuids) {
+                for (int i = 0; i <= 2; i++) {
+                    Path f = TrackLayout.dayDir(base, cycleId, d.minusDays(i)).resolve(uuid + ".bin");
+                    if (Files.isRegularFile(f)) {
+                        return new LocatedFile(f, uuid);
+                    }
                 }
             }
         }
@@ -481,21 +553,23 @@ public final class TrackRecorder {
     public record LocatedFile(Path file, UUID owner) {
     }
 
-    /** 某个玩家最近的文件（跨周目，新周目优先；状态展示用） */
+    /** 某个玩家最近的文件（跨栈层/周目，新周目优先；状态展示用） */
     public List<Path> recentFiles(UUID uuid, int limit) {
-        if (worldRoot == null || !Files.isDirectory(worldRoot)) {
-            return List.of();
-        }
         List<Path> out = new ArrayList<>();
         List<Integer> cycles = cycleIds();
-        for (int cycle : cycles) {
-            for (long i = 0; i < 7; i++) {
-                Path f = TrackLayout.dayDir(worldRoot, cycle, LocalDate.now().minusDays(i))
-                        .resolve(uuid + ".bin");
-                if (Files.isRegularFile(f)) {
-                    out.add(f);
-                    if (out.size() >= limit) {
-                        return out;
+        for (Path base : trackRoots()) {
+            if (!Files.isDirectory(base)) {
+                continue;
+            }
+            for (int cycle : cycles) {
+                for (long i = 0; i < 7; i++) {
+                    Path f = TrackLayout.dayDir(base, cycle, LocalDate.now().minusDays(i))
+                            .resolve(uuid + ".bin");
+                    if (Files.isRegularFile(f)) {
+                        out.add(f);
+                        if (out.size() >= limit) {
+                            return out;
+                        }
                     }
                 }
             }
@@ -503,14 +577,17 @@ public final class TrackRecorder {
         return out;
     }
 
-    /** 当前世界下已有的周目目录 id（新→旧）；无目录时返回 [当前周目] */
+    /** 全部栈层下已有的周目目录 id（新→旧）；无目录时返回 [当前周目] */
     public List<Integer> cycleIds() {
         List<Integer> ids = new ArrayList<>();
-        if (worldRoot != null && Files.isDirectory(worldRoot)) {
-            try (var list = Files.list(worldRoot)) {
+        for (Path base : trackRoots()) {
+            if (!Files.isDirectory(base)) {
+                continue;
+            }
+            try (var list = Files.list(base)) {
                 for (Path p : (Iterable<Path>) list::iterator) {
                     int id = TrackLayout.cycleIdOf(p.getFileName().toString());
-                    if (id >= 0 && Files.isDirectory(p)) {
+                    if (id >= 0 && Files.isDirectory(p) && !ids.contains(id)) {
                         ids.add(id);
                     }
                 }
@@ -525,7 +602,21 @@ public final class TrackRecorder {
         return ids;
     }
 
-    /** 捕捉截断点存储（周目隔离） */
+    /** 文件所属栈层 track 根；无法识别时回退栈顶。 */
+    public Path trackRootOf(Path file) {
+        if (file == null) {
+            return root;
+        }
+        Path abs = file.toAbsolutePath().normalize();
+        for (Path candidate : trackRoots()) {
+            if (abs.startsWith(candidate.toAbsolutePath().normalize())) {
+                return candidate.toAbsolutePath().normalize();
+            }
+        }
+        return root;
+    }
+
+    /** 捕捉截断点存储（栈顶；跨栈层请用 {@link #cutsForTrackRoot(Path)}） */
     public TrackCuts cuts() {
         return cuts;
     }

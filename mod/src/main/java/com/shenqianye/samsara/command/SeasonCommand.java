@@ -202,7 +202,7 @@ public class SeasonCommand {
      * 无待开始周目时直接返回错误且<b>不进入待确认状态</b>，避免留下半武装状态。
      */
     private static String confirmStart(CommandSourceStack src) {
-        com.shenqianye.samsara.season.Season pending = manager().currentPending();
+        Season pending = manager().currentPending();
         if (pending == null) {
             return manager().start(src.getServer()); // 无 PENDING 周目：交给 MANAGER 回错误文案
         }
@@ -226,7 +226,17 @@ public class SeasonCommand {
                     + "· 箱子/潜影盒内容随区块文件一同删除；背包/末影箱/进度安全\n"
                     + "再次输入 /samsara season start（" + ConfirmGuard.ttlSeconds() + " 秒内）才会真正执行。";
         }
-        return manager().start(src.getServer());
+        String mode = pending.mode;
+        Long seed = pending.seed;
+        manager().skip();
+        String result = "new-world".equals(mode)
+                ? manager().resetNew(src.getServer(), seed)
+                : manager().resetSame(src.getServer(),
+                        src.getPlayer() == null ? null
+                                : com.shenqianye.samsara.season.StackTeleport.layerOf(
+                                        src.getServer(), src.getPlayer()));
+        return "（旧命令 /samsara season start 已转调新流程；建议改用 /samsara reset "
+                + ("new-world".equals(mode) ? "new" : "same") + "）\n" + result;
     }
 
     /** /season info：模组说明 + 当前世界种子与出生点（测试便利：种子可查地图工具熟悉地形） */

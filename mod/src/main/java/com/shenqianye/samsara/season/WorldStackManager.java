@@ -1,53 +1,30 @@
 package com.shenqianye.samsara.season;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
 import com.shenqianye.samsara.Samsara;
-import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.storage.LevelResource;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Random;
 
 /**
- * 世界栈（M7）：管理「栈底 → 栈顶」的世界目录，以及跨世界切换。
+ * 世界栈门面（v0.24 维度模型）。
  *
- * <p>物理模型：每个栈层是独立的存档目录（{@code world} / {@code world_s1} / …）。
- * MC 服务端一次只能加载一个主存档，所以 {@code enter}/{@code leave}/{@code new-world}
- * 都是「写 {@code server.properties} 的 {@code level-name} → 停服 → 由启动脚本重新开服」。
- * 这保证每层拥有独立种子、独立下界/末地、独立 {@code <存档>/samsara/} 数据。
+ * <p>权威清单在 {@code world/samsara/stack.json}：index 0 = 栈底/最旧，
+ * 栈顶固定是 {@code world}。旧世界是 {@code world/dimensions/samsara/stack_<n>}
+ * 的自定义维度，不再切换 {@code level-name}。
  *
- * <p>栈清单保存在服务器级 {@code config/samsara/world-stack.json}，不随当前存档走，
- * 否则切换世界后清单会丢失。每个世界的 {@code season.json} 只保存该世界的周目。
+ * <p>类里保留旧的 {@link Manifest}/{@link Pending} 纯数据类，供旧单测/兼容代码使用。
  */
 public final class WorldStackManager {
-    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-    private static final String FILE_NAME = "world-stack.json";
-    private static final int SWITCH_SECONDS = 5;
-
     private static WorldStackManager instance;
 
-    private final Path file;
-    private Manifest manifest = new Manifest();
-
-    private static int switchTicksLeft;
-    private static int switchLastSecond = -1;
-    private static String switchTarget = "";
-
     private WorldStackManager() {
-        // 世界栈是服务器级状态：不随当前存档走，也不属于可编辑配置
-        this.file = net.fabricmc.loader.api.FabricLoader.getInstance().getGameDir()
-                .resolve("samsara").resolve(FILE_NAME);
-        load();
     }
 
     public static synchronized WorldStackManager getInstance() {
@@ -57,15 +34,258 @@ public final class WorldStackManager {
         return instance;
     }
 
-    // ---- 纯数据（可单测） ----
+    // ---- 新模型 ----
 
-    /** world-stack.json 根结构。 */
+    public synchronized StackManifest manifest(MinecraftServer server) {
+        return StackManifest.load(StackPaths.worldDir(server));
+    }
+
+    public synchronized void refresh(MinecraftServer server, String preferredTop) {
+        StackManifest m = manifest(server);
+        if (m.layers.isEmpty()) {
+            m.ensureTop(StackLayer.top(server, server.getWorldGenSettings().options().seed()));
+        }
+        m.save(StackPaths.worldDir(server));
+    }
+
+    public synchronized List<String> stack(MinecraftServer server) {
+        List<String> ids = new ArrayList<>();
+        for (StackLayer l : manifest(server).layers) {
+            ids.add(l.id);
+        }
+        return ids;
+    }
+
+    public synchronized String top(MinecraftServer server) {
+        StackLayer top = manifest(server).top();
+        return top == null ? StackPaths.TOP_ID : top.id;
+    }
+
+    public synchronized String current(MinecraftServer server) {
+        return StackPaths.TOP_ID; // 主存档永远是栈顶 world
+    }
+
+    public synchronized boolean isTopCurrent(MinecraftServer server) {
+        return true;
+    }
+
+    public synchronized String listText(MinecraftServer server) {
+        StackManifest m = manifest(server);
+        if (m.layers.isEmpty()) {
+            return "世界栈为空（启动后会创建 world 栈顶）";
+        }
+        StringBuilder sb = new StringBuilder("世界栈（栈底 → 栈顶）：");
+        for (StackLayer l : m.layers) {
+            sb.append("\n").append(l.index).append(". ").append(l.id);
+            if (l.top) {
+                sb.append("  ← 当前/栈顶");
+            }
+            if (!l.parent.isBlank()) {
+                sb.append("  (父 ").append(l.parent).append(")");
+            }
+            int count = onlineIn(server, l);
+            if (count > 0) {
+                sb.append(" · 在线 ").append(count);
+            }
+            if (!l.top && StackDimensionLoader.hasFailure(l.id)) {
+                sb.append(" · 加载失败：").append(StackDimensionLoader.failureReason(l.id));
+            }
+        }
+        return sb.toString();
+    }
+
+    public synchronized String infoText(MinecraftServer server, ServerPlayer player) {
+        StackManifest m = manifest(server);
+        StackLayer current = player == null ? m.top() : StackTeleport.layerOf(server, player);
+        StringBuilder sb = new StringBuilder("世界栈信息：");
+        sb.append("\n· 实际加载：").append(currentWorldName(server));
+        sb.append("\n· 栈顶：").append(m.top() == null ? "world" : m.top().id);
+        sb.append("\n· 层数：").append(m.layers.size());
+        if (current != null) {
+            sb.append("\n· 你所在：").append(current.id).append("（index ").append(current.index).append("）");
+            sb.append("\n· 当前种子：").append(current.seed);
+            sb.append("\n· 出生点：").append(current.spawnX).append(", ")
+                    .append(current.spawnY).append(", ").append(current.spawnZ);
+            SpawnHistory h = spawnHistory(server, current.id);
+            sb.append("\n· ").append(h.summaryText());
+        }
+        sb.append("\n· ").append(StackDimensionLoader.status());
+        return sb.toString();
+    }
+
+    public synchronized String enter(MinecraftServer server, String target) {
+        int moved = 0;
+        for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+            String r = StackTeleport.enter(p, target);
+            if (!r.contains("不在栈中") && !r.contains("未加载")) {
+                moved++;
+            }
+        }
+        if (moved == 0) {
+            return "没有玩家被传送；确认世界 " + target + " 存在且维度已加载";
+        }
+        return "已把 " + moved + " 名在线玩家送入 " + target;
+    }
+
+    public synchronized String leave(MinecraftServer server) {
+        int moved = 0;
+        for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+            StackLayer current = StackTeleport.layerOf(server, p);
+            if (current == null) {
+                continue;
+            }
+            StackLayer below = manifest(server).below(current);
+            if (below != null && StackTeleport.enter(p, below.id).contains("已进入")) {
+                moved++;
+            }
+        }
+        return moved == 0 ? "没有玩家需要 leave（或已在栈底）" : "已把 " + moved + " 名玩家送回下层";
+    }
+
+    // ---- 新世界 / 出生点 ----
+
+    public synchronized String startNewWorld(MinecraftServer server, Season season) {
+        return StackBootstrap.scheduleNew(server, season.seed, "normal", "", false);
+    }
+
+    public synchronized String resetNew(MinecraftServer server, Long seed, int seasonId, String name) {
+        return StackBootstrap.scheduleNew(server, seed, "normal", "", false);
+    }
+
+    public synchronized int nextSeasonId(MinecraftServer server) {
+        int max = 0;
+        SeasonData data = SeasonManager.getInstance().data();
+        if (data != null && data.seasons != null) {
+            for (Season s : data.seasons) {
+                max = Math.max(max, s.id);
+            }
+        }
+        return max + 1;
+    }
+
+    public SpawnHistory ensureSpawnHistory(MinecraftServer server, String layerId, boolean migrate) {
+        StackManifest m = manifest(server);
+        StackLayer layer = m.byId(layerId);
+        if (layer == null) {
+            layer = m.top();
+        }
+        if (layer == null) {
+            return new SpawnHistory();
+        }
+        Path file = StackPaths.spawnHistory(StackPaths.worldDir(server), layer);
+        SpawnHistory h = SpawnHistory.loadFrom(StackPaths.layerMeta(StackPaths.worldDir(server), layer));
+        if (h.isEmpty()) {
+            if (layer.top && migrate) {
+                SeasonData legacy = SeasonManager.getInstance().data();
+                if (legacy != null && legacy.seasons != null && !legacy.seasons.isEmpty()) {
+                    h = SpawnHistory.fromSeasons(legacy, layer.spawnX, layer.spawnZ,
+                            System.currentTimeMillis());
+                } else {
+                    h.ensureInitial(layer.spawnX, layer.spawnZ, System.currentTimeMillis());
+                }
+            } else {
+                h.ensureInitial(layer.spawnX, layer.spawnZ, System.currentTimeMillis());
+            }
+            h.saveTo(StackPaths.layerMeta(StackPaths.worldDir(server), layer));
+        } else {
+            SpawnHistory.Cycle c = h.detect(layer.spawnX, layer.spawnZ, System.currentTimeMillis());
+            if (c != null) {
+                h.saveTo(StackPaths.layerMeta(StackPaths.worldDir(server), layer));
+            }
+        }
+        return h;
+    }
+
+    public SpawnHistory spawnHistory(MinecraftServer server, String layerId) {
+        StackManifest m = manifest(server);
+        StackLayer layer = m.byId(layerId);
+        if (layer == null) {
+            layer = m.top();
+        }
+        if (layer == null) {
+            return new SpawnHistory();
+        }
+        return SpawnHistory.loadFrom(
+                StackPaths.layerMeta(StackPaths.worldDir(server), layer));
+    }
+
+    public SpawnHistory currentSpawnHistory(MinecraftServer server) {
+        StackManifest m = manifest(server);
+        StackLayer top = m.top();
+        return top == null ? new SpawnHistory()
+                : SpawnHistory.loadFrom(
+                StackPaths.layerMeta(StackPaths.worldDir(server), top));
+    }
+
+    public String spawnText(MinecraftServer server, ServerPlayer player, boolean history) {
+        StackLayer layer = player == null ? manifest(server).top()
+                : StackTeleport.layerOf(server, player);
+        if (layer == null) {
+            layer = manifest(server).top();
+        }
+        if (layer == null) {
+            return "世界栈为空";
+        }
+        SpawnHistory h = spawnHistory(server, layer.id);
+        return history ? h.historyText()
+                : "世界 " + layer.id + " · " + h.summaryText();
+    }
+
+    // ---- 旧命令兼容 ----
+
+    public synchronized String debugPush(MinecraftServer server, String world) {
+        return "v0.24 栈世界是 world 内的自定义维度，不再支持 debug world push；请用旧布局迁移或 reset new";
+    }
+
+    public synchronized String debugPop(MinecraftServer server) {
+        return "v0.24 栈顶固定是 world，不能弹出；旧栈层可用 /samsara world list 查看";
+    }
+
+    public synchronized String debugReset(MinecraftServer server) {
+        return "v0.24 不再重置栈清单；请手动备份 world 后处理 samsara/stack.json";
+    }
+
+    // ---- 路径/静态 ----
+
+    public static String currentWorldName(MinecraftServer server) {
+        Path levelDat = server.getWorldPath(LevelResource.LEVEL_DATA_FILE);
+        Path dir = levelDat == null ? null : levelDat.getParent();
+        Path name = dir == null ? null : dir.getFileName();
+        return name == null ? StackPaths.TOP_ID : name.toString();
+    }
+
+    public static Path worldDir(MinecraftServer server, String worldName) {
+        return StackPaths.worldDir(server);
+    }
+
+    public static Path worldParent(MinecraftServer server) {
+        return StackPaths.worldDir(server).getParent();
+    }
+
+    public synchronized String newWorldName(MinecraftServer server) {
+        return "stack_" + manifest(server).layers.size();
+    }
+
+    public static synchronized void tick(MinecraftServer server) {
+        // 由 StackBootstrap.tick 处理倒计时
+    }
+
+    private static int onlineIn(MinecraftServer server, StackLayer layer) {
+        int n = 0;
+        for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+            String id = StackPaths.layerIdOf(p.level().dimension());
+            if (layer.id.equals(id)) {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    // ---- 旧纯数据类（单测/兼容） ----
+
     public static final class Manifest {
-        /** 栈底 → 栈顶。 */
         public List<String> stack = new ArrayList<>();
-        /** 当前加载的世界目录名；不一定是栈顶（允许回旧世界访问）。 */
         public String current = "";
-        /** 全局周目编号游标，避免跨世界 id 冲突。 */
         public int nextSeasonId = 1;
         public Pending pending;
 
@@ -81,7 +301,6 @@ public final class WorldStackManager {
             return world != null && stack.contains(world);
         }
 
-        /** 压入新世界；已存在则不重复。 */
         public boolean push(String world) {
             if (world == null || world.isBlank() || stack.contains(world)) {
                 return false;
@@ -90,7 +309,6 @@ public final class WorldStackManager {
             return true;
         }
 
-        /** 进入栈内任意世界（不改变栈顺序）。 */
         public boolean enter(String world) {
             if (!contains(world)) {
                 return false;
@@ -99,7 +317,6 @@ public final class WorldStackManager {
             return true;
         }
 
-        /** 返回下一层（栈底方向）；已在栈底返回 false。 */
         public boolean leave() {
             int index = stack.indexOf(current);
             if (index <= 0) {
@@ -114,9 +331,7 @@ public final class WorldStackManager {
         }
     }
 
-    /** 待执行的世界切换；服务器重启并加载目标世界后消费。 */
     public static final class Pending {
-        /** new-world | enter | leave */
         public String action = "";
         public String target = "";
         public String from = "";
@@ -124,385 +339,5 @@ public final class WorldStackManager {
         public String name = "";
         public Long seed;
         public long createdAt;
-
-        public Pending() {
-        }
-
-        public Pending(String action, String target, String from) {
-            this.action = action;
-            this.target = target;
-            this.from = from;
-            this.createdAt = Instant.now().toEpochMilli();
-        }
-    }
-
-    // ---- 读取/保存 ----
-
-    public synchronized Manifest manifest() {
-        return manifest;
-    }
-
-    public synchronized List<String> stack() {
-        return List.copyOf(manifest.stack);
-    }
-
-    public synchronized String current() {
-        return manifest.current;
-    }
-
-    public synchronized String top() {
-        return manifest.top();
-    }
-
-    public synchronized boolean isTopCurrent() {
-        return manifest.isTopCurrent();
-    }
-
-    public synchronized boolean hasPending() {
-        return manifest.pending != null;
-    }
-
-    public synchronized int nextSeasonId() {
-        int id = Math.max(1, manifest.nextSeasonId);
-        manifest.nextSeasonId = id + 1;
-        save();
-        return id;
-    }
-
-    private synchronized void load() {
-        if (!Files.exists(file)) {
-            manifest = new Manifest();
-            return;
-        }
-        try {
-            String raw = Files.readString(file, StandardCharsets.UTF_8);
-            Manifest loaded = GSON.fromJson(raw, Manifest.class);
-            if (loaded == null) {
-                loaded = new Manifest();
-            }
-            if (loaded.stack == null) {
-                loaded.stack = new ArrayList<>();
-            }
-            manifest = loaded;
-        } catch (Exception e) {
-            Samsara.LOGGER.warn("[周目管理 samsara] world-stack.json 解析失败，使用空栈: {}",
-                    e.getMessage());
-            manifest = new Manifest();
-        }
-    }
-
-    private synchronized void save() {
-        try {
-            Files.createDirectories(file.getParent());
-            Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
-            Files.writeString(tmp, GSON.toJson(manifest), StandardCharsets.UTF_8);
-            if (Files.exists(file)) {
-                Files.copy(file, file.resolveSibling(file.getFileName() + ".bak"),
-                        StandardCopyOption.REPLACE_EXISTING);
-            }
-            Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
-        } catch (IOException e) {
-            Samsara.LOGGER.warn("[周目管理 samsara] world-stack.json 写入失败: {}", e.getMessage());
-        }
-    }
-
-    // ---- 服务器生命周期 ----
-
-    /**
-     * SERVER_STARTED：把实际加载的世界登记进栈，并消费上一次切换。
-     * 必须在玩家加入前执行（新世界开局要建周目/分组/待传送）。
-     */
-    public synchronized void onServerStarted(MinecraftServer server) {
-        String actual = currentWorldName(server);
-        boolean changed = false;
-        if (manifest.stack.isEmpty()) {
-            manifest.stack.add(actual);
-            changed = true;
-        }
-        if (!manifest.stack.contains(actual)) {
-            manifest.stack.add(actual);
-            changed = true;
-        }
-        manifest.current = actual;
-
-        Pending pending = manifest.pending;
-        if (pending != null) {
-            if (!actual.equals(pending.target)) {
-                Samsara.LOGGER.warn("[周目管理 samsara] 世界切换未完成：期望 {}，实际 {}，已清除待执行标记",
-                        pending.target, actual);
-            } else if ("new-world".equals(pending.action)) {
-                SeasonManager.getInstance().onNewWorldBoot(server, pending);
-            }
-            manifest.pending = null;
-            changed = true;
-        }
-        if (changed) {
-            save();
-        }
-        SeasonManager.getInstance().syncWorldStack(manifest.stack);
-        Samsara.LOGGER.info("[周目管理 samsara] 世界栈：{}（当前 {}）",
-                String.join(" → ", manifest.stack), manifest.current);
-    }
-
-    /** 新世界开局：建周目、分组、传送，然后更新栈顶。 */
-    public synchronized void onNewWorldBoot(MinecraftServer server, Pending pending) {
-        if (!manifest.stack.contains(pending.target)) {
-            manifest.stack.add(pending.target);
-        }
-        manifest.current = pending.target;
-        save();
-    }
-
-    // ---- 切换 ----
-
-    /** new-world：为待开始周目创建新世界目录并安排重启。 */
-    public synchronized String startNewWorld(MinecraftServer server, Season season) {
-        if (manifest.pending != null) {
-            return "已有世界切换待执行（目标 " + manifest.pending.target + "），请先重启服务器";
-        }
-        if (!manifest.isTopCurrent()) {
-            return "只有栈顶世界可以开启 new-world（当前 " + manifest.current
-                    + "，栈顶 " + manifest.top() + "）";
-        }
-        String target = newWorldName(server);
-        long seed = season.seed != null ? season.seed : new Random().nextLong();
-        season.worldName = target;
-        season.seed = seed;
-
-        manifest.pending = new Pending("new-world", target, manifest.current);
-        manifest.pending.seasonId = season.id;
-        manifest.pending.name = season.name;
-        manifest.pending.seed = seed;
-        save();
-
-        String result = writeLevelName(server, target, seed);
-        if (result != null) {
-            manifest.pending = null;
-            save();
-            return result;
-        }
-        broadcast(server, "🌍 正在创建新世界「" + target + "」（种子 " + seed
-                + "）· 旧世界保留在世界栈中 · 服务器将在 " + SWITCH_SECONDS
-                + " 秒后停服，请启动脚本重新开服");
-        beginHaltCountdown();
-        return "已安排 new-world 切换：\n· 新世界目录 " + target + "（种子 " + seed + "）\n"
-                + "· 旧世界 " + manifest.current + " 保留在栈中\n"
-                + "· 服务器将在 " + SWITCH_SECONDS + " 秒后停服；请用启动脚本重新开服\n"
-                + "· 重启后自动创建周目 #" + season.id + "「" + season.name + "」并全员迁移";
-    }
-
-    /** 进入栈内旧世界（不改变栈顺序）。 */
-    public synchronized String enter(MinecraftServer server, String target) {
-        if (target == null || target.isBlank()) {
-            return "用法：/samsara world enter <世界名>";
-        }
-        if (!manifest.contains(target)) {
-            return "世界 " + target + " 不在世界栈中；当前栈：" + String.join(" → ", manifest.stack);
-        }
-        if (target.equals(manifest.current)) {
-            return "已经在世界 " + target + " 中";
-        }
-        if (manifest.pending != null) {
-            return "已有世界切换待执行（目标 " + manifest.pending.target + "），请先重启服务器";
-        }
-        String old = manifest.current;
-        manifest.pending = new Pending("enter", target, old);
-        save();
-        String error = writeLevelName(server, target, null);
-        if (error != null) {
-            manifest.pending = null;
-            save();
-            return error;
-        }
-        broadcast(server, "🌍 正在切换世界：" + old + " → " + target + " · 服务器将在 "
-                + SWITCH_SECONDS + " 秒后停服，请启动脚本重新开服");
-        beginHaltCountdown();
-        return "已安排进入世界 " + target + "；服务器将在 " + SWITCH_SECONDS + " 秒后停服";
-    }
-
-    /** 返回世界栈的下一层（栈底方向）。 */
-    public synchronized String leave(MinecraftServer server) {
-        int index = manifest.indexOf(manifest.current);
-        if (index <= 0) {
-            return "已经在栈底世界 " + manifest.current + "，无法继续 leave";
-        }
-        String target = manifest.stack.get(index - 1);
-        String result = enter(server, target);
-        return result.replace("进入世界", "返回下层世界");
-    }
-
-    /** 调试：把已存在的世界目录压入栈（不切换）。 */
-    public synchronized String debugPush(String world) {
-        if (world == null || world.isBlank()) {
-            return "用法：/samsara debug world push <世界名>";
-        }
-        if (manifest.contains(world)) {
-            return "世界 " + world + " 已在栈中";
-        }
-        manifest.stack.add(world);
-        save();
-        return "已压入世界 " + world + "；当前栈：" + String.join(" → ", manifest.stack);
-    }
-
-    /** 调试：弹出栈顶（当前世界不能弹出）。 */
-    public synchronized String debugPop() {
-        if (manifest.stack.isEmpty()) {
-            return "世界栈为空";
-        }
-        if (manifest.top().equals(manifest.current)) {
-            return "当前世界就是栈顶，不能弹出；先 enter 到下层世界";
-        }
-        String removed = manifest.stack.remove(manifest.stack.size() - 1);
-        save();
-        return "已弹出栈顶世界 " + removed + "；当前栈：" + String.join(" → ", manifest.stack);
-    }
-
-    /** 调试：清空栈并只保留当前世界。 */
-    public synchronized String debugReset(MinecraftServer server) {
-        String actual = currentWorldName(server);
-        manifest.stack = new ArrayList<>();
-        manifest.stack.add(actual);
-        manifest.current = actual;
-        manifest.pending = null;
-        save();
-        return "世界栈已重置：仅保留当前世界 " + actual;
-    }
-
-    // ---- 展示 ----
-
-    public synchronized String listText() {
-        if (manifest.stack.isEmpty()) {
-            return "世界栈为空（服务器启动后会自动登记当前世界）";
-        }
-        StringBuilder sb = new StringBuilder("世界栈（栈底 → 栈顶）：");
-        for (int i = 0; i < manifest.stack.size(); i++) {
-            String world = manifest.stack.get(i);
-            sb.append("\n").append(i + 1).append(". ").append(world);
-            if (world.equals(manifest.current)) {
-                sb.append("  ← 当前");
-            }
-            if (i == manifest.stack.size() - 1) {
-                sb.append("  [栈顶]");
-            }
-        }
-        if (manifest.pending != null) {
-            sb.append("\n待执行：").append(manifest.pending.action)
-                    .append(" → ").append(manifest.pending.target);
-        }
-        return sb.toString();
-    }
-
-    public synchronized String infoText(MinecraftServer server) {
-        String actual = currentWorldName(server);
-        StringBuilder sb = new StringBuilder("世界栈信息：");
-        sb.append("\n· 实际加载：").append(actual);
-        sb.append("\n· 清单当前：").append(manifest.current);
-        sb.append("\n· 栈顶：").append(manifest.top());
-        sb.append("\n· 层数：").append(manifest.stack.size());
-        if (server.getLevel(net.minecraft.world.level.Level.OVERWORLD) != null) {
-            sb.append("\n· 当前种子：")
-                    .append(server.getLevel(net.minecraft.world.level.Level.OVERWORLD).getSeed());
-        }
-        if (manifest.pending != null) {
-            sb.append("\n· 待执行：").append(manifest.pending.action)
-                    .append(" → ").append(manifest.pending.target)
-                    .append("（创建于 ")
-                    .append(Instant.ofEpochMilli(manifest.pending.createdAt)).append("）");
-        }
-        if (!actual.equals(manifest.current)) {
-            sb.append("\n⚠ 实际世界与清单不一致，重启后会自动校正");
-        }
-        return sb.toString();
-    }
-
-    // ---- 内部 ----
-
-    /** 当前实际加载的世界目录名。 */
-    public static String currentWorldName(MinecraftServer server) {
-        // ROOT 的 id 为空，不同版本 getWorldPath(ROOT) 可能返回 "."；level.dat 的父目录才是世界目录
-        Path levelDat = server.getWorldPath(LevelResource.LEVEL_DATA_FILE);
-        Path dir = levelDat == null ? null : levelDat.getParent();
-        Path name = dir == null ? null : dir.getFileName();
-        return name == null ? "world" : name.toString();
-    }
-
-    /** 找一个未被栈或磁盘占用的新世界名：world_s1、world_s2 … */
-    public synchronized String newWorldName(MinecraftServer server) {
-        int n = 1;
-        while (true) {
-            String candidate = "world_s" + n;
-            if (!manifest.stack.contains(candidate)
-                    && !Files.exists(server.getServerDirectory().resolve(candidate))) {
-                return candidate;
-            }
-            n++;
-        }
-    }
-
-    /** 修改 server.properties 的 level-name/level-seed；成功返回 null。 */
-    private String writeLevelName(MinecraftServer server, String target, Long seed) {
-        Path props = server.getServerDirectory().resolve("server.properties");
-        try {
-            List<String> lines = Files.exists(props)
-                    ? new ArrayList<>(Files.readAllLines(props, StandardCharsets.UTF_8))
-                    : new ArrayList<>();
-            boolean nameSet = false;
-            boolean seedSet = false;
-            for (int i = 0; i < lines.size(); i++) {
-                String line = lines.get(i);
-                if (line.startsWith("level-name=")) {
-                    lines.set(i, "level-name=" + target);
-                    nameSet = true;
-                } else if (line.startsWith("level-seed=")) {
-                    if (seed != null) {
-                        lines.set(i, "level-seed=" + seed);
-                    }
-                    seedSet = true;
-                }
-            }
-            if (!nameSet) {
-                lines.add("level-name=" + target);
-            }
-            if (!seedSet && seed != null) {
-                lines.add("level-seed=" + seed);
-            }
-            if (Files.exists(props)) {
-                Files.copy(props, props.resolveSibling("server.properties.bak"),
-                        StandardCopyOption.REPLACE_EXISTING);
-            }
-            Files.write(props, lines, StandardCharsets.UTF_8);
-            return null;
-        } catch (IOException e) {
-            return "写入 server.properties 失败：" + e.getMessage();
-        }
-    }
-
-    private static void broadcast(MinecraftServer server, String message) {
-        Component component = Component.literal(message);
-        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-            player.sendSystemMessage(component);
-        }
-        Samsara.LOGGER.info("[周目管理 samsara] {}", message);
-    }
-
-    private static void beginHaltCountdown() {
-        switchTicksLeft = SWITCH_SECONDS * 20;
-        switchLastSecond = -1;
-    }
-
-    /** 每个服务器 tick 调用；世界切换倒计时结束走正常停服流程。 */
-    public static synchronized void tick(MinecraftServer server) {
-        if (switchTicksLeft <= 0) {
-            return;
-        }
-        switchTicksLeft--;
-        int seconds = Math.max(0, (switchTicksLeft + 19) / 20);
-        if (seconds > 0 && seconds != switchLastSecond) {
-            switchLastSecond = seconds;
-            broadcast(server, "🌍 世界切换倒计时 " + seconds + " 秒");
-        }
-        if (switchTicksLeft <= 0) {
-            server.halt(false);
-        }
     }
 }

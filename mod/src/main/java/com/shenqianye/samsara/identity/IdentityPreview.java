@@ -74,13 +74,15 @@ public final class IdentityPreview {
         }
         try {
             TrackRecorder recorder = TrackRecorder.getInstance();
-            Path root = recorder.worldRoot();
-            if (root == null) {
+            List<Path> roots = recorder.trackRoots();
+            if (roots.isEmpty()) {
                 return 0;
             }
             int count = 0;
             for (UUID alias : aliases) {
-                count += ViewTrackReader.available(root, alias, cycle -> null).size();
+                for (Path root : roots) {
+                    count += ViewTrackReader.available(root, alias, cycle -> null).size();
+                }
             }
             return count;
         } catch (RuntimeException e) {
