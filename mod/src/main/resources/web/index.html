@@ -218,7 +218,7 @@
               <h2>栈位排序</h2>
               <p class="panel-sub">拖动或上下移动，保存前先看预览。只调整栈顶以下时立即生效；把旧栈层拖到栈顶会交换 world 与该层数据，需重启并在失败时回滚。</p>
             </div>
-            <div class="panel-tools">
+            <div class="panel-tools world-stack-order-actions">
               <span id="world-stack-order-preview" class="muted small"></span>
               <button id="world-stack-order-save" class="primary" type="button" disabled>保存排序</button>
             </div>
@@ -263,6 +263,16 @@
             </div>
           </div>
           <div id="world-stack-archive-preview" class="world-stack-preview" hidden></div>
+        </section>
+
+        <section class="panel" id="world-stack-files-panel">
+          <div class="panel-head">
+            <div>
+              <h2>文件位置</h2>
+              <p class="panel-sub">动态列出本模组创建/使用的目录。服务器级备份不随存档移动；缓存目录可安全删除；点击行或 ⧉ 可复制绝对路径。</p>
+            </div>
+          </div>
+          <div id="world-stack-files" class="world-stack-files"></div>
         </section>
 
         <section class="panel" id="world-stack-jobs-panel">

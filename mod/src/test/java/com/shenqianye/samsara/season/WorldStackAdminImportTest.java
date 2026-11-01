@@ -109,6 +109,12 @@ class WorldStackAdminImportTest {
                 world.resolve("samsara/stack/stack_0/spawn-history.json")));
         assertFalse(Files.exists(world.resolve("samsara/pending-import.json")));
 
+        WorldStackAdmin.Model model = WorldStackAdmin.model(world, server, List.of());
+        assertTrue(model.files.stream().anyMatch(f -> f.label.contains("world-stack-archive")),
+                "文件树应包含服务器级归档备份目录");
+        assertTrue(model.files.stream().anyMatch(f -> f.label.contains("world-stack-backup")),
+                "文件树应包含服务器级导入/提升备份目录");
+
         // 源目录保持不变
         assertTrue(Files.isRegularFile(
                 source.resolve("dimensions/minecraft/overworld/region/r.0.0.mca")));
@@ -196,7 +202,7 @@ class WorldStackAdminImportTest {
         assertEquals("old-level", Files.readString(
                 world.resolve("samsara/stack/stack_0/level.dat")));
         assertTrue(Files.isRegularFile(
-                world.resolve("samsara/stack-backup/import-" + scheduled.jobId)
+                server.resolve("samsara/world-stack-backup/import-" + scheduled.jobId)
                         .resolve("data-minecraft/world_gen_settings.dat")));
         assertTrue(Files.readString(world.resolve("samsara/claims/claims.json"))
                 .contains("\"new\""), "栈顶导入应带走源目录的 claims");
@@ -285,7 +291,7 @@ class WorldStackAdminImportTest {
         WorldStackAdmin.consumePending(world);
 
         assertNull(StackManifest.load(world).byId("stack_0"));
-        Path archive = world.resolve("samsara/stack-archive");
+        Path archive = server.resolve("samsara/world-stack-archive");
         try (var stream = Files.list(archive)) {
             Path backup = stream.filter(Files::isDirectory).findFirst().orElseThrow();
             assertTrue(Files.isRegularFile(backup.resolve(

@@ -53,6 +53,54 @@ public final class WorldStackAdmin {
     private WorldStackAdmin() {
     }
 
+    /** 备份放在服务器根目录，不跟随存档；删档/复制存档不会带走或误删备份。 */
+    public static Path archiveRoot(Path worldDir) {
+        return serverDataRoot(worldDir).resolve("world-stack-archive");
+    }
+
+    public static Path backupRoot(Path worldDir) {
+        return serverDataRoot(worldDir).resolve("world-stack-backup");
+    }
+
+    private static Path serverDataRoot(Path worldDir) {
+        Path parent = worldDir.toAbsolutePath().normalize().getParent();
+        return (parent == null ? worldDir : parent).resolve("samsara");
+    }
+
+    private static String serverRelative(Path worldDir, Path path) {
+        Path parent = worldDir.toAbsolutePath().normalize().getParent();
+        try {
+            return (parent == null ? worldDir : parent).relativize(path.toAbsolutePath().normalize())
+                    .toString().replace('\\', '/');
+        } catch (RuntimeException e) {
+            return path.toString();
+        }
+    }
+
+    /** 旧版本备份在 world/samsara 下；启动时搬到服务器级备份目录。 */
+    private static void migrateLegacyBackups(Path worldDir) {
+        moveLegacy(worldDir.resolve("samsara/stack-archive"), archiveRoot(worldDir));
+        moveLegacy(worldDir.resolve("samsara/stack-backup"), backupRoot(worldDir));
+    }
+
+    private static void moveLegacy(Path from, Path to) {
+        if (!Files.exists(from)) {
+            return;
+        }
+        if (Files.exists(to)) {
+            Samsara.LOGGER.warn("[世界栈] 旧备份目录 {} 仍存在，但新位置 {} 已有内容；"
+                    + "未自动合并，请手动确认", from, to);
+            return;
+        }
+        try {
+            Files.createDirectories(to.getParent());
+            Files.move(from, to);
+            Samsara.LOGGER.info("[世界栈] 备份已移到服务器级目录：{} → {}", from, to);
+        } catch (IOException e) {
+            Samsara.LOGGER.warn("[世界栈] 备份迁移失败 {} → {}: {}", from, to, e.getMessage());
+        }
+    }
+
     // ---- 模型 ----
 
     public static Model model(Path worldDir, Path serverRoot, List<Path> importRoots) {
@@ -78,6 +126,7 @@ public final class WorldStackAdmin {
         model.jobs = jobs(worldDir, 8);
         model.lastReport = readJobFile(worldDir.resolve("samsara").resolve(JOBS_DIR)
                 .resolve(LAST_RESULT));
+        model.files = fileTree(worldDir, model.stacks);
         return model;
     }
 
@@ -112,6 +161,90 @@ public final class WorldStackAdmin {
         view.spawnCycles = SpawnHistory.loadFrom(layer.metaDir(worldDir)).size();
         view.dataBytes = layerBytes(worldDir, layer);
         return view;
+    }
+
+    private static List<FileNode> fileTree(Path worldDir, List<LayerView> stacks) {
+        List<FileNode> out = new ArrayList<>();
+        Path server = worldDir.toAbsolutePath().normalize().getParent();
+        if (server == null) {
+            server = worldDir;
+        }
+        addFile(out, 0, "服务器根", server, "模组配置与服务器级备份的根目录", false);
+        addFile(out, 1, "config/samsara/", server.resolve("config/samsara"),
+                "YAML 配置（不随存档）", false);
+        addFile(out, 1, "samsara/world-stack-archive/", archiveRoot(worldDir),
+                "栈层归档备份（不随存档）", false);
+        addFile(out, 1, "samsara/world-stack-backup/", backupRoot(worldDir),
+                "导入/提升栈顶的备份（不随存档）", false);
+        addFile(out, 1, "samsara/global/（服务器级）", server.resolve("samsara/global"),
+                "globalFollowWorld=false 时使用", false);
+        Path legacyArchive = worldDir.resolve("samsara/stack-archive");
+        if (Files.exists(legacyArchive)) {
+            addFile(out, 1, "world/samsara/stack-archive/（旧位置）", legacyArchive,
+                    "旧版备份；启动时会尝试迁移到服务器级目录", false);
+        }
+        addFile(out, 1, "world/", worldDir, "栈顶/最新存档", false);
+        addFile(out, 2, "level.dat", worldDir.resolve("level.dat"), "栈顶世界元数据", false);
+        addFile(out, 2, "players/", worldDir.resolve("players"), "所有栈共享的玩家数据", false);
+        addFile(out, 2, "data/minecraft/", worldDir.resolve("data/minecraft"),
+                "运行期共享数据；不是 claims 数据根", false);
+        addFile(out, 2, "dimensions/minecraft/", worldDir.resolve("dimensions/minecraft"),
+                "栈顶的主世界/下界/末地", false);
+        addFile(out, 2, "dimensions/samsara/", worldDir.resolve("dimensions/samsara"),
+                "旧栈层的自定义维度", false);
+        for (LayerView stack : stacks) {
+            if (stack.top) continue;
+            addFile(out, 3, stack.id + "/",
+                    worldDir.resolve(stack.dimensionsPath), "旧栈层维度", false);
+        }
+        Path data = worldDir.resolve("samsara");
+        addFile(out, 2, "samsara/", data, "世界数据根；栈顶元数据也在这里", false);
+        addFile(out, 3, "stack.json", data.resolve("stack.json"),
+                "栈清单（权威）", false);
+        addFile(out, 3, "spawn-history.json", data.resolve("spawn-history.json"),
+                "栈顶出生点历史", false);
+        addFile(out, 3, "claims/", data.resolve("claims"), "栈顶圈地", false);
+        addFile(out, 3, "diff/", data.resolve("diff"), "栈顶倒流差异", false);
+        addFile(out, 3, "track/", data.resolve("track"), "栈顶玩家轨迹", false);
+        addFile(out, 3, "activity/", data.resolve("activity"), "静默活动记录", false);
+        addFile(out, 3, "audit/", data.resolve("audit"), "审计日志", false);
+        addFile(out, 3, "backups/", data.resolve("backups"), "安全删除/压缩备份", false);
+        addFile(out, 3, "identity/", data.resolve("identity"), "身份运行时数据", false);
+        addFile(out, 3, "global/（跟随存档）", data.resolve("global"),
+                "globalFollowWorld=true 时使用", false);
+        addFile(out, 3, "web-map-cache/", data.resolve("web-map-cache"),
+                "地图 tile 派生缓存（可安全删除）", false);
+        addFile(out, 3, "world-stack-jobs/", data.resolve(JOBS_DIR),
+                "导入/归档/栈顶交换任务报告", false);
+        addFile(out, 3, "stack/", data.resolve("stack"), "旧栈层元数据", false);
+        for (LayerView stack : stacks) {
+            if (stack.top) continue;
+            addFile(out, 4, stack.id + "/", worldDir.resolve(stack.metaPath),
+                    "旧栈层 level.dat / claims / diff / track / spawn-history", false);
+        }
+        for (String pending : List.of(PENDING_IMPORT, PENDING_ARCHIVE, PENDING_PROMOTE)) {
+            Path file = data.resolve(pending);
+            if (Files.exists(file)) {
+                addFile(out, 3, pending, file, "待重启执行", false);
+            }
+        }
+        return out;
+    }
+
+    private static void addFile(List<FileNode> out, int depth, String label, Path path,
+                                String note, boolean showBytes) {
+        FileNode node = new FileNode();
+        node.depth = depth;
+        node.label = label;
+        node.path = path.toAbsolutePath().normalize().toString();
+        node.relative = node.path;
+        node.exists = Files.exists(path);
+        node.kind = Files.isDirectory(path) ? "dir" : "file";
+        node.note = note;
+        if (showBytes && node.exists && node.kind.equals("dir")) {
+            node.bytes = sizeOf(path);
+        }
+        out.add(node);
     }
 
     private static long layerBytes(Path worldDir, StackLayer layer) {
@@ -495,10 +628,14 @@ public final class WorldStackAdmin {
             p.freeBytes = freeBytes(worldDir);
             p.neededBytes = p.source.sizeBytes;
             p.requiresRestart = true;
-            p.steps.add("移动 world/dimensions/samsara/" + layer.id
-                    + " -> world/samsara/stack-archive/" + layer.id + "-<时间戳>");
-            p.steps.add("移动 world/samsara/stack/" + layer.id
-                    + " -> world/samsara/stack-archive/" + layer.id + "-<时间戳>/meta");
+            Path archive = archiveRoot(worldDir).resolve(layer.id + "-job");
+            p.backupPath = archive.toString();
+            p.steps.add("移动 " + serverRelative(worldDir, StackPaths.layerDimensions(worldDir, layer))
+                    + " -> " + serverRelative(worldDir, archiveRoot(worldDir))
+                    + "/" + layer.id + "-<job>/dimensions");
+            p.steps.add("移动 " + serverRelative(worldDir, layer.metaDir(worldDir))
+                    + " -> " + serverRelative(worldDir, archiveRoot(worldDir))
+                    + "/" + layer.id + "-<job>/meta");
             p.steps.add("从 stack.json 移除该层并重排 index；world 保持栈顶");
             p.warnings.add("归档会保留完整备份，不直接删除；重启时执行");
             p.warnings.add("该层的 claims/diff/track 随 meta 一起归档，不再参与运行");
@@ -520,8 +657,7 @@ public final class WorldStackAdmin {
         pending.jobId = jobId;
         pending.id = preview.targetId;
         pending.createdAt = System.currentTimeMillis();
-        pending.archivePath = worldDir.resolve("samsara").resolve("stack-archive")
-                .resolve(pending.id + "-" + jobId).toString();
+        pending.archivePath = archiveRoot(worldDir).resolve(pending.id + "-" + jobId).toString();
         if (!write(worldDir, PENDING_ARCHIVE, pending)) {
             result.ok = false;
             preview.errors.add("无法写入 pending-archive.json");
@@ -594,6 +730,7 @@ public final class WorldStackAdmin {
 
     /** SERVER_STARTING 之前调用；处理 pending-import / pending-archive。 */
     public static synchronized void consumePending(Path worldDir) {
+        migrateLegacyBackups(worldDir);
         Path importFile = stackFile(worldDir, PENDING_IMPORT);
         Path archiveFile = stackFile(worldDir, PENDING_ARCHIVE);
         Path promoteFile = stackFile(worldDir, PENDING_PROMOTE);
@@ -704,8 +841,7 @@ public final class WorldStackAdmin {
             job = newJob(pending.jobId, "promote", pending.promoteId);
         }
         Path file = stackFile(worldDir, PENDING_PROMOTE);
-        Path backup = worldDir.resolve("samsara").resolve("stack-backup")
-                .resolve("promote-" + pending.jobId);
+        Path backup = backupRoot(worldDir).resolve("promote-" + pending.jobId);
         Path manifestBackup = backupManifest(worldDir);
         Path topDims = worldDir.resolve("dimensions/minecraft");
         Path topLevel = worldDir.resolve("level.dat");
@@ -1029,7 +1165,7 @@ public final class WorldStackAdmin {
         Path dimsMinecraft = worldDir.resolve("dimensions/minecraft");
         Path oldDims = worldDir.resolve("dimensions/samsara").resolve(demoteId);
         Path oldMeta = worldDir.resolve("samsara/stack").resolve(demoteId);
-        Path backup = worldDir.resolve("samsara/stack-backup").resolve("import-" + pending.jobId);
+        Path backup = backupRoot(worldDir).resolve("import-" + pending.jobId);
         if (Files.exists(oldDims) || Files.exists(oldMeta)) {
             throw new IOException("旧栈目标目录已存在：" + demoteId);
         }
@@ -1654,6 +1790,7 @@ public final class WorldStackAdmin {
         public PendingPromote pendingPromote;
         public List<Job> jobs = new ArrayList<>();
         public Job lastReport;
+        public List<FileNode> files = new ArrayList<>();
         public long totalBytes;
         public boolean restartRequired;
     }
@@ -1683,6 +1820,17 @@ public final class WorldStackAdmin {
         public String id = "";
         public boolean exists;
         public int regions;
+    }
+
+    public static final class FileNode {
+        public int depth;
+        public String label = "";
+        public String path = "";
+        public String relative = "";
+        public String kind = "dir";
+        public boolean exists;
+        public long bytes = -1;
+        public String note = "";
     }
 
     public static final class SourceInfo {
@@ -1716,6 +1864,7 @@ public final class WorldStackAdmin {
         public String targetId = "";
         public String demoteId = "";
         public String betweenUpper = "";
+        public String backupPath = "";
         public int targetIndex;
         public long freeBytes;
         public long neededBytes;

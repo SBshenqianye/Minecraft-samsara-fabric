@@ -33,6 +33,7 @@ public class WorldStackWebService {
         out.put("pendingPromote", model.pendingPromote);
         out.put("jobs", model.jobs);
         out.put("lastReport", model.lastReport);
+        out.put("files", model.files);
         out.put("totalBytes", model.totalBytes);
         out.put("restartRequired", model.restartRequired);
         return out;
@@ -123,6 +124,7 @@ public class WorldStackWebService {
         out.put("targetId", preview.targetId);
         out.put("demoteId", preview.demoteId);
         out.put("betweenUpper", preview.betweenUpper);
+        out.put("backupPath", preview.backupPath);
         out.put("targetIndex", preview.targetIndex);
         out.put("freeBytes", preview.freeBytes);
         out.put("neededBytes", preview.neededBytes);

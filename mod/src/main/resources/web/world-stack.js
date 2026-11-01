@@ -32,6 +32,7 @@
       importPreviewButton: $('world-stack-import-preview-button'),
       importPreview: $('world-stack-import-preview'),
       archivePreview: $('world-stack-archive-preview'),
+      files: $('world-stack-files'),
       jobs: $('world-stack-jobs'),
       refresh: $('world-stack-refresh'),
       overview: $('world-stack-overview'),
@@ -39,6 +40,7 @@
       orderPanel: $('world-stack-order-panel'),
       importPanel: $('world-stack-import-panel'),
       archivePanel: $('world-stack-archive-panel'),
+      filesPanel: $('world-stack-files-panel'),
       jobsPanel: $('world-stack-jobs-panel'),
     };
     return els;
@@ -171,6 +173,7 @@
     renderAfterSelect();
     renderImportPreview();
     renderArchivePreview();
+    renderFiles();
     renderJobs();
     renderNav();
   }
@@ -548,8 +551,8 @@
       appendRows(archivePreview, [
         ['栈层', preview.targetId],
         ['数据大小', fmtBytes(preview.source.sizeBytes)],
-        ['备份位置', 'world/samsara/stack-archive/' + preview.targetId + '-<job>'],
-        ['执行时机', '服务器重启时；先备份再移除'],
+        ['备份位置', preview.backupPath || '服务器级 samsara/world-stack-archive/' + preview.targetId + '-<job>'],
+        ['执行时机', '服务器重启时；先备份再移除；备份不跟随存档'],
       ]);
     }
     if (Array.isArray(preview.steps) && preview.steps.length) {
@@ -635,6 +638,76 @@
       }
     } catch (error) {
       setMessage(window.SamsaraUI.authMessage(error, '排序保存失败'), 'error');
+    }
+  }
+
+  async function copyPath(text, button) {
+    try {
+      await navigator.clipboard.writeText(text);
+      button.textContent = '✓';
+      window.setTimeout(() => { button.textContent = '⧉'; }, 1400);
+      return;
+    } catch (error) {
+      // fallback below
+    }
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.append(area);
+    area.select();
+    try {
+      document.execCommand('copy');
+      button.textContent = '✓';
+      window.setTimeout(() => { button.textContent = '⧉'; }, 1400);
+    } catch (error) {
+      button.textContent = '!';
+    } finally {
+      area.remove();
+    }
+  }
+
+  function renderFiles() {
+    const { files } = ensureEls();
+    if (!files) return;
+    files.replaceChildren();
+    const list = state.model && Array.isArray(state.model.files) ? state.model.files : [];
+    if (list.length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'muted small';
+      empty.textContent = '暂无文件位置信息。';
+      files.append(empty);
+      return;
+    }
+    for (const node of list) {
+      const row = document.createElement('div');
+      row.className = 'world-stack-file' + (node.exists ? '' : ' missing');
+      row.style.paddingLeft = (Math.max(0, node.depth) * 14 + 4) + 'px';
+      row.title = node.path;
+      const icon = document.createElement('span');
+      icon.className = 'world-stack-file-icon';
+      icon.textContent = node.exists ? (node.kind === 'dir' ? '▸' : '·') : '×';
+      const label = document.createElement('span');
+      label.className = 'world-stack-file-label';
+      label.textContent = node.label;
+      const note = document.createElement('span');
+      note.className = 'world-stack-file-note';
+      note.textContent = node.note || '';
+      const size = document.createElement('span');
+      size.className = 'world-stack-file-size';
+      size.textContent = node.bytes >= 0 ? fmtBytes(node.bytes) : '';
+      const copy = document.createElement('button');
+      copy.type = 'button';
+      copy.className = 'world-stack-file-copy';
+      copy.textContent = '⧉';
+      copy.title = '复制路径';
+      copy.addEventListener('click', (event) => {
+        event.stopPropagation();
+        copyPath(node.path, copy);
+      });
+      row.append(icon, label, note, size, copy);
+      row.addEventListener('click', () => copyPath(node.path, copy));
+      files.append(row);
     }
   }
 
@@ -739,6 +812,7 @@
     add('world-stack-order-panel', '栈位排序', e.orderPanel);
     add('world-stack-import-panel', '导入', e.importPanel);
     add('world-stack-archive-panel', '归档', e.archivePanel);
+    add('world-stack-files-panel', '文件位置', e.filesPanel);
     add('world-stack-jobs-panel', '任务与结果', e.jobsPanel);
     window.SamsaraUI.buildNav('世界栈导航', items, targets);
   }
