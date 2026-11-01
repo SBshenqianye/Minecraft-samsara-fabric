@@ -1247,10 +1247,12 @@ public class SeasonManager {
         // y 用与传送一致的“地表上方一格”，避免 getHeight 异常导致 y=2 埋地底
         int y = findSafeSurfaceY(overworld, x, z);
         // 与 SetSpawnCommand(/spawnpoint) 完全一致的写法：
-        //  RespawnData.of(dimension, pos, yaw, pitch)；forced=false（仅无床/锚时生效）
+        //  RespawnData.of(dimension, pos, yaw, pitch) + forced=true。
+        //  原版只对床/重生锚使用非强制重生点；普通地面 spawn 若 forced=false，
+        //  死亡时会被判为“没有床”并回退全局主世界。
         var respawnData = LevelData.RespawnData.of(overworld.dimension(), new BlockPos(x, y, z),
                 player.getYRot(), player.getXRot());
-        player.setRespawnPosition(new ServerPlayer.RespawnConfig(respawnData, false), false);
+        player.setRespawnPosition(new ServerPlayer.RespawnConfig(respawnData, true), false);
     }
 
     /** debug：读取玩家当前重生点（RespawnConfig pos/dimension/forced），用于定位重生点 bug */
