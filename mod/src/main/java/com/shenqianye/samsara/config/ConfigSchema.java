@@ -167,7 +167,11 @@ public final class ConfigSchema {
                         "访问令牌，由程序在首次启动时生成；请求需 Authorization: Bearer <token>"),
                 ConfigEntry.stringList("importRoots", List.of(), "世界栈",
                         "允许 Web 导入世界栈的服务器本地目录（绝对路径）；服务器根目录始终允许。"
-                                + "留空时只允许服务器根目录下的 world；来源目录只读，不会被修改")
+                                + "留空时只允许服务器根目录下的 world；来源目录只读，不会被修改"),
+                ConfigEntry.integer("backupKeep", 5, 0, 100, "世界栈",
+                        "服务器级世界栈备份保留份数：只清理 samsara/world-stack-backup 下的"
+                                + "导入/提升栈顶备份，按时间保留最新 N 份；0 表示不自动清理；"
+                                + "world-stack-archive 是用户数据，永不自动删除")
         ));
 
         List<ConfigEntry> outputEntries = new ArrayList<>();

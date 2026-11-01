@@ -269,7 +269,7 @@
           <div class="panel-head">
             <div>
               <h2>文件位置</h2>
-              <p class="panel-sub">动态列出本模组创建/使用的目录。服务器级备份不随存档移动；缓存目录可安全删除；点击行或 ⧉ 可复制绝对路径。</p>
+              <p class="panel-sub">动态列出本模组创建/使用的目录。服务器级备份不随存档移动；缓存目录可安全删除；<code>world-stack-backup</code> 只保留最近 N 份（由配置项 <code>backupKeep</code> 控制），<code>world-stack-archive</code> 是用户数据不会自动删除。点击行或 ⧉ 可复制绝对路径。</p>
             </div>
           </div>
           <div id="world-stack-files" class="world-stack-files"></div>

@@ -3,6 +3,8 @@ package com.shenqianye.samsara.season;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.shenqianye.samsara.Samsara;
+import com.shenqianye.samsara.config.ConfigManager;
+import com.shenqianye.samsara.config.ConfigSchema;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtAccounter;
@@ -101,6 +103,64 @@ public final class WorldStackAdmin {
         }
     }
 
+    /** 保留份数；读不到配置时回退默认值。 */
+    public static int backupKeep() {
+        try {
+            return Math.max(0, ConfigManager.getInstance()
+                    .integer(ConfigSchema.WEB, "backupKeep"));
+        } catch (RuntimeException e) {
+            return 5;
+        }
+    }
+
+    /**
+     * 只清理服务器级 {@code world-stack-backup}（导入/提升栈顶的临时回滚备份）。
+     * {@code world-stack-archive} 是用户数据，永不自动删除。
+     *
+     * @return 实际删除的目录数
+     */
+    public static int pruneBackups(Path worldDir, int keep) {
+        if (keep <= 0) {
+            return 0;
+        }
+        Path root = backupRoot(worldDir);
+        if (!Files.isDirectory(root)) {
+            return 0;
+        }
+        List<Path> dirs = new ArrayList<>();
+        try (Stream<Path> stream = Files.list(root)) {
+            stream.filter(Files::isDirectory).forEach(dirs::add);
+        } catch (IOException e) {
+            Samsara.LOGGER.warn("[世界栈] 读取备份目录失败 {}: {}", root, e.getMessage());
+            return 0;
+        }
+        if (dirs.size() <= keep) {
+            return 0;
+        }
+        dirs.sort(Comparator.comparingLong(WorldStackAdmin::lastModified).reversed());
+        int removed = 0;
+        for (int i = keep; i < dirs.size(); i++) {
+            Path old = dirs.get(i);
+            deleteRecursive(old);
+            if (!Files.exists(old)) {
+                removed++;
+            }
+        }
+        if (removed > 0) {
+            Samsara.LOGGER.info("[世界栈] 备份清理（保留最新 {} 份）: 删除 {} 个旧目录",
+                    keep, removed);
+        }
+        return removed;
+    }
+
+    private static long lastModified(Path path) {
+        try {
+            return Files.getLastModifiedTime(path).toMillis();
+        } catch (IOException e) {
+            return 0L;
+        }
+    }
+
     // ---- 模型 ----
 
     public static Model model(Path worldDir, Path serverRoot, List<Path> importRoots) {
@@ -127,6 +187,7 @@ public final class WorldStackAdmin {
         model.lastReport = readJobFile(worldDir.resolve("samsara").resolve(JOBS_DIR)
                 .resolve(LAST_RESULT));
         model.files = fileTree(worldDir, model.stacks);
+        model.backupKeep = backupKeep();
         return model;
     }
 
@@ -173,9 +234,9 @@ public final class WorldStackAdmin {
         addFile(out, 1, "config/samsara/", server.resolve("config/samsara"),
                 "YAML 配置（不随存档）", false);
         addFile(out, 1, "samsara/world-stack-archive/", archiveRoot(worldDir),
-                "栈层归档备份（不随存档）", false);
+                "栈层归档备份（不随存档；用户数据，不自动删除）", true);
         addFile(out, 1, "samsara/world-stack-backup/", backupRoot(worldDir),
-                "导入/提升栈顶的备份（不随存档）", false);
+                "导入/提升栈顶的备份（不随存档，保留最近 " + backupKeep() + " 份）", true);
         addFile(out, 1, "samsara/global/（服务器级）", server.resolve("samsara/global"),
                 "globalFollowWorld=false 时使用", false);
         Path legacyArchive = worldDir.resolve("samsara/stack-archive");
@@ -289,6 +350,27 @@ public final class WorldStackAdmin {
         }
         if (!source.hasDimensions) {
             p.errors.add("源目录缺少 dimensions/minecraft；请确认是 26.3 新布局");
+        }
+        if (!source.hasGenSettings) {
+            p.fields.put("path", "源目录缺少 data/minecraft/world_gen_settings.dat");
+            p.errors.add("源目录缺少 data/minecraft/world_gen_settings.dat："
+                    + "26.3 必须带该文件（含 seed 与维度生成设置），否则导入后世界无法启动；"
+                    + "请先用 26.3 打开/另存一次该世界");
+        }
+        LevelInfo serverLevel = LevelInfo.read(worldDir);
+        if (source.dataVersion > 0 && serverLevel.dataVersion > 0
+                && source.dataVersion > serverLevel.dataVersion) {
+            p.fields.put("path", "源世界版本高于服务器世界");
+            p.errors.add("源世界由更新版本创建（DataVersion " + source.dataVersion
+                    + " > 服务器 " + serverLevel.dataVersion
+                    + "）：服务器会拒绝打开该世界，导入后无法启动；请先用当前版本打开并另存");
+        }
+        if (source.snapshot && !serverLevel.snapshot) {
+            p.fields.put("path", "源世界是快照版本");
+            p.errors.add("源世界由快照版本创建（"
+                    + (source.versionName.isBlank() ? "snapshot" : source.versionName)
+                    + "）：正式版服务器会拒绝打开（incompatible version）；"
+                    + "请用当前正式版打开并另存后再导入");
         }
         if (source.hasSamsaraStack) {
             p.errors.add("源目录本身包含 samsara/stack.json（世界栈存档）：请先导出单层 world");
@@ -431,6 +513,10 @@ public final class WorldStackAdmin {
         }
         info.hasLevelDat = Files.isRegularFile(real.resolve("level.dat"));
         info.hasDimensions = Files.isDirectory(real.resolve("dimensions/minecraft"));
+        // 26.3 把 generator/seed 放在 data/minecraft/world_gen_settings.dat；缺了它
+        // 栈顶导入会留下一个启动不了的世界（Overworld settings missing）。
+        info.hasGenSettings = Files.isRegularFile(
+                real.resolve("data/minecraft/world_gen_settings.dat"));
         info.legacy = !info.hasDimensions && (Files.exists(real.resolve("region"))
                 || Files.isDirectory(real.resolve("DIM-1"))
                 || Files.isDirectory(real.resolve("DIM1"))
@@ -439,6 +525,9 @@ public final class WorldStackAdmin {
         info.hasSamsaraStack = Files.isRegularFile(real.resolve("samsara/stack.json"));
         info.sessionLocked = sessionLocked(real.resolve("session.lock"));
         LevelInfo level = LevelInfo.read(real);
+        info.dataVersion = level.dataVersion;
+        info.snapshot = level.snapshot;
+        info.versionName = level.versionName;
         info.worldName = level.worldName;
         info.seed = String.valueOf(level.seed);
         info.spawnX = level.spawnX;
@@ -628,8 +717,8 @@ public final class WorldStackAdmin {
             p.freeBytes = freeBytes(worldDir);
             p.neededBytes = p.source.sizeBytes;
             p.requiresRestart = true;
-            Path archive = archiveRoot(worldDir).resolve(layer.id + "-job");
-            p.backupPath = archive.toString();
+            p.backupPath = serverRelative(worldDir, archiveRoot(worldDir))
+                    + "/" + layer.id + "-<job>";
             p.steps.add("移动 " + serverRelative(worldDir, StackPaths.layerDimensions(worldDir, layer))
                     + " -> " + serverRelative(worldDir, archiveRoot(worldDir))
                     + "/" + layer.id + "-<job>/dimensions");
@@ -665,6 +754,7 @@ public final class WorldStackAdmin {
         }
         Job job = newJob(jobId, "archive", preview.targetId);
         job.source = preview.source == null ? "" : preview.source.canonicalPath;
+        job.requiresRestart = true;
         job.message = "已排队：重启服务器后归档 " + pending.id;
         writeJob(worldDir, job);
         result.ok = true;
@@ -731,6 +821,7 @@ public final class WorldStackAdmin {
     /** SERVER_STARTING 之前调用；处理 pending-import / pending-archive。 */
     public static synchronized void consumePending(Path worldDir) {
         migrateLegacyBackups(worldDir);
+        pruneBackups(worldDir, backupKeep());
         Path importFile = stackFile(worldDir, PENDING_IMPORT);
         Path archiveFile = stackFile(worldDir, PENDING_ARCHIVE);
         Path promoteFile = stackFile(worldDir, PENDING_PROMOTE);
@@ -1051,6 +1142,23 @@ public final class WorldStackAdmin {
                     || !Files.isDirectory(source.resolve("dimensions/minecraft"))) {
                 throw new IOException("源目录不是 26.3 新布局（缺少 level.dat 或 dimensions/minecraft）");
             }
+            if (!Files.isRegularFile(source.resolve("data/minecraft/world_gen_settings.dat"))) {
+                throw new IOException("源目录缺少 data/minecraft/world_gen_settings.dat；"
+                        + "导入会导致世界无法启动，已中止（原栈与源目录保持不变）");
+            }
+            int serverDataVersion = LevelInfo.read(worldDir).dataVersion;
+            int sourceDataVersion = LevelInfo.read(source).dataVersion;
+            if (serverDataVersion > 0 && sourceDataVersion > serverDataVersion) {
+                throw new IOException("源世界版本高于服务器（DataVersion " + sourceDataVersion
+                        + " > " + serverDataVersion + "）；服务器会拒绝打开，已中止"
+                        + "（原栈与源目录保持不变）");
+            }
+            LevelInfo sourceLevel = LevelInfo.read(source);
+            if (sourceLevel.snapshot && !LevelInfo.read(worldDir).snapshot) {
+                throw new IOException("源世界由快照版本创建（"
+                        + (sourceLevel.versionName.isBlank() ? "snapshot" : sourceLevel.versionName)
+                        + "）；正式版服务器会拒绝打开，已中止（原栈与源目录保持不变）");
+            }
             if (sessionLocked(source.resolve("session.lock"))) {
                 throw new IOException("源目录 session.lock 仍被占用");
             }
@@ -1211,6 +1319,12 @@ public final class WorldStackAdmin {
             copyFile(source.resolve("level.dat"), worldDir.resolve("level.dat"));
             copyTree(source.resolve("data/minecraft"), worldDir.resolve("data/minecraft"),
                     job, 62, 78);
+            if (!Files.isRegularFile(worldDir.resolve("level.dat"))
+                    || !Files.isRegularFile(
+                            worldDir.resolve("data/minecraft/world_gen_settings.dat"))) {
+                throw new IOException("复制后缺少 level.dat 或 world_gen_settings.dat，"
+                        + "世界将无法启动；已回滚");
+            }
             for (String name : List.of("claims", "diff", "track")) {
                 copyTree(source.resolve("samsara").resolve(name),
                         worldDir.resolve("samsara").resolve(name), job, 78, 80);
@@ -1312,6 +1426,9 @@ public final class WorldStackAdmin {
     private static final class LevelInfo {
         String worldName = "";
         long seed;
+        int dataVersion;
+        String versionName = "";
+        boolean snapshot;
         int spawnX;
         int spawnY = 64;
         int spawnZ;
@@ -1324,6 +1441,10 @@ public final class WorldStackAdmin {
                 CompoundTag root = NbtIo.readCompressed(source.resolve("level.dat"),
                         NbtAccounter.unlimitedHeap());
                 CompoundTag data = root.getCompoundOrEmpty("Data");
+                info.dataVersion = data.getIntOr("DataVersion", 0);
+                CompoundTag version = data.getCompoundOrEmpty("Version");
+                info.snapshot = version.getBooleanOr("Snapshot", false);
+                info.versionName = version.getStringOr("Name", "");
                 String name = data.getStringOr("LevelName", "");
                 if (!name.isBlank()) {
                     info.worldName = name;
@@ -1792,6 +1913,7 @@ public final class WorldStackAdmin {
         public Job lastReport;
         public List<FileNode> files = new ArrayList<>();
         public long totalBytes;
+        public int backupKeep;
         public boolean restartRequired;
     }
 
@@ -1849,7 +1971,11 @@ public final class WorldStackAdmin {
         public boolean legacy;
         public boolean hasLevelDat;
         public boolean hasDimensions;
+        public boolean hasGenSettings;
         public boolean hasSamsaraStack;
+        public int dataVersion;
+        public String versionName = "";
+        public boolean snapshot;
     }
 
     public static final class Preview {
