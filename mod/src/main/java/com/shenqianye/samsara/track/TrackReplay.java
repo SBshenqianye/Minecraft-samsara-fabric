@@ -29,6 +29,8 @@ import java.util.UUID;
 /**
  * 玩家轨迹回放（设计文档 §5.4）：服务端按光标时间在相邻样本间插值，驱动
  * {@link ReplayMannequin}（原版 26.3 Mannequin 子类，客户端原生渲染、带玩家皮肤）。
+ * 每 tick 同时把当前样本的 flags 交给 {@link TrackMannequin#applyTrackFlags(int)}，
+ * 所以潜行/疾跑/游泳/飞行/骑乘/受伤/死亡姿态在回放过程中持续生效。
  * <p>
  * <b>多人同屏</b>：{@code Map<UUID, Replay>} 按"被回放的玩家"索引，支持同时回放多个玩家/多个目标；
  * 每个回放独立推进、独立结束、独立捕捉，所有在场玩家都能看到全部人偶。
@@ -154,6 +156,8 @@ public final class TrackReplay {
         if (!level.addFreshEntity(entity)) {
             return "人偶生成失败（区块未加载？）";
         }
+        // 加入世界后再应用：受伤闪烁需要广播给已追踪该实体的玩家
+        entity.applyTrackFlags(first.flags());
 
         Replay r = new Replay();
         r.uuid = uuid;
@@ -281,6 +285,8 @@ public final class TrackReplay {
             r.entity.yHeadRotO = yaw;
             r.entity.yBodyRotO = yaw;
             r.entity.setDeltaMovement(0, 0, 0);
+            // flags 取当前所在样本（不插值）：姿态是离散状态，越过样本时刻才切换
+            r.entity.applyTrackFlags(a.flags());
         }
     }
 

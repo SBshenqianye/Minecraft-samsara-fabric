@@ -352,7 +352,6 @@ public final class ViewManager {
         entity.setYBodyRot(first.yaw());
         entity.yHeadRotO = first.yaw();
         entity.yBodyRotO = first.yaw();
-        entity.applyTrackFlags(first.flags());
         entity.walkAnimation.stop();
         s.prevMannequinX = first.x();
         s.prevMannequinY = first.y();
@@ -364,6 +363,8 @@ public final class ViewManager {
             fail(server, p, "人偶生成失败（区块未加载）");
             return;
         }
+        // 加入世界后再应用：受伤闪烁需要广播给已追踪该实体的玩家
+        entity.applyTrackFlags(first.flags());
 
         // 2) 旧会话先结束（同观看者替换，不叠加实体）
         if (p.old != null) {

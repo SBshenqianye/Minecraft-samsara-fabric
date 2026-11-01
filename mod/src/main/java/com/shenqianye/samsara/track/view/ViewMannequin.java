@@ -1,13 +1,12 @@
 package com.shenqianye.samsara.track.view;
 
 import com.mojang.authlib.GameProfile;
+import com.shenqianye.samsara.track.TrackMannequin;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.damagesource.DamageSource;
-import net.minecraft.world.entity.Pose;
-import net.minecraft.world.entity.decoration.Mannequin;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.component.ResolvableProfile;
 import net.minecraft.world.level.Level;
@@ -24,8 +23,12 @@ import java.util.UUID;
  * <b>回看始终不可交互</b>：{@code noPhysics}、零碰撞、不可攻击/推动/右键、不触发元件。
  * {@link #isPickable()} 返回 true，仅用于旁观者左键把相机切到人偶（原版 spectator
  * 相机接管），不是世界交互。
+ * <p>
+ * 可见姿态与捕捉式回放共用 {@link TrackMannequin#applyTrackFlags(int)}：
+ * 每 tick 按当前轨迹点的 flags 应用潜行/疾跑/游泳/飞行/骑乘/受伤/死亡，
+ * 位置与朝向仍由 {@code ViewManager} 驱动。
  */
-public class ViewMannequin extends Mannequin {
+public class ViewMannequin extends TrackMannequin {
     private final UUID sourceUuid;
     private final boolean nameTag;
 
@@ -64,17 +67,6 @@ public class ViewMannequin extends Mannequin {
     @Override
     public boolean canBeCollidedWith(net.minecraft.world.entity.Entity entity) {
         return false;
-    }
-
-    /** 回放姿态：潜行/游泳/疾跑来自轨迹 flags。 */
-    public void applyTrackFlags(int flags) {
-        boolean sneak = (flags & com.shenqianye.samsara.track.TrackStore.FLAG_SNEAK) != 0;
-        boolean sprint = (flags & com.shenqianye.samsara.track.TrackStore.FLAG_SPRINT) != 0;
-        boolean swimming = (flags & com.shenqianye.samsara.track.TrackStore.FLAG_SWIMMING) != 0;
-        setShiftKeyDown(sneak);
-        setSprinting(sprint);
-        setSwimming(swimming);
-        setPose(swimming ? Pose.SWIMMING : sneak ? Pose.CROUCHING : Pose.STANDING);
     }
 
     /**
