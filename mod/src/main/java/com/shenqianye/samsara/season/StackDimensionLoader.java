@@ -122,9 +122,11 @@ public final class StackDimensionLoader {
             if (stem.isEmpty()) {
                 throw new IllegalStateException("缺少维度 " + stemKey);
             }
+            // 额外栈层共享 top 的 ServerLevelData；若 tickTime=true，每个维度都会推进同一个
+            // dayTime，游戏时间会变成 10 倍速并出现跳时。时间只由原版主世界推进，栈维度只 tick 区块/实体。
             ServerLevel level = StackLevel.create(server, (java.util.concurrent.Executor) executor,
                     access, levelData, layer.key(dim), stem.get(), false,
-                    layer.seed, List.of(), true);
+                    layer.seed, List.of(), false);
             register(server, layer.key(dim), level);
             out.levels.put(dim, level);
         }
