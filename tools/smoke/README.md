@@ -67,6 +67,23 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\smoke\world-legacy-mig
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\smoke\world-chain.ps1 -Confirm -BotName ChainBot
 ```
 
+> 脚本默认等待 4.2 秒，覆盖 3 秒跨世界防抖；F-32 需要先 `world enter` 到非栈顶层。
+
+## 自动加载 / 重试（v0.27）
+
+目标栈层启动时加载失败时，玩家沿跨栈链到达会自动重试（5s→60s 退避），不再只提示“未加载”。测试可用：
+
+```powershell
+# 启动时注入失败（仅测试）：java ... -Dsamsara.debug.failStackLayer=stack_1 ...
+# 运行中注入/解除
+samsara debug world failstack stack_1 on
+samsara debug world failstack stack_1 off
+# 忽略退避立即重试，并返回失败原因
+samsara debug world retrystack stack_1
+# 查看各层加载状态与失败原因
+samsara debug world multi
+```
+
 > v0.24 的 `world enter/leave` 直接传送到栈维度，不再改写 `server.properties`；`reset new` 仍会改 `level-seed`/`level-type` 并停服，脚本按默认参数直接 `java -jar` 重启。
 > 若测试服用的是别的启动方式/端口，用参数覆盖：
 > `-ServerDir`、`-ServerArgs`、`-RconPort`、`-RconPassword`、`-Java`。
