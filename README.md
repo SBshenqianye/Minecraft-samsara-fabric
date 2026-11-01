@@ -100,6 +100,20 @@ Linux/macOS 用 `./gradlew build`。产物是 `mod/build/libs/samsara-<版本>.j
 
 > 26.2 起使用 Mojang 官方映射，构建脚本不需要 yarn 映射；26.3 沿用同一套构建链。
 
+## 自动化验收
+
+Web 冒烟 E2E 使用系统 Edge/Chrome 的 headless + CDP，零 npm 依赖：
+
+```powershell
+# 测试服已在运行
+node tools/web-e2e.mjs --base http://127.0.0.1:8730 --token testtoken
+
+# 或自动启动/停止测试服
+powershell -ExecutionPolicy Bypass -File tools/web-e2e.ps1 -ServerDir .\test-server-backup-test
+```
+
+覆盖：token 连接、6 个服务器文件同页/分组/70 条目/中文说明、折叠、搜索、玩家选择、备份时间线与回滚预览、身份组/输出/权限/配置页布尔按钮、重复 id、未捕获脚本错误。退出码 0 为通过；默认不保存配置、不创建或恢复备份。
+
 ## 加载方式
 
 模组按“服务端入口 + 客户端也加载”的方式声明：
