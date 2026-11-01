@@ -30,6 +30,7 @@ public class WorldStackWebService {
         out.put("stacks", model.stacks);
         out.put("pendingImport", model.pendingImport);
         out.put("pendingArchive", model.pendingArchive);
+        out.put("pendingPromote", model.pendingPromote);
         out.put("jobs", model.jobs);
         out.put("lastReport", model.lastReport);
         out.put("totalBytes", model.totalBytes);
@@ -121,6 +122,7 @@ public class WorldStackWebService {
         out.put("afterId", preview.afterId);
         out.put("targetId", preview.targetId);
         out.put("demoteId", preview.demoteId);
+        out.put("betweenUpper", preview.betweenUpper);
         out.put("targetIndex", preview.targetIndex);
         out.put("freeBytes", preview.freeBytes);
         out.put("neededBytes", preview.neededBytes);

@@ -175,7 +175,7 @@
         const option = document.createElement('option');
         option.value = stack.id;
         option.textContent = stack.top
-          ? 'world（栈顶 / 最新）'
+          ? 'world（栈顶）'
           : stack.id + '（第 ' + ((stack.index || 0) + 1) + ' 层）';
         stackSelect.append(option);
       }
@@ -829,8 +829,12 @@
   async function copyText(text, button, normalLabel) {
     const label = normalLabel || '⧉';
     const done = () => {
-      button.textContent = '已复制';
-      window.setTimeout(() => { button.textContent = label; }, 1600);
+      button.textContent = '✓';
+      button.title = '已复制';
+      window.setTimeout(() => {
+        button.textContent = label;
+        button.title = '复制传送命令';
+      }, 1400);
     };
     try {
       await navigator.clipboard.writeText(text);
@@ -849,7 +853,8 @@
       document.execCommand('copy');
       done();
     } catch (error) {
-      button.textContent = '复制失败，请手动选择';
+      button.textContent = '!';
+      button.title = '复制失败，请手动选择';
     } finally {
       area.remove();
     }

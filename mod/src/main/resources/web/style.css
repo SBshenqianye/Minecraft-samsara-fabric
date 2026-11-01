@@ -756,6 +756,7 @@ body.locked .tabs, body.locked .tab-actions { opacity: .45; pointer-events: none
 .world-stack-rows dd { margin: 0; overflow-wrap: anywhere; font-family: var(--mono); }
 .world-stack-order { display: flex; flex-direction: column; gap: 6px; }
 .world-stack-order-item { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-soft); cursor: grab; }
+.world-stack-order-item.top { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: color-mix(in srgb, var(--accent) 6%, var(--panel-soft)); }
 .world-stack-order-item.dragging { opacity: .45; }
 .world-stack-order-item.drop-target { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
 .world-stack-drag { color: var(--muted); font-family: var(--mono); letter-spacing: -2px; cursor: grab; }

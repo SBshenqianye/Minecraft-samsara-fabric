@@ -38,6 +38,7 @@ import java.util.stream.Stream;
 public final class WorldStackAdmin {
     public static final String PENDING_IMPORT = "pending-import.json";
     public static final String PENDING_ARCHIVE = "pending-archive.json";
+    public static final String PENDING_PROMOTE = "pending-promote.json";
     public static final String JOBS_DIR = "world-stack-jobs";
     public static final String LAST_RESULT = "last-result.json";
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
@@ -47,7 +48,7 @@ public final class WorldStackAdmin {
             "pending-delete.json", "pending-teleports.json", "level.dat_old");
     private static final List<String> SAMSARA_EXCLUDES = List.of(
             "stack.json", "stack", "web-map-cache", JOBS_DIR,
-            PENDING_IMPORT, PENDING_ARCHIVE, "pending-new.json");
+            PENDING_IMPORT, PENDING_ARCHIVE, PENDING_PROMOTE, "pending-new.json");
 
     private WorldStackAdmin() {
     }
@@ -71,7 +72,9 @@ public final class WorldStackAdmin {
         }
         model.pendingImport = read(worldDir, PENDING_IMPORT, PendingImport.class);
         model.pendingArchive = read(worldDir, PENDING_ARCHIVE, PendingArchive.class);
-        model.restartRequired = model.pendingImport != null || model.pendingArchive != null;
+        model.pendingPromote = read(worldDir, PENDING_PROMOTE, PendingPromote.class);
+        model.restartRequired = model.pendingImport != null || model.pendingArchive != null
+                || model.pendingPromote != null;
         model.jobs = jobs(worldDir, 8);
         model.lastReport = readJobFile(worldDir.resolve("samsara").resolve(JOBS_DIR)
                 .resolve(LAST_RESULT));
@@ -91,6 +94,9 @@ public final class WorldStackAdmin {
         view.levelType = layer.levelType;
         view.source = layer.source == null || layer.source.isBlank()
                 ? (layer.top ? "current" : "layer") : layer.source;
+        if (layer.top && "demoted".equals(view.source)) {
+            view.source = "current";
+        }
         view.importedFrom = layer.importedFrom == null ? "" : layer.importedFrom;
         view.metaPath = relative(worldDir, layer.metaDir(worldDir));
         view.dimensionsPath = relative(worldDir, StackPaths.layerDimensions(worldDir, layer));
@@ -181,6 +187,8 @@ public final class WorldStackAdmin {
             } else {
                 p.targetIndex = after.index + 1;
                 p.targetId = allocateId(manifest);
+                StackLayer upper = manifest.above(after);
+                p.betweenUpper = upper == null ? StackPaths.TOP_ID : upper.id;
             }
         } else if ("top".equals(p.position)) {
             p.targetIndex = manifest.layers.size();
@@ -190,8 +198,9 @@ public final class WorldStackAdmin {
             p.fields.put("position", "position 只能是 bottom / between / top");
             p.errors.add("position 只能是 bottom / between / top");
         }
-        if (pending(worldDir, PENDING_IMPORT) || pending(worldDir, PENDING_ARCHIVE)) {
-            p.errors.add("已有待执行的导入/归档任务；请先重启服务器完成或手动清理 pending 文件");
+        if (pending(worldDir, PENDING_IMPORT) || pending(worldDir, PENDING_ARCHIVE)
+                || pending(worldDir, PENDING_PROMOTE)) {
+            p.errors.add("已有待执行的导入/归档/栈顶交换任务；请先重启服务器完成或手动清理 pending 文件");
         }
         if (Files.isRegularFile(worldDir.resolve("samsara/pending-new.json"))) {
             p.errors.add("已有 pending-new.json（新世界生成）；请先重启完成 reset new，再做导入/归档");
@@ -214,6 +223,11 @@ public final class WorldStackAdmin {
 
     private static List<String> stepsFor(Path worldDir, Preview p, SourceInfo source) {
         List<String> steps = new ArrayList<>();
+        if ("between".equals(p.position)) {
+            steps.add("插入位置：" + p.afterId + " 与 "
+                    + (p.betweenUpper.isBlank() ? StackPaths.TOP_ID : p.betweenUpper)
+                    + " 之间（更靠近栈顶）");
+        }
         steps.add("校验源目录、布局、session.lock、可用磁盘空间");
         if ("top".equals(p.position)) {
             steps.add("备份当前 world 元数据，并把当前 world 压入 " + p.demoteId);
@@ -374,17 +388,76 @@ public final class WorldStackAdmin {
 
     public static Map<String, Object> reorder(Path worldDir, List<String> orderedIds) {
         Map<String, Object> out = new LinkedHashMap<>();
-        if (pending(worldDir, PENDING_IMPORT) || pending(worldDir, PENDING_ARCHIVE)) {
+        if (pending(worldDir, PENDING_IMPORT) || pending(worldDir, PENDING_ARCHIVE)
+                || pending(worldDir, PENDING_PROMOTE)) {
             out.put("ok", false);
             out.put("error", "已有待执行任务；请先重启服务器完成或手动清理 pending 文件");
             return out;
         }
         try {
             StackManifest manifest = StackManifest.load(worldDir);
-            manifest.reorderBelowTop(orderedIds);
-            manifest.save(worldDir);
+            List<String> ids = orderedIds == null ? List.of() : orderedIds;
+            boolean includesTop = ids.contains(StackPaths.TOP_ID);
+            if (!includesTop) {
+                // 兼容旧版只传非栈顶列表的调用。
+                manifest.reorderBelowTop(ids);
+                manifest.save(worldDir);
+                out.put("ok", true);
+                out.put("order", ids);
+                out.put("requiresRestart", false);
+                return out;
+            }
+            java.util.Set<String> expected = new LinkedHashSet<>();
+            for (StackLayer layer : manifest.layers) {
+                expected.add(layer.id);
+            }
+            if (ids.size() != expected.size() || !new LinkedHashSet<>(ids).equals(expected)) {
+                out.put("ok", false);
+                out.put("error", "排序列表必须包含全部栈层且不能重复");
+                return out;
+            }
+            if (StackPaths.TOP_ID.equals(ids.get(ids.size() - 1))) {
+                List<String> belowTop = new ArrayList<>(ids);
+                belowTop.remove(StackPaths.TOP_ID);
+                manifest.reorderBelowTop(belowTop);
+                manifest.save(worldDir);
+                out.put("ok", true);
+                out.put("order", ids);
+                out.put("requiresRestart", false);
+                return out;
+            }
+            // 把某个旧栈层提升为栈顶：必须交换 world 与该层的数据，重启时执行。
+            String promoteId = ids.get(ids.size() - 1);
+            StackLayer target = manifest.byId(promoteId);
+            if (target == null || target.top) {
+                out.put("ok", false);
+                out.put("error", "目标栈层不存在或已经是栈顶");
+                return out;
+            }
+            String jobId = newJobId("prom");
+            PendingPromote pending = new PendingPromote();
+            pending.jobId = jobId;
+            pending.order = new ArrayList<>(ids);
+            pending.promoteId = promoteId;
+            // 真交换：原 world 接管目标层的 id/目录，目标层数据变成 world。
+            pending.demoteId = promoteId;
+            pending.createdAt = System.currentTimeMillis();
+            if (!write(worldDir, PENDING_PROMOTE, pending)) {
+                out.put("ok", false);
+                out.put("error", "无法写入 pending-promote.json");
+                return out;
+            }
+            Job job = newJob(jobId, "promote", promoteId);
+            job.requiresRestart = true;
+            job.message = "已排队：重启后把 " + promoteId + " 提升为栈顶，当前 world 接管 "
+                    + promoteId + " 的位置";
+            writeJob(worldDir, job);
             out.put("ok", true);
-            out.put("order", orderedIds);
+            out.put("order", ids);
+            out.put("requiresRestart", true);
+            out.put("jobId", jobId);
+            out.put("job", job);
+            out.put("message", job.message);
             return out;
         } catch (RuntimeException e) {
             out.put("ok", false);
@@ -406,7 +479,8 @@ public final class WorldStackAdmin {
             p.fields.put("id", "不允许归档栈顶 world");
             p.errors.add("不允许归档栈顶 world；请先导入新栈顶或使用 reset new");
         }
-        if (pending(worldDir, PENDING_IMPORT) || pending(worldDir, PENDING_ARCHIVE)) {
+        if (pending(worldDir, PENDING_IMPORT) || pending(worldDir, PENDING_ARCHIVE)
+                || pending(worldDir, PENDING_PROMOTE)) {
             p.errors.add("已有待执行任务；请先重启服务器完成或手动清理 pending 文件");
         }
         if (Files.isRegularFile(worldDir.resolve("samsara/pending-new.json"))) {
@@ -522,15 +596,25 @@ public final class WorldStackAdmin {
     public static synchronized void consumePending(Path worldDir) {
         Path importFile = stackFile(worldDir, PENDING_IMPORT);
         Path archiveFile = stackFile(worldDir, PENDING_ARCHIVE);
+        Path promoteFile = stackFile(worldDir, PENDING_PROMOTE);
+        int pendingCount = (Files.exists(importFile) ? 1 : 0)
+                + (Files.exists(archiveFile) ? 1 : 0) + (Files.exists(promoteFile) ? 1 : 0);
         if (Files.isRegularFile(worldDir.resolve("samsara/pending-new.json"))
-                && (Files.exists(importFile) || Files.exists(archiveFile))) {
-            Samsara.LOGGER.error("[世界栈] 同时存在 pending-new 与导入/归档任务，"
+                && pendingCount > 0) {
+            Samsara.LOGGER.error("[世界栈] 同时存在 pending-new 与导入/归档/栈顶交换任务，"
                     + "拒绝自动执行；请手动清理 pending 文件");
             return;
         }
-        if (Files.exists(importFile) && Files.exists(archiveFile)) {
-            Samsara.LOGGER.error("[世界栈] 同时存在 pending-import 与 pending-archive，"
+        if (pendingCount > 1) {
+            Samsara.LOGGER.error("[世界栈] 同时存在多个 pending 任务，"
                     + "拒绝自动执行；请手动选择其一");
+            return;
+        }
+        if (Files.exists(promoteFile)) {
+            PendingPromote pending = read(worldDir, PENDING_PROMOTE, PendingPromote.class);
+            if (pending != null) {
+                executePromote(worldDir, pending);
+            }
             return;
         }
         if (Files.exists(archiveFile)) {
@@ -611,6 +695,204 @@ public final class WorldStackAdmin {
             writeJob(worldDir, job);
             moveFailed(worldDir, PENDING_ARCHIVE, file);
             Samsara.LOGGER.error("[世界栈] {}（原栈层未删除）", job.message);
+        }
+    }
+
+    private static void executePromote(Path worldDir, PendingPromote pending) {
+        Job job = readJob(worldDir, pending.jobId);
+        if (job == null) {
+            job = newJob(pending.jobId, "promote", pending.promoteId);
+        }
+        Path file = stackFile(worldDir, PENDING_PROMOTE);
+        Path backup = worldDir.resolve("samsara").resolve("stack-backup")
+                .resolve("promote-" + pending.jobId);
+        Path manifestBackup = backupManifest(worldDir);
+        Path topDims = worldDir.resolve("dimensions/minecraft");
+        Path topLevel = worldDir.resolve("level.dat");
+        Path topGen = worldDir.resolve("data/minecraft/world_gen_settings.dat");
+        Path topDataRoot = worldDir.resolve("samsara");
+        Path targetDims = null;
+        Path targetMeta = null;
+        Path tmpDims = null;
+        Path tmpMeta = null;
+        boolean targetToTemp = false;
+        boolean topToTarget = false;
+        boolean targetToTop = false;
+        boolean targetGenMoved = false;
+        try {
+            job.status = "running";
+            job.stage = "校验排序";
+            job.startedAt = System.currentTimeMillis();
+            writeJob(worldDir, job);
+            StackManifest manifest = StackManifest.load(worldDir);
+            StackLayer currentTop = manifest.top();
+            String promoteId = pending.promoteId;
+            StackLayer target = manifest.byId(promoteId);
+            if (currentTop == null || target == null || target.top) {
+                throw new IOException("栈顶交换目标无效");
+            }
+            java.util.Set<String> expected = new LinkedHashSet<>();
+            for (StackLayer layer : manifest.layers) {
+                expected.add(layer.id);
+            }
+            if (pending.order == null || pending.order.size() != expected.size()
+                    || !new LinkedHashSet<>(pending.order).equals(expected)
+                    || !promoteId.equals(pending.order.get(pending.order.size() - 1))) {
+                throw new IOException("排序列表与当前栈层不一致；请重新预览排序");
+            }
+            targetDims = StackPaths.layerDimensions(worldDir, target);
+            targetMeta = target.metaDir(worldDir);
+            tmpDims = backup.resolve("swap/target-dimensions");
+            tmpMeta = backup.resolve("swap/target-meta");
+            if (!Files.isDirectory(targetDims) || !Files.isRegularFile(targetMeta.resolve("level.dat"))) {
+                throw new IOException("目标栈层缺少 dimensions 或 level.dat：" + promoteId);
+            }
+            Files.createDirectories(backup.resolve("swap"));
+            copyFile(topLevel, backup.resolve("top-level.dat"));
+            copyFile(topGen, backup.resolve("top-world_gen_settings.dat"));
+            job.stage = "交换目标层与当前 world";
+            job.progress = 10;
+            writeJob(worldDir, job);
+
+            // 1) 目标层数据移到临时目录
+            moveIfExists(targetDims, tmpDims);
+            moveIfExists(targetMeta, tmpMeta);
+            targetToTemp = true;
+
+            // 2) 当前 world 数据移到目标层 id/目录
+            Files.createDirectories(targetMeta.resolve("data/minecraft"));
+            moveIfExists(topDims, targetDims);
+            moveIfExists(topLevel, targetMeta.resolve("level.dat"));
+            copyFile(topGen, targetMeta.resolve("data/minecraft/world_gen_settings.dat"));
+            moveIfExists(topGen, backup.resolve("top-world_gen_settings.moved.dat"));
+            for (String name : List.of("claims", "diff", "track")) {
+                moveIfExists(topDataRoot.resolve(name), targetMeta.resolve(name));
+            }
+            moveIfExists(topDataRoot.resolve(SpawnHistory.FILE_NAME),
+                    targetMeta.resolve(SpawnHistory.FILE_NAME));
+            topToTarget = true;
+
+            // 3) 目标层数据移到 world 栈顶
+            job.stage = "提升目标层为栈顶";
+            job.progress = 55;
+            writeJob(worldDir, job);
+            moveIfExists(tmpDims, topDims);
+            moveIfExists(tmpMeta.resolve("level.dat"), topLevel);
+            if (Files.isRegularFile(tmpMeta.resolve("data/minecraft/world_gen_settings.dat"))) {
+                moveIfExists(tmpMeta.resolve("data/minecraft/world_gen_settings.dat"), topGen);
+                targetGenMoved = true;
+            } else {
+                copyFile(backup.resolve("top-world_gen_settings.dat"), topGen);
+            }
+            for (String name : List.of("claims", "diff", "track")) {
+                moveIfExists(tmpMeta.resolve(name), topDataRoot.resolve(name));
+            }
+            moveIfExists(tmpMeta.resolve(SpawnHistory.FILE_NAME),
+                    topDataRoot.resolve(SpawnHistory.FILE_NAME));
+            moveIfExists(tmpMeta.resolve("data/minecraft"),
+                    backup.resolve("target-data-minecraft"));
+            targetToTop = true;
+
+            job.stage = "写入栈清单";
+            job.progress = 90;
+            writeJob(worldDir, job);
+            currentTop.top = false;
+            currentTop.id = promoteId;
+            if (currentTop.source == null || currentTop.source.isBlank()
+                    || "current".equals(currentTop.source)) {
+                currentTop.source = "demoted";
+            }
+            StackLayer newTop = target.copy();
+            newTop.id = StackPaths.TOP_ID;
+            newTop.top = true;
+            if (newTop.source == null || newTop.source.isBlank()
+                    || "demoted".equals(newTop.source)) {
+                newTop.source = "current";
+            }
+            List<StackLayer> layers = new ArrayList<>();
+            for (String id : pending.order) {
+                if (StackPaths.TOP_ID.equals(id)) {
+                    layers.add(currentTop);
+                } else if (!promoteId.equals(id)) {
+                    StackLayer layer = manifest.byId(id);
+                    if (layer == null) {
+                        throw new IOException("排序列表包含未知栈层：" + id);
+                    }
+                    layers.add(layer);
+                }
+            }
+            layers.add(newTop);
+            manifest.layers = layers;
+            manifest.normalize();
+            manifest.save(worldDir);
+            StackManifest verify = StackManifest.load(worldDir);
+            if (verify.top() == null || !StackPaths.TOP_ID.equals(verify.top().id)
+                    || verify.byId(promoteId) == null
+                    || verify.byId(promoteId).top) {
+                throw new IOException("stack.json 写入后校验失败");
+            }
+            ensureSpawn(topDataRoot, LevelInfo.read(worldDir));
+            deleteRecursive(tmpDims);
+            deleteRecursive(tmpMeta);
+            if (manifestBackup != null) {
+                Files.deleteIfExists(manifestBackup);
+            }
+            job.status = "done";
+            job.stage = "完成";
+            job.progress = 100;
+            job.finishedAt = System.currentTimeMillis();
+            job.message = "已把 " + promoteId + " 提升为栈顶；原 world 接管 " + promoteId + " 的层位";
+            job.log.add("备份：" + backup);
+            Files.deleteIfExists(file);
+            writeJob(worldDir, job);
+            Samsara.LOGGER.info("[世界栈] {}", job.message);
+        } catch (Exception e) {
+            try {
+                if (targetToTop) {
+                    moveIfExists(topDims, tmpDims);
+                    moveIfExists(topLevel, tmpMeta.resolve("level.dat"));
+                    if (targetGenMoved && Files.isRegularFile(topGen)) {
+                        moveIfExists(topGen, tmpMeta.resolve("data/minecraft/world_gen_settings.dat"));
+                    } else {
+                        Files.deleteIfExists(topGen);
+                    }
+                    for (String name : List.of("claims", "diff", "track")) {
+                        moveIfExists(topDataRoot.resolve(name), tmpMeta.resolve(name));
+                    }
+                    moveIfExists(topDataRoot.resolve(SpawnHistory.FILE_NAME),
+                            tmpMeta.resolve(SpawnHistory.FILE_NAME));
+                }
+                if (topToTarget) {
+                    moveIfExists(targetDims, topDims);
+                    moveIfExists(targetMeta.resolve("level.dat"), topLevel);
+                    Files.deleteIfExists(topGen);
+                    copyFile(backup.resolve("top-world_gen_settings.dat"), topGen);
+                    for (String name : List.of("claims", "diff", "track")) {
+                        moveIfExists(targetMeta.resolve(name), topDataRoot.resolve(name));
+                    }
+                    moveIfExists(targetMeta.resolve(SpawnHistory.FILE_NAME),
+                            topDataRoot.resolve(SpawnHistory.FILE_NAME));
+                }
+                if (targetToTemp) {
+                    deleteRecursive(targetMeta);
+                    moveIfExists(tmpMeta, targetMeta);
+                    moveIfExists(tmpDims, targetDims);
+                }
+                deleteRecursive(tmpDims);
+                deleteRecursive(tmpMeta);
+                restoreManifest(worldDir, manifestBackup);
+                job.log.add("已回滚栈顶交换，当前 world 与目标栈层保持原状");
+            } catch (Exception rollback) {
+                job.log.add("栈顶交换回滚失败：" + rollback.getMessage());
+            }
+            job.status = "failed";
+            job.stage = "失败";
+            job.finishedAt = System.currentTimeMillis();
+            job.message = "栈顶交换失败：" + e.getMessage();
+            job.log.add(job.message);
+            writeJob(worldDir, job);
+            moveFailed(worldDir, PENDING_PROMOTE, file);
+            Samsara.LOGGER.error("[世界栈] {}", job.message);
         }
     }
 
@@ -1369,6 +1651,7 @@ public final class WorldStackAdmin {
         public List<LayerView> stacks = new ArrayList<>();
         public PendingImport pendingImport;
         public PendingArchive pendingArchive;
+        public PendingPromote pendingPromote;
         public List<Job> jobs = new ArrayList<>();
         public Job lastReport;
         public long totalBytes;
@@ -1432,6 +1715,7 @@ public final class WorldStackAdmin {
         public String afterId = "";
         public String targetId = "";
         public String demoteId = "";
+        public String betweenUpper = "";
         public int targetIndex;
         public long freeBytes;
         public long neededBytes;
@@ -1467,6 +1751,15 @@ public final class WorldStackAdmin {
         public String id = "";
         public long createdAt;
         public String archivePath = "";
+    }
+
+    public static final class PendingPromote {
+        public String jobId = "";
+        /** 包含 world 的完整目标顺序（栈底 → 栈顶）。 */
+        public List<String> order = new ArrayList<>();
+        public String promoteId = "";
+        public String demoteId = "";
+        public long createdAt;
     }
 
     public static final class Job {

@@ -137,7 +137,8 @@ public class WebMapService {
         out.put("id", layer.id);
         out.put("index", layer.index);
         out.put("top", layer.top);
-        out.put("label", layer.top ? "world（栈顶 / 最新）" : layer.id);
+        out.put("label", layer.top ? "world（栈顶）"
+                : layer.id + "（第 " + (layer.index + 1) + " 层）");
         out.put("createdAt", layer.createdAt);
         out.put("seed", layer.seed);
         out.put("levelType", layer.levelType);

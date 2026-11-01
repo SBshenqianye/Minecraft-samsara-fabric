@@ -138,7 +138,7 @@
             <div>
               <h2>地图</h2>
               <p class="panel-sub">按 v0.24 世界栈扫描各栈层的 region 文件生成地表底图，并叠加该层的圈地保护区块、旗帜与出生点历史。只读展示，不加载区块、不写世界数据；地形图缓存可安全删除。</p>
-              <p class="panel-sub">栈顶是 <code>world</code>（最新），旧栈层在 dimensions/samsara/stack_<span class="muted">n</span>；出生点标记在末地不显示，下界按主世界坐标 /8 推算。</p>
+              <p class="panel-sub">栈顶是 <code>world</code>；旧栈层按从栈底往上数（第一层、第二层…），目录在 dimensions/samsara/stack_<span class="muted">n</span>；出生点标记在末地不显示，下界按主世界坐标 /8 推算。</p>
             </div>
             <div class="panel-tools">
               <label class="inline-field">
@@ -206,7 +206,7 @@
           <div class="panel-head">
             <div>
               <h2>栈层</h2>
-              <p class="panel-sub">world 固定是栈顶/最新；旧栈层是 world 内部的自定义维度。归档只在这里发起，先备份再移除。</p>
+              <p class="panel-sub">world 固定是栈顶；旧栈层是 world 内部的自定义维度，按从栈底往上数（stack_0 是最下层）。归档只在这里发起，先备份再移除。</p>
             </div>
           </div>
           <div id="world-stack-list" class="world-stack-list"></div>
@@ -216,7 +216,7 @@
           <div class="panel-head">
             <div>
               <h2>栈位排序</h2>
-              <p class="panel-sub">第一版只允许调整栈顶以下。拖动或上下移动，保存前先看预览；保存后 world enter stack_<span class="muted">n</span> 仍进入原数据。</p>
+              <p class="panel-sub">拖动或上下移动，保存前先看预览。只调整栈顶以下时立即生效；把旧栈层拖到栈顶会交换 world 与该层数据，需重启并在失败时回滚。</p>
             </div>
             <div class="panel-tools">
               <span id="world-stack-order-preview" class="muted small"></span>
@@ -247,7 +247,7 @@
               </select>
             </label>
             <label class="inline-field" id="world-stack-after-wrap" hidden>
-              <span>插到</span>
+              <span>插入位置</span>
               <select id="world-stack-import-after"></select>
             </label>
             <button id="world-stack-import-preview-button" class="ghost" type="button">预览导入</button>

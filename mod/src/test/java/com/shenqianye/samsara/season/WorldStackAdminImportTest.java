@@ -205,6 +205,64 @@ class WorldStackAdminImportTest {
     }
 
     @Test
+    void promoteTopExchangesWorldDataAtRestart() throws Exception {
+        Path world = world();
+        Files.writeString(world.resolve("level.dat"), "old-top-level", StandardCharsets.UTF_8);
+        Files.createDirectories(world.resolve("data/minecraft"));
+        Files.writeString(world.resolve("data/minecraft/world_gen_settings.dat"), "old-top-gen",
+                StandardCharsets.UTF_8);
+        Files.writeString(world.resolve("dimensions/minecraft/overworld/region/r.0.0.mca"),
+                "old-top-region", StandardCharsets.UTF_8);
+        Files.createDirectories(world.resolve("samsara/claims"));
+        Files.writeString(world.resolve("samsara/claims/claims.json"), "{\"nodes\":[{\"source\":\"top\"}]}",
+                StandardCharsets.UTF_8);
+
+        StackManifest manifest = StackManifest.load(world);
+        StackLayer first = new StackLayer();
+        first.id = "stack_0";
+        first.seed = 11;
+        StackLayer second = new StackLayer();
+        second.id = "stack_1";
+        second.seed = 22;
+        manifest.layers.add(0, first);
+        manifest.layers.add(1, second);
+        manifest.normalize();
+        manifest.save(world);
+        Files.createDirectories(world.resolve("dimensions/samsara/stack_0/overworld"));
+        Files.createDirectories(world.resolve("dimensions/samsara/stack_1/overworld/region"));
+        Files.writeString(world.resolve("dimensions/samsara/stack_1/overworld/region/r.0.0.mca"),
+                "promoted-region", StandardCharsets.UTF_8);
+        Files.writeString(world.resolve("samsara/stack/stack_1/level.dat"), "promoted-level",
+                StandardCharsets.UTF_8);
+        Files.createDirectories(world.resolve("samsara/stack/stack_1/data/minecraft"));
+        Files.writeString(world.resolve("samsara/stack/stack_1/data/minecraft/world_gen_settings.dat"),
+                "promoted-gen", StandardCharsets.UTF_8);
+        Files.createDirectories(world.resolve("samsara/stack/stack_1/claims"));
+        Files.writeString(world.resolve("samsara/stack/stack_1/claims/claims.json"),
+                "{\"nodes\":[{\"source\":\"promoted\"}]}", StandardCharsets.UTF_8);
+
+        var result = WorldStackAdmin.reorder(world, List.of("stack_0", "world", "stack_1"));
+        assertEquals(true, result.get("ok"), String.valueOf(result.get("error")));
+        assertEquals(true, result.get("requiresRestart"));
+        WorldStackAdmin.consumePending(world);
+
+        StackManifest after = StackManifest.load(world);
+        var job = WorldStackAdmin.jobs(world, 1);
+        String jobText = job.isEmpty() ? "no job" : job.get(0).message + " " + job.get(0).log;
+        assertEquals(List.of("stack_0", "stack_1", "world"),
+                after.layers.stream().map(l -> l.id).toList(), jobText);
+        assertEquals("promoted-level", Files.readString(world.resolve("level.dat")));
+        assertEquals("promoted-region", Files.readString(
+                world.resolve("dimensions/minecraft/overworld/region/r.0.0.mca")));
+        assertEquals("old-top-region", Files.readString(
+                world.resolve("dimensions/samsara/stack_1/overworld/region/r.0.0.mca")));
+        assertTrue(Files.readString(world.resolve("samsara/claims/claims.json"))
+                .contains("promoted"));
+        assertTrue(Files.readString(
+                world.resolve("samsara/stack/stack_1/claims/claims.json")).contains("top"));
+    }
+
+    @Test
     void archiveMovesLayerToBackupAndRemovesFromManifest() throws Exception {
         Path world = world();
         StackManifest manifest = StackManifest.load(world);

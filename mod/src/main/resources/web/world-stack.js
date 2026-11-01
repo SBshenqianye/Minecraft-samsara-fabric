@@ -148,7 +148,8 @@
     try {
       const data = await window.SamsaraUI.api('/api/world-stack');
       state.model = data;
-      state.order = nonTop().map((stack) => stack.id);
+      state.order = stacks().slice().sort((a, b) => a.index - b.index)
+        .map((stack) => stack.id);
       state.savedOrder = state.order.slice();
       state.preview = null;
       state.archive = null;
@@ -220,7 +221,7 @@
       if (stack.top) {
         const topBadge = document.createElement('span');
         topBadge.className = 'world-stack-badge top';
-        topBadge.textContent = '栈顶 / 最新';
+        topBadge.textContent = '栈顶';
         badges.append(topBadge);
       }
       if (stack.loaded) {
@@ -270,23 +271,25 @@
     order.replaceChildren();
     const old = state.savedOrder;
     const changed = state.order.join('|') !== old.join('|');
+    const topMoved = changed && state.order[state.order.length - 1] !== 'world';
     if (orderPreview) {
       orderPreview.textContent = changed
         ? '原：' + old.join(' → ') + ' ／ 新：' + state.order.join(' → ')
+          + (topMoved ? '（保存后提升栈顶，需重启）' : '')
         : '顺序未改变';
     }
     if (orderSave) orderSave.disabled = !changed || Boolean(state.model && state.model.restartRequired);
     if (state.order.length === 0) {
       const empty = document.createElement('p');
       empty.className = 'muted small';
-      empty.textContent = '当前只有栈顶 world，没有可排序的旧栈层。';
+      empty.textContent = '当前没有栈层。';
       order.append(empty);
       return;
     }
     state.order.forEach((id, index) => {
       const stack = byId(id);
       const row = document.createElement('div');
-      row.className = 'world-stack-order-item';
+      row.className = 'world-stack-order-item' + (stack && stack.top ? ' top' : '');
       row.draggable = true;
       row.dataset.id = id;
       const handle = document.createElement('span');
@@ -296,11 +299,12 @@
       const label = document.createElement('div');
       label.className = 'world-stack-order-label';
       const strong = document.createElement('strong');
-      strong.textContent = id;
+      strong.textContent = stack && stack.top
+        ? 'world（栈顶）' : id + '（第 ' + (index + 1) + ' 层）';
       const meta = document.createElement('span');
       meta.className = 'muted small';
       meta.textContent = stack
-        ? 'index ' + (stack.index + 1) + ' · seed ' + stack.seed
+        ? '顺序 index ' + (stack.index + 1) + ' · seed ' + stack.seed
           + ' · ' + fmtBytes(stack.dataBytes)
         : '';
       label.append(strong, meta);
@@ -358,10 +362,20 @@
     if (!importAfter || !importAfterWrap) return;
     const current = importAfter.value;
     importAfter.replaceChildren();
-    for (const stack of nonTop()) {
+    const list = nonTop();
+    for (let i = 0; i < list.length; i += 1) {
+      const lower = list[i];
+      const upper = i + 1 < list.length ? list[i + 1].id : 'world（栈顶）';
       const option = document.createElement('option');
-      option.value = stack.id;
-      option.textContent = stack.id + '（#' + (stack.index + 1) + '）';
+      option.value = lower.id;
+      option.textContent = lower.id + ' 与 ' + upper + ' 之间';
+      importAfter.append(option);
+    }
+    if (list.length === 0) {
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = '没有可插入的旧栈层';
+      option.disabled = true;
       importAfter.append(option);
     }
     if (current && nonTop().some((stack) => stack.id === current)) {
@@ -399,7 +413,10 @@
     }
     appendRows(importPreview, [
       ['位置', preview.position === 'top' ? '栈顶（替换当前 world）'
-        : preview.position === 'between' ? '插到 ' + preview.afterId + ' 之后' : '栈底'],
+        : preview.position === 'between'
+          ? '插到 ' + preview.afterId + ' 与 '
+            + (preview.betweenUpper || 'world（栈顶）') + ' 之间'
+          : '栈底'],
       ['目标 id', preview.targetId || '—'],
       ['目标 index', String(preview.targetIndex + 1)],
       ['需要空间', fmtBytes(preview.neededBytes) + '（可用 ' + fmtBytes(preview.freeBytes) + '）'],
@@ -611,7 +628,11 @@
         return;
       }
       await load();
-      setMessage('排序已保存；目录未改名，下次重启仍保持新顺序。', 'ok');
+      if (data.requiresRestart) {
+        setMessage('已排队：' + (data.jobId || '') + '。重启后提升栈顶；原 world 会压入旧栈。', 'ok');
+      } else {
+        setMessage('排序已保存；目录未改名，下次重启仍保持新顺序。', 'ok');
+      }
     } catch (error) {
       setMessage(window.SamsaraUI.authMessage(error, '排序保存失败'), 'error');
     }
@@ -646,11 +667,24 @@
         log: [],
       }));
     }
+    if (model.pendingPromote) {
+      jobs.append(jobCard({
+        id: model.pendingPromote.jobId,
+        type: 'promote',
+        status: 'queued',
+        stage: '等待重启',
+        progress: 0,
+        message: '重启后把 ' + model.pendingPromote.promoteId
+          + ' 提升为栈顶；原 world 压入 ' + model.pendingPromote.demoteId,
+        log: [],
+      }));
+    }
     const list = (model.jobs || []).slice();
     if (model.lastReport && !list.some((job) => job.id === model.lastReport.id)) {
       list.unshift(model.lastReport);
     }
-    if (list.length === 0 && !model.pendingImport && !model.pendingArchive) {
+    if (list.length === 0 && !model.pendingImport && !model.pendingArchive
+        && !model.pendingPromote) {
       const empty = document.createElement('p');
       empty.className = 'muted small';
       empty.textContent = '暂无导入/归档任务。排序是立即生效的，不会在这里生成任务。';
