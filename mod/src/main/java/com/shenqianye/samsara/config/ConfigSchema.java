@@ -164,7 +164,10 @@ public final class ConfigSchema {
                 ConfigEntry.integer("port", 8720, 1024, 65_535, "服务",
                         "本地面板端口"),
                 ConfigEntry.string("token", "", "鉴权",
-                        "访问令牌，由程序在首次启动时生成；请求需 Authorization: Bearer <token>")
+                        "访问令牌，由程序在首次启动时生成；请求需 Authorization: Bearer <token>"),
+                ConfigEntry.stringList("importRoots", List.of(), "世界栈",
+                        "允许 Web 导入世界栈的服务器本地目录（绝对路径）；服务器根目录始终允许。"
+                                + "留空时只允许服务器根目录下的 world；来源目录只读，不会被修改")
         ));
 
         List<ConfigEntry> outputEntries = new ArrayList<>();

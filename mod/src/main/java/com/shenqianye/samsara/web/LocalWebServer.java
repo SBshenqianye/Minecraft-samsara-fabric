@@ -44,6 +44,7 @@ public final class LocalWebServer {
     private final OutputWebService outputService;
     private final PermissionWebService permissionService;
     private final WebMapService mapService;
+    private final WorldStackWebService worldStackService;
     private final String token;
     private final int port;
     private HttpServer server;
@@ -70,11 +71,22 @@ public final class LocalWebServer {
                           PermissionWebService permissionService,
                           WebMapService mapService,
                           String token, int port) {
+        this(service, identityService, outputService, permissionService, mapService, null,
+                token, port);
+    }
+
+    public LocalWebServer(ConfigService service, IdentityWebService identityService,
+                          OutputWebService outputService,
+                          PermissionWebService permissionService,
+                          WebMapService mapService,
+                          WorldStackWebService worldStackService,
+                          String token, int port) {
         this.service = service;
         this.identityService = identityService;
         this.outputService = outputService;
         this.permissionService = permissionService;
         this.mapService = mapService;
+        this.worldStackService = worldStackService;
         this.token = token == null ? "" : token;
         this.port = port;
     }
@@ -111,6 +123,9 @@ public final class LocalWebServer {
         }
         if (mapService != null) {
             server.createContext("/api/map", this::handleMap);
+        }
+        if (worldStackService != null) {
+            server.createContext("/api/world-stack", this::handleWorldStack);
         }
         executor = Executors.newFixedThreadPool(4, runnable -> {
             Thread thread = new Thread(runnable, "samsara-web");
@@ -558,6 +573,85 @@ public final class LocalWebServer {
             }
             status = 404;
             json(exchange, status, Map.of("error", "Not Found"));
+        } catch (RuntimeException e) {
+            status = 500;
+            json(exchange, status, Map.of("error", "服务器内部错误"));
+            LOG.warn("[web] 处理 {} 失败: {}", exchange.getRequestURI().getPath(), e.getMessage());
+        } finally {
+            log(exchange, status, start);
+        }
+    }
+
+    private void handleWorldStack(HttpExchange exchange) throws IOException {
+        long start = System.currentTimeMillis();
+        int status = 200;
+        try {
+            if (!authorized(exchange)) {
+                status = 401;
+                json(exchange, status, Map.of("error", "未授权：缺少或错误的 Bearer token"));
+                return;
+            }
+            if (worldStackService == null) {
+                status = 503;
+                json(exchange, status, Map.of("error", "世界栈服务未启动"));
+                return;
+            }
+            String path = exchange.getRequestURI().getPath();
+            String method = exchange.getRequestMethod();
+            Map<String, Object> body = Map.of();
+            if ("POST".equals(method) || "PUT".equals(method)) {
+                try {
+                    body = parseObject(readBody(exchange));
+                } catch (BodyTooLarge e) {
+                    status = 413;
+                    json(exchange, status, Map.of("error", "请求体过大"));
+                    return;
+                } catch (RuntimeException e) {
+                    status = 400;
+                    json(exchange, status, Map.of("error", "请求体应为 JSON 对象"));
+                    return;
+                }
+            }
+            Map<String, Object> result;
+            if ("GET".equals(method)) {
+                if ("/api/world-stack".equals(path)) {
+                    result = worldStackService.model();
+                } else if ("/api/world-stack/jobs".equals(path)) {
+                    result = worldStackService.jobs();
+                } else if (path.startsWith("/api/world-stack/jobs/")) {
+                    String id = URLDecoder.decode(
+                            path.substring("/api/world-stack/jobs/".length()),
+                            StandardCharsets.UTF_8);
+                    result = worldStackService.job(id);
+                } else {
+                    status = 404;
+                    result = Map.of("error", "Not Found");
+                }
+            } else if ("POST".equals(method)) {
+                switch (path) {
+                    case "/api/world-stack/import/preview" ->
+                            result = worldStackService.previewImport(body);
+                    case "/api/world-stack/import" ->
+                            result = worldStackService.importWorld(body);
+                    case "/api/world-stack/reorder" ->
+                            result = worldStackService.reorder(body);
+                    case "/api/world-stack/archive/preview" ->
+                            result = worldStackService.previewArchive(body);
+                    case "/api/world-stack/archive" ->
+                            result = worldStackService.archive(body);
+                    default -> {
+                        status = 404;
+                        result = Map.of("error", "Not Found");
+                    }
+                }
+            } else {
+                status = 405;
+                result = Map.of("error", "Method Not Allowed");
+            }
+            if (status == 200 && Boolean.FALSE.equals(result.get("ok"))) {
+                status = 400;
+            }
+            json(exchange, status, result);
         } catch (RuntimeException e) {
             status = 500;
             json(exchange, status, Map.of("error", "服务器内部错误"));

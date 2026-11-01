@@ -101,6 +101,8 @@ public final class StackBootstrap {
         Path worldDir = StackPaths.worldDir();
         // 旧布局 world_sN 一次性迁移（只做目录 rename/元数据复制）
         StackLegacyMigration.migrateIfNeeded();
+        // Web 排队的导入/归档：必须在世界打开前消费。
+        WorldStackAdmin.consumePending(worldDir);
         Path file = pendingFile(worldDir);
         if (!Files.exists(file)) {
             return;

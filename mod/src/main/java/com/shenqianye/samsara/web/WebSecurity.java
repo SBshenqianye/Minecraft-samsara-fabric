@@ -57,6 +57,7 @@ public final class WebSecurity {
             case "/permissions.js" -> "/web/permissions.js";
             case "/banners.js" -> "/web/banners.js";
             case "/map.js" -> "/web/map.js";
+            case "/world-stack.js" -> "/web/world-stack.js";
             case "/style.css" -> "/web/style.css";
             default -> null;
         };
@@ -79,7 +80,12 @@ public final class WebSecurity {
                 || "/api/permissions".equals(path)
                 || "/api/permissions/reload".equals(path)
                 || "/api/map".equals(path)
-                || "/api/map/tile".equals(path);
+                || "/api/map/tile".equals(path)
+                || "/api/world-stack".equals(path)
+                || path.startsWith("/api/world-stack/import")
+                || path.startsWith("/api/world-stack/reorder")
+                || path.startsWith("/api/world-stack/archive")
+                || path.startsWith("/api/world-stack/jobs");
     }
 
     public static boolean bodyWithinLimit(long length) {

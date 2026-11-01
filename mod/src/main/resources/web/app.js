@@ -11,14 +11,14 @@ const state = {
   tab: 'config',
   navTargets: [],
   navScrollHandler: null,
-  scrollPositions: { config: 0, identity: 0, 'claim-range': 0, output: 0, permissions: 0, map: 0 },
-  navScrollPositions: { config: 0, identity: 0, 'claim-range': 0, output: 0, permissions: 0, map: 0 },
+  scrollPositions: { config: 0, identity: 0, 'claim-range': 0, output: 0, permissions: 0, map: 0, 'world-stack': 0 },
+  navScrollPositions: { config: 0, identity: 0, 'claim-range': 0, output: 0, permissions: 0, map: 0, 'world-stack': 0 },
   claimPreview: null,
 };
 
 const connectHooks = [];
-const panelIds = ['panel-identity', 'panel-config', 'panel-claim-range', 'panel-output', 'panel-permissions', 'panel-map'];
-const tabNames = { 'panel-identity': 'identity', 'panel-config': 'config', 'panel-claim-range': 'claim-range', 'panel-output': 'output', 'panel-permissions': 'permissions', 'panel-map': 'map' };
+const panelIds = ['panel-identity', 'panel-config', 'panel-claim-range', 'panel-output', 'panel-permissions', 'panel-map', 'panel-world-stack'];
+const tabNames = { 'panel-identity': 'identity', 'panel-config': 'config', 'panel-claim-range': 'claim-range', 'panel-output': 'output', 'panel-permissions': 'permissions', 'panel-map': 'map', 'panel-world-stack': 'world-stack' };
 
 const $ = (id) => document.getElementById(id);
 
@@ -2217,6 +2217,8 @@ function setActiveTab(name) {
     renderClaimRange();
   } else if (name === 'map') {
     window.SamsaraMap?.activate();
+  } else if (name === 'world-stack') {
+    window.SamsaraWorldStack?.activate();
   } else if (name === 'identity') {
     window.SamsaraIdentity?.activate();
   } else if (name === 'output') {
@@ -2249,6 +2251,11 @@ const TAB_ACTIONS = {
   map: {
     title: '地图',
     hint: '只读扫描存档；标签计数 = 全服保护区块；切世界后点“重新读取”',
+    save: null,
+  },
+  'world-stack': {
+    title: '世界栈',
+    hint: '导入/归档重启后执行；排序立即保存，只改逻辑顺序不改目录名',
     save: null,
   },
   identity: {
@@ -2284,7 +2291,7 @@ function updateTabActions(name) {
 }
 
 function setTabCount(panel, count) {
-  const map = { config: 'config-count', identity: 'identity-count', 'claim-range': 'claim-range-count', output: 'output-count', permissions: 'perm-count', map: 'map-count' };
+  const map = { config: 'config-count', identity: 'identity-count', 'claim-range': 'claim-range-count', output: 'output-count', permissions: 'perm-count', map: 'map-count', 'world-stack': 'world-stack-count' };
   const el = $(map[panel]);
   if (el) el.textContent = String(count == null ? 0 : count);
 }
@@ -2299,6 +2306,7 @@ function refreshCounts() {
   window.SamsaraOutput?.refreshCount?.();
   window.SamsaraPermissions?.refreshCount?.();
   window.SamsaraMap?.refreshCount?.();
+  window.SamsaraWorldStack?.refreshCount?.();
 }
 
 async function saveActive() {
@@ -2315,6 +2323,7 @@ async function reloadActive() {
   if (state.tab === 'output') return window.SamsaraOutput?.reload?.();
   if (state.tab === 'permissions') return window.SamsaraPermissions?.reload?.();
   if (state.tab === 'map') return window.SamsaraMap?.reload?.();
+  if (state.tab === 'world-stack') return window.SamsaraWorldStack?.reload?.();
   return reloadConfig();
 }
 
@@ -2397,7 +2406,7 @@ window.SamsaraUI = {
 };
 
 const initialTab = (location.hash || '').replace('#', '');
-if (['config', 'claim-range', 'identity', 'output', 'permissions', 'map'].includes(initialTab)) {
+if (['config', 'claim-range', 'identity', 'output', 'permissions', 'map', 'world-stack'].includes(initialTab)) {
   setActiveTab(initialTab);
 } else {
   updateTabActions('config');

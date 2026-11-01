@@ -145,6 +145,28 @@ class LocalWebServerTest {
                 "/api/map/tile?dim=minecraft:overworld&rx=9&rz=9&scale=4", null, TOKEN).statusCode());
     }
 
+    @Test
+    void worldStackApiRoutesAndFieldErrors() throws Exception {
+        server = new LocalWebServer(new FakeService(), null, null, null, null,
+                new FakeWorldStackService(), TOKEN, 0);
+        assertTrue(server.start());
+
+        assertEquals(401, request("GET", "/api/world-stack", null, null).statusCode());
+        HttpResponse<String> model = request("GET", "/api/world-stack", null, TOKEN);
+        assertEquals(200, model.statusCode());
+        assertTrue(model.body().contains("\"stacks\""));
+
+        HttpResponse<String> preview = request("POST", "/api/world-stack/import/preview",
+                "{\"path\":\"C:\\\\world\"}", TOKEN);
+        assertEquals(200, preview.statusCode());
+        assertTrue(preview.body().contains("\"targetId\""));
+
+        HttpResponse<String> reorder = request("POST", "/api/world-stack/reorder",
+                "{}", TOKEN);
+        assertEquals(400, reorder.statusCode());
+        assertTrue(reorder.body().contains("ids"));
+    }
+
     /** 假地图服务：只验证 HTTP 路由和参数校验，不读真实存档。 */
     private static final class FakeMapService extends WebMapService {
         private FakeMapService() {
@@ -172,6 +194,28 @@ class LocalWebServerTest {
                 return null;
             }
             return new byte[]{(byte) 0x89, 'P', 'N', 'G'};
+        }
+    }
+
+    private static final class FakeWorldStackService extends WorldStackWebService {
+        @Override
+        public Map<String, Object> model() {
+            return Map.of("ok", true, "stacks", List.of(Map.of(
+                    "id", "world", "index", 0, "top", true)));
+        }
+
+        @Override
+        public Map<String, Object> previewImport(Map<String, Object> body) {
+            return Map.of("ok", true, "targetId", "stack_0", "targetIndex", 0,
+                    "requiresRestart", true);
+        }
+
+        @Override
+        public Map<String, Object> reorder(Map<String, Object> body) {
+            if (!body.containsKey("ids")) {
+                return Map.of("ok", false, "error", "ids 缺失");
+            }
+            return Map.of("ok", true);
         }
     }
 

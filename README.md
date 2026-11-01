@@ -5,7 +5,7 @@
 
 ## 当前版本
 
-**v0.25.0** · Minecraft **26.3** · Fabric Loader **0.20.1** · Java **25**
+**v0.26.0** · Minecraft **26.3** · Fabric Loader **0.20.1** · Java **25**
 
 ## 能做什么
 
@@ -46,6 +46,7 @@
 | 宠物多主人 | ✅ 可用 | 保留原版主主人，额外主人写入 `samsara:owners`；所有主人可交互/坐下/染色/喂食/繁殖；跟随按主主人→最后手持驯服物品→最近在线主人 |
 | 开场流程（Fabric） | ✅ 可用 | 新一轮开场、分组与传送由 Fabric 服务端事件/代码实现；`reset new` 首次生成新世界后自动计算出生点、分组并迁移；数据包不依赖 |
 | Web 地图 | ✅ 可用 | “地图”标签按 v0.24 栈清单分组显示栈层，每个栈层下再选主世界/下界/末地；按对应栈层的 region 生成地表底图，叠加该层圈地保护区块、边界与旗帜；支持拖动、0.0625~16 格/像素缩放、定位全部圈地、栈层/维度导航和旗帜详情；选中旗帜显示实际范围与右上角半透明 HUD；出生点历史按栈层显示独立标记，点击可复制传送命令（下界按主世界 /8 推算并标注）；地形 tile 使用内存热缓存 + `world/samsara/web-map-cache/` 磁盘缓存，region 变化自动失效、按 LRU 限额淘汰，缓存目录可安全删除；只读，不加载区块、不写世界数据，首次按圈地范围取景 |
+| 世界栈管理 | ✅ 可用 | Web 新增“世界栈”页：列出栈层 index/id/栈顶/种子/出生点/历史/维度/数据大小/来源；从服务器本地 world 目录导入到栈底、两层之间或栈顶，默认复制且源目录只读；导入/归档有预览、磁盘空间与玩家冲突检查、排队任务、结果报告和失败回滚说明；排序支持拖动/上下移动并在保存前预览，只改逻辑顺序，不重命名 `stack_<n>` 目录；归档先移动到 `world/samsara/stack-archive/` 备份，不直接删除；导入路径限制在服务器根或 `web.yml` 的 `importRoots`，拒绝旧布局、正在使用和世界栈存档 |
 
 ## 常用命令
 
@@ -117,6 +118,7 @@ Linux/macOS 用 `./gradlew build`。产物是 `mod/build/libs/samsara-<版本>.j
 
 - `<存档根>` 在专用服务器是 `world/`，单人存档是 `saves/<存档名>/`。`world` 固定是栈顶；旧栈层是它内部的 `dimensions/samsara/stack_<n>`，所以备份整个 `world` 就包含全部栈层。
 - 地图地形缓存 `world/samsara/web-map-cache/` 是派生数据，可随时删除；删除后地图重新渲染，不影响圈地/轨迹/差异数据。
+- 世界栈导入/归档的待执行任务在 `world/samsara/pending-*.json`，重启时由模组在世界打开前执行；归档备份在 `world/samsara/stack-archive/`，任务报告在 `world/samsara/world-stack-jobs/`。
 - **存档备份会包含 `samsara/` 世界数据**（轨迹与倒流记录可能较大）；配置不随存档复制。
 - **身份组配置**固定在 `config/samsara/identity.yml`，不随存档走；身份运行时数据固定在 `<存档根>/samsara/identity/`，随主存档复制/备份，不随世界栈或 `globalFollowWorld` 切换。
 - 只转移存档时 `identity/playerdata` 会一起走，但 `identity.yml` 不会；完整迁移请同时复制它，或使用 Web 导出/导入。

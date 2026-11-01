@@ -19,6 +19,7 @@
     selectedSpawn: null,
     hover: null,
     drag: null,
+    dragMoved: false,
     loading: false,
     raf: 0,
     fitPending: false,
@@ -825,10 +826,11 @@
       + target.x + ' ' + target.y + ' ' + target.z;
   }
 
-  async function copyText(text, button) {
+  async function copyText(text, button, normalLabel) {
+    const label = normalLabel || '⧉';
     const done = () => {
       button.textContent = '已复制';
-      window.setTimeout(() => { button.textContent = '复制传送命令'; }, 1600);
+      window.setTimeout(() => { button.textContent = label; }, 1600);
     };
     try {
       await navigator.clipboard.writeText(text);
@@ -880,20 +882,6 @@
     parent.append(list);
   }
 
-  function appendClearButton(parent) {
-    const clear = document.createElement('button');
-    clear.type = 'button';
-    clear.className = 'ghost';
-    clear.textContent = '清除选择';
-    clear.addEventListener('click', () => {
-      state.selected = null;
-      state.selectedSpawn = null;
-      renderSelection();
-      draw();
-    });
-    parent.append(clear);
-  }
-
   function renderSelection() {
     const { selection } = ensureEls();
     if (!selection) return;
@@ -929,7 +917,17 @@
       const command = teleportCommand(target);
       const code = document.createElement('div');
       code.className = 'map-command';
-      code.textContent = command;
+      const codeText = document.createElement('span');
+      codeText.className = 'map-command-text';
+      codeText.textContent = command;
+      const copy = document.createElement('button');
+      copy.type = 'button';
+      copy.className = 'map-copy-inline';
+      copy.textContent = '⧉';
+      copy.title = '复制传送命令';
+      copy.setAttribute('aria-label', '复制传送命令');
+      copy.addEventListener('click', () => copyText(command, copy, '⧉'));
+      code.append(codeText, copy);
       selection.append(code);
       const note = document.createElement('p');
       note.className = 'map-hud-note';
@@ -942,16 +940,6 @@
       }
       note.textContent = notes.join(' ');
       selection.append(note);
-      const actions = document.createElement('div');
-      actions.className = 'map-hud-actions';
-      const copy = document.createElement('button');
-      copy.type = 'button';
-      copy.className = 'ghost';
-      copy.textContent = '复制传送命令';
-      copy.addEventListener('click', () => copyText(command, copy));
-      actions.append(copy);
-      selection.append(actions);
-      appendClearButton(selection);
       return;
     }
     title.textContent = '选中的旗帜';
@@ -964,7 +952,6 @@
       ['图案', (banner.patterns || []).map((item) => item.id + '（' + item.color + '）').join('、') || '无'],
       ['范围', bannerCells(banner).size + ' 区块'],
     ]);
-    appendClearButton(selection);
   }
 
   function setScale(next, anchorX, anchorY) {
@@ -1057,14 +1044,18 @@
         return;
       }
       state.drag = { x: event.clientX, y: event.clientY, centerX: state.centerX, centerZ: state.centerZ };
+      state.dragMoved = false;
       try { canvas.setPointerCapture(event.pointerId); } catch (e) { /* 合成事件/不支持时忽略 */ }
       canvas.style.cursor = 'grabbing';
     });
     canvas.addEventListener('pointermove', (event) => {
       const rect = canvas.getBoundingClientRect();
       if (state.drag) {
-        state.centerX = state.drag.centerX - (event.clientX - state.drag.x) * state.scale;
-        state.centerZ = state.drag.centerZ - (event.clientY - state.drag.y) * state.scale;
+        const dx = event.clientX - state.drag.x;
+        const dy = event.clientY - state.drag.y;
+        if (Math.abs(dx) + Math.abs(dy) > 3) state.dragMoved = true;
+        state.centerX = state.drag.centerX - dx * state.scale;
+        state.centerZ = state.drag.centerZ - dy * state.scale;
         draw();
         return;
       }
@@ -1083,6 +1074,10 @@
       try { canvas.releasePointerCapture(event.pointerId); } catch (e) { /* ignore */ }
     });
     canvas.addEventListener('click', (event) => {
+      if (state.dragMoved) {
+        state.dragMoved = false;
+        return;
+      }
       const rect = canvas.getBoundingClientRect();
       const x = event.clientX - rect.left;
       const y = event.clientY - rect.top;
@@ -1092,7 +1087,17 @@
         return;
       }
       const banner = bannerAt(x, y);
-      if (banner) selectBanner(banner);
+      if (banner) {
+        selectBanner(banner);
+        return;
+      }
+      // 点击地图空白处自动清除选择，不再单独放“清除选择”按钮。
+      if (state.selected || state.selectedSpawn) {
+        state.selected = null;
+        state.selectedSpawn = null;
+        renderSelection();
+        draw();
+      }
     });
     canvas.addEventListener('wheel', (event) => {
       event.preventDefault();
