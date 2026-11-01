@@ -17,6 +17,7 @@ const state = {
 };
 
 const connectHooks = [];
+const connectedHooks = [];
 const panelIds = ['panel-identity', 'panel-config', 'panel-claim-range', 'panel-output', 'panel-permissions', 'panel-map', 'panel-world-stack'];
 const tabNames = { 'panel-identity': 'identity', 'panel-config': 'config', 'panel-claim-range': 'claim-range', 'panel-output': 'output', 'panel-permissions': 'permissions', 'panel-map': 'map', 'panel-world-stack': 'world-stack' };
 
@@ -2373,6 +2374,10 @@ function onConnect(fn) {
   connectHooks.push(fn);
 }
 
+function onConnected(fn) {
+  connectedHooks.push(fn);
+}
+
 async function runConnectHooks() {
   for (const fn of connectHooks) {
     try {
@@ -2380,6 +2385,20 @@ async function runConnectHooks() {
     } catch (e) {
       // 各面板自己显示错误；这里只避免连接流程中断
     }
+  }
+  // 所有页面都加载完后再同步一次导航，避免晚注册的页面覆盖当前页导航。
+  for (const fn of connectedHooks) {
+    try {
+      await fn();
+    } catch (e) {
+      // 同上
+    }
+  }
+  const inServerSection = window.SamsaraServer
+      && window.SamsaraServer.state
+      && window.SamsaraServer.state.section === 'server';
+  if (!inServerSection) {
+    setActiveTab(state.tab || 'config');
   }
   refreshCounts();
 }
@@ -2389,6 +2408,7 @@ window.SamsaraUI = {
   api,
   setMessage,
   onConnect,
+  onConnected,
   runConnectHooks,
   getToken: () => state.token,
   authHeaders,

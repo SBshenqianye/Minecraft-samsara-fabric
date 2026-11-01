@@ -478,6 +478,12 @@
                 <h2>服务器配置</h2>
                 <p class="panel-sub">编辑 server.properties、白名单、OP、封禁列表与 eula。写入前自动备份到 samsara/server-config-backups；server.properties/eula 需重启生效，其余保存后立即重载。</p>
               </div>
+              <div class="panel-tools">
+                <label class="search-box">
+                  <span aria-hidden="true">⌕</span>
+                  <input id="server-config-search" type="search" placeholder="搜索配置项：键名 / 说明">
+                </label>
+              </div>
             </div>
             <div id="server-config-message" class="message" role="status"></div>
             <div class="server-config-layout">
@@ -493,7 +499,7 @@
                   </div>
                   <div class="file-body">
                     <p id="server-config-warning" class="muted small"></p>
-                    <textarea id="server-config-editor" class="server-config-editor" spellcheck="false" autocomplete="off"></textarea>
+                    <div id="server-config-fields" class="server-config-fields"></div>
                   </div>
                 </div>
               </div>

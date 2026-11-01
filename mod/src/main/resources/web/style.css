@@ -894,6 +894,24 @@ body.server-section #panel-permissions {
 .server-config-edit .file-summary { border-bottom: 1px solid var(--line); }
 .server-config-edit .file-title { font-family: var(--mono); font-size: 15px; }
 .server-config-edit .file-body { padding: 12px 14px 14px; }
+.server-config-fields { display: flex; flex-direction: column; }
+.server-config-fields > .entry:first-of-type { border-top: 0; }
+.server-config-fields > .entry:last-of-type { padding-bottom: 0; }
+.server-field-label {
+  flex: 0 0 130px;
+  min-width: 0;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.server-json-list { display: flex; flex-direction: column; gap: 10px; }
+.server-json-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.server-json-item > .file-summary { border-bottom: 1px solid var(--line); }
+.server-json-head .file-title { font-size: 13px; }
+.server-json-head .file-path { margin: 2px 0 0; }
+.server-json-item .file-body { padding-top: 10px; }
+.server-config-add { margin-top: 10px; }
 .server-config-editor {
   width: 100%;
   min-height: 480px;

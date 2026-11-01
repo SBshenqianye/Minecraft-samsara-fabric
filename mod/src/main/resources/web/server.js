@@ -16,6 +16,8 @@
     dirty: false,
     model: null,
     restorePreview: null,
+    draft: null,
+    search: '',
   };
 
   function message(text, kind) {
@@ -207,7 +209,6 @@
     const title = $('server-config-title');
     const path = $('server-config-path');
     const warning = $('server-config-warning');
-    const editor = $('server-config-editor');
     if (title) title.textContent = file.name;
     if (path) {
       const root = state.model && state.model.serverRoot;
@@ -227,11 +228,9 @@
               ? '保存后需重启服务器生效；写入前会自动备份到 samsara/server-config-backups。'
               : '保存后立即重新载入；写入前会自动备份到 samsara/server-config-backups。');
     }
-    if (editor) {
-      editor.value = file.content || '';
-      editor.dataset.file = file.id;
-      state.dirty = false;
-    }
+    state.draft = parseDraft(file);
+    state.dirty = false;
+    renderDraft();
     for (const button of document.querySelectorAll('.server-config-file')) {
       const strong = button.querySelector('strong');
       button.classList.toggle('active', !!strong && strong.textContent === file.name);
@@ -244,21 +243,454 @@
       return;
     }
     state.activeId = id;
+    state.search = '';
+    const search = $('server-config-search');
+    if (search) search.value = '';
     renderConfig();
     renderServerNav();
   }
 
+  // ---- 结构化编辑：与“模组 / 插件”的配置项保持一致 ----
+
+  const PROPERTY_DESCRIPTIONS = {
+    'allow-flight': '允许生存模式飞行；关闭时飞行会被踢出',
+    'allow-nether': '允许玩家前往下界',
+    'broadcast-console-to-ops': '把控制台命令结果发给 OP',
+    'broadcast-rcon-to-ops': '把 RCON 命令结果发给 OP',
+    'difficulty': '游戏难度',
+    'enable-command-block': '允许命令方块',
+    'enable-query': '启用 GameSpy4 查询协议',
+    'enable-rcon': '启用 RCON 远程控制台',
+    'enable-status': '在服务器列表显示在线状态',
+    'enforce-whitelist': '白名单开启时踢出不在名单的玩家',
+    'enforce-secure-profile': '要求玩家使用正版签名聊天',
+    'force-gamemode': '加入时强制使用默认游戏模式',
+    'function-permission-level': '函数与数据包的默认权限等级（1-4）',
+    'gamemode': '新玩家的默认游戏模式',
+    'generate-structures': '生成结构（村庄、要塞等）',
+    'generator-settings': '自定义生成器参数（JSON）',
+    'hardcore': '极限模式：死亡后不可复活',
+    'hide-online-players': '在服务器列表隐藏在线玩家',
+    'level-name': '世界目录名；本体恢复要求与备份一致',
+    'level-seed': '世界种子；留空随机',
+    'level-type': '世界生成器类型',
+    'max-players': '最大在线玩家数',
+    'max-tick-time': '单 tick 超时（毫秒），-1 表示禁用',
+    'motd': '服务器列表显示的描述',
+    'network-compression-threshold': '网络压缩阈值（字节），-1 关闭',
+    'online-mode': '正版验证；离线服设为 false',
+    'op-permission-level': 'OP 默认权限等级（1-4）',
+    'player-idle-timeout': '挂机踢出时间（分钟），0 不踢',
+    'prevent-proxy-connections': '拒绝通过代理连接的玩家',
+    'pvp': '允许玩家互相伤害',
+    'query.port': 'GameSpy4 查询端口',
+    'rcon.password': 'RCON 密码；敏感信息，写进备份 zip 时注意保护',
+    'rcon.port': 'RCON 端口',
+    'resource-pack': '资源包下载地址',
+    'resource-pack-sha1': '资源包 SHA-1 校验值',
+    'server-ip': '监听地址；留空表示所有网卡',
+    'server-port': '游戏端口',
+    'simulation-distance': '模拟距离（区块）',
+    'spawn-protection': '出生点保护半径（方块）',
+    'sync-chunk-writes': '强制同步区块写入',
+    'use-native-transport': '在 Linux 上使用原生传输',
+    'view-distance': '视距（区块）',
+    'white-list': '启用白名单',
+    'eula': 'EULA 同意标记；必须为 true 才能启动服务器',
+  };
+
+  const PROPERTY_ENUMS = {
+    difficulty: ['peaceful', 'easy', 'normal', 'hard'],
+    gamemode: ['survival', 'creative', 'adventure', 'spectator'],
+    'level-type': ['minecraft\\:normal', 'minecraft\\:flat', 'minecraft\\:large_biomes',
+      'minecraft\\:amplified', 'minecraft\\:single_biome_surface'],
+  };
+
+  const JSON_DEFAULTS = {
+    whitelist: () => ({ uuid: '', name: '' }),
+    ops: () => ({ uuid: '', name: '', level: 4, bypassesPlayerLimit: false }),
+    'banned-players': () => ({
+      uuid: '', name: '', created: '', source: '',
+      expires: 'forever', reason: 'Banned by an operator.',
+    }),
+    'banned-ips': () => ({
+      ip: '', created: '', source: '', expires: 'forever',
+      reason: 'Banned by an operator.',
+    }),
+  };
+
+  const JSON_ADD_LABELS = {
+    whitelist: '+ 添加白名单玩家',
+    ops: '+ 添加 OP',
+    'banned-players': '+ 添加玩家封禁',
+    'banned-ips': '+ 添加 IP 封禁',
+  };
+
+  function splitPropertyLines(content) {
+    return String(content || '').split(/\r?\n/).map((line) => {
+      if (line === '') return { type: 'blank', raw: '' };
+      if (/^\s*[#!]/.test(line)) return { type: 'comment', raw: line };
+      const eq = line.indexOf('=');
+      if (eq <= 0) return { type: 'raw', raw: line };
+      return { type: 'prop', key: line.slice(0, eq), value: line.slice(eq + 1) };
+    });
+  }
+
+  function parseDraft(file) {
+    const content = file.content || '';
+    if (file.kind === 'json_array') {
+      try {
+        const data = JSON.parse(content.trim() === '' ? '[]' : content);
+        if (Array.isArray(data)) return { kind: 'json', data };
+      } catch (e) {
+        return { kind: 'text', text: content, parseError: true };
+      }
+      return { kind: 'text', text: content, parseError: true };
+    }
+    if (file.kind === 'properties' || file.kind === 'eula') {
+      const tokens = splitPropertyLines(content);
+      if (file.kind === 'eula' && !tokens.some((t) => t.type === 'prop' && t.key === 'eula')) {
+        tokens.push({ type: 'prop', key: 'eula', value: 'false' });
+      }
+      return { kind: 'lines', tokens };
+    }
+    return { kind: 'text', text: content };
+  }
+
+  function renderDraft() {
+    const fields = $('server-config-fields');
+    if (!fields || !state.draft) return;
+    fields.textContent = '';
+    if (state.draft.kind === 'json') {
+      renderJsonFields(fields, state.draft);
+    } else if (state.draft.kind === 'lines') {
+      renderLineFields(fields, state.draft);
+    } else {
+      renderTextFallback(fields, state.draft);
+    }
+  }
+
+  function matchesSearch(text) {
+    const q = state.search.trim().toLowerCase();
+    return !q || String(text || '').toLowerCase().includes(q);
+  }
+
+  function renderLineFields(fields, draft) {
+    const file = activeFile();
+    const rows = draft.tokens
+        .map((token, index) => ({ token, index }))
+        .filter(({ token }) => token.type === 'prop')
+        .filter(({ token }) => matchesSearch(token.key)
+            || matchesSearch(PROPERTY_DESCRIPTIONS[token.key]));
+    if (!rows.length) {
+      const empty = document.createElement('p');
+      empty.className = 'muted small';
+      empty.textContent = state.search.trim() ? '没有匹配的配置项。' : '文件里还没有可编辑的键值项。';
+      fields.appendChild(empty);
+      return;
+    }
+    for (const { token, index } of rows) {
+      fields.appendChild(renderPropertyRow(file, draft, token, index));
+    }
+  }
+
+  function renderPropertyRow(file, draft, token, index) {
+    const row = document.createElement('div');
+    row.className = 'entry';
+    const main = document.createElement('div');
+    const keyLine = document.createElement('div');
+    keyLine.className = 'entry-key';
+    keyLine.textContent = token.key;
+    if (file.restartRequired) {
+      const badge = document.createElement('span');
+      badge.className = 'badge restart';
+      badge.textContent = '需重启';
+      keyLine.append(document.createTextNode(' '), badge);
+    }
+    if (token.key === 'rcon.password') {
+      const badge = document.createElement('span');
+      badge.className = 'badge';
+      badge.textContent = '敏感';
+      keyLine.append(document.createTextNode(' '), badge);
+    }
+    const desc = document.createElement('div');
+    desc.className = 'entry-desc';
+    desc.textContent = PROPERTY_DESCRIPTIONS[token.key] || '';
+    main.append(keyLine, desc);
+
+    const control = document.createElement('div');
+    control.className = 'entry-control';
+    control.appendChild(buildPropertyInput(token));
+
+    const actions = document.createElement('div');
+    actions.className = 'entry-actions';
+    if (file.kind === 'properties') {
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'ghost';
+      remove.textContent = '恢复默认';
+      remove.title = '从文件中删除该项；保存后服务器会使用默认值';
+      remove.addEventListener('click', () => {
+        const at = draft.tokens.indexOf(token);
+        if (at >= 0) draft.tokens.splice(at, 1);
+        state.dirty = true;
+        renderDraft();
+      });
+      actions.appendChild(remove);
+    }
+
+    row.append(main, control, actions);
+    return row;
+  }
+
+  function buildPropertyInput(token) {
+    const value = token.value == null ? '' : String(token.value);
+    let control;
+    if (token.key === 'rcon.password') {
+      control = document.createElement('input');
+      control.type = 'password';
+      control.autocomplete = 'off';
+      control.value = value;
+      control.placeholder = 'RCON 密码';
+    } else if (/^(true|false)$/i.test(value)) {
+      control = document.createElement('select');
+      for (const choice of ['true', 'false']) {
+        const option = document.createElement('option');
+        option.value = choice;
+        option.textContent = choice === 'true' ? 'true（开）' : 'false（关）';
+        control.appendChild(option);
+      }
+      control.value = value.toLowerCase();
+    } else if (PROPERTY_ENUMS[token.key]) {
+      control = document.createElement('select');
+      const choices = PROPERTY_ENUMS[token.key].slice();
+      if (value && !choices.includes(value)) choices.unshift(value);
+      for (const choice of choices) {
+        const option = document.createElement('option');
+        option.value = choice;
+        option.textContent = choice.replace(/\\:/g, ':');
+        control.appendChild(option);
+      }
+      control.value = value;
+    } else if (value !== '' && /^-?(0|[1-9]\d*)(\.\d+)?$/.test(value)) {
+      control = document.createElement('input');
+      control.type = 'number';
+      control.step = value.includes('.') ? 'any' : '1';
+      control.value = value;
+    } else {
+      control = document.createElement('input');
+      control.type = 'text';
+      control.value = value;
+      control.placeholder = '空';
+    }
+    const update = () => {
+      token.value = control.value;
+      state.dirty = true;
+    };
+    control.addEventListener('input', update);
+    control.addEventListener('change', update);
+    return control;
+  }
+
+  function renderJsonFields(fields, draft) {
+    const file = activeFile();
+    const q = state.search.trim().toLowerCase();
+    const visible = draft.data
+        .map((item, index) => ({ item, index }))
+        .filter(({ item }) => !q || JSON.stringify(item).toLowerCase().includes(q));
+    if (!visible.length) {
+      const empty = document.createElement('p');
+      empty.className = 'muted small';
+      empty.textContent = q ? '没有匹配的条目。' : '这个文件还是空数组。';
+      fields.appendChild(empty);
+    }
+    const list = document.createElement('div');
+    list.className = 'server-json-list';
+    for (const { item, index } of visible) {
+      list.appendChild(renderJsonItem(file, draft, item, index));
+    }
+    if (visible.length) fields.appendChild(list);
+
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'ghost server-config-add';
+    add.textContent = JSON_ADD_LABELS[file.id] || '+ 添加一条';
+    add.addEventListener('click', () => {
+      const factory = JSON_DEFAULTS[file.id];
+      draft.data.push(factory ? factory() : {});
+      state.dirty = true;
+      renderDraft();
+    });
+    fields.appendChild(add);
+  }
+
+  function renderJsonItem(file, draft, item, index) {
+    const block = document.createElement('div');
+    block.className = 'file-block server-json-item';
+
+    const summary = document.createElement('div');
+    summary.className = 'file-summary server-json-head';
+    const info = document.createElement('div');
+
+    if (item === null || typeof item !== 'object' || Array.isArray(item)) {
+      const title = document.createElement('h4');
+      title.className = 'file-title';
+      title.textContent = '条目 ' + (index + 1);
+      info.appendChild(title);
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'ghost danger';
+      remove.textContent = '删除';
+      remove.addEventListener('click', () => {
+        draft.data.splice(index, 1);
+        state.dirty = true;
+        renderDraft();
+      });
+      summary.append(info, remove);
+      const body = document.createElement('div');
+      body.className = 'file-body';
+      const row = document.createElement('div');
+      row.className = 'struct-row';
+      const label = document.createElement('span');
+      label.className = 'server-field-label';
+      label.textContent = '值';
+      const input = document.createElement('input');
+      input.className = 'struct-input';
+      input.type = 'text';
+      input.value = item == null ? '' : String(item);
+      input.addEventListener('input', () => {
+        draft.data[index] = input.value;
+        state.dirty = true;
+      });
+      row.append(label, input);
+      body.appendChild(row);
+      block.append(summary, body);
+      return block;
+    }
+
+    const title = document.createElement('h4');
+    title.className = 'file-title';
+    title.textContent = item.name || item.ip || item.uuid || ('条目 ' + (index + 1));
+    const path = document.createElement('p');
+    path.className = 'file-path';
+    path.textContent = item.uuid || item.ip || '';
+    info.append(title, path);
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'ghost danger';
+    remove.textContent = '删除';
+    remove.addEventListener('click', () => {
+      draft.data.splice(index, 1);
+      state.dirty = true;
+      renderDraft();
+    });
+    summary.append(info, remove);
+
+    const body = document.createElement('div');
+    body.className = 'file-body';
+    const rows = document.createElement('div');
+    rows.className = 'struct-list';
+    for (const key of Object.keys(item)) {
+      const row = document.createElement('div');
+      row.className = 'struct-row';
+      const label = document.createElement('span');
+      label.className = 'server-field-label';
+      label.textContent = key;
+      row.append(label, buildJsonField(item, key));
+      rows.appendChild(row);
+    }
+    body.appendChild(rows);
+    block.append(summary, body);
+    return block;
+  }
+
+  function buildJsonField(item, key) {
+    const value = item[key];
+    if (value && typeof value === 'object') {
+      const input = document.createElement('input');
+      input.className = 'struct-input';
+      input.type = 'text';
+      input.value = JSON.stringify(value);
+      input.disabled = true;
+      input.title = '嵌套结构暂不支持在这里编辑';
+      return input;
+    }
+    if (typeof value === 'boolean') {
+      const label = document.createElement('label');
+      label.className = 'struct-bool';
+      const input = document.createElement('input');
+      input.type = 'checkbox';
+      input.checked = value;
+      input.addEventListener('change', () => {
+        item[key] = input.checked;
+        state.dirty = true;
+      });
+      label.append(input, document.createTextNode(' 启用'));
+      return label;
+    }
+    if (typeof value === 'number') {
+      const input = document.createElement('input');
+      input.className = 'struct-input';
+      input.type = 'number';
+      input.value = String(value);
+      input.addEventListener('input', () => {
+        item[key] = input.value === '' ? 0 : Number(input.value);
+        state.dirty = true;
+      });
+      return input;
+    }
+    const input = document.createElement('input');
+    input.className = 'struct-input';
+    input.type = 'text';
+    input.value = value == null ? '' : String(value);
+    input.addEventListener('input', () => {
+      item[key] = input.value;
+      state.dirty = true;
+    });
+    return input;
+  }
+
+  function renderTextFallback(fields, draft) {
+    if (draft.parseError) {
+      const warn = document.createElement('p');
+      warn.className = 'message warning';
+      warn.textContent = 'JSON 解析失败，已切换为源码编辑；保存前请先修正格式。';
+      fields.appendChild(warn);
+    }
+    const editor = document.createElement('textarea');
+    editor.className = 'server-config-editor';
+    editor.spellcheck = false;
+    editor.autocomplete = 'off';
+    editor.value = draft.text || '';
+    editor.addEventListener('input', () => {
+      draft.text = editor.value;
+      state.dirty = true;
+    });
+    fields.appendChild(editor);
+  }
+
+  function buildContent() {
+    const draft = state.draft;
+    if (!draft) return '';
+    if (draft.kind === 'json') return JSON.stringify(draft.data, null, 2) + '\n';
+    if (draft.kind === 'lines') {
+      return draft.tokens
+          .map((token) => (token.type === 'prop' ? token.key + '=' + token.value : (token.raw || '')))
+          .join('\n');
+    }
+    return draft.text || '';
+  }
+
   async function saveConfig() {
     const file = activeFile();
-    const editor = $('server-config-editor');
-    if (!file || !editor) return;
+    if (!file || !state.draft) return;
     const button = $('server-save');
     if (button) button.disabled = true;
     message('保存中…', '');
     try {
       const data = await UI.api('/api/server/config', {
         method: 'POST',
-        body: JSON.stringify({ id: file.id, content: editor.value }),
+        body: JSON.stringify({ id: file.id, content: buildContent() }),
       });
       state.files = data.configFiles || state.files;
       state.dirty = false;
@@ -700,8 +1132,13 @@
   for (const tab of document.querySelectorAll('.tab[data-server-panel]')) {
     tab.addEventListener('click', () => setServerPanel(tab.dataset.serverPanel));
   }
-  const editor = $('server-config-editor');
-  if (editor) editor.addEventListener('input', () => { state.dirty = true; });
+  const search = $('server-config-search');
+  if (search) {
+    search.addEventListener('input', () => {
+      state.search = search.value;
+      renderDraft();
+    });
+  }
   const save = $('server-save');
   if (save) save.addEventListener('click', saveConfig);
   const reload = $('server-reload');
@@ -720,7 +1157,17 @@
   if (backupCreate) backupCreate.addEventListener('click', createBackup);
 
   UI.onConnect(() => {
-    if (state.section === 'server') loadAll();
+    if (state.section !== 'server') return null;
+    if (state.serverPanel === 'server-backup-panel') {
+      backupMessage('', '');
+      return loadBackupsOnly();
+    }
+    return loadAll();
+  });
+
+  // 其它页面的连接钩子也会重建导航；所有页面加载完后再把本体导航同步回来。
+  UI.onConnected(() => {
+    if (state.section === 'server') renderServerNav();
   });
 
   const initialHash = location.hash || '';
