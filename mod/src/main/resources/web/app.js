@@ -533,19 +533,27 @@ function buildInput(file, entry) {
     case 'enum': {
       const wrap = document.createElement('div');
       wrap.className = 'particle-wrap';
-      const select = document.createElement('select');
-      for (const choice of entry.choices || []) {
-        const option = document.createElement('option');
-        option.value = choice;
-        option.textContent = choice;
-        select.append(option);
+      const choices = entry.choices || [];
+      let current = value == null ? entry.default : value;
+      const apply = (next) => {
+        current = next;
+        markEdited(file.id, entry, next);
+        updateParticlePreview(wrap, next);
+      };
+      if (window.SamsaraUIKit && choices.length === 2) {
+        wrap.append(window.SamsaraUIKit.buttonGroup(choices, current, apply));
+      } else {
+        const select = document.createElement('select');
+        for (const choice of choices) {
+          const option = document.createElement('option');
+          option.value = choice;
+          option.textContent = choice;
+          select.append(option);
+        }
+        select.value = current;
+        select.addEventListener('change', () => apply(select.value));
+        wrap.append(select);
       }
-      select.value = value == null ? entry.default : value;
-      select.addEventListener('change', () => {
-        markEdited(file.id, entry, select.value);
-        updateParticlePreview(wrap, select.value);
-      });
-      wrap.append(select);
       if (/Particle$/i.test(entry.path) || /particle/i.test(entry.path)) {
         const theme = entry.path === 'dayParticle' ? 'day'
             : entry.path === 'nightParticle' ? 'night' : 'dark';
@@ -556,7 +564,7 @@ function buildInput(file, entry) {
         wrap.append(canvas);
         // 刚 append 时还未进入布局，clientWidth 为 0；等一帧再取真实尺寸。
         requestAnimationFrame(() => {
-          if (canvas.isConnected) window.SamsaraParticles?.attach(canvas, select.value, { background: theme });
+          if (canvas.isConnected) window.SamsaraParticles?.attach(canvas, current, { background: theme });
         });
       }
       return wrap;
@@ -605,6 +613,10 @@ function buildInput(file, entry) {
 }
 
 function buildBoolean(file, entry, value) {
+  if (window.SamsaraUIKit) {
+    return window.SamsaraUIKit.control({ type: 'bool', onLabel: '启用', offLabel: '关闭' }, value === true,
+        (next) => markEdited(file.id, entry, next));
+  }
   const row = document.createElement('label');
   row.className = 'boolean-row';
   const input = document.createElement('input');

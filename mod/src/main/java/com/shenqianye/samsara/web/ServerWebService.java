@@ -1,13 +1,21 @@
 package com.shenqianye.samsara.web;
 
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.shenqianye.samsara.server.ServerBackup;
 import com.shenqianye.samsara.server.ServerConfigFiles;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.storage.LevelResource;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /** Web「本体」页：服务器配置 + 存档备份。 */
@@ -98,6 +106,93 @@ public class ServerWebService {
         out.put("ok", true);
         out.put("jobs", ServerBackup.jobs(serverRoot, 20));
         out.put("lastReport", ServerBackup.job(serverRoot, "last-result"));
+        return out;
+    }
+
+    /** 已知玩家：在线玩家 + usercache.json，供白名单/OP/封禁选择。 */
+    public Map<String, Object> players() {
+        Map<String, Map<String, Object>> byUuid = new LinkedHashMap<>();
+        if (server != null) {
+            try {
+                for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+                    String uuid = player.getStringUUID();
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("uuid", uuid);
+                    row.put("name", player.getName().getString());
+                    row.put("online", true);
+                    row.put("lastSeen", "");
+                    byUuid.put(uuid, row);
+                }
+            } catch (RuntimeException ignored) {
+            }
+        }
+        Path cache = serverRoot.resolve("usercache.json");
+        if (Files.isRegularFile(cache)) {
+            try {
+                JsonElement parsed = JsonParser.parseString(
+                        Files.readString(cache, StandardCharsets.UTF_8));
+                if (parsed.isJsonArray()) {
+                    for (JsonElement element : parsed.getAsJsonArray()) {
+                        if (!element.isJsonObject()) {
+                            continue;
+                        }
+                        JsonObject object = element.getAsJsonObject();
+                        String uuid = object.has("uuid") ? object.get("uuid").getAsString() : "";
+                        String name = object.has("name") ? object.get("name").getAsString() : "";
+                        if (uuid.isBlank() || name.isBlank() || byUuid.containsKey(uuid)) {
+                            continue;
+                        }
+                        Map<String, Object> row = new LinkedHashMap<>();
+                        row.put("uuid", uuid);
+                        row.put("name", name);
+                        row.put("online", false);
+                        row.put("lastSeen", object.has("expiresOn")
+                                ? object.get("expiresOn").getAsString() : "");
+                        byUuid.put(uuid, row);
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        // 白名单 / OP 名单里的玩家也算“已知玩家”，方便直接选择。
+        for (String fileName : new String[]{"whitelist.json", "ops.json"}) {
+            Path file = serverRoot.resolve(fileName);
+            if (!Files.isRegularFile(file)) {
+                continue;
+            }
+            try {
+                JsonElement parsed = JsonParser.parseString(
+                        Files.readString(file, StandardCharsets.UTF_8));
+                if (!parsed.isJsonArray()) {
+                    continue;
+                }
+                for (JsonElement element : parsed.getAsJsonArray()) {
+                    if (!element.isJsonObject()) {
+                        continue;
+                    }
+                    JsonObject object = element.getAsJsonObject();
+                    String uuid = object.has("uuid") ? object.get("uuid").getAsString() : "";
+                    String name = object.has("name") ? object.get("name").getAsString() : "";
+                    if (uuid.isBlank() || name.isBlank() || byUuid.containsKey(uuid)) {
+                        continue;
+                    }
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("uuid", uuid);
+                    row.put("name", name);
+                    row.put("online", false);
+                    row.put("lastSeen", fileName);
+                    byUuid.put(uuid, row);
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        List<Map<String, Object>> list = new ArrayList<>(byUuid.values());
+        list.sort(Comparator
+                .comparing((Map<String, Object> row) -> Boolean.TRUE.equals(row.get("online")) ? 0 : 1)
+                .thenComparing(row -> String.valueOf(row.get("name")), String.CASE_INSENSITIVE_ORDER));
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ok", true);
+        out.put("players", list);
         return out;
     }
 

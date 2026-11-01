@@ -26,10 +26,12 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
@@ -113,7 +115,18 @@ public final class ServerBackup {
         return backupRoot(serverRoot).resolve(id + ".json");
     }
 
+    public static Path stateFile(Path serverRoot) {
+        return serverRoot.resolve("samsara/server-backup-state.json");
+    }
+
     // ---- models ----
+
+    /** 时间线状态：当前头节点，以及“恢复后下一次备份是否另起分支”。 */
+    public static final class State {
+        public String headId = "";
+        public boolean pendingBranch;
+        public long updatedAt;
+    }
 
     public static final class Pending {
         public String mode = "backup";
@@ -149,11 +162,20 @@ public final class ServerBackup {
         public String modVersion = "";
         public String sha256 = "";
         public String error = "";
+        public String parentId = "";
+        public String branchId = "";
+        public String message = "";
         public long createdAt;
+        public long restoredAt;
         public long zipBytes;
         public long totalBytes;
         public int fileCount;
-            public boolean pendingRestore;
+        public boolean pendingRestore;
+        // 时间线渲染用，不写回 sidecar 的业务字段也可以照常序列化
+        public boolean current;
+        public boolean deletable = true;
+        public boolean hasChildren;
+        public int depth;
     }
 
     public static final class Preview {
@@ -186,6 +208,7 @@ public final class ServerBackup {
         out.put("freeBytes", freeBytes(serverRoot));
         out.put("keep", currentKeep());
         out.put("backups", list(serverRoot));
+        out.put("timeline", timeline(serverRoot));
         out.put("pendingBackup", read(serverRoot, pendingBackupFile(serverRoot), Pending.class));
         out.put("pendingRestore", read(serverRoot, pendingRestoreFile(serverRoot), Pending.class));
         out.put("jobs", jobs(serverRoot, 12));
@@ -194,8 +217,36 @@ public final class ServerBackup {
         return out;
     }
 
-    public static synchronized List<BackupInfo> list(Path serverRoot) {
-        List<BackupInfo> out = new ArrayList<>();
+    /** 备份时间线：父节点 + 分支 + 当前头节点，供本体与其它备份系统复用。 */
+    public static synchronized Map<String, Object> timeline(Path serverRoot) {
+        List<BackupTimeline.Entry> entries = new ArrayList<>();
+        for (BackupInfo info : list(serverRoot)) {
+            BackupTimeline.Entry entry = new BackupTimeline.Entry();
+            entry.id = info.id;
+            entry.parentId = info.parentId;
+            entry.branchId = info.branchId;
+            entry.label = info.worldName;
+            entry.createdAt = info.createdAt;
+            entry.data.put("worldName", info.worldName);
+            entry.data.put("zipBytes", info.zipBytes);
+            entry.data.put("totalBytes", info.totalBytes);
+            entry.data.put("fileCount", info.fileCount);
+            entry.data.put("sha256", info.sha256);
+            entry.data.put("error", info.error);
+            entry.data.put("restoredAt", info.restoredAt);
+            entry.data.put("pendingRestore", info.pendingRestore);
+            entries.add(entry);
+        }
+        State state = readState(serverRoot);
+        BackupTimeline.Tree tree = BackupTimeline.build(entries, state.headId);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("headId", tree.headId);
+        out.put("pendingBranch", state.pendingBranch);
+        out.put("nodes", tree.nodes);
+        return out;
+    }
+
+    public static synchronized List<BackupInfo> list(Path serverRoot) {        List<BackupInfo> out = new ArrayList<>();
         Path root = backupRoot(serverRoot);
         if (!Files.isDirectory(root)) {
             return out;
@@ -389,6 +440,7 @@ public final class ServerBackup {
         preview.steps.add("server.properties 与 web.yml 不直接覆盖，另存为 *.restored-<job> 供确认");
         preview.warnings.add("恢复会替换当前世界；建议先在游戏内确认没有正在进行的导入/归档");
         preview.warnings.add("恢复完成后需要再次启动服务器才会加载新世界");
+        preview.warnings.add("时间线会移动到该备份；下一次备份会从该点分出新分支");
         preview.ok = preview.errors.isEmpty();
         return preview;
     }
@@ -454,6 +506,21 @@ public final class ServerBackup {
         if (!Files.isRegularFile(zip) && !Files.isRegularFile(sidecar)) {
             out.put("ok", false);
             out.put("error", "备份不存在：" + id);
+            return out;
+        }
+        State state = readState(serverRoot);
+        Object timelineHead = timeline(serverRoot).get("headId");
+        String headId = timelineHead == null ? state.headId : String.valueOf(timelineHead);
+        if (id.equals(headId)) {
+            out.put("ok", false);
+            out.put("error", "该备份是当前时间线节点，先回滚到别处或先创建新备份，再删除");
+            return out;
+        }
+        boolean hasChildren = list(serverRoot).stream()
+                .anyMatch(backup -> id.equals(backup.parentId));
+        if (hasChildren) {
+            out.put("ok", false);
+            out.put("error", "该备份还有后续分支，不能删除；请先删除它的子节点");
             return out;
         }
         try {
@@ -553,6 +620,16 @@ public final class ServerBackup {
         }
     }
 
+    private static State readState(Path serverRoot) {
+        State state = read(serverRoot, stateFile(serverRoot), State.class);
+        return state == null ? new State() : state;
+    }
+
+    private static void writeState(Path serverRoot, State state) {
+        state.updatedAt = System.currentTimeMillis();
+        write(serverRoot, stateFile(serverRoot), state);
+    }
+
     private static void executeBackup(Path serverRoot, Pending pending) {
         Path pendingFile = pendingBackupFile(serverRoot);
         Path world = worldDir(serverRoot);
@@ -581,6 +658,41 @@ public final class ServerBackup {
             manifest.put("zipBytes", Files.size(tmp));
             // 重新写 manifest 需要重打包；这里把最新 manifest 写到 sidecar，
             // zip 内 manifest 已包含主要字段，sha256 以 sidecar 为准。
+            State state = readState(serverRoot);
+            List<BackupInfo> existing = list(serverRoot);
+            String parentId = state.headId;
+            boolean parentExists = false;
+            for (BackupInfo backup : existing) {
+                if (backup.id.equals(parentId)) {
+                    parentExists = true;
+                    break;
+                }
+            }
+            if (parentId == null || parentId.isBlank() || !parentExists) {
+                parentId = existing.isEmpty() ? "" : existing.get(0).id;
+            }
+            BackupInfo parentInfo = null;
+            boolean parentHasChildren = false;
+            for (BackupInfo backup : existing) {
+                if (backup.id.equals(parentId)) {
+                    parentInfo = backup;
+                }
+                if (parentId.equals(backup.parentId)) {
+                    parentHasChildren = true;
+                }
+            }
+            parentHasChildren = parentHasChildren && !parentId.isEmpty();
+            String branchId;
+            if (parentId.isEmpty()) {
+                branchId = newId("br");
+            } else if (state.pendingBranch || parentHasChildren) {
+                branchId = newId("br");
+            } else if (parentInfo != null && parentInfo.branchId != null
+                    && !parentInfo.branchId.isBlank()) {
+                branchId = parentInfo.branchId;
+            } else {
+                branchId = "main";
+            }
             BackupInfo info = new BackupInfo();
             info.id = pending.id;
             info.file = target.toString();
@@ -593,9 +705,15 @@ public final class ServerBackup {
             info.zipBytes = num(manifest.get("zipBytes"));
             info.totalBytes = num(manifest.get("totalBytes"));
             info.fileCount = (int) num(manifest.get("fileCount"));
+            info.parentId = parentId;
+            info.branchId = branchId;
+            info.message = parentId.isEmpty() ? "时间线起点" : "从 " + parentId + " 继续";
             Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
             Files.writeString(sidecarFile(serverRoot, pending.id), GSON.toJson(info),
                     StandardCharsets.UTF_8);
+            state.headId = pending.id;
+            state.pendingBranch = false;
+            writeState(serverRoot, state);
             prune(serverRoot, pending.keep);
             Files.deleteIfExists(pendingFile);
             job.status = "done";
@@ -692,6 +810,16 @@ public final class ServerBackup {
             writeJob(serverRoot, job);
             Files.move(restoredWorld, world, StandardCopyOption.ATOMIC_MOVE);
             restoreConfigs(serverRoot, staging, pending.jobId, job);
+            State state = readState(serverRoot);
+            state.headId = pending.id;
+            state.pendingBranch = true;
+            writeState(serverRoot, state);
+            BackupInfo restoredInfo = info(serverRoot, pending.id);
+            if (restoredInfo != null) {
+                restoredInfo.restoredAt = System.currentTimeMillis();
+                Files.writeString(sidecarFile(serverRoot, pending.id), GSON.toJson(restoredInfo),
+                        StandardCharsets.UTF_8);
+            }
             deleteRecursive(staging);
             Files.deleteIfExists(pendingFile);
             job.status = "done";
@@ -700,6 +828,7 @@ public final class ServerBackup {
             job.finishedAt = System.currentTimeMillis();
             job.message = "已恢复 " + pending.id + "；恢复前 world 保留在 " + rollback;
             job.log.add("rollback=" + rollback);
+            job.log.add("时间线已移动到 " + pending.id + "；下一次备份会从该点分出新分支");
             job.log.add("server.properties / web.yml 未覆盖，另存为 *.restored-" + pending.jobId);
             writeJob(serverRoot, job);
             Samsara.LOGGER.info("[本体备份] {}", job.message);
@@ -922,9 +1051,20 @@ public final class ServerBackup {
             return;
         }
         List<BackupInfo> backups = list(serverRoot);
-        // list() 已按 createdAt 倒序
-        for (int i = keep; i < backups.size(); i++) {
-            BackupInfo old = backups.get(i);
+        List<BackupTimeline.Entry> entries = new ArrayList<>();
+        for (BackupInfo backup : backups) {
+            BackupTimeline.Entry entry = new BackupTimeline.Entry();
+            entry.id = backup.id;
+            entry.parentId = backup.parentId;
+            entry.createdAt = backup.createdAt;
+            entries.add(entry);
+        }
+        State state = readState(serverRoot);
+        Set<String> kept = BackupTimeline.retentionKeep(entries, keep, state.headId);
+        for (BackupInfo old : backups) {
+            if (kept.contains(old.id)) {
+                continue;
+            }
             try {
                 Files.deleteIfExists(Path.of(old.file));
                 Files.deleteIfExists(Path.of(old.sidecar));

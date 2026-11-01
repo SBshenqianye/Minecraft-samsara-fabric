@@ -11,6 +11,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -132,5 +133,65 @@ class ServerBackupTest {
             assertTrue(zip.getEntry("world/samsara/web-map-cache/derived.png") == null);
             assertTrue(zip.getEntry("manifest.json") != null);
         }
+    }
+
+    @Test
+    void timelineBranchesAfterRestore() throws Exception {
+        prepareWorld();
+        Map<String, Object> a = ServerBackup.scheduleCreate(root);
+        ServerBackup.prepare(root);
+        Map<String, Object> b = ServerBackup.scheduleCreate(root);
+        ServerBackup.prepare(root);
+
+        Map<String, Object> firstTree = timeline(root);
+        assertEquals(2, ((List<?>) firstTree.get("nodes")).size());
+        Map<String, Object> nodeB = findNode(firstTree, (String) b.get("id"));
+        assertEquals(a.get("id"), nodeB.get("parentId"));
+        assertEquals(0, nodeB.get("depth"));
+
+        // 回滚到 A，再创建备份 C：C 应挂在 A 下，并另起分支。
+        ServerBackup.scheduleRestore(root, (String) a.get("id"));
+        ServerBackup.prepare(root);
+        Map<String, Object> c = ServerBackup.scheduleCreate(root);
+        ServerBackup.prepare(root);
+
+        Map<String, Object> secondTree = timeline(root);
+        Map<String, Object> nodeA = findNode(secondTree, (String) a.get("id"));
+        Map<String, Object> nodeC = findNode(secondTree, (String) c.get("id"));
+        assertEquals(a.get("id"), nodeC.get("parentId"));
+        assertNotEquals(nodeA.get("branchId"), nodeC.get("branchId"));
+        assertEquals(1, nodeC.get("depth"));
+        assertEquals(c.get("id"), secondTree.get("headId"));
+        assertEquals(Boolean.TRUE, nodeC.get("current"));
+    }
+
+    @Test
+    void deleteRejectsTimelineHeadAndParents() throws Exception {
+        prepareWorld();
+        Map<String, Object> a = ServerBackup.scheduleCreate(root);
+        ServerBackup.prepare(root);
+        Map<String, Object> b = ServerBackup.scheduleCreate(root);
+        ServerBackup.prepare(root);
+
+        Map<String, Object> headDelete = ServerBackup.delete(root, (String) b.get("id"), true);
+        assertEquals(Boolean.FALSE, headDelete.get("ok"));
+
+        Map<String, Object> parentDelete = ServerBackup.delete(root, (String) a.get("id"), true);
+        assertEquals(Boolean.FALSE, parentDelete.get("ok"));
+        assertTrue(String.valueOf(parentDelete.get("error")).contains("分支"));
+    }
+
+    private static Map<String, Object> timeline(Path root) {
+        return ServerBackup.timeline(root);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> findNode(Map<String, Object> tree, String id) {
+        for (Map<String, Object> node : (List<Map<String, Object>>) tree.get("nodes")) {
+            if (id.equals(node.get("id"))) {
+                return node;
+            }
+        }
+        return null;
     }
 }

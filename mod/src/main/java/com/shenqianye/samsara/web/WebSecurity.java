@@ -52,6 +52,7 @@ public final class WebSecurity {
             case "/identity", "/identity.html" -> "/web/identity.html";
             case "/identity.js" -> "/web/identity.js";
             case "/structured.js" -> "/web/structured.js";
+            case "/form-kit.js" -> "/web/form-kit.js";
             case "/particles.js" -> "/web/particles.js";
             case "/output.js" -> "/web/output.js";
             case "/permissions.js" -> "/web/permissions.js";

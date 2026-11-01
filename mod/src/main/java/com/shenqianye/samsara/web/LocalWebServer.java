@@ -637,6 +637,8 @@ public final class LocalWebServer {
                     result = serverService.model();
                 } else if ("/api/server/jobs".equals(path)) {
                     result = serverService.jobs();
+                } else if ("/api/server/players".equals(path)) {
+                    result = serverService.players();
                 } else if ("/api/server/backups/download".equals(path)) {
                     String id = parseQuery(exchange.getRequestURI().getRawQuery()).get("id");
                     var file = serverService.backupFile(id);
