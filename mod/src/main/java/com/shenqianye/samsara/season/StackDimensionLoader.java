@@ -43,6 +43,8 @@ public final class StackDimensionLoader {
     private static final List<String> DIMS = List.of("overworld", "the_nether", "the_end");
     private static Map<String, LoadedLayer> loaded = new LinkedHashMap<>();
     private static Map<String, Failure> failures = new LinkedHashMap<>();
+    /** 仅测试/演示用：强制让指定栈层加载失败，用于验证失败提示与重试。 */
+    private static java.util.Set<String> debugFailures = new java.util.LinkedHashSet<>();
 
     private StackDimensionLoader() {
     }
@@ -81,6 +83,7 @@ public final class StackDimensionLoader {
     public static synchronized void load(MinecraftServer server) {
         unload();
         failures = new LinkedHashMap<>();
+        seedDebugFailures();
         Path worldDir = StackPaths.worldDir(server);
         StackManifest manifest = StackManifest.load(worldDir);
         if (manifest.layers.isEmpty()) {
@@ -129,6 +132,9 @@ public final class StackDimensionLoader {
 
     private static LoadedLayer loadLayer(MinecraftServer server, Path worldDir, StackLayer layer)
             throws Exception {
+        if (debugFailures.contains(layer.id)) {
+            throw new IllegalStateException("调试注入的加载失败（samsara.debug.failStackLayer）");
+        }
         WorldGenSettings gen = readWorldGen(server, worldDir, layer);
         LevelStorageSource.LevelStorageAccess access = storageAccess(server);
         ServerLevelData levelData = server.getWorldData().overworldData();
@@ -235,6 +241,49 @@ public final class StackDimensionLoader {
     /** 是否有失败记录（供 world info / 调试使用）。 */
     public static synchronized boolean hasFailure(String id) {
         return failures.containsKey(id);
+    }
+
+    /**
+     * 测试/演示开关：强制某个栈层加载失败（或解除）。
+     *
+     * <p>只影响后续加载，不会卸载已经加载的层；用于在真实服务器上验证
+     * “跨栈链目标层加载失败 → 明确提示 → 解除后自动重试成功”。
+     */
+    public static synchronized String setDebugFailure(String id, boolean fail) {
+        if (fail) {
+            debugFailures.add(id);
+        } else {
+            debugFailures.remove(id);
+        }
+        failures.remove(id);
+        return "栈层 " + id + " 调试注入失败已" + (fail ? "开启" : "关闭");
+    }
+
+    /** 忽略退避窗口，立即重试某一层；返回可读结果。 */
+    public static synchronized String retryNow(MinecraftServer server, String id) {
+        StackLayer layer = StackManifest.load(StackPaths.worldDir(server)).byId(id);
+        if (layer == null) {
+            return "栈层 " + id + " 不存在";
+        }
+        if (layer.top) {
+            return "栈层 " + id + " 是栈顶，由服务器直接提供";
+        }
+        failures.remove(id);
+        ServerLevel level = ensureLevel(server, layer, "overworld");
+        if (level != null) {
+            return "已加载栈层 " + id + " · " + level.dimension().identifier();
+        }
+        return "栈层 " + id + " 仍加载失败：" + failureReason(id);
+    }
+
+    private static void seedDebugFailures() {
+        String value = System.getProperty("samsara.debug.failStackLayer", "");
+        for (String part : value.split(",")) {
+            String id = part.trim();
+            if (!id.isEmpty()) {
+                debugFailures.add(id);
+            }
+        }
     }
 
     private static WorldGenSettings readWorldGen(MinecraftServer server, Path worldDir, StackLayer layer) {

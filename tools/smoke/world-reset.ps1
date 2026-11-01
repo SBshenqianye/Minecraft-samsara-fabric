@@ -103,7 +103,8 @@ function Wait-RewindDone {
 }
 
 function Get-Spawn([string]$text) {
-    $m = [regex]::Match($text, "出生点 \((-?\d+), (-?\d+)\)")
+    # 用 ASCII 括号/数字匹配，避免 Windows PowerShell 5.1 按 ANSI 读取脚本时中文乱码。
+    $m = [regex]::Match($text, "\((-?\d+),\s*(-?\d+)\)")
     if (-not $m.Success) { Fail "无法解析出生点。实际输出：`n$text" }
     return @([int]$m.Groups[1].Value, [int]$m.Groups[2].Value)
 }
@@ -148,8 +149,8 @@ Info "起始出生点：($($before[0]), $($before[1]))"
 
 for ($i = 1; $i -le $Resets; $i++) {
     Info "第 $i/$Resets 次同世界重置"
-    $confirm = Invoke-ResetCommand "samsara reset same"
-    Assert-Contains $confirm "危险操作确认" "reset same 第一次只确认"
+    $firstReply = Invoke-ResetCommand "samsara reset same"
+    Assert-Contains $firstReply "危险操作确认" "reset same 第一次只确认"
     $started = Invoke-ResetCommand "samsara reset same"
     Assert-Contains $started "已开始同世界重置" "reset same 第二次执行"
 

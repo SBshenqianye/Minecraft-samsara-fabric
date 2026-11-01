@@ -124,10 +124,12 @@ public final class StackTeleport {
         }
         player.teleportTo(level, x + 0.5, y, z + 0.5, Set.of(),
                 player.getYRot(), player.getXRot(), false);
-        // 个人重生点：在没有床/锚时回到当前栈的出生点，而不是全局主世界
+        // 个人重生点：在没有床/锚时回到当前栈的出生点，而不是全局主世界。
+        // forced=true 是必须的：原版只对床/重生锚使用非强制重生点；普通地面 spawn
+        // 若 forced=false 会在死亡时被判为“没有床”，回退到全局主世界。
         LevelData.RespawnData respawn = LevelData.RespawnData.of(
                 level.dimension(), new BlockPos(x, y, z), player.getYRot(), player.getXRot());
-        player.setRespawnPosition(new ServerPlayer.RespawnConfig(respawn, false), false);
+        player.setRespawnPosition(new ServerPlayer.RespawnConfig(respawn, true), false);
         player.sendSystemMessage(Component.literal("[世界栈] 已进入 " + layer.label()
                 + " · 出生点 (" + x + ", " + y + ", " + z + ")"));
         Samsara.LOGGER.info("[周目管理 samsara] {} 进入栈层 {} @ {}",

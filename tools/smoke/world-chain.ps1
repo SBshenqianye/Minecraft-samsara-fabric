@@ -22,7 +22,8 @@ param(
     [string]$Java = "$env:APPDATA\.minecraft\runtime\java-runtime-epsilon\bin\java.exe",
     [string]$RconClassPath = ".tmp\rcon",
     [string]$BotName = "ChainBot",
-    [int]$WaitMillis = 1500,
+    # 跨世界传送有 3 秒防抖；等待必须大于防抖窗口，否则会读到传送前的维度。
+    [int]$WaitMillis = 4200,
     [switch]$Confirm
 )
 
@@ -35,6 +36,12 @@ function Fail([string]$message) {
 }
 function Info([string]$message) { Write-Host "[smoke] $message" -ForegroundColor Cyan }
 function Pass([string]$message) { Write-Host "[ ok ] $message" -ForegroundColor Green }
+function Assert-Contains([string]$text, [string]$needle, [string]$label) {
+    if ($text -notlike "*$needle*") {
+        Fail "$label 未包含「$needle」，实际输出：`n$text"
+    }
+    Pass $label
+}
 
 function Invoke-Rcon([string]$command) {
     $out = & $Java "-Dstdout.encoding=UTF-8" -cp $RconClassPath RconClient $RconHost $RconPort $RconPassword $command 2>&1
@@ -52,6 +59,7 @@ function Test-RconPort {
     } catch { return $false }
 }
 function Wait-Transfer {
+    # 3 秒防抖 + 5 tick 检查间隔：等待窗口必须覆盖防抖，再留 1 秒余量。
     Start-Sleep -Milliseconds $WaitMillis
 }
 function Get-Dimension {

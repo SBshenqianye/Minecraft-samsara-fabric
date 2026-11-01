@@ -184,7 +184,23 @@ public class DebugCommand {
                                 .then(Commands.literal("multi")
                                         .executes(ctx -> reply(ctx.getSource(),
                                                 com.shenqianye.samsara.season.WorldChainTeleport
-                                                        .statusText()))))
+                                                        .statusText())))
+                                // 测试/演示：强制某栈层加载失败，或立即重试（不等待退避）
+                                .then(Commands.literal("failstack")
+                                        .then(Commands.argument("world", StringArgumentType.word())
+                                                .then(Commands.argument("state", StringArgumentType.word())
+                                                        .executes(ctx -> reply(ctx.getSource(),
+                                                                com.shenqianye.samsara.season.StackDimensionLoader
+                                                                        .setDebugFailure(
+                                                                                StringArgumentType.getString(ctx, "world"),
+                                                                                !"off".equalsIgnoreCase(
+                                                                                        StringArgumentType.getString(ctx, "state"))))))))
+                                .then(Commands.literal("retrystack")
+                                        .then(Commands.argument("world", StringArgumentType.word())
+                                                .executes(ctx -> reply(ctx.getSource(),
+                                                        com.shenqianye.samsara.season.StackDimensionLoader
+                                                                .retryNow(ctx.getSource().getServer(),
+                                                                        StringArgumentType.getString(ctx, "world")))))))
                         .then(diffCmd)
                         .then(Commands.literal("flow")
                                 .then(Commands.literal("setup")

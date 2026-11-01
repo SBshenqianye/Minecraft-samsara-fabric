@@ -9,6 +9,7 @@ build/
 run/
 test-server*/
 mods-old-*/
+test-client/
 server.properties
 ops.json
 whitelist.json

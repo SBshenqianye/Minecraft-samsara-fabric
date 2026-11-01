@@ -9,6 +9,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.level.storage.LevelData;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -84,7 +85,7 @@ public final class WorldChainTeleport {
                 if (nether != null) {
                     int tx = WorldChainRules.toNether(player.getX());
                     int tz = WorldChainRules.toNether(player.getZ());
-                    teleport(player, nether, tx, tz, safeNetherY(nether, tx, tz),
+                    teleport(player, nether, layer, tx, tz, safeNetherY(nether, tx, tz),
                             "虚空坠落 → 同层下界");
                 } else {
                     notice(player, "void-nether:" + layer.id, "同层下界（" + layer.id
@@ -103,7 +104,7 @@ public final class WorldChainTeleport {
                 }
                 int tx = WorldChainRules.toOverworld(player.getX());
                 int tz = WorldChainRules.toOverworld(player.getZ());
-                teleport(player, target, tx, tz, safeY(target, tx, tz),
+                teleport(player, target, lower, tx, tz, safeY(target, tx, tz),
                         "下界虚空 → 下层 " + lower.id + " 主世界");
             }
             return;
@@ -117,7 +118,7 @@ public final class WorldChainTeleport {
                 if (overworld != null) {
                     int tx = WorldChainRules.toOverworld(player.getX());
                     int tz = WorldChainRules.toOverworld(player.getZ());
-                    teleport(player, overworld, tx, tz, safeY(overworld, tx, tz),
+                    teleport(player, overworld, layer, tx, tz, safeY(overworld, tx, tz),
                             "下界顶部 → 同层主世界");
                 } else {
                     notice(player, "top-overworld:" + layer.id, "同层主世界（" + layer.id
@@ -136,13 +137,13 @@ public final class WorldChainTeleport {
                 }
                 int tx = WorldChainRules.toNether(player.getX());
                 int tz = WorldChainRules.toNether(player.getZ());
-                teleport(player, target, tx, tz, netherRoofY(target, tx, tz),
+                teleport(player, target, upper, tx, tz, netherRoofY(target, tx, tz),
                         "主世界顶部 → 上层 " + upper.id + " 下界");
             }
         }
     }
 
-    private static void teleport(ServerPlayer player, ServerLevel target,
+    private static void teleport(ServerPlayer player, ServerLevel target, StackLayer layer,
                                  int x, int z, int y, String reason) {
         long now = System.currentTimeMillis();
         Long last = lastTeleport.get(player.getUUID());
@@ -152,11 +153,36 @@ public final class WorldChainTeleport {
         lastTeleport.put(player.getUUID(), now);
         player.teleportTo(target, x + 0.5, y, z + 0.5, Set.of(),
                 player.getYRot(), player.getXRot(), false);
+        applyRespawn(player, target, layer);
         player.sendSystemMessage(Component.literal("[世界栈] " + reason
                 + " · (" + x + ", " + y + ", " + z + ")"));
         Samsara.LOGGER.info("[周目管理 samsara] 跨世界传送：{} {} → {} ({}, {}, {})",
                 player.getName().getString(), reason,
                 target.dimension().identifier(), x, y, z);
+    }
+
+    /**
+     * 跨栈链也更新个人重生点，让“从未执行 world enter、只靠自动穿越”的玩家
+     * 在该层死亡后回到本层出生点，而不是全局主世界。
+     *
+     * <p>只在该层主世界生效；下界/末地落点不作为重生点（避免重生在屋顶/虚空）。
+     * forced=true 是必须的：原版只对床/重生锚使用非强制重生点。
+     */
+    private static void applyRespawn(ServerPlayer player, ServerLevel target, StackLayer layer) {
+        if (layer == null || !"overworld".equals(StackPaths.dimensionOf(target.dimension()))) {
+            return;
+        }
+        int x = layer.spawnX;
+        int z = layer.spawnZ;
+        int minY = target.dimensionType().minY();
+        int maxY = minY + target.dimensionType().height();
+        int y = layer.spawnY;
+        if (y <= minY || y >= maxY || !isDry(target, x, y, z)) {
+            y = safeY(target, x, z);
+        }
+        LevelData.RespawnData respawn = LevelData.RespawnData.of(
+                target.dimension(), new BlockPos(x, y, z), player.getYRot(), player.getXRot());
+        player.setRespawnPosition(new ServerPlayer.RespawnConfig(respawn, true), false);
     }
 
     private static void notice(ServerPlayer player, String key, String message) {
