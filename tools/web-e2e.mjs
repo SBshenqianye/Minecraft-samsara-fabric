@@ -230,8 +230,10 @@ async function main() {
     await sleep(300);
     await evaluate(`
       window.__e2eErrors = [];
-      window.addEventListener('error', (event) => window.__e2eErrors.push(String(event.message)));
-      window.addEventListener('unhandledrejection', (event) => window.__e2eErrors.push(String(event.reason)));
+      window.addEventListener('error', (event) => window.__e2eErrors.push(
+        String(event.message) + (event.error && event.error.stack ? '\\n' + event.error.stack : '')));
+      window.addEventListener('unhandledrejection', (event) => window.__e2eErrors.push(
+        String(event.reason) + (event.reason && event.reason.stack ? '\\n' + event.reason.stack : '')));
       document.getElementById('token-input').value = ${JSON.stringify(token)};
       document.getElementById('token-connect').click();
       true;
@@ -794,22 +796,110 @@ async function main() {
     check('窄屏圈地页无横向溢出', narrow.overflow === false && narrow.canvasWidth <= narrow.viewport,
         JSON.stringify(narrow));
 
-    // ---- 地图页冒烟：确认新的缓存失效入口存在，页面仍能读取 /api/map ----
+    // ---- 地图页冒烟 + 世界栈总览 / 在线玩家 ----
     await evaluate("window.SamsaraUI.setActiveTab('map'); true;");
     await until("document.getElementById('map-message') && (document.getElementById('map-message').textContent.includes('失败') || document.getElementById('map-stats').textContent.trim().length > 0)", 20000, '地图数据');
-    const mapState = await evaluate(`(() => {
-      const message = document.getElementById('map-message')?.textContent || '';
+    const mapState = await evaluate(`(async () => {
+      const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const toggle = document.getElementById('map-overview-toggle');
+      // E2E 注入一个假玩家，验证总览玩家标记与 TP 命令入口；不依赖测试服是否有人在线。
+      const originalApi = window.SamsaraUI.api;
+      window.SamsaraUI.api = async (path, options) => {
+        if (path === '/api/map/players') {
+          return {
+            ok: true,
+            players: [{
+              name: 'E2EPlayer', uuid: 'e2e-player', stackId: 'world',
+              dimension: 'overworld', dimensionId: 'minecraft:overworld',
+              x: 0, y: 64, z: 0, yaw: 0, health: 20,
+            }],
+          };
+        }
+        return originalApi.call(window.SamsaraUI, path, options);
+      };
+      toggle?.click();
+      await wait(1100);
+      const overview = document.getElementById('map-stack-overview');
+      const blocks = [...document.querySelectorAll('#map-overview-stacks .map-stack-block')];
+      const first = blocks[0] || null;
+      const panels = first ? [...first.querySelectorAll('.map-stack-panel')] : [];
+      const dims = panels.map((panel) => [...panel.classList]
+        .find((name) => name.startsWith('dim-')) || '');
+      const leftColumn = first ? first.querySelector('.map-stack-column') : null;
+      const leftChildren = leftColumn ? [...leftColumn.children] : [];
+      const voidGaps = document.querySelectorAll('#map-overview-stacks .map-stack-void').length;
+      const status = document.getElementById('map-overview-status')?.textContent || '';
+      const canvases = first ? first.querySelectorAll('.map-stack-thumb').length : 0;
+      const endInSide = Boolean(first?.querySelector('.map-stack-end .map-stack-panel'));
+      const playersData = await window.SamsaraUI.api('/api/map/players');
+      const online = Array.isArray(playersData.players) ? playersData.players.length : -1;
+      let markers = document.querySelectorAll('#map-stack-overview .map-player-marker').length;
+      const deadline = Date.now() + 2500;
+      while (online > 0 && markers === 0 && Date.now() < deadline) {
+        await wait(150);
+        markers = document.querySelectorAll('#map-stack-overview .map-player-marker').length;
+      }
+      const markerName = document.querySelector('#map-stack-overview .map-player-marker')?.textContent || '';
+      window.SamsaraUI.api = originalApi;
+      const target = panels.find((panel) => panel.classList.contains('dim-overworld'));
+      const targetStack = target?.closest('.map-stack-block')?.dataset.stack || '';
+      target?.click();
+      await wait(600);
       return {
         canvas: Boolean(document.getElementById('map-canvas')),
         stats: document.getElementById('map-stats')?.textContent.trim() || '',
-        message,
+        message: document.getElementById('map-message')?.textContent || '',
         hasMarkStale: typeof window.SamsaraMap?.markStale === 'function',
+        overviewBlocks: blocks.length,
+        panels: panels.length,
+        dims,
+        dimGapBetween: leftChildren[1]?.classList.contains('map-dim-gap') || false,
+        voidGaps,
+        status,
+        canvases,
+        endInSide,
+        online,
+        markers,
+        markerName,
+        detailVisible: !document.getElementById('map-stage-anchor')?.hidden,
+        overviewHidden: Boolean(overview?.hidden),
+        selectedStack: document.getElementById('map-stack')?.value || '',
+        targetStack,
       };
     })()`);
     check('地图页仍可读取 /api/map', mapState.canvas
         && mapState.stats.length > 0 && !mapState.message.includes('失败'),
         JSON.stringify(mapState));
     check('地图页提供几何缓存失效入口', mapState.hasMarkStale);
+    check('世界栈总览按栈层渲染', mapState.overviewBlocks >= 1,
+        'blocks=' + mapState.overviewBlocks);
+    check('每栈含主世界/下界/末地三面板', mapState.panels >= 3
+        && mapState.dims[0] === 'dim-overworld' && mapState.dims[1] === 'dim-the_nether'
+        && mapState.dims.includes('dim-the_end') && mapState.canvases >= 3,
+        JSON.stringify({ dims: mapState.dims, canvases: mapState.canvases }));
+    check('主世界与下界上下排列并留虚空缝隙', mapState.dimGapBetween === true);
+    check('末地面板并排在右侧', mapState.endInSide === true);
+    check('栈与栈之间留虚空缝隙', mapState.voidGaps === Math.max(0, mapState.overviewBlocks - 1),
+        'blocks=' + mapState.overviewBlocks + ' gaps=' + mapState.voidGaps);
+    check('总览显示在线玩家状态', mapState.status.includes('在线'), mapState.status);
+    check('在线玩家标记渲染在所属栈/维度', mapState.online === 1
+        && mapState.markers > 0 && mapState.markerName.includes('E2EPlayer'),
+        'online=' + mapState.online + ' markers=' + mapState.markers
+          + ' name=' + mapState.markerName);
+    check('总览状态显示在线人数', mapState.status.includes('在线 1 人'), mapState.status);
+    check('点击总览面板进入详细地图', mapState.detailVisible && mapState.overviewHidden
+        && mapState.selectedStack === mapState.targetStack,
+        JSON.stringify({ detail: mapState.detailVisible, hidden: mapState.overviewHidden,
+          selected: mapState.selectedStack, target: mapState.targetStack }));
+
+    if (process.env.SAMSARA_E2E_SCREENSHOT) {
+      // 供人工快速看布局；默认不写文件。
+      await evaluate("document.getElementById('map-overview-toggle')?.click(); true;");
+      await sleep(1200);
+      const shot = await cdp.send('Page.captureScreenshot', { format: 'png' });
+      fs.writeFileSync(process.env.SAMSARA_E2E_SCREENSHOT, Buffer.from(shot.data, 'base64'));
+      console.log('screenshot: ' + process.env.SAMSARA_E2E_SCREENSHOT);
+    }
 
     const errors = await evaluate('window.__e2eErrors || []');
     check('没有未捕获的页面脚本错误', errors.length === 0, errors.slice(0, 3).join(' | '));

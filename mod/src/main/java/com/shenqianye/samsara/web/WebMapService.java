@@ -11,6 +11,10 @@ import com.shenqianye.samsara.season.StackLayer;
 import com.shenqianye.samsara.season.StackManifest;
 import com.shenqianye.samsara.season.StackPaths;
 import com.shenqianye.samsara.storage.StoragePaths;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.Level;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -23,7 +27,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -46,6 +52,7 @@ public class WebMapService {
     private static final long MANIFEST_RESCAN_MS = 2000L;
 
     private final Path worldRoot;
+    private final MinecraftServer server;
     private final WebMapTileCache cache;
     private final Map<Path, ClaimsSnapshot> claimsCache = new ConcurrentHashMap<>();
     private volatile StackManifest manifestCache;
@@ -53,11 +60,20 @@ public class WebMapService {
     private volatile long manifestStamp = Long.MIN_VALUE;
 
     public WebMapService() {
-        this(StoragePaths.get().worldRoot());
+        this(StoragePaths.get().worldRoot(), null);
+    }
+
+    public WebMapService(MinecraftServer server) {
+        this(StoragePaths.get().worldRoot(), server);
     }
 
     WebMapService(Path worldRoot) {
+        this(worldRoot, null);
+    }
+
+    WebMapService(Path worldRoot, MinecraftServer server) {
         this.worldRoot = worldRoot.toAbsolutePath().normalize();
+        this.server = server;
         this.cache = new WebMapTileCache(this.worldRoot.resolve("samsara").resolve("web-map-cache"));
     }
 
@@ -79,6 +95,88 @@ public class WebMapService {
         out.put("stacks", stacks);
         out.put("topStackId", layers.isEmpty() ? StackPaths.TOP_ID : layers.get(0).id);
         return out;
+    }
+
+    /**
+     * 在线玩家快照。地图总览每 2 秒轮询一次；玩家位置必须在服务端线程读取，
+     * 避免 HTTP 线程与服务器 tick 并发访问玩家实体。
+     */
+    public Map<String, Object> players() {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ok", true);
+        out.put("generatedAt", System.currentTimeMillis());
+        out.put("players", playerSnapshot());
+        return out;
+    }
+
+    private List<Map<String, Object>> playerSnapshot() {
+        MinecraftServer current = server;
+        if (current == null) {
+            return List.of();
+        }
+        try {
+            if (current.isSameThread()) {
+                return snapshotPlayers(current);
+            }
+            CompletableFuture<List<Map<String, Object>>> future = new CompletableFuture<>();
+            current.execute(() -> {
+                try {
+                    future.complete(snapshotPlayers(current));
+                } catch (Throwable t) {
+                    future.completeExceptionally(t);
+                }
+            });
+            return future.get(2, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            Samsara.LOGGER.debug("[web] 读取在线玩家快照失败: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    private static List<Map<String, Object>> snapshotPlayers(MinecraftServer server) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            Map<String, Object> entry = playerEntry(
+                    player.getName().getString(),
+                    player.getUUID().toString(),
+                    player.level().dimension(),
+                    player.getX(), player.getY(), player.getZ(),
+                    player.getYRot(), player.getHealth());
+            if (entry != null) {
+                out.add(entry);
+            }
+        }
+        out.sort(Comparator.comparing(item -> String.valueOf(item.get("name")),
+                String.CASE_INSENSITIVE_ORDER));
+        return out;
+    }
+
+    /** 把玩家维度映射到栈层 + 三界短名；非本模组管理的维度返回 null。 */
+    static Map<String, Object> playerEntry(String name, String uuid,
+                                           ResourceKey<Level> dimension,
+                                           double x, double y, double z,
+                                           float yaw, float health) {
+        String stackId = StackPaths.layerIdOf(dimension);
+        String dim = StackPaths.dimensionOf(dimension);
+        if (stackId == null || dim == null) {
+            return null;
+        }
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("name", name == null ? "" : name);
+        item.put("uuid", uuid == null ? "" : uuid);
+        item.put("stackId", stackId);
+        item.put("dimension", dim);
+        item.put("dimensionId", dimension.identifier().toString());
+        item.put("x", round1(x));
+        item.put("y", round1(y));
+        item.put("z", round1(z));
+        item.put("yaw", round1(yaw));
+        item.put("health", round1(health));
+        return item;
+    }
+
+    private static double round1(double value) {
+        return Math.round(value * 10.0) / 10.0;
     }
 
     /** 返回一个 region 的地形 PNG；栈层/维度/坐标/缩放非法或文件不存在时返回 null。 */

@@ -82,6 +82,7 @@ public final class WebSecurity {
                 || "/api/permissions".equals(path)
                 || "/api/permissions/reload".equals(path)
                 || "/api/map".equals(path)
+                || "/api/map/players".equals(path)
                 || "/api/map/tile".equals(path)
                 || "/api/world-stack".equals(path)
                 || "/api/world-stack/timeline".equals(path)

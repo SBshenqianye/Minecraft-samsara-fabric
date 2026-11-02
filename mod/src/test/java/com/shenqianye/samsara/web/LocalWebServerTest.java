@@ -131,6 +131,12 @@ class LocalWebServerTest {
         assertTrue(model.body().contains("\"dimensions\""));
         assertTrue(model.body().contains("minecraft:overworld"));
 
+        assertEquals(401, request("GET", "/api/map/players", null, null).statusCode());
+        HttpResponse<String> players = request("GET", "/api/map/players", null, TOKEN);
+        assertEquals(200, players.statusCode());
+        assertTrue(players.body().contains("\"players\""));
+        assertTrue(players.body().contains("Alice"));
+
         HttpResponse<byte[]> tile = client.send(HttpRequest.newBuilder(
                         URI.create(base() + "/api/map/tile?dim=minecraft:overworld&rx=0&rz=0&scale=4"))
                 .header("Authorization", "Bearer " + TOKEN).GET().build(),
@@ -192,6 +198,12 @@ class LocalWebServerTest {
                     "id", "minecraft:overworld", "name", "主世界",
                     "regions", List.of(), "protectedChunks", List.of(),
                     "banners", List.of(), "protectedCount", 0, "bannerCount", 0)));
+        }
+
+        @Override
+        public Map<String, Object> players() {
+            return Map.of("ok", true, "players", List.of(Map.of(
+                    "name", "Alice", "stackId", "world", "dimension", "overworld")));
         }
 
         @Override

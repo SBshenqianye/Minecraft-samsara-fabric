@@ -25,6 +25,14 @@
     raf: 0,
     fitPending: false,
     shading: true,
+    overview: false,
+    overviewKey: '',
+    overviewPanels: [],
+    thumbTiles: new Map(),
+    players: [],
+    playersFetchedAt: 0,
+    playerTimer: 0,
+    showPlayers: true,
   };
 
   const DIRECTION_NAMES = [
@@ -59,6 +67,11 @@
       claims: $('map-show-claims'),
       spawns: $('map-show-spawns'),
       shading: $('map-shading'),
+      showPlayers: $('map-show-players'),
+      overviewToggle: $('map-overview-toggle'),
+      overview: $('map-stack-overview'),
+      overviewStacks: $('map-overview-stacks'),
+      overviewStatus: $('map-overview-status'),
       anchors: $('map-dim-anchors'),
     };
     if (els.canvas) {
@@ -142,6 +155,7 @@
       const data = await window.SamsaraUI.api('/api/map');
       state.model = data;
       state.stale = false;
+      state.overviewKey = '';
       state.selected = null;
       state.selectedSpawn = null;
       const allStacks = stacks();
@@ -156,12 +170,17 @@
       setMessage('');
       renderControls();
       renderStats();
-      renderSelection();
-      fitView();
-      state.fitPending = true;
+      if (state.overview) {
+        renderOverview();
+      } else {
+        renderSelection();
+        fitView();
+        state.fitPending = true;
+        draw();
+      }
       refreshCount();
       renderNav();
-      draw();
+      loadPlayers();
     } catch (error) {
       setMessage(window.SamsaraUI.authMessage(error, '地图数据读取失败'), 'error');
     } finally {
@@ -195,6 +214,7 @@
     }
     dimension.value = state.dimId || '';
     dimension.disabled = dimensions().length === 0;
+    applyOverviewUi();
   }
 
   function renderStats() {
@@ -209,16 +229,26 @@
     const cycles = stack && stack.spawnHistory && Array.isArray(stack.spawnHistory.cycles)
       ? stack.spawnHistory.cycles.length : 0;
     const spawn = stack ? stack.spawn : null;
-    const chips = [
-      ['栈层', stack ? stack.label : '无'],
-      ['栈序号', stack ? '#' + ((stack.index || 0) + 1) : '—'],
-      ['出生点', spawn ? spawn.x + ', ' + spawn.y + ', ' + spawn.z : '—'],
-      ['出生历史', cycles + ' 轮'],
-      ['当前地形', dim ? dim.regions.length + ' 个 region' : '无'],
-      ['保护区块', dim ? String(dim.protectedCount || 0) : '0'],
-      ['旗帜', dim ? String(dim.bannerCount || 0) : '0'],
-      ['全服圈地', totalProtected + ' 区块 / ' + totalBanners + ' 旗'],
-    ];
+    const totalPlayers = state.players.length;
+    const currentPlayers = stack && dim ? playersFor(stack.id, dim.dim).length : 0;
+    const chips = state.overview
+      ? [
+        ['栈层', String(stacks().length)],
+        ['维度', String(all.length)],
+        ['在线玩家', totalPlayers + ' 人'],
+        ['全服圈地', totalProtected + ' 区块 / ' + totalBanners + ' 旗'],
+      ]
+      : [
+        ['栈层', stack ? stack.label : '无'],
+        ['栈序号', stack ? '#' + ((stack.index || 0) + 1) : '—'],
+        ['出生点', spawn ? spawn.x + ', ' + spawn.y + ', ' + spawn.z : '—'],
+        ['出生历史', cycles + ' 轮'],
+        ['当前地形', dim ? dim.regions.length + ' 个 region' : '无'],
+        ['保护区块', dim ? String(dim.protectedCount || 0) : '0'],
+        ['旗帜', dim ? String(dim.bannerCount || 0) : '0'],
+        ['在线玩家', currentPlayers + ' / ' + totalPlayers + ' 人'],
+        ['全服圈地', totalProtected + ' 区块 / ' + totalBanners + ' 旗'],
+      ];
     for (const [label, value] of chips) {
       const chip = document.createElement('span');
       chip.className = 'map-stat';
@@ -239,6 +269,32 @@
     const stage = ensureEls().stage;
     const selection = ensureEls().selection;
     const anchors = ensureEls().anchors;
+    if (state.overview) {
+      const overview = ensureEls().overview;
+      if (overview) {
+        const totalProtected = allDimensions()
+          .reduce((sum, item) => sum + (item.dim.protectedCount || 0), 0);
+        targets.push({ id: 'map-stack-overview', el: overview });
+        items.push({
+          label: '世界栈总览',
+          count: totalProtected,
+          target: 'map-stack-overview',
+        });
+      }
+      for (const stack of stacks()) {
+        const id = 'map-stack-overview-' + safeId(stack.id);
+        const el = document.getElementById(id);
+        if (!el) continue;
+        targets.push({ id, el });
+        items.push({
+          label: stack.label,
+          count: (stack.dimensions || []).reduce((sum, dim) => sum + (dim.protectedCount || 0), 0),
+          target: id,
+        });
+      }
+      window.SamsaraUI.buildNav('地图导航', items, targets);
+      return;
+    }
     const stackAnchors = new Map();
     const dimAnchors = new Map();
     if (anchors) {
@@ -259,8 +315,8 @@
     if (stats) {
       const totalProtected = allDimensions()
         .reduce((sum, item) => sum + (item.dim.protectedCount || 0), 0);
-      targets.push({ id: 'map-overview', el: stats });
-      items.push({ label: '全服统计', count: totalProtected, target: 'map-overview' });
+      targets.push({ id: 'map-stats', el: stats });
+      items.push({ label: '全服统计', count: totalProtected, target: 'map-stats' });
     }
     for (const stack of stacks()) {
       const stackTotal = (stack.dimensions || [])
@@ -300,6 +356,524 @@
     window.SamsaraUI.buildNav('地图导航', items.filter((item) => item.target), targets);
   }
 
+  // ---- 在线玩家 / 世界栈总览 ----
+
+  function playerName(player) {
+    return player && player.name ? player.name : '玩家';
+  }
+
+  function playersFor(stackId, dimension) {
+    return state.players.filter((player) => player.stackId === stackId
+      && player.dimension === dimension);
+  }
+
+  function dimensionLabel(dim) {
+    if (dim === 'the_nether') return '下界';
+    if (dim === 'the_end') return '末地';
+    return '主世界';
+  }
+
+  function stackLabelOf(stackId) {
+    const stack = stacks().find((item) => item.id === stackId);
+    return stack ? stack.label : (stackId || '未知栈层');
+  }
+
+  function fmtCoord(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return '0';
+    return Number.isInteger(number) ? String(number) : number.toFixed(1);
+  }
+
+  function playerCommand(player) {
+    return '/execute in ' + player.dimensionId + ' run tp ' + playerName(player)
+      + ' ' + fmtCoord(player.x) + ' ' + fmtCoord(player.y) + ' ' + fmtCoord(player.z);
+  }
+
+  async function copyPlainText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (error) {
+      // 非安全上下文/浏览器拒绝时退回隐藏 textarea。
+    }
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.append(area);
+    area.select();
+    let ok = false;
+    try {
+      ok = document.execCommand('copy');
+    } catch (error) {
+      ok = false;
+    } finally {
+      area.remove();
+    }
+    return ok;
+  }
+
+  async function copyPlayerCommand(player) {
+    const ok = await copyPlainText(playerCommand(player));
+    setMessage(ok ? '已复制 ' + playerName(player) + ' 的 TP 命令' : '复制失败，请手动复制',
+      ok ? 'ok' : 'error');
+  }
+
+  function updatePlayerStatus() {
+    const el = ensureEls().overviewStatus;
+    if (!el) return;
+    const time = state.playersFetchedAt
+      ? new Date(state.playersFetchedAt).toLocaleTimeString() : '—';
+    el.textContent = '在线 ' + state.players.length + ' 人 · 2 秒刷新 · ' + time;
+  }
+
+  async function loadPlayers() {
+    if (!state.model) return;
+    if (window.SamsaraUI && window.SamsaraUI.getToken && !window.SamsaraUI.getToken()) return;
+    try {
+      const data = await window.SamsaraUI.api('/api/map/players');
+      state.players = Array.isArray(data.players) ? data.players : [];
+      state.playersFetchedAt = Date.now();
+      updatePlayerStatus();
+      if (state.overview) {
+        updateOverviewPlayers();
+        renderStats();
+      } else {
+        renderStats();
+        draw();
+      }
+    } catch (error) {
+      // 玩家轮询失败不打断地图浏览；连接失效由统一 API 处理。
+    }
+  }
+
+  function dimColors(dim) {
+    if (dim === 'the_nether') {
+      return {
+        bg1: '#2a0f0f', bg2: '#160808',
+        fill: 'rgba(248, 113, 113, .42)', line: 'rgba(251, 146, 60, .9)',
+        placeholder: 'rgba(248, 113, 113, .09)',
+      };
+    }
+    if (dim === 'the_end') {
+      return {
+        bg1: '#1b1230', bg2: '#0d0818',
+        fill: 'rgba(167, 139, 250, .42)', line: 'rgba(196, 181, 253, .9)',
+        placeholder: 'rgba(167, 139, 250, .09)',
+      };
+    }
+    return {
+      bg1: '#0b1b1c', bg2: '#081012',
+      fill: 'rgba(45, 212, 191, .42)', line: 'rgba(94, 234, 212, .9)',
+      placeholder: 'rgba(45, 212, 191, .09)',
+    };
+  }
+
+  function regionCenter(stack, dim) {
+    const bounds = dim && dim.bounds;
+    if (bounds && (bounds.maxX > bounds.minX || bounds.maxZ > bounds.minZ)) {
+      return { x: (bounds.minX + bounds.maxX) / 2, z: (bounds.minZ + bounds.maxZ) / 2 };
+    }
+    const cycles = stack && stack.spawnHistory && Array.isArray(stack.spawnHistory.cycles)
+      ? stack.spawnHistory.cycles : [];
+    if (dim && dim.dim === 'the_nether' && cycles.length > 0) {
+      const cycle = cycles.find((item) => item.current) || cycles[cycles.length - 1];
+      if (cycle && cycle.nether) return { x: cycle.nether.x, z: cycle.nether.z };
+    }
+    if (dim && dim.dim === 'the_end') {
+      return { x: 0, z: 0 };
+    }
+    if (stack && stack.spawn) {
+      return { x: stack.spawn.x, z: stack.spawn.z };
+    }
+    if (dim && Array.isArray(dim.regions) && dim.regions.length > 0) {
+      return {
+        x: (dim.regions[0][0] + .5) * 512,
+        z: (dim.regions[0][1] + .5) * 512,
+      };
+    }
+    return { x: 0, z: 0 };
+  }
+
+  function panelView(stack, dim, canvasW, canvasH) {
+    const regions = dim && Array.isArray(dim.regions) ? dim.regions : [];
+    const center = regionCenter(stack, dim);
+    let rx = Math.floor(center.x / 512);
+    let rz = Math.floor(center.z / 512);
+    if (regions.length > 0 && !regions.some(([x, z]) => x === rx && z === rz)) {
+      let best = regions[0];
+      let bestDistance = Infinity;
+      for (const [x, z] of regions) {
+        const distance = Math.abs(x - rx) + Math.abs(z - rz);
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          best = [x, z];
+        }
+      }
+      rx = best[0];
+      rz = best[1];
+    }
+    const regionX = rx * 512;
+    const regionZ = rz * 512;
+    const aspect = canvasW / canvasH;
+    let viewW;
+    let viewH;
+    if (aspect >= 1) {
+      viewW = 512;
+      viewH = Math.round(512 / aspect);
+    } else {
+      viewH = 512;
+      viewW = Math.round(512 * aspect);
+    }
+    viewW = Math.max(1, Math.min(512, viewW));
+    viewH = Math.max(1, Math.min(512, viewH));
+    let viewX = center.x - viewW / 2;
+    let viewZ = center.z - viewH / 2;
+    viewX = Math.max(regionX, Math.min(regionX + 512 - viewW, viewX));
+    viewZ = Math.max(regionZ, Math.min(regionZ + 512 - viewH, viewZ));
+    return {
+      rx, rz, regionX, regionZ, viewX, viewZ, viewW, viewH,
+      canvasW, canvasH, hasRegion: regions.length > 0,
+    };
+  }
+
+  function overviewThumbKey(panel) {
+    return panel.stack.id + '|' + panel.dim.dim + '|' + panel.view.rx + '|'
+      + panel.view.rz + '|8|' + (state.shading ? 1 : 0);
+  }
+
+  function drawOverviewPanel(panel) {
+    if (!panel || !panel.ctx) return;
+    const { ctx } = panel;
+    const view = panel.view;
+    const { canvasW, canvasH } = view;
+    const colors = dimColors(panel.dim.dim);
+    ctx.clearRect(0, 0, canvasW, canvasH);
+    const gradient = ctx.createLinearGradient(0, 0, 0, canvasH);
+    gradient.addColorStop(0, colors.bg1);
+    gradient.addColorStop(1, colors.bg2);
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, canvasW, canvasH);
+
+    if (panel.image && view.hasRegion) {
+      const sx = (view.viewX - view.regionX) / 8;
+      const sy = (view.viewZ - view.regionZ) / 8;
+      const sw = view.viewW / 8;
+      const sh = view.viewH / 8;
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(panel.image, sx, sy, sw, sh, 0, 0, canvasW, canvasH);
+    } else {
+      ctx.strokeStyle = colors.placeholder;
+      ctx.lineWidth = 1;
+      for (let x = -canvasH; x < canvasW; x += 18) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x + canvasH, canvasH);
+        ctx.stroke();
+      }
+      ctx.fillStyle = 'rgba(226, 232, 240, .58)';
+      ctx.font = '12px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(view.hasRegion ? '地形加载中…' : '暂无 region 数据', canvasW / 2, canvasH / 2);
+    }
+
+    const showClaims = !ensureEls().claims || ensureEls().claims.checked;
+    if (showClaims) {
+      const chunkW = (16 / view.viewW) * canvasW;
+      const chunkH = (16 / view.viewH) * canvasH;
+      for (const [cx, cz] of panel.dim.protectedChunks || []) {
+        const blockX = cx * 16;
+        const blockZ = cz * 16;
+        if (blockX + 16 < view.viewX || blockX > view.viewX + view.viewW
+            || blockZ + 16 < view.viewZ || blockZ > view.viewZ + view.viewH) {
+          continue;
+        }
+        const x = (blockX - view.viewX) / view.viewW * canvasW;
+        const z = (blockZ - view.viewZ) / view.viewH * canvasH;
+        ctx.fillStyle = colors.fill;
+        ctx.fillRect(x, z, Math.max(1, chunkW), Math.max(1, chunkH));
+      }
+      ctx.strokeStyle = colors.line;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(.5, .5, canvasW - 1, canvasH - 1);
+    }
+
+    if (panel.dim.dim === 'overworld' && panel.stack.spawn) {
+      const spawn = panel.stack.spawn;
+      const x = (spawn.x - view.viewX) / view.viewW * canvasW;
+      const z = (spawn.z - view.viewZ) / view.viewH * canvasH;
+      if (x >= 0 && x <= canvasW && z >= 0 && z <= canvasH) {
+        ctx.save();
+        ctx.translate(x, z);
+        ctx.rotate(Math.PI / 4);
+        ctx.fillStyle = '#f472b6';
+        ctx.strokeStyle = '#fdf2f8';
+        ctx.lineWidth = 1;
+        ctx.fillRect(-4, -4, 8, 8);
+        ctx.strokeRect(-4, -4, 8, 8);
+        ctx.restore();
+      }
+    }
+  }
+
+  function loadOverviewThumb(panel) {
+    if (!panel.view.hasRegion) {
+      panel.tileState = 'missing';
+      drawOverviewPanel(panel);
+      return;
+    }
+    const key = overviewThumbKey(panel);
+    if (state.thumbTiles.has(key)) {
+      panel.image = state.thumbTiles.get(key);
+      panel.tileState = panel.image ? 'done' : 'missing';
+      drawOverviewPanel(panel);
+      return;
+    }
+    panel.tileState = 'loading';
+    fetchTileImage(panel.stack.id, panel.dim.dim, panel.view.rx, panel.view.rz, 8, state.shading)
+      .then((image) => {
+        state.thumbTiles.set(key, image);
+        panel.image = image;
+        panel.tileState = 'done';
+        drawOverviewPanel(panel);
+      })
+      .catch(() => {
+        state.thumbTiles.set(key, null);
+        panel.image = null;
+        panel.tileState = 'missing';
+        drawOverviewPanel(panel);
+      });
+  }
+
+  function createPlayerMarker(player, panel) {
+    const { view } = panel;
+    let x = (player.x - view.viewX) / view.viewW * 100;
+    let z = (player.z - view.viewZ) / view.viewH * 100;
+    const outside = x < 0 || x > 100 || z < 0 || z > 100;
+    x = Math.max(2, Math.min(98, x));
+    z = Math.max(5, Math.min(95, z));
+    const marker = document.createElement('button');
+    marker.type = 'button';
+    marker.className = 'map-player-marker' + (outside ? ' outside' : '');
+    marker.style.left = x + '%';
+    marker.style.top = z + '%';
+    marker.title = playerName(player) + ' · ' + stackLabelOf(player.stackId)
+      + ' · ' + dimensionLabel(player.dimension)
+      + '\n坐标 ' + fmtCoord(player.x) + ', ' + fmtCoord(player.y) + ', ' + fmtCoord(player.z)
+      + (outside ? '\n（在缩略图范围外，标记已贴边）' : '')
+      + '\n点击复制 TP 命令';
+    marker.setAttribute('aria-label', playerName(player) + '，点击复制 TP 命令');
+    const dot = document.createElement('span');
+    dot.className = 'dot';
+    const name = document.createElement('span');
+    name.className = 'name';
+    name.textContent = playerName(player);
+    marker.append(dot, name);
+    marker.addEventListener('click', (event) => {
+      event.stopPropagation();
+      copyPlayerCommand(player);
+    });
+    return marker;
+  }
+
+  function updateOverviewPlayers() {
+    const showPlayers = !ensureEls().showPlayers || ensureEls().showPlayers.checked;
+    state.showPlayers = showPlayers;
+    for (const panel of state.overviewPanels) {
+      const players = playersFor(panel.stack.id, panel.dim.dim);
+      panel.meta.textContent = (panel.dim.protectedCount || 0) + ' 区块 · '
+        + (panel.dim.bannerCount || 0) + ' 旗 · ' + players.length + ' 人';
+      panel.playerLayer.replaceChildren();
+      if (!showPlayers || !panel.view.hasRegion) continue;
+      for (const player of players) {
+        panel.playerLayer.append(createPlayerMarker(player, panel));
+      }
+    }
+    for (const stack of stacks()) {
+      const el = document.getElementById('map-stack-players-' + safeId(stack.id));
+      if (el) el.textContent = '在线 ' + playersForStack(stack.id).length + ' 人';
+    }
+    updatePlayerStatus();
+  }
+
+  function playersForStack(stackId) {
+    return state.players.filter((player) => player.stackId === stackId);
+  }
+
+  function createOverviewPanel(stack, dim, canvasW, canvasH) {
+    const panelEl = document.createElement('div');
+    panelEl.className = 'map-stack-panel dim-' + dim.dim;
+    panelEl.tabIndex = 0;
+    panelEl.setAttribute('role', 'button');
+    panelEl.setAttribute('aria-label', stack.label + ' · ' + dim.name + '，点击查看详细地图');
+    const view = panelView(stack, dim, canvasW, canvasH);
+    const canvas = document.createElement('canvas');
+    canvas.className = 'map-stack-thumb';
+    canvas.width = canvasW;
+    canvas.height = canvasH;
+    const head = document.createElement('div');
+    head.className = 'map-stack-panel-head';
+    const name = document.createElement('span');
+    name.className = 'map-stack-panel-name';
+    name.textContent = dim.name;
+    const meta = document.createElement('span');
+    meta.className = 'map-stack-panel-meta';
+    head.append(name, meta);
+    const playerLayer = document.createElement('div');
+    playerLayer.className = 'map-stack-player-layer';
+    const hint = document.createElement('div');
+    hint.className = 'map-stack-panel-hint';
+    hint.textContent = '点击查看详细地图';
+    panelEl.append(canvas, head, playerLayer, hint);
+    const panel = {
+      stack, dim, view, canvas, ctx: canvas.getContext('2d'),
+      playerLayer, panelEl, meta, image: null, tileState: 'idle',
+    };
+    state.overviewPanels.push(panel);
+    drawOverviewPanel(panel);
+    loadOverviewThumb(panel);
+    const open = () => openDetailed(stack.id, dim.dim);
+    panelEl.addEventListener('click', (event) => {
+      if (event.target.closest('.map-player-marker')) return;
+      open();
+    });
+    panelEl.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        open();
+      }
+    });
+    return panelEl;
+  }
+
+  function renderOverview() {
+    const e = ensureEls();
+    if (!e.overviewStacks) return;
+    const ordered = stacks();
+    const overviewKey = JSON.stringify(ordered.map((stack) => [
+      stack.id, stack.label, stack.seed, stack.index, stack.spawn,
+      (stack.dimensions || []).map((dim) => [
+        dim.dim, dim.protectedCount, dim.bannerCount,
+        (dim.regions || []).length, dim.bounds,
+      ]),
+    ]));
+    if (overviewKey === state.overviewKey && state.overviewPanels.length > 0) {
+      updateOverviewPlayers();
+      return;
+    }
+    state.overviewKey = overviewKey;
+    e.overviewStacks.replaceChildren();
+    state.overviewPanels = [];
+    if (ordered.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'map-overview-empty';
+      empty.textContent = '还没有可显示的世界栈。';
+      e.overviewStacks.append(empty);
+      updatePlayerStatus();
+      return;
+    }
+    ordered.forEach((stack, index) => {
+      const block = document.createElement('section');
+      block.className = 'map-stack-block';
+      block.id = 'map-stack-overview-' + safeId(stack.id);
+      block.dataset.stack = stack.id;
+      const head = document.createElement('div');
+      head.className = 'map-stack-block-head';
+      const title = document.createElement('div');
+      title.className = 'map-stack-block-title';
+      const strong = document.createElement('strong');
+      strong.textContent = stack.label;
+      const meta = document.createElement('span');
+      const spawn = stack.spawn;
+      meta.textContent = '栈序 #' + ((stack.index || 0) + 1)
+        + ' · 种子 ' + (stack.seed || '—')
+        + (spawn ? ' · 出生点 ' + spawn.x + ', ' + spawn.y + ', ' + spawn.z : '');
+      title.append(strong, meta);
+      const players = document.createElement('span');
+      players.className = 'map-stack-block-players';
+      players.id = 'map-stack-players-' + safeId(stack.id);
+      players.textContent = '在线 ' + playersForStack(stack.id).length + ' 人';
+      head.append(title, players);
+
+      const body = document.createElement('div');
+      body.className = 'map-stack-block-body';
+      const left = document.createElement('div');
+      left.className = 'map-stack-column';
+      const dims = new Map((stack.dimensions || []).map((dim) => [dim.dim, dim]));
+      const overworld = dims.get('overworld');
+      const nether = dims.get('the_nether');
+      const end = dims.get('the_end');
+      if (overworld) left.append(createOverviewPanel(stack, overworld, 320, 180));
+      const gap = document.createElement('div');
+      gap.className = 'map-dim-gap';
+      const gapLabel = document.createElement('span');
+      gapLabel.textContent = '虚空 / 高空';
+      gap.append(gapLabel);
+      left.append(gap);
+      if (nether) left.append(createOverviewPanel(stack, nether, 320, 180));
+      const right = document.createElement('div');
+      right.className = 'map-stack-end';
+      if (end) right.append(createOverviewPanel(stack, end, 180, 225));
+      body.append(left, right);
+      block.append(head, body);
+      e.overviewStacks.append(block);
+      if (index < ordered.length - 1) {
+        const voidGap = document.createElement('div');
+        voidGap.className = 'map-stack-void';
+        const label = document.createElement('span');
+        label.textContent = '虚空 / 高空';
+        voidGap.append(label);
+        e.overviewStacks.append(voidGap);
+      }
+    });
+    updateOverviewPlayers();
+  }
+
+  function applyOverviewUi() {
+    const {
+      stage, overview, overviewToggle, stack, dimension, fit, zoomIn, zoomOut, spawns,
+    } = ensureEls();
+    if (stage) stage.hidden = state.overview;
+    if (overview) overview.hidden = !state.overview;
+    if (overviewToggle) {
+      overviewToggle.classList.toggle('active', state.overview);
+      overviewToggle.setAttribute('aria-pressed', state.overview ? 'true' : 'false');
+      overviewToggle.textContent = state.overview ? '详细地图' : '世界栈总览';
+    }
+    if (stack) stack.disabled = state.overview || stacks().length === 0;
+    if (dimension) dimension.disabled = state.overview || dimensions().length === 0;
+    if (fit) fit.disabled = state.overview;
+    if (spawns) spawns.disabled = state.overview;
+    updateZoomLabel();
+  }
+
+  function setOverview(active) {
+    state.overview = Boolean(active);
+    applyOverviewUi();
+    if (state.overview) {
+      renderOverview();
+      loadPlayers();
+      window.SamsaraUI?.scrollToTarget?.('map-stack-overview');
+    } else {
+      resize();
+      draw();
+    }
+    renderStats();
+    renderNav();
+  }
+
+  function openDetailed(stackId, dimId) {
+    state.overview = false;
+    if (stackId && stackId !== state.stackId) switchStack(stackId);
+    if (dimId && dimId !== state.dimId) switchDimension(dimId);
+    applyOverviewUi();
+    resize();
+    draw();
+    renderStats();
+    renderNav();
+    window.SamsaraUI?.scrollToTarget?.('map-stage-anchor');
+  }
+
   function fitView() {
     const dim = currentDim();
     const { canvas } = ensureEls();
@@ -329,14 +903,14 @@
 
   function updateZoomLabel() {
     const { zoom, zoomIn, zoomOut } = ensureEls();
-    if (zoom) zoom.textContent = state.scale + ' 格/像素';
-    if (zoomIn) zoomIn.disabled = state.scale <= 0.0625;
-    if (zoomOut) zoomOut.disabled = state.scale >= 16;
+    if (zoom) zoom.textContent = state.overview ? '总览模式' : state.scale + ' 格/像素';
+    if (zoomIn) zoomIn.disabled = state.overview || state.scale <= 0.0625;
+    if (zoomOut) zoomOut.disabled = state.overview || state.scale >= 16;
   }
 
   function resize() {
     const { canvas, stage } = ensureEls();
-    if (!canvas || !stage) return;
+    if (!canvas || !stage || state.overview) return;
     const width = Math.max(320, Math.round(stage.clientWidth));
     const height = Math.max(380, Math.min(820, Math.round(window.innerHeight * 0.64)));
     const dpr = window.devicePixelRatio || 1;
@@ -377,28 +951,42 @@
       + tileScale() + '|' + (state.shading ? 1 : 0);
   }
 
+  function tileUrl(stackId, dimId, rx, rz, scale, shade) {
+    return '/api/map/tile?stack=' + encodeURIComponent(stackId)
+      + '&dim=' + encodeURIComponent(dimId)
+      + '&rx=' + rx + '&rz=' + rz + '&scale=' + scale
+      + '&shade=' + (shade ? 1 : 0);
+  }
+
+  function blobToImage(blob) {
+    if ('createImageBitmap' in window) {
+      return createImageBitmap(blob);
+    }
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => {
+        URL.revokeObjectURL(image.src);
+        resolve(image);
+      };
+      image.onerror = reject;
+      image.src = URL.createObjectURL(blob);
+    });
+  }
+
+  function fetchTileImage(stackId, dimId, rx, rz, scale, shade) {
+    return fetch(tileUrl(stackId, dimId, rx, rz, scale, shade), {
+      headers: window.SamsaraUI.authHeaders ? window.SamsaraUI.authHeaders() : {},
+    }).then(async (response) => {
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      return blobToImage(await response.blob());
+    });
+  }
+
   function ensureTile(rx, rz) {
     const key = tileKey(rx, rz);
     if (state.tiles.has(key) || state.pending.has(key)) return;
     state.pending.add(key);
-    const url = '/api/map/tile?stack=' + encodeURIComponent(state.stackId)
-      + '&dim=' + encodeURIComponent(state.dimId)
-      + '&rx=' + rx + '&rz=' + rz + '&scale=' + tileScale()
-      + '&shade=' + (state.shading ? 1 : 0);
-    fetch(url, { headers: window.SamsaraUI.authHeaders ? window.SamsaraUI.authHeaders() : {} })
-      .then(async (response) => {
-        if (!response.ok) throw new Error('HTTP ' + response.status);
-        const blob = await response.blob();
-        if ('createImageBitmap' in window) {
-          return createImageBitmap(blob);
-        }
-        return new Promise((resolve, reject) => {
-          const image = new Image();
-          image.onload = () => resolve(image);
-          image.onerror = reject;
-          image.src = URL.createObjectURL(blob);
-        });
-      })
+    fetchTileImage(state.stackId, state.dimId, rx, rz, tileScale(), state.shading)
       .then((image) => {
         state.tiles.set(key, image);
         scheduleDraw();
@@ -506,6 +1094,7 @@
     if (!ensureEls().spawns || ensureEls().spawns.checked) {
       drawSpawns(ctx, width, height);
     }
+    drawPlayers(ctx, dim, width, height);
     drawScale(ctx, width, height);
     ctx.fillStyle = 'rgba(226,232,240,.65)';
     ctx.font = '11px system-ui, sans-serif';
@@ -551,21 +1140,6 @@
     }
   }
 
-  function pointInPolygon(x, z, points) {
-    let inside = false;
-    for (let i = 0, j = points.length - 1; i < points.length; j = i, i += 1) {
-      const xi = points[i].x;
-      const zi = points[i].z;
-      const xj = points[j].x;
-      const zj = points[j].z;
-      if (((zi > z) !== (zj > z))
-          && x < (xj - xi) * (z - zi) / (zj - zi) + xi) {
-        inside = !inside;
-      }
-    }
-    return inside;
-  }
-
   function distanceForColor(color) {
     const claimRange = state.model && state.model.claimRange;
     if (!claimRange) return 1;
@@ -576,6 +1150,7 @@
     return Math.max(1, Math.min(claimRange.maxDistance || 16, Math.round(base)));
   }
 
+  /** 单面旗帜只显示图案射线，不做任何填充；填充面属于多旗全局结果。 */
   function bannerCells(banner) {
     const claimRange = state.model && state.model.claimRange;
     const cells = new Set();
@@ -583,6 +1158,7 @@
     const offset = FACING_OFFSET[banner.facing] || 0;
     const baseX = Math.floor(banner.x / 16);
     const baseZ = Math.floor(banner.z / 16);
+    cells.add(baseX + ',' + baseZ);
     for (const pattern of banner.patterns) {
       const names = claimRange.patternDirections && claimRange.patternDirections[pattern.id];
       if (!Array.isArray(names) || names.length === 0) continue;
@@ -590,39 +1166,10 @@
       const dirs = names.map((name) => DIRECTION_NAMES.indexOf(name))
         .filter((index) => index >= 0)
         .map((index) => (index + offset) % 8);
-      const endpoints = [];
-      cells.add(baseX + ',' + baseZ);
       for (const dir of dirs) {
         const direction = DIRECTIONS[dir];
         for (let step = 1; step <= distance; step += 1) {
           cells.add((baseX + direction.dx * step) + ',' + (baseZ + direction.dz * step));
-        }
-        endpoints.push({
-          x: baseX + direction.dx * distance,
-          z: baseZ + direction.dz * distance,
-        });
-      }
-      if (endpoints.length >= 3) {
-        endpoints.sort((a, b) => Math.atan2(a.z - baseZ, a.x - baseX)
-          - Math.atan2(b.z - baseZ, b.x - baseX));
-        for (let i = 0; i < endpoints.length; i += 1) {
-          const a = endpoints[i];
-          const b = endpoints[(i + 1) % endpoints.length];
-          const steps = Math.max(Math.abs(b.x - a.x), Math.abs(b.z - a.z));
-          for (let step = 0; step <= steps; step += 1) {
-            const t = steps === 0 ? 0 : step / steps;
-            cells.add(Math.round(a.x + (b.x - a.x) * t) + ','
-              + Math.round(a.z + (b.z - a.z) * t));
-          }
-        }
-        const minX = Math.min(...endpoints.map((point) => point.x));
-        const maxX = Math.max(...endpoints.map((point) => point.x));
-        const minZ = Math.min(...endpoints.map((point) => point.z));
-        const maxZ = Math.max(...endpoints.map((point) => point.z));
-        for (let x = minX; x <= maxX; x += 1) {
-          for (let z = minZ; z <= maxZ; z += 1) {
-            if (pointInPolygon(x, z, endpoints)) cells.add(x + ',' + z);
-          }
         }
       }
     }
@@ -696,6 +1243,61 @@
     }
   }
 
+  function drawPlayers(ctx, dim, width, height) {
+    if (!state.showPlayers) return;
+    const stack = currentStack();
+    if (!stack || !dim) return;
+    for (const player of playersFor(stack.id, dim.dim)) {
+      const point = worldToScreen(player.x, player.z);
+      if (point.x < -30 || point.y < -30 || point.x > width + 30 || point.y > height + 30) {
+        continue;
+      }
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, 8, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(96, 165, 250, .22)';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, 5, 0, Math.PI * 2);
+      ctx.fillStyle = '#60a5fa';
+      ctx.fill();
+      ctx.strokeStyle = '#eff6ff';
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+      const label = playerName(player);
+      const textX = point.x + 9;
+      const textY = point.y - 7;
+      ctx.font = 'bold 11px system-ui, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(8, 12, 17, .92)';
+      ctx.strokeText(label, textX, textY);
+      ctx.fillStyle = '#dbeafe';
+      ctx.fillText(label, textX, textY);
+      ctx.restore();
+    }
+  }
+
+  function playerAt(screenX, screenY) {
+    const stack = currentStack();
+    const dim = currentDim();
+    if (!stack || !dim || !state.showPlayers) return null;
+    let best = null;
+    let bestDistance = 13 * 13;
+    for (const player of playersFor(stack.id, dim.dim)) {
+      const point = worldToScreen(player.x, player.z);
+      const dx = point.x - screenX;
+      const dy = point.y - screenY;
+      const distance = dx * dx + dy * dy;
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = player;
+      }
+    }
+    return best;
+  }
+
   function drawScale(ctx, width, height) {
     const options = [16, 32, 64, 128, 256, 512, 1024, 2048, 4096];
     const target = 130 * state.scale;
@@ -757,9 +1359,22 @@
     const rect = ensureEls().canvas.getBoundingClientRect();
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
+    const player = playerAt(x, y);
     const spawn = ensureEls().spawns && ensureEls().spawns.checked ? spawnAt(x, y) : null;
     const banner = bannerAt(x, y);
     const dim = currentDim();
+    if (player) {
+      tooltip.textContent = [
+        playerName(player) + ' · ' + stackLabelOf(player.stackId)
+          + ' · ' + dimensionLabel(player.dimension),
+        '坐标 ' + fmtCoord(player.x) + ', ' + fmtCoord(player.y) + ', ' + fmtCoord(player.z),
+        '点击复制 TP 命令',
+      ].join('\n');
+      tooltip.hidden = false;
+      tooltip.style.left = Math.min(rect.width - 240, x + 14) + 'px';
+      tooltip.style.top = Math.min(rect.height - 70, y + 12) + 'px';
+      return;
+    }
     if (spawn) {
       const stack = currentStack();
       const target = spawn.target;
@@ -957,7 +1572,7 @@
       ['区块', banner.chunkX + ', ' + banner.chunkZ],
       ['朝向', facingName(banner.facing)],
       ['图案', (banner.patterns || []).map((item) => item.id + '（' + item.color + '）').join('、') || '无'],
-      ['范围', bannerCells(banner).size + ' 区块'],
+      ['单旗射线', bannerCells(banner).size + ' 区块'],
     ]);
   }
 
@@ -1003,8 +1618,10 @@
   }
 
   function bind() {
-    const { canvas, stage, stack, dimension, reload, fit, zoomIn, zoomOut, claims, spawns, shading }
-      = ensureEls();
+    const {
+      canvas, stage, stack, dimension, reload, fit, zoomIn, zoomOut, claims, spawns,
+      shading, showPlayers, overviewToggle,
+    } = ensureEls();
     if (!canvas || !stage) return;
     new ResizeObserver(resize).observe(stage);
     resize();
@@ -1015,6 +1632,9 @@
       dimension.addEventListener('change', () => switchDimension(dimension.value));
     }
     if (reload) reload.addEventListener('click', () => loadModel());
+    if (overviewToggle) {
+      overviewToggle.addEventListener('click', () => setOverview(!state.overview));
+    }
     if (fit) {
       fit.addEventListener('click', () => {
         fitView();
@@ -1023,15 +1643,36 @@
     }
     if (zoomIn) zoomIn.addEventListener('click', () => setScale(state.scale / 2));
     if (zoomOut) zoomOut.addEventListener('click', () => setScale(state.scale * 2));
-    if (claims) claims.addEventListener('change', draw);
+    if (claims) {
+      claims.addEventListener('change', () => {
+        if (state.overview) {
+          for (const panel of state.overviewPanels) drawOverviewPanel(panel);
+        } else {
+          draw();
+        }
+      });
+    }
     if (spawns) spawns.addEventListener('change', draw);
+    if (showPlayers) {
+      state.showPlayers = showPlayers.checked;
+      showPlayers.addEventListener('change', () => {
+        state.showPlayers = showPlayers.checked;
+        if (state.overview) updateOverviewPlayers();
+        else draw();
+      });
+    }
     if (shading) {
       state.shading = shading.checked;
       shading.addEventListener('change', () => {
         state.shading = shading.checked;
         state.tiles.clear();
         state.pending.clear();
-        draw();
+        state.thumbTiles.clear();
+        if (state.overview) {
+          for (const panel of state.overviewPanels) loadOverviewThumb(panel);
+        } else {
+          draw();
+        }
       });
     }
 
@@ -1040,6 +1681,8 @@
       const rect = canvas.getBoundingClientRect();
       const x = event.clientX - rect.left;
       const y = event.clientY - rect.top;
+      // 玩家标记由 click 复制命令；pointerdown 不开始拖拽，避免误移动地图。
+      if (playerAt(x, y)) return;
       const spawn = ensureEls().spawns && ensureEls().spawns.checked ? spawnAt(x, y) : null;
       if (spawn) {
         selectSpawn(spawn);
@@ -1069,7 +1712,7 @@
       const x = event.clientX - rect.left;
       const y = event.clientY - rect.top;
       const spawn = ensureEls().spawns && ensureEls().spawns.checked ? spawnAt(x, y) : null;
-      canvas.style.cursor = (spawn || bannerAt(x, y)) ? 'pointer' : 'grab';
+      canvas.style.cursor = (playerAt(x, y) || spawn || bannerAt(x, y)) ? 'pointer' : 'grab';
       updateTooltip(event);
     });
     canvas.addEventListener('pointerleave', () => {
@@ -1088,6 +1731,11 @@
       const rect = canvas.getBoundingClientRect();
       const x = event.clientX - rect.left;
       const y = event.clientY - rect.top;
+      const player = playerAt(x, y);
+      if (player) {
+        copyPlayerCommand(player);
+        return;
+      }
       const spawn = ensureEls().spawns && ensureEls().spawns.checked ? spawnAt(x, y) : null;
       if (spawn) {
         selectSpawn(spawn);
@@ -1115,6 +1763,11 @@
     }, { passive: false });
 
     renderSelection();
+    if (!state.playerTimer) {
+      state.playerTimer = window.setInterval(() => {
+        if (window.SamsaraUI?.isActiveTab?.('map')) loadPlayers();
+      }, 2000);
+    }
     if (window.SamsaraBanners) {
       window.SamsaraBanners.ready(() => scheduleDraw());
     }
@@ -1132,6 +1785,7 @@
   function activate() {
     const elements = ensureEls();
     if (!elements.canvas) return;
+    applyOverviewUi();
     if (state.stale && !state.loading) {
       // 圈地范围保存后 claims.json 可能没变，必须重新拉 /api/map 才能拿到新几何。
       loadModel();
@@ -1139,6 +1793,12 @@
     }
     if (!state.model && !state.loading) {
       loadModel();
+      return;
+    }
+    if (state.overview) {
+      renderOverview();
+      renderStats();
+      renderNav();
     } else {
       resize();
       if (state.fitPending) {
@@ -1150,6 +1810,7 @@
       renderSelection();
       draw();
     }
+    loadPlayers();
   }
 
   function refreshCount() {

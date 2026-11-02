@@ -38,7 +38,7 @@ public final class WebLifecycle {
         int port = config.integer(ConfigSchema.WEB, "port");
         LocalWebServer candidate = new LocalWebServer(new WebConfigService(),
                 new WebIdentityService(), new WebOutputService(),
-                new WebPermissionService(), new WebMapService(),
+                new WebPermissionService(), new WebMapService(minecraftServer),
                 new WorldStackWebService(), new ServerWebService(minecraftServer),
                 token, port);
         if (!candidate.start()) {

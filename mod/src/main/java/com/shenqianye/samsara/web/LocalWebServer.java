@@ -562,6 +562,10 @@ public final class LocalWebServer {
                 json(exchange, 200, mapService.model());
                 return;
             }
+            if ("/api/map/players".equals(path)) {
+                json(exchange, 200, mapService.players());
+                return;
+            }
             if ("/api/map/tile".equals(path)) {
                 String stack = query.getOrDefault("stack", "");
                 String dimension = query.getOrDefault("dim", "");
