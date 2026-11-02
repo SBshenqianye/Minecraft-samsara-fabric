@@ -101,6 +101,12 @@ public class SeasonCommand {
                         .executes(ctx -> reply(ctx.getSource(),
                                 SeasonAdvanceVoteManager.getInstance().agree(
                                         ctx.getSource().getServer(), ctx.getSource().getPlayer()))))
+                .then(Commands.literal("cancel")
+                        .requires(src -> com.shenqianye.samsara.permission.PermissionChecker
+                                .check(src, "season cancel"))
+                        .executes(ctx -> reply(ctx.getSource(),
+                                SeasonAdvanceVoteManager.getInstance().cancel(
+                                        ctx.getSource().getServer(), ctx.getSource().getPlayer()))))
                 .then(Commands.literal("vote-status")
                         .requires(src -> com.shenqianye.samsara.permission.PermissionChecker
                                 .check(src, "season vote-status"))

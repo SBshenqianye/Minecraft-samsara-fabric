@@ -33,6 +33,7 @@ public final class PermissionDefaults {
         map.put("season respawn-groups", "owner");
         map.put("season advance", "user");
         map.put("season agree", "user");
+        map.put("season cancel", "user");
         map.put("season vote-status", "user");
         // world stack
         map.put("world", "user");

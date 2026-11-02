@@ -167,6 +167,32 @@ class LocalWebServerTest {
         assertTrue(reorder.body().contains("ids"));
     }
 
+    @Test
+    void seasonAdvanceApiIsReadOnlyAndRequiresToken() throws Exception {
+        Map<String, Object> model = new LinkedHashMap<>();
+        model.put("active", true);
+        model.put("mode", "same");
+        model.put("initiatorName", "BotA");
+        model.put("agreed", List.of(Map.of("uuid", "u1", "name", "BotA")));
+        model.put("missing", List.of());
+        model.put("requiredCount", 1);
+        SeasonAdvanceWebService voteService = new SeasonAdvanceWebService(() -> model);
+        server = new LocalWebServer(new FakeService(), null, null, null, null, null, null,
+                voteService, TOKEN, 0);
+        assertTrue(server.start());
+
+        assertEquals(401, request("GET", "/api/season-advance", null, null).statusCode());
+        HttpResponse<String> response = request("GET", "/api/season-advance", null, TOKEN);
+        assertEquals(200, response.statusCode());
+        assertTrue(response.body().contains("\"active\":true"));
+        assertTrue(response.body().contains("BotA"));
+        assertEquals(405, request("POST", "/api/season-advance", "{}", TOKEN).statusCode());
+
+        HttpResponse<String> script = request("GET", "/season-advance.js", null, null);
+        assertEquals(200, script.statusCode());
+        assertTrue(script.body().contains("SamsaraSeasonAdvance"));
+    }
+
     /** 假地图服务：只验证 HTTP 路由和参数校验，不读真实存档。 */
     private static final class FakeMapService extends WebMapService {
         private FakeMapService() {

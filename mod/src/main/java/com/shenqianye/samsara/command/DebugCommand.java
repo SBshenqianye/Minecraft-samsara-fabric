@@ -1208,6 +1208,8 @@ public class DebugCommand {
                         ChatUi.suggest("发起开新周目", "/samsara season advance ",
                                 "无管理员且在线 >1 人时发起投票；填入 same 或 new"),
                         ChatUi.run("同意开新周目", "/samsara season agree", "同意当前进行中的投票"),
+                        ChatUi.run("取消/撤回投票", "/samsara season cancel",
+                                "发起者撤回，或管理员取消进行中的投票"),
                         ChatUi.run("投票状态", "/samsara season vote-status",
                                 "查看发起者、模式、同意名单与剩余时间")),
                 ChatUi.line(ChatUi.text(cont, ChatFormatting.GRAY),

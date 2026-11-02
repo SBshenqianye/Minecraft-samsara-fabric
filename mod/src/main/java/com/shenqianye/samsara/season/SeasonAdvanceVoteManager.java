@@ -170,6 +170,32 @@ public final class SeasonAdvanceVoteManager {
                 + "\n· 使用 /samsara season vote-status 查看完整状态";
     }
 
+    /** {@code /samsara season cancel}：发起者撤回，或管理员取消进行中的投票。 */
+    public synchronized String cancel(MinecraftServer server, ServerPlayer player) {
+        long now = System.currentTimeMillis();
+        if (expireIfNeeded(server, now)) {
+            return "投票已过期，没有进行中的投票。";
+        }
+        if (active == null) {
+            return noVoteText();
+        }
+        boolean admin = player == null
+                || player.permissions().hasPermission(Permissions.COMMANDS_ADMIN);
+        boolean initiator = player != null && active.isInitiator(player.getUUID());
+        if (!SeasonAdvanceVote.canCancel(admin, initiator)) {
+            return "只有本次投票的发起者或管理员可以取消/撤回投票。";
+        }
+        String actor = player == null ? "控制台" : player.getScoreboardName();
+        String initiatorName = active.initiatorName;
+        String mode = modeLabel(active.mode);
+        active = null;
+        SeasonAdvanceVote.deleteFile(file);
+        String verb = initiator ? "撤回" : "取消";
+        broadcast(server, "🗳 " + (admin && !initiator ? "管理员 " : "") + actor
+                + " 已" + verb + "开新周目投票（发起者 " + initiatorName + " · " + mode + "）");
+        return "已" + verb + "开新周目投票（发起者 " + initiatorName + " · " + mode + "）。";
+    }
+
     /** {@code /samsara season vote-status}：发起者、模式、名单、剩余时间。 */
     public synchronized String statusText(MinecraftServer server) {
         long now = System.currentTimeMillis();
@@ -208,6 +234,22 @@ public final class SeasonAdvanceVoteManager {
     }
 
     // ---- 事件钩子 ----
+
+    /** Web 只读状态快照；没有投票时 active=false。 */
+    public synchronized Map<String, Object> webModel(MinecraftServer server) {
+        long now = System.currentTimeMillis();
+        expireIfNeeded(server, now);
+        if (active == null) {
+            Map<String, Object> empty = new LinkedHashMap<>();
+            empty.put("active", false);
+            empty.put("now", now);
+            empty.put("message", "没有进行中的开新周目投票。");
+            return empty;
+        }
+        Map<String, Object> model = active.webModel(onlinePlayers(server), now);
+        model.put("now", now);
+        return model;
+    }
 
     /** 每 20 秒检查一次过期，并把期间新加入的在线玩家并入 eligible。 */
     public synchronized void tick(MinecraftServer server) {
