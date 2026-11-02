@@ -204,12 +204,9 @@ public final class OutputRenderer {
             if (i > 0) {
                 out.add(OutputPreviewFragment.text("text", "\n", null));
             }
-            if (i == 0) {
-                if (!explicitPrefix) {
-                    out.add(OutputPreviewFragment.text("prefix",
-                            ChatFormat.getFirstPrefix(), null));
-                }
-            } else if (autoContinuePrefix) {
+            // 首行前缀只来自模板里的 PrefixPart。用户删掉 PrefixPart 后不能自动补回，
+            // 否则 Web 里“删掉前缀”会看起来没生效。
+            if (i > 0 && autoContinuePrefix) {
                 out.add(OutputPreviewFragment.text("prefix",
                         ChatFormat.getContinuePrefix(), null));
             }

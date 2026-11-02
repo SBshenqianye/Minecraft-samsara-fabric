@@ -1,5 +1,6 @@
 package com.shenqianye.samsara.output;
 
+import com.shenqianye.samsara.command.ChatFormat;
 import org.junit.jupiter.api.Test;
 
 import java.util.LinkedHashMap;
@@ -92,7 +93,21 @@ class OutputRendererTest {
     }
 
     @Test
-    void continuationPrefixIsAddedForSecondLine() {
+    void deletedFirstPrefixIsNotReAdded() {
+        OutputTemplate template = new OutputTemplate("test", "测试", "test", List.of(),
+                List.of(), List.of());
+        List<OutputPreviewFragment> decorated = OutputRenderer.decorate(
+                OutputRenderer.renderRaw(template,
+                        List.of(new TextPart("服务器已关闭")), Map.of(),
+                        OutputRenderer.ButtonPolicy.all()),
+                false);
+        String plain = OutputRenderer.plainText(decorated);
+        assertEquals("服务器已关闭", plain);
+        assertFalse(plain.contains(ChatFormat.getFirstPrefix()));
+    }
+
+    @Test
+    void continuationPrefixIsAddedWithoutAutomaticFirstPrefix() {
         OutputTemplate template = new OutputTemplate("test", "测试", "test", List.of(),
                 List.of(), List.of());
         List<OutputPreviewFragment> decorated = OutputRenderer.decorate(
@@ -101,7 +116,8 @@ class OutputRendererTest {
                         OutputRenderer.ButtonPolicy.all()),
                 false);
         String plain = OutputRenderer.plainText(decorated);
-        assertTrue(plain.startsWith("[周目管理] ▸ a"));
-        assertTrue(plain.contains("\n  ▸ b"));
+        assertTrue(plain.startsWith("a"));
+        assertFalse(plain.contains(ChatFormat.getFirstPrefix()));
+        assertTrue(plain.contains("\n" + ChatFormat.getContinuePrefix() + "b"));
     }
 }
