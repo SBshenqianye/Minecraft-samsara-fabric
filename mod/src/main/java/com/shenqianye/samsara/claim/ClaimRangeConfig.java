@@ -146,6 +146,40 @@ public final class ClaimRangeConfig {
         return maxDistance;
     }
 
+    /**
+     * 几何相关配置的指纹。地图页按 {@code claims.json} 的 mtime/size 缓存保护区块，
+     * 但保护形状还依赖本配置；配置热重载后 claims.json 可能没变，缓存必须靠指纹失效。
+     */
+    public String geometryFingerprint() {
+        return geometryFingerprint(mode, fixedDistance, maxDistance,
+                colorDistances, patternDirections);
+    }
+
+    /** 纯函数版本，供地图缓存与单测使用。 */
+    public static String geometryFingerprint(Mode mode, int fixedDistance, int maxDistance,
+                                             List<Integer> colorDistances,
+                                             Map<String, List<String>> patternDirections) {
+        StringBuilder sb = new StringBuilder(256);
+        sb.append(mode == null ? Mode.DYE.name() : mode.name()).append('|')
+                .append(fixedDistance).append('|').append(maxDistance).append('|');
+        if (colorDistances != null) {
+            for (int distance : colorDistances) {
+                sb.append(distance).append(',');
+            }
+        }
+        sb.append('|');
+        Map<String, List<String>> directions =
+                patternDirections == null ? Map.of() : patternDirections;
+        for (String pattern : PATTERN_IDS) {
+            sb.append(pattern).append('=');
+            for (String direction : directions.getOrDefault(pattern, List.of())) {
+                sb.append(direction).append(',');
+            }
+            sb.append(';');
+        }
+        return sb.toString();
+    }
+
     /** 重新读取 YAML（启动与配置热重载）。失败时保留上一次有效值。 */
     public synchronized boolean load() {
         try {

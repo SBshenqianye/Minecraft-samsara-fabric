@@ -30,7 +30,9 @@ public class ClaimNode {
     private final List<BannerEntry> banners = new ArrayList<>();
     /** 旋转后的扩展（延迟计算，首次访问时构建） */
     private Extension rotatedExtension;
-    /** 影响坐标集（延迟计算） */
+    /** 单面/多面旗帜的射线线段（延迟计算，不含任何填充面） */
+    private List<int[]> claimSegments;
+    /** 影响坐标集（延迟计算；只含射线格，不含填充面） */
     private List<ChunkCoord> influencedCoords;
 
     public ClaimNode(ChunkCoord location, ResourceKey<Level> dimension, String facing, List<PatternEntry> patterns,
@@ -96,6 +98,7 @@ public class ClaimNode {
             }
         }
         banners.add(newEntry);
+        invalidateGeometry();
     }
 
     /**
@@ -104,7 +107,9 @@ public class ClaimNode {
      * @return 移除后该区块是否还有旗帜（true = 继续保留注册，false = 应注销）
      */
     public boolean removeBanner(int blockX, int blockY, int blockZ) {
-        banners.removeIf(be -> be.blockX == blockX && be.blockY == blockY && be.blockZ == blockZ);
+        boolean removed = banners.removeIf(be -> be.blockX == blockX
+                && be.blockY == blockY && be.blockZ == blockZ);
+        if (removed) invalidateGeometry();
         return !banners.isEmpty();
     }
 
@@ -126,16 +131,25 @@ public class ClaimNode {
      */
     public void invalidateGeometry() {
         rotatedExtension = null;
+        claimSegments = null;
         influencedCoords = null;
     }
 
-    /** 计算影响坐标集（从节点位置沿 8 个方向延伸出的全部格点，用于展示/粒子预览） */
+    /**
+     * 计算影响坐标集：该节点所有旗帜、所有图案产生的**射线格**（含旗帜所在区块）。
+     * <p>
+     * 这里不返回填充面——单面旗帜永远只有线；填充由
+     * {@code AreaService.rebuildGeometry()} 把所有旗帜的射线汇总后交给
+     * {@code Geometry.compute} 全局完成。
+     */
     public List<ChunkCoord> getInfluencedCoords() {
         if (influencedCoords != null) return influencedCoords;
-        influencedCoords = new ArrayList<>();
-        for (int[] s : getExtensionSegments()) {
-            addLine(location, s[2] - s[0], s[3] - s[1], influencedCoords);
+        java.util.LinkedHashSet<ChunkCoord> cells = new java.util.LinkedHashSet<>();
+        cells.add(location);
+        for (int[] segment : getShapeSegments()) {
+            ClaimShape.rasterize(segment, cells);
         }
+        influencedCoords = new ArrayList<>(cells);
         return influencedCoords;
     }
 
@@ -159,58 +173,48 @@ public class ClaimNode {
     }
 
     /**
-     * 按角度顺序（北→东北→东→东南→南→西南→西→西北）排列的延伸末端格点。
+     * 该节点贡献给全局「化线为面」的线段集 = 所有旗帜、所有图案的**射线**。
      * <p>
-     * 交给 {@link com.shenqianye.samsara.geometry.Geometry#ringSegments} 连成闭合环后，
-     * 图形才有"内部"可填——这是"化线为面"能产出面的前提。
+     * <b>不再生成末端环</b>：单面旗帜的射线都从同一中心出发，构成星形图（无环），
+     * 因此单旗永远不会自己形成面。只有多面旗帜的射线在全局图中互相接续/交叉时，
+     * {@code Geometry.compute} 才会找到闭合面并填充内部。
      */
-    public List<ChunkCoord> getExtensionEndpoints() {
-        Extension e = getExtension();
-        List<ChunkCoord> out = new ArrayList<>(8);
-        addEnd(out, 0, -e.getUp());
-        addEnd(out, e.getUpRight(), -e.getUpRight());
-        addEnd(out, e.getRight(), 0);
-        addEnd(out, e.getDownRight(), e.getDownRight());
-        addEnd(out, 0, e.getDown());
-        addEnd(out, -e.getDownLeft(), e.getDownLeft());
-        addEnd(out, -e.getLeft(), 0);
-        addEnd(out, -e.getUpLeft(), -e.getUpLeft());
-        return out;
+    public List<int[]> getShapeSegments() {
+        if (claimSegments != null) return claimSegments;
+        List<int[]> out = new ArrayList<>();
+        if (banners.isEmpty()) {
+            appendBannerSegments(out, facing, patterns);
+        } else {
+            for (BannerEntry banner : banners) {
+                appendBannerSegments(out, banner.facing(), banner.patterns());
+            }
+        }
+        claimSegments = out;
+        return claimSegments;
     }
 
     /**
-     * 该节点贡献给「化线为面」的完整线段集 = **8 条射线 + 末端环**。
-     * <p>
-     * 只给射线是不够的：射线都从同一节点出发，构成星形图（无环），
-     * 面遍历找不到有界面 → 保护区域只会有"线"、没有"面"。
-     * 补上末端环后图形闭合，才能被填充出内部。
+     * 单面旗帜的射线：按图案方向 + 图案颜色距离生成，再按该旗帜朝向旋转。
+     * 多个图案层直接并集，不触发任何填充。
      */
-    public List<int[]> getShapeSegments() {
-        List<int[]> segs = new ArrayList<>(getExtensionSegments());
-        segs.addAll(com.shenqianye.samsara.geometry.Geometry.ringSegments(getExtensionEndpoints()));
-        return segs;
+    private void appendBannerSegments(List<int[]> out, String bannerFacing,
+                                      List<PatternEntry> bannerPatterns) {
+        ClaimRangeConfig config = ClaimRangeConfig.getInstance();
+        for (PatternEntry pe : bannerPatterns) {
+            int distance = config.distanceForColor(pe.color());
+            List<String> directions = config.directionsFor(pe.patternId());
+            for (int[] segment : ClaimShape.segments(pe.patternId(), distance,
+                    bannerFacing, directions)) {
+                out.add(new int[]{
+                        location.x + segment[0], location.z + segment[1],
+                        location.x + segment[2], location.z + segment[3]});
+            }
+        }
     }
 
     private void addSeg(List<int[]> out, int dx, int dz) {
         if (dx == 0 && dz == 0) return;
         out.add(new int[]{location.x, location.z, location.x + dx, location.z + dz});
-    }
-
-    private void addEnd(List<ChunkCoord> out, int dx, int dz) {
-        if (dx == 0 && dz == 0) return;
-        out.add(new ChunkCoord(location.x + dx, location.z + dz));
-    }
-
-    /** 从起点沿方向延伸 N 格，生成所有中间格点 */
-    private static void addLine(ChunkCoord start, int dx, int dz,
-                                 List<ChunkCoord> out) {
-        int dist = Math.max(Math.abs(dx), Math.abs(dz));
-        if (dist == 0) return;
-        int sx = dx / dist;
-        int sz = dz / dist;
-        for (int i = 1; i <= dist; i++) {
-            out.add(new ChunkCoord(start.x + sx * i, start.z + sz * i));
-        }
     }
 
     /** 旗帜图案记录（patternId + color） */

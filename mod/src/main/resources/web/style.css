@@ -387,6 +387,88 @@ details[open].file-block > .file-summary { border-bottom-color: var(--line); }
 .claim-banner-chip { display: inline-flex; align-items: center; padding: 6px 10px; border: 1px dashed color-mix(in srgb, var(--accent) 55%, var(--line)); border-radius: 8px; color: var(--accent); background: var(--accent-soft); font-size: 12px; cursor: grab; }
 .claim-banner-chip:active { cursor: grabbing; }
 .claim-sim-canvas { touch-action: none; }
+.claim-preview-controls { align-items: center; }
+.claim-zoom-label { min-width: 82px; color: var(--muted); font-family: var(--mono); font-size: 11px; text-align: center; }
+
+/* ---- 紧凑触发器：色块/预览图标 + 短名称 ---- */
+.claim-trigger {
+  display: inline-flex; align-items: center; gap: 7px;
+  max-width: 190px; min-height: 34px; padding: 3px 9px 3px 3px;
+  border: 1px solid var(--line); border-radius: 9px;
+  background: var(--panel); color: var(--fg-soft);
+  font-size: 12px; font-weight: 600; line-height: 1.2;
+  box-shadow: none;
+}
+.claim-trigger:hover:not(:disabled) { border-color: var(--line-strong); background: var(--panel-soft); }
+.claim-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.claim-trigger-swatch {
+  width: 28px; height: 28px; flex: 0 0 auto; border-radius: 7px;
+  border: 1px solid rgba(0, 0, 0, .28);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .18);
+}
+.claim-trigger-icon {
+  width: 28px; height: 28px; flex: 0 0 auto; display: grid; place-items: center;
+  border-radius: 7px; background: #0a1220; border: 1px solid var(--line); overflow: hidden;
+}
+.claim-trigger-canvas { width: 26px; height: 26px; image-rendering: pixelated; display: block; }
+.claim-trigger-placeholder { color: var(--muted); font-size: 12px; }
+.claim-trigger-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.claim-trigger-meta { color: var(--muted); font-family: var(--mono); font-size: 10px; font-weight: 500; white-space: nowrap; }
+.claim-pattern-trigger { padding-right: 10px; }
+
+/* ---- 4×4 色板 / 图案网格浮窗 ---- */
+.claim-popover {
+  position: fixed; z-index: 80; width: min(390px, calc(100vw - 16px));
+  padding: 11px; border: 1px solid var(--line-strong); border-radius: 12px;
+  background: var(--panel); color: var(--fg); box-shadow: 0 18px 46px rgba(8, 12, 17, .28);
+}
+.claim-popover-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; }
+.claim-popover-head strong { font-size: 13px; }
+.claim-popover-foot { margin-top: 8px; color: var(--muted); font-size: 11px; line-height: 1.45; }
+.claim-color-grid {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px;
+}
+.claim-color-cell {
+  position: relative; display: grid; grid-template-columns: 26px minmax(0, 1fr);
+  grid-template-rows: auto auto; gap: 0 6px; align-items: center;
+  padding: 5px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--panel-soft); color: var(--fg-soft); text-align: left; box-shadow: none;
+}
+.claim-color-cell:hover:not(:disabled) { border-color: var(--line-strong); background: var(--panel); }
+.claim-color-cell.selected {
+  border-color: var(--accent); background: var(--accent-soft);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+.claim-color-swatch {
+  grid-row: 1 / span 2; width: 26px; height: 26px; border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, .28); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .16);
+}
+.claim-color-name { font-size: 12px; font-weight: 700; line-height: 1.25; }
+.claim-color-meta { color: var(--muted); font-family: var(--mono); font-size: 9px; line-height: 1.25; }
+.claim-color-check {
+  position: absolute; right: 4px; top: 2px; color: var(--accent);
+  font-size: 11px; font-weight: 800; line-height: 1;
+}
+.claim-pattern-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.claim-pattern-cell {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 6px 4px 5px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--panel-soft); color: var(--fg-soft); text-align: center; box-shadow: none;
+}
+.claim-pattern-cell:hover:not(:disabled) { border-color: var(--line-strong); background: var(--panel); }
+.claim-pattern-cell.selected {
+  border-color: var(--accent); background: var(--accent-soft);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+.claim-pattern-cell-icon { width: 40px; height: 40px; display: grid; place-items: center; }
+.claim-pattern-canvas { width: 40px; height: 40px; image-rendering: pixelated; display: block; }
+.claim-pattern-placeholder { color: var(--muted); }
+.claim-pattern-name { font-size: 11px; font-weight: 700; line-height: 1.25; white-space: nowrap; }
+.claim-pattern-code { color: var(--muted); font-family: var(--mono); font-size: 8px; line-height: 1.1; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.claim-pattern-check {
+  position: absolute; right: 3px; top: 2px; color: var(--accent);
+  font-size: 11px; font-weight: 800; line-height: 1;
+}
 .pattern-directions { margin-top: 14px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-soft); }
 .pattern-directions-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
 .pattern-directions-head .ghost { margin-left: auto; }
@@ -411,9 +493,10 @@ details[open].file-block > .file-summary { border-bottom-color: var(--line); }
 .banner-composer-preview { width: 64px; height: 80px; flex: 0 0 auto; image-rendering: pixelated; border: 1px solid var(--line); border-radius: 8px; background: #0a1220; }
 .banner-composer-controls { flex: 1; min-width: 260px; display: flex; flex-direction: column; gap: 7px; }
 .banner-composer-layers { display: flex; flex-direction: column; gap: 4px; }
-.banner-composer-layer { display: flex; align-items: center; gap: 6px; }
-.banner-composer-layer select { min-width: 0; }
-.banner-composer-layer select:first-of-type { flex: 1; }
+.banner-composer-layer { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.banner-composer-layer .claim-pattern-trigger { flex: 1 1 150px; min-width: 0; }
+.banner-composer-layer .claim-color-trigger { flex: 0 1 auto; }
+.banner-composer-base { flex-wrap: wrap; }
 .banner-composer-index { width: 18px; color: var(--muted); font-family: var(--mono); font-size: 10px; text-align: right; }
 .banner-composer-layer button { padding: 3px 7px; }
 .banner-composer-actions { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }

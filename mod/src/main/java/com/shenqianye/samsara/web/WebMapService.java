@@ -367,8 +367,12 @@ public class WebMapService {
         } catch (IOException e) {
             return Map.of();
         }
+        // claims.json 只保存图案/颜色/朝向；实际几何还依赖 claim-range 配置。
+        // 配置热重载不会改 claims.json，所以缓存键必须带上几何配置指纹。
+        String rangeFingerprint = ClaimRangeConfig.getInstance().geometryFingerprint();
         ClaimsSnapshot snapshot = claimsCache.get(file);
-        if (snapshot != null && snapshot.mtime() == mtime && snapshot.size() == size) {
+        if (snapshot != null && snapshot.mtime() == mtime && snapshot.size() == size
+                && rangeFingerprint.equals(snapshot.rangeFingerprint())) {
             return snapshot.byDimension();
         }
         Map<String, List<ClaimNode>> grouped = new LinkedHashMap<>();
@@ -387,7 +391,8 @@ public class WebMapService {
             byDimension.put(entry.getKey(), new DimClaims(entry.getValue(),
                     Geometry.compute(nodeSet, segments)));
         }
-        claimsCache.put(file, new ClaimsSnapshot(mtime, size, Map.copyOf(byDimension)));
+        claimsCache.put(file,
+                new ClaimsSnapshot(mtime, size, rangeFingerprint, Map.copyOf(byDimension)));
         return byDimension;
     }
 
@@ -487,6 +492,7 @@ public class WebMapService {
     private record DimClaims(List<ClaimNode> nodes, Set<ChunkCoord> protectedChunks) {
     }
 
-    private record ClaimsSnapshot(long mtime, long size, Map<String, DimClaims> byDimension) {
+    private record ClaimsSnapshot(long mtime, long size, String rangeFingerprint,
+                                  Map<String, DimClaims> byDimension) {
     }
 }

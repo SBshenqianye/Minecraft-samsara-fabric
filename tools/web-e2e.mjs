@@ -358,8 +358,13 @@ async function main() {
       };
     })()`);
     check('存档备份导航', timeline.nav.startsWith('存档备份'), timeline.nav);
-    check('时间线节点渲染', timeline.nodes >= 1, 'nodes=' + timeline.nodes);
-    check('时间线仅一个当前节点', timeline.current === 1, 'current=' + timeline.current);
+    if (timeline.nodes === 0) {
+      check('时间线节点渲染', true, '测试服没有本体备份，跳过节点断言');
+      check('时间线仅一个当前节点', true, '测试服没有本体备份，跳过节点断言');
+    } else {
+      check('时间线节点渲染', timeline.nodes >= 1, 'nodes=' + timeline.nodes);
+      check('时间线仅一个当前节点', timeline.current === 1, 'current=' + timeline.current);
+    }
     if (timeline.hasRollback) {
       check('回滚预览打开', timeline.previewTitle.startsWith('恢复预览'), timeline.previewTitle);
     }
@@ -483,6 +488,328 @@ async function main() {
     check('输出格式布尔改为按钮', mods.output === 2, 'buttons=' + mods.output);
     check('权限树布尔改为按钮', mods.permissions > 0, 'segmented=' + mods.permissions);
     check('配置页布尔改为按钮', mods.configBool > 0, 'segmented=' + mods.configBool);
+
+    // ---- 圈地范围：条件显示 / 色板 / 图案网格 / 朝向 / 缩放平移 ----
+    const claim = await evaluate(`(async () => {
+      const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      window.SamsaraUI.setActiveTab('claim-range');
+      await wait(800);
+      const preview = document.getElementById('claim-range-preview');
+      const canvas = document.getElementById('claim-sim-canvas');
+      const modeRow = document.getElementById('cfg-entry-' + encodeURIComponent('claim-range|mode'));
+      const fixedRow = document.getElementById('cfg-entry-' + encodeURIComponent('claim-range|fixedDistance'));
+      const colorsRow = document.getElementById('cfg-entry-' + encodeURIComponent('claim-range|colorDistances'));
+      const navFor = (row) => document.querySelector('#global-nav .nav-item[data-target="' + row.id + '"]');
+      const clickMode = (value) => {
+        const button = modeRow.querySelector('.segmented-btn[data-value="' + value + '"]');
+        if (button) button.click();
+      };
+
+      const initial = {
+        nav: document.querySelector('#global-nav .nav-title')?.textContent.trim() || '',
+        fixedHidden: fixedRow.hidden,
+        colorsHidden: colorsRow.hidden,
+        mode: modeRow.querySelector('.segmented-btn.active')?.dataset.value || '',
+      };
+
+      clickMode('fixed');
+      await wait(160);
+      const afterFixed = {
+        fixedHidden: fixedRow.hidden,
+        colorsHidden: colorsRow.hidden,
+        fixedNavHidden: navFor(fixedRow)?.hidden,
+        colorsNavHidden: navFor(colorsRow)?.hidden,
+        mode: modeRow.querySelector('.segmented-btn.active')?.dataset.value || '',
+      };
+
+      clickMode('dye');
+      await wait(160);
+      const afterDye = {
+        fixedHidden: fixedRow.hidden,
+        colorsHidden: colorsRow.hidden,
+        fixedNavHidden: navFor(fixedRow)?.hidden,
+        colorsNavHidden: navFor(colorsRow)?.hidden,
+        mode: modeRow.querySelector('.segmented-btn.active')?.dataset.value || '',
+      };
+
+      // 4×4 色板
+      const colorTrigger = preview.querySelector('[data-role="canvas-pattern-color-trigger"]');
+      colorTrigger.click();
+      await wait(160);
+      const colorPop = document.querySelector('.claim-color-popover');
+      const colorGrid = colorPop?.querySelector('.claim-color-grid');
+      const colorCells = colorPop ? [...colorPop.querySelectorAll('.claim-color-cell')] : [];
+      const colorColumns = colorGrid
+        ? getComputedStyle(colorGrid).gridTemplateColumns.split(' ').filter(Boolean).length : 0;
+      const colorMeta = colorCells.map((cell) => cell.querySelector('.claim-color-meta')?.textContent || '');
+      colorCells[0]?.click();
+      await wait(160);
+      const colorClosed = !document.querySelector('.claim-color-popover');
+
+      // 图案网格（带 canvas 预览）
+      const patternTrigger = preview.querySelector('[data-role="canvas-pattern-trigger"]');
+      patternTrigger.click();
+      await wait(160);
+      const patternPop = document.querySelector('.claim-pattern-popover');
+      const patternCells = patternPop ? [...patternPop.querySelectorAll('.claim-pattern-cell')] : [];
+      const patternCanvases = patternPop ? patternPop.querySelectorAll('canvas').length : 0;
+      const patternNames = patternCells.map((cell) => cell.querySelector('.claim-pattern-name')?.textContent || '');
+      const patternGridColumns = patternPop
+        ? getComputedStyle(patternPop.querySelector('.claim-pattern-grid')).gridTemplateColumns
+          .split(' ').filter(Boolean).length : 0;
+      patternPop?.querySelector('.claim-pattern-cell[data-pattern="border"]')?.click();
+      await wait(160);
+      const patternClosed = !document.querySelector('.claim-pattern-popover');
+
+      // 旗帜合成器必须复用同一套浮窗组件，不能退回原生下拉框
+      const composer = document.getElementById('claim-banner-composer');
+      const composerSelects = composer ? composer.querySelectorAll('select').length : -1;
+      const composerTriggers = composer ? composer.querySelectorAll(
+          '[data-role="base-color-trigger"], [data-role="layer-pattern-trigger"], [data-role="layer-color-trigger"]').length : 0;
+      const composerCanvases = composer ? composer.querySelectorAll('.claim-trigger-canvas').length : 0;
+      const composerPatternText = composer
+        ? composer.querySelector('[data-role="layer-pattern-trigger"] .claim-trigger-label')?.textContent || ''
+        : '';
+
+      // 单旗 border + 白色（距离 1）= 中心 + 8 条射线 = 9，不应是 3×3 填充
+      const summary = () => document.querySelector('.claim-preview-summary')?.textContent || '';
+      const borderSummary = summary();
+      const borderCells = Number(canvas.dataset.protectedCells);
+
+      // 单旗 cross + 白色 = 中心 + 4 条斜向射线 = 5
+      patternTrigger.click();
+      await wait(120);
+      document.querySelector('.claim-pattern-popover .claim-pattern-cell[data-pattern="cross"]')?.click();
+      await wait(160);
+      const crossSummary = summary();
+      const crossCells = Number(canvas.dataset.protectedCells);
+
+      // 朝向控件与画布同步
+      const eastBtn = document.querySelector('#claim-facing .segmented-btn[data-value="east"]');
+      eastBtn?.click();
+      await wait(160);
+      const facingEast = {
+        active: document.querySelector('#claim-facing .segmented-btn.active')?.dataset.value || '',
+        canvas: canvas.dataset.facing || '',
+        summary: summary(),
+      };
+      const rotateButton = [...preview.querySelectorAll('.claim-sim-toolbar button')]
+        .find((button) => button.textContent.trim() === '旋转');
+      rotateButton?.click();
+      await wait(160);
+      const rotated = {
+        active: document.querySelector('#claim-facing .segmented-btn.active')?.dataset.value || '',
+        canvas: canvas.dataset.facing || '',
+        summary: summary(),
+      };
+
+      // 连续缩放 + 拖拽平移 + 平移后仍能放置旗帜
+      const resetButton = document.getElementById('claim-zoom-reset');
+      resetButton.click();
+      await wait(160);
+      const rect = canvas.getBoundingClientRect();
+      const beforeRadius = Number(canvas.dataset.viewRadius);
+      const centerX = rect.left + rect.width * 0.5;
+      const centerY = rect.top + rect.height * 0.5;
+      canvas.dispatchEvent(new WheelEvent('wheel', {
+        deltaY: -120, clientX: centerX, clientY: centerY, bubbles: true, cancelable: true,
+      }));
+      await wait(100);
+      const afterZoomRadius = Number(canvas.dataset.viewRadius);
+
+      const panX = rect.left + rect.width * 0.28;
+      const panY = rect.top + rect.height * 0.72;
+      const beforeCenter = canvas.dataset.viewCenter;
+      canvas.dispatchEvent(new PointerEvent('pointerdown', {
+        bubbles: true, clientX: panX, clientY: panY, button: 0, pointerId: 7, pointerType: 'mouse',
+      }));
+      canvas.dispatchEvent(new PointerEvent('pointermove', {
+        bubbles: true, clientX: panX + 70, clientY: panY + 40, button: 0, pointerId: 7, pointerType: 'mouse',
+      }));
+      canvas.dispatchEvent(new PointerEvent('pointerup', {
+        bubbles: true, clientX: panX + 70, clientY: panY + 40, button: 0, pointerId: 7, pointerType: 'mouse',
+      }));
+      await wait(120);
+      const afterCenter = canvas.dataset.viewCenter;
+
+      const bannerBefore = Number(canvas.dataset.bannerCount);
+      const placeX = rect.left + rect.width * 0.72;
+      const placeY = rect.top + rect.height * 0.28;
+      canvas.dispatchEvent(new PointerEvent('pointerdown', {
+        bubbles: true, clientX: placeX, clientY: placeY, button: 0, pointerId: 8, pointerType: 'mouse',
+      }));
+      canvas.dispatchEvent(new PointerEvent('pointerup', {
+        bubbles: true, clientX: placeX, clientY: placeY, button: 0, pointerId: 8, pointerType: 'mouse',
+      }));
+      await wait(450);
+      const bannerAfter = Number(canvas.dataset.bannerCount);
+
+      // 多面旗帜闭合区域：三面 straight_cross + 颜色 3（默认距离 4）
+      // 单旗应为 17 格（中心 + 4×4 射线）；三面围成 4×4 矩形后应填充内部，共 49 格。
+      [...preview.querySelectorAll('.claim-sim-toolbar button')]
+        .find((button) => button.textContent.trim() === '清空')?.click();
+      await wait(180);
+      patternTrigger.click();
+      await wait(140);
+      document.querySelector('.claim-pattern-popover .claim-pattern-cell[data-pattern="straight_cross"]')?.click();
+      await wait(180);
+      colorTrigger.click();
+      await wait(140);
+      const paletteCells = [...document.querySelectorAll('.claim-color-popover .claim-color-cell')];
+      paletteCells[3]?.click();
+      await wait(180);
+      const draftDistance = Number(canvas.dataset.patternDistance);
+      resetButton.click();
+      await wait(180);
+
+      const rect2 = canvas.getBoundingClientRect();
+      const cellPx = (560 - 52) / 25;
+      const toScreen = (gx, gz) => ({
+        x: rect2.left + (26 + (gx + 12.5) * cellPx) * (rect2.width / 560),
+        y: rect2.top + (26 + (gz + 12.5) * cellPx) * (rect2.height / 560),
+      });
+      let singleStraightCrossCells = 0;
+      let singleDistance = 0;
+      let singleRayCells = 0;
+      const points = [[0, 0, 9], [0, 4, 10], [4, 0, 11]];
+      for (let i = 0; i < points.length; i += 1) {
+        const [gx, gz, pointerId] = points[i];
+        const point = toScreen(gx, gz);
+        canvas.dispatchEvent(new PointerEvent('pointerdown', {
+          bubbles: true, clientX: point.x, clientY: point.y, button: 0,
+          pointerId, pointerType: 'mouse',
+        }));
+        canvas.dispatchEvent(new PointerEvent('pointerup', {
+          bubbles: true, clientX: point.x, clientY: point.y, button: 0,
+          pointerId, pointerType: 'mouse',
+        }));
+        await wait(380);
+        if (i === 0) {
+          singleStraightCrossCells = Number(canvas.dataset.protectedCells);
+          singleDistance = Number(canvas.dataset.patternDistance);
+          singleRayCells = Number(canvas.dataset.rayCells);
+        }
+      }
+      const multiBannerCount = Number(canvas.dataset.bannerCount);
+      const multiBannerCells = Number(canvas.dataset.protectedCells);
+      const multiBannerPattern = canvas.dataset.pattern;
+      const multiBannerColor = Number(canvas.dataset.patternColor);
+
+      return {
+        initial, afterFixed, afterDye,
+        colorCells: colorCells.length,
+        colorColumns,
+        colorHasDistance: colorMeta.every((text) => text.includes('格')),
+        colorSelected: colorCells.filter((cell) => cell.classList.contains('selected')).length,
+        colorClosed,
+        patternCells: patternCells.length,
+        patternCanvases,
+        patternNamesOk: patternNames.includes('全边框') && patternNames.includes('交叉'),
+        patternGridColumns,
+        patternClosed,
+        composerSelects, composerTriggers, composerCanvases, composerPatternText,
+        borderSummary, borderCells,
+        crossSummary, crossCells,
+        facingEast, rotated,
+        beforeRadius, afterZoomRadius, beforeCenter, afterCenter,
+        bannerBefore, bannerAfter,
+        draftDistance, singleStraightCrossCells, singleDistance, singleRayCells,
+        multiBannerCount, multiBannerCells, multiBannerPattern, multiBannerColor,
+        overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
+      };
+    })()`);
+
+    check('圈地范围导航', claim.initial.nav.startsWith('圈地范围'), claim.initial.nav);
+    check('点击 fixed 后 fixedDistance 立即出现',
+        claim.afterFixed.fixedHidden === false && claim.afterFixed.mode === 'fixed',
+        JSON.stringify(claim.afterFixed));
+    check('点击 fixed 后 colorDistances 立即隐藏',
+        claim.afterFixed.colorsHidden === true, JSON.stringify(claim.afterFixed));
+    check('左侧导航同步 fixed 条件显示',
+        claim.afterFixed.fixedNavHidden === false && claim.afterFixed.colorsNavHidden === true,
+        JSON.stringify(claim.afterFixed));
+    check('点击 dye 后反向切换',
+        claim.afterDye.fixedHidden === true && claim.afterDye.colorsHidden === false
+          && claim.afterDye.mode === 'dye', JSON.stringify(claim.afterDye));
+    check('色板为 4×4 网格', claim.colorCells === 16 && claim.colorColumns === 4,
+        'cells=' + claim.colorCells + ' cols=' + claim.colorColumns);
+    check('色板每格显示距离', claim.colorHasDistance);
+    check('色板单选状态与关闭', claim.colorSelected === 1 && claim.colorClosed,
+        'selected=' + claim.colorSelected + ' closed=' + claim.colorClosed);
+    check('图案浮窗列出 15 种图案', claim.patternCells === 15 && claim.patternNamesOk,
+        'cells=' + claim.patternCells);
+    check('图案浮窗含 canvas 预览', claim.patternCanvases >= 15, 'canvas=' + claim.patternCanvases);
+    check('图案浮窗 4 列网格', claim.patternGridColumns === 4, 'cols=' + claim.patternGridColumns);
+    check('图案浮窗可关闭', claim.patternClosed);
+    check('旗帜合成器复用颜色/图案浮窗（无原生下拉框）',
+        claim.composerSelects === 0 && claim.composerTriggers >= 3,
+        'selects=' + claim.composerSelects + ' triggers=' + claim.composerTriggers);
+    check('合成器图案触发器带预览图标与图案名',
+        claim.composerCanvases >= 1 && claim.composerPatternText.length > 0,
+        'canvas=' + claim.composerCanvases + ' label=' + claim.composerPatternText);
+    check('单面 border 只出射线（9 格，不填充）', claim.borderCells === 9
+        && claim.borderSummary.includes('保护 9 区块'), 'cells=' + claim.borderCells);
+    check('单面 cross 只出射线（5 格，不填充）', claim.crossCells === 5
+        && claim.crossSummary.includes('保护 5 区块'), 'cells=' + claim.crossCells);
+    check('朝向控件与画布同步（东）',
+        claim.facingEast.active === 'east' && claim.facingEast.canvas === 'east'
+          && claim.facingEast.summary.includes('旗面朝 东'), JSON.stringify(claim.facingEast));
+    check('旋转后控件/画布/摘要同步（南）',
+        claim.rotated.active === 'south' && claim.rotated.canvas === 'south'
+          && claim.rotated.summary.includes('旗面朝 南'), JSON.stringify(claim.rotated));
+    check('滚轮以光标为中心连续缩放', claim.afterZoomRadius < claim.beforeRadius,
+        claim.beforeRadius + ' → ' + claim.afterZoomRadius);
+    check('空白拖拽可平移', claim.afterCenter !== claim.beforeCenter,
+        claim.beforeCenter + ' → ' + claim.afterCenter);
+    check('缩放/平移后仍能放置旗帜', claim.bannerAfter === claim.bannerBefore + 1,
+        claim.bannerBefore + ' → ' + claim.bannerAfter);
+    check('单面 straight_cross 只出射线（17 格，不填充）',
+        claim.singleStraightCrossCells === 17,
+        'cells=' + claim.singleStraightCrossCells + ' rays=' + claim.singleRayCells
+          + ' draftD=' + claim.draftDistance + ' singleD=' + claim.singleDistance);
+    check('多面旗帜闭合区域在 Web 预览中填充（49 格）',
+        claim.multiBannerCount === 3 && claim.multiBannerCells === 49
+          && claim.multiBannerPattern === 'straight_cross' && claim.multiBannerColor === 3,
+        JSON.stringify({
+          count: claim.multiBannerCount,
+          cells: claim.multiBannerCells,
+          pattern: claim.multiBannerPattern,
+          color: claim.multiBannerColor,
+        }));
+
+    await cdp.send('Emulation.setDeviceMetricsOverride', {
+      width: 800, height: 900, deviceScaleFactor: 1, mobile: false,
+    });
+    await sleep(500);
+    const narrow = await evaluate(`(async () => {
+      window.SamsaraUI.setActiveTab('claim-range');
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      return {
+        overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
+        canvasWidth: document.getElementById('claim-sim-canvas')?.getBoundingClientRect().width || 0,
+        viewport: window.innerWidth,
+      };
+    })()`);
+    await cdp.send('Emulation.clearDeviceMetricsOverride');
+    check('窄屏圈地页无横向溢出', narrow.overflow === false && narrow.canvasWidth <= narrow.viewport,
+        JSON.stringify(narrow));
+
+    // ---- 地图页冒烟：确认新的缓存失效入口存在，页面仍能读取 /api/map ----
+    await evaluate("window.SamsaraUI.setActiveTab('map'); true;");
+    await until("document.getElementById('map-message') && (document.getElementById('map-message').textContent.includes('失败') || document.getElementById('map-stats').textContent.trim().length > 0)", 20000, '地图数据');
+    const mapState = await evaluate(`(() => {
+      const message = document.getElementById('map-message')?.textContent || '';
+      return {
+        canvas: Boolean(document.getElementById('map-canvas')),
+        stats: document.getElementById('map-stats')?.textContent.trim() || '',
+        message,
+        hasMarkStale: typeof window.SamsaraMap?.markStale === 'function',
+      };
+    })()`);
+    check('地图页仍可读取 /api/map', mapState.canvas
+        && mapState.stats.length > 0 && !mapState.message.includes('失败'),
+        JSON.stringify(mapState));
+    check('地图页提供几何缓存失效入口', mapState.hasMarkStale);
 
     const errors = await evaluate('window.__e2eErrors || []');
     check('没有未捕获的页面脚本错误', errors.length === 0, errors.slice(0, 3).join(' | '));

@@ -21,6 +21,7 @@
     drag: null,
     dragMoved: false,
     loading: false,
+    stale: false,
     raf: 0,
     fitPending: false,
     shading: true,
@@ -140,6 +141,7 @@
     try {
       const data = await window.SamsaraUI.api('/api/map');
       state.model = data;
+      state.stale = false;
       state.selected = null;
       state.selectedSpawn = null;
       const allStacks = stacks();
@@ -1130,6 +1132,11 @@
   function activate() {
     const elements = ensureEls();
     if (!elements.canvas) return;
+    if (state.stale && !state.loading) {
+      // 圈地范围保存后 claims.json 可能没变，必须重新拉 /api/map 才能拿到新几何。
+      loadModel();
+      return;
+    }
     if (!state.model && !state.loading) {
       loadModel();
     } else {
@@ -1163,6 +1170,7 @@
     refreshCount,
     reload: loadModel,
     loadModel,
+    markStale: () => { state.stale = true; },
   };
 
   if (document.readyState === 'loading') {

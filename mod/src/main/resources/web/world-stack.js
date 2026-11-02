@@ -230,7 +230,8 @@
     renderSnapshots();
     renderFiles();
     renderJobs();
-    renderNav();
+    // 存档备份页也会调用 load() 预取世界栈数据；只有世界栈标签真正激活时才接管左侧导航。
+    if (window.SamsaraUI?.isActiveTab?.('world-stack')) renderNav();
   }
 
   function renderStats() {

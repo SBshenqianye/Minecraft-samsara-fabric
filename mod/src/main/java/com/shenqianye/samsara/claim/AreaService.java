@@ -75,6 +75,8 @@ public class AreaService {
         if (existing != null) {
             existing.addBanner(newNode.getBlockX(), newNode.getBannerY(), newNode.getBlockZ(),
                     newNode.getFacing(), newNode.getPatterns());
+            // 同一区块新增旗帜会改变该节点的射线集合，必须重新做全局化线为面。
+            rebuildGeometry(dim);
             save();
             if (com.shenqianye.samsara.DebugToggle.isDebugEnabled()) {
                 return "该区块已有圈地旗帜，添加坐标记录（" + dim.toString()
@@ -85,13 +87,9 @@ public class AreaService {
 
         dimNodes(dim).put(loc, newNode);
 
-        // 增量更新几何图形
-        GeometryStore geo = GeometryStore.getInstance();
-        for (ChunkCoord inf : newNode.getInfluencedCoords()) {
-            geo.addChunk(dim, inf);
-        }
-        geo.addChunk(dim, loc);
-        geo.flush();
+        // 保护范围必须由「所有旗帜的射线汇总后全局化线为面」得出，
+        // 不能把单面旗帜的射线直接塞进白名单（那会把线当成面）。
+        rebuildGeometry(dim);
 
         save();
         return "已注册圈地旗 " + dim.toString() + " " + loc + "（朝向 " + newNode.getFacing()
@@ -108,6 +106,7 @@ public class AreaService {
 
         boolean hasRemaining = node.removeBanner(blockX, blockY, blockZ);
         if (hasRemaining) {
+            rebuildGeometry(dim);
             save();
             if (com.shenqianye.samsara.DebugToggle.isDebugEnabled()) {
                 return "移除旗帜坐标，区块 " + chunkLoc + " 还有 "
@@ -235,11 +234,10 @@ public class AreaService {
     /**
      * 从指定维度的所有节点重建几何图形（白名单）。
      * <p>
-     * <b>2026-09-10 修复</b>：此前只把 {@code node.getInfluencedCoords()} 的射线格点交给
-     * {@link GeometryStore} 做 4 邻接连通合并，<b>从不调用「化线为面」算法</b>——
-     * 于是保护区域只有"线"、永远没有"面"（border 旗也只能得到十字/米字，而非实心正方形）。
-     * 现改为把所有节点的线段（8 条射线 + 末端环）汇总交给
-     * {@link Geometry#compute}，由它算出「边界 + 内部 ∪ 开放折线 ∪ 孤立点」。
+     * <b>2026-11-02 层级修正</b>：单面旗帜只提供射线，<b>不生成末端环、不单独化线为面</b>；
+     * 同一旗帜的多个图案层也只做射线并集。所有旗帜的所有射线在这里一次性汇总，
+     * 再交给 {@link Geometry#compute} 做全局 rasterize → findFaces → scanlineFill。
+     * 因此单旗永远只有线，只有多面旗帜的线互相接续/交叉围出的闭合面才会被填充。
      * <p>
      * 全维度一次汇总（而非逐个节点单独算）是有意为之：不同旗帜的线段可以互相接续成
      * 更大的封闭图形——这正是"最终白名单 = 所有旗帜区域的并集"的语义来源。
@@ -251,6 +249,7 @@ public class AreaService {
         List<int[]> segments = new ArrayList<>();
         for (ClaimNode node : dimNodes(dim).values()) {
             nodes.add(node.getLocation());
+            // getShapeSegments() 只含射线（多旗帜、多图案的并集），没有任何末端环。
             segments.addAll(node.getShapeSegments());
         }
         Set<ChunkCoord> whitelist = Geometry.compute(nodes, segments);
