@@ -9,9 +9,14 @@ package com.shenqianye.samsara.season;
  *   <li>主世界顶部：{@code y > minY + height}（默认 > 320）；</li>
  *   <li>下界顶部：{@code y > minY + height - 1}（默认 > 255）。</li>
  * </ul>
+ *
+ * <p>下界虚空 → 下层主世界使用高空落点 {@link #voidDropY(int, int)}，
+ * 并配合 {@link #isVoidDropGuardActive(long, long)} 防止落点被顶部阈值弹回上层（乒乓）。
  */
 public final class WorldChainRules {
     public static final int VOID_MARGIN = 32;
+    /** 高空落点距离主世界建筑上限的格数；必须大于 2，避免落进顶部触发阈值。 */
+    public static final int VOID_DROP_MARGIN = 16;
 
     public enum DimensionKind {
         OVERWORLD, NETHER, END
@@ -30,6 +35,32 @@ public final class WorldChainRules {
         }
         int maxBuild = minY + height;
         return kind == DimensionKind.NETHER ? y > maxBuild - 1 : y > maxBuild;
+    }
+
+    /**
+     * 下界虚空 → 下层主世界的高空落点。
+     *
+     * <p>取 {@code minY + height - 16}（26.3 主世界 = 320 - 16 = 304），
+     * 再钳制到 {@code minY + 2 .. minY + height - 2}。
+     * <b>结果必须严格小于 {@code minY + height}</b>：否则 {@link #isTop} 会立即把它
+     * 判定为“主世界顶部 → 上层下界”，把玩家弹回上层下界（乒乓）。
+     */
+    public static int voidDropY(int minY, int height) {
+        int top = minY + height;
+        int low = minY + 2;
+        int high = Math.max(low, top - 2);
+        int y = Math.max(low, Math.min(high, top - VOID_DROP_MARGIN));
+        return Math.min(top - 1, y);
+    }
+
+    /**
+     * 虚空高空落点守卫是否仍在生效。
+     *
+     * <p>守卫期内只抑制“主世界顶部 → 上层下界”，让慢降/区块加载造成的短暂 Y
+     * 抖动不会把玩家弹回上层；守卫过期后玩家仍可正常搭方块上行。
+     */
+    public static boolean isVoidDropGuardActive(long nowMs, long guardUntilMs) {
+        return guardUntilMs > nowMs;
     }
 
     /** 主世界方块坐标 → 下界坐标（下界 1 格 = 主世界 8 格）。 */

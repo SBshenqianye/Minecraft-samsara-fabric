@@ -36,4 +36,43 @@ class WorldChainRulesTest {
         assertEquals(100, WorldChainRules.toOverworld(12.5));
         assertEquals(-100, WorldChainRules.toOverworld(-12.5));
     }
+
+    @Test
+    void voidDropYIsHighAboveGroundButBelowTopThreshold() {
+        // 26.3 主世界：minY=-64，height=384 → 320 - 16 = 304
+        assertEquals(304, WorldChainRules.voidDropY(-64, 384));
+        assertTrue(WorldChainRules.voidDropY(-64, 384) < -64 + 384);
+        assertFalse(WorldChainRules.isTop(
+                WorldChainRules.voidDropY(-64, 384), -64, 384,
+                WorldChainRules.DimensionKind.OVERWORLD));
+    }
+
+    @Test
+    void voidDropYClampsToDimensionBounds() {
+        // 低高度维度按传入的 minY/height 计算，不写死 320。
+        assertEquals(112, WorldChainRules.voidDropY(0, 128));
+        assertEquals(240, WorldChainRules.voidDropY(0, 256));
+        assertEquals(176, WorldChainRules.voidDropY(64, 128));
+        // 目标值低于下限时钳到 minY + 2
+        assertEquals(2, WorldChainRules.voidDropY(0, 16));
+        assertEquals(-62, WorldChainRules.voidDropY(-64, 16));
+        for (int height : new int[] { 16, 32, 64, 128, 256, 384, 512 }) {
+            int y = WorldChainRules.voidDropY(-64, height);
+            assertTrue(y >= -62, "落点不能低于 minY + 2");
+            assertTrue(y <= -64 + height - 2, "落点不能高于 minY + height - 2");
+            assertTrue(y < -64 + height, "落点必须严格低于顶部阈值");
+        }
+    }
+
+    @Test
+    void voidDropGuardSuppressesTopOnlyUntilExpiry() {
+        assertTrue(WorldChainRules.isVoidDropGuardActive(1_000L, 6_000L));
+        assertFalse(WorldChainRules.isVoidDropGuardActive(6_000L, 6_000L));
+        assertFalse(WorldChainRules.isVoidDropGuardActive(7_000L, 6_000L));
+        // 过期后“主世界顶部 → 上层下界”恢复
+        int overworldTop = 321;
+        assertFalse(WorldChainRules.isVoidDropGuardActive(6_000L, 6_000L));
+        assertTrue(WorldChainRules.isTop(overworldTop, -64, 384,
+                WorldChainRules.DimensionKind.OVERWORLD));
+    }
 }

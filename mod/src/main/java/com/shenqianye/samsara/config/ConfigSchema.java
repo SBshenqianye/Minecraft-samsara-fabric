@@ -111,7 +111,14 @@ public final class ConfigSchema {
                         "执行 /samsara restart 后先广播倒计时多少秒再停服"),
                 ConfigEntry.bool("output.autoContinuePrefix", true, "输出",
                         "是否为聊天输出的续行自动添加“  ▸ ”前缀；"
-                                + "关闭后完全按模板文字输出，行首由你自己控制")
+                                + "关闭后完全按模板文字输出，行首由你自己控制"),
+                ConfigEntry.bool("chain.voidDropSlowFalling", true, "传送链",
+                        "下界虚空 → 下层主世界高空坠落时是否给予缓降效果。"
+                                + "默认开启，避免 240 格以上自由落体必死；"
+                                + "关闭后保留真实摔落伤害"),
+                ConfigEntry.integer("chain.voidDropSlowFallingSeconds", 60, 0, 300, "传送链",
+                        "虚空高空落点的缓降持续时间（秒）；0 = 不施加缓降。"
+                                + "仅在“缓降”开启时生效")
         ));
 
         file(PERMISSIONS, "权限", List.of(

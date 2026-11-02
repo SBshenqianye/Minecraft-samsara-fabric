@@ -1,11 +1,16 @@
 package com.shenqianye.samsara.season;
 
 import com.shenqianye.samsara.Samsara;
+import com.shenqianye.samsara.config.CommandConfig;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.entity.Relative;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.Heightmap;
@@ -29,9 +34,12 @@ import java.util.UUID;
 public final class WorldChainTeleport {
     private static final int CHECK_INTERVAL_TICKS = 5;
     private static final long COOLDOWN_MS = 3000L;
+    /** 虚空高空落点后的防乒乓窗口：覆盖慢降与区块加载导致的短暂 Y 抖动。 */
+    private static final long VOID_DROP_GUARD_MS = 5000L;
 
     private static final Map<UUID, Long> lastTeleport = new HashMap<>();
     private static final Map<UUID, String> lastNotice = new HashMap<>();
+    private static final Map<UUID, Long> voidDropGuardUntil = new HashMap<>();
     private static int counter;
 
     private WorldChainTeleport() {
@@ -44,6 +52,7 @@ public final class WorldChainTeleport {
     public static synchronized void unload() {
         lastTeleport.clear();
         lastNotice.clear();
+        voidDropGuardUntil.clear();
     }
 
     public static synchronized String statusText() {
@@ -55,6 +64,8 @@ public final class WorldChainTeleport {
             return;
         }
         counter = 0;
+        long now = System.currentTimeMillis();
+        voidDropGuardUntil.entrySet().removeIf(entry -> entry.getValue() <= now);
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             try {
                 check(server, player);
@@ -104,8 +115,9 @@ public final class WorldChainTeleport {
                 }
                 int tx = WorldChainRules.toOverworld(player.getX());
                 int tz = WorldChainRules.toOverworld(player.getZ());
-                teleport(player, target, lower, tx, tz, safeY(target, tx, tz),
-                        "下界虚空 → 下层 " + lower.id + " 主世界");
+                int dropY = resolveVoidDropY(target, tx, tz, lower);
+                teleport(player, target, lower, tx, tz, dropY,
+                        "下界虚空 → 下层 " + lower.id + " 主世界高空", true);
             }
             return;
         }
@@ -125,6 +137,11 @@ public final class WorldChainTeleport {
                             + "）加载失败：" + StackDimensionLoader.failureReason(layer.id));
                 }
             } else if ("overworld".equals(dim)) {
+                long guardUntil = voidDropGuardUntil.getOrDefault(player.getUUID(), 0L);
+                if (WorldChainRules.isVoidDropGuardActive(System.currentTimeMillis(), guardUntil)) {
+                    // 刚经历下界虚空 → 高空落点：守卫期内不把落点附近的 Y 抖动判成上行。
+                    return;
+                }
                 StackLayer upper = manifest.above(layer);
                 if (upper == null) {
                     return;
@@ -145,20 +162,97 @@ public final class WorldChainTeleport {
 
     private static void teleport(ServerPlayer player, ServerLevel target, StackLayer layer,
                                  int x, int z, int y, String reason) {
+        teleport(player, target, layer, x, z, y, reason, false);
+    }
+
+    private static void teleport(ServerPlayer player, ServerLevel target, StackLayer layer,
+                                 int x, int z, int y, String reason, boolean voidDrop) {
         long now = System.currentTimeMillis();
         Long last = lastTeleport.get(player.getUUID());
         if (last != null && now - last < COOLDOWN_MS) {
             return;
         }
         lastTeleport.put(player.getUUID(), now);
-        player.teleportTo(target, x + 0.5, y, z + 0.5, Set.of(),
+        if (voidDrop) {
+            // 下界虚空已经累积了很长的摔落距离；不清掉会在下层主世界落地时直接摔死。
+            // 速度不在这里清零：下面用 Relative.DELTA 把进入虚空时的动量（含水平与下落）
+            // 一并带到落点，避免跨世界传送把玩家“刹停”。
+            player.resetFallDistance();
+        }
+        Set<Relative> relatives = voidDrop ? Relative.DELTA : Set.of();
+        player.teleportTo(target, x + 0.5, y, z + 0.5, relatives,
                 player.getYRot(), player.getXRot(), false);
         applyRespawn(player, target, layer);
+        if (voidDrop) {
+            voidDropGuardUntil.put(player.getUUID(), now + VOID_DROP_GUARD_MS);
+            applyVoidDropSlowFalling(player);
+        }
         player.sendSystemMessage(Component.literal("[世界栈] " + reason
                 + " · (" + x + ", " + y + ", " + z + ")"));
         Samsara.LOGGER.info("[周目管理 samsara] 跨世界传送：{} {} → {} ({}, {}, {})",
                 player.getName().getString(), reason,
                 target.dimension().identifier(), x, y, z);
+    }
+
+    /**
+     * 计算“下界虚空 → 下层主世界”的高空 Y。
+     *
+     * <p>先确保目标区块已生成；区块加载失败时降级到地表安全点并写 WARN。
+     * 落点 Y 由 {@link WorldChainRules#voidDropY(int, int)} 给出，再从落点向上
+     * 找 2~3 格空气，避免落在方块里。找不到空气时同样降级到地表安全点。
+     */
+    private static int resolveVoidDropY(ServerLevel target, int x, int z, StackLayer lower) {
+        try {
+            target.getChunk(x >> 4, z >> 4);
+        } catch (Exception e) {
+            Samsara.LOGGER.warn("[周目管理 samsara] 下层世界 {} 目标区块 ({}, {}) 加载失败，"
+                            + "虚空落点降级为地表安全点：{}",
+                    lower.id, x >> 4, z >> 4, e.getMessage());
+            return safeY(target, x, z);
+        }
+        int baseY = WorldChainRules.voidDropY(
+                target.dimensionType().minY(), target.dimensionType().height());
+        int airY = findVoidDropAirY(target, x, z, baseY);
+        if (airY == Integer.MIN_VALUE) {
+            Samsara.LOGGER.warn("[周目管理 samsara] 下层世界 {} ({}, {}) 高空 {} 附近没有空气，"
+                            + "虚空落点降级为地表安全点",
+                    lower.id, x, z, baseY);
+            return safeY(target, x, z);
+        }
+        return airY;
+    }
+
+    /** 从高空落点向上找 2~3 格空气；必须保持在主世界顶部阈值以下。 */
+    private static int findVoidDropAirY(ServerLevel level, int x, int z, int baseY) {
+        int top = level.dimensionType().minY() + level.dimensionType().height();
+        int upper = top - 2;
+        for (int i = 0; i < 3; i++) {
+            int y = baseY + i;
+            if (y > upper) {
+                break;
+            }
+            if (level.getBlockState(new BlockPos(x, y, z)).isAir()
+                    && level.getBlockState(new BlockPos(x, y + 1, z)).isAir()) {
+                return y;
+            }
+        }
+        return Integer.MIN_VALUE;
+    }
+
+    /** 默认给 60 秒无粒子、无环境音、无图标的缓降；可在 commands.yml 关闭或改时长。 */
+    private static void applyVoidDropSlowFalling(ServerPlayer player) {
+        CommandConfig config = CommandConfig.getInstance();
+        if (!config.chainVoidDropSlowFalling()) {
+            return;
+        }
+        int seconds = config.chainVoidDropSlowFallingSeconds();
+        if (seconds <= 0) {
+            return;
+        }
+        player.level().registryAccess().lookupOrThrow(Registries.MOB_EFFECT)
+                .get(Identifier.parse("minecraft:slow_falling"))
+                .ifPresent(effect -> player.addEffect(new MobEffectInstance(
+                        effect, seconds * 20, 0, false, false, false)));
     }
 
     /**

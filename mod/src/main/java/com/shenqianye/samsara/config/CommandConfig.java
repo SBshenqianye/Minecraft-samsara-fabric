@@ -39,6 +39,9 @@ public final class CommandConfig {
     private int shutdownCountdownSeconds;
     private boolean outputAutoContinuePrefix;
 
+    private boolean chainVoidDropSlowFalling;
+    private int chainVoidDropSlowFallingSeconds;
+
     private CommandConfig() {
         reload();
     }
@@ -144,6 +147,16 @@ public final class CommandConfig {
         return outputAutoContinuePrefix;
     }
 
+    // ---- 跨世界传送链 ----
+
+    public boolean chainVoidDropSlowFalling() {
+        return chainVoidDropSlowFalling;
+    }
+
+    public int chainVoidDropSlowFallingSeconds() {
+        return chainVoidDropSlowFallingSeconds;
+    }
+
     /** 配置文件绝对路径 */
     public String configPath() {
         return ConfigManager.getInstance().file(ConfigSchema.COMMANDS).toAbsolutePath()
@@ -180,6 +193,9 @@ public final class CommandConfig {
         completionMaxItems = Math.max(1, config.integer(id, "completion.maxItems"));
         shutdownCountdownSeconds = Math.max(1, config.integer(id, "shutdown.countdownSeconds"));
         outputAutoContinuePrefix = config.bool(id, "output.autoContinuePrefix");
+        chainVoidDropSlowFalling = config.bool(id, "chain.voidDropSlowFalling");
+        chainVoidDropSlowFallingSeconds = Math.max(0,
+                Math.min(300, config.integer(id, "chain.voidDropSlowFallingSeconds")));
         return "命令配置已重载：" + (whereEnabled ? "where 启用" : "where 禁用")
                 + " · 广播" + (whereBroadcast ? "允许" : "禁止")
                 + " · tpa " + (tpaEnabled ? "启用" : "禁用")
