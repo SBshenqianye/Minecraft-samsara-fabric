@@ -251,28 +251,11 @@ class SeasonAdvanceVoteTest {
     }
 
     @Test
-    void webModelContainsAgreedMissingAndRemaining() {
-        SeasonAdvanceVote vote = sameVote();
-        vote.agree(B, "B", NOW + 1);
-        Map<String, Object> model = vote.webModel(online(A, "A", B, "B", C, "C"), NOW + 2);
-
-        assertEquals(true, model.get("active"));
-        assertEquals("same", model.get("mode"));
-        assertEquals("A", model.get("initiatorName"));
-        assertEquals(2, model.get("agreedCount"));
-        assertEquals(1, model.get("missingCount"));
-        assertEquals(3, model.get("requiredCount"));
-        assertEquals(SeasonAdvanceVote.TTL_MS - 2, model.get("remainingMs"));
-        assertTrue(model.get("remainingText").toString().contains("2d"));
-        assertEquals("world", model.get("layerId"));
-        assertTrue(model.get("executionError").toString().isEmpty());
-    }
-
-    @Test
     void voteCommandsDefaultToUser() {
         var defaults = com.shenqianye.samsara.permission.PermissionDefaults.entries();
         assertEquals("user", defaults.get("season advance"));
         assertEquals("user", defaults.get("season agree"));
+        assertEquals("user", defaults.get("season cancel"));
         assertEquals("user", defaults.get("season vote-status"));
     }
 

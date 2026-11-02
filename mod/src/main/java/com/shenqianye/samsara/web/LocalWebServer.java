@@ -48,7 +48,6 @@ public final class LocalWebServer {
     private final WebMapService mapService;
     private final WorldStackWebService worldStackService;
     private final ServerWebService serverService;
-    private final SeasonAdvanceWebService seasonAdvanceService;
     private final String token;
     private final int port;
     private HttpServer server;
@@ -96,18 +95,6 @@ public final class LocalWebServer {
                           WorldStackWebService worldStackService,
                           ServerWebService serverService,
                           String token, int port) {
-        this(service, identityService, outputService, permissionService, mapService,
-                worldStackService, serverService, null, token, port);
-    }
-
-    public LocalWebServer(ConfigService service, IdentityWebService identityService,
-                          OutputWebService outputService,
-                          PermissionWebService permissionService,
-                          WebMapService mapService,
-                          WorldStackWebService worldStackService,
-                          ServerWebService serverService,
-                          SeasonAdvanceWebService seasonAdvanceService,
-                          String token, int port) {
         this.service = service;
         this.identityService = identityService;
         this.outputService = outputService;
@@ -115,7 +102,6 @@ public final class LocalWebServer {
         this.mapService = mapService;
         this.worldStackService = worldStackService;
         this.serverService = serverService;
-        this.seasonAdvanceService = seasonAdvanceService;
         this.token = token == null ? "" : token;
         this.port = port;
     }
@@ -158,9 +144,6 @@ public final class LocalWebServer {
         }
         if (serverService != null) {
             server.createContext("/api/server", this::handleServer);
-        }
-        if (seasonAdvanceService != null) {
-            server.createContext("/api/season-advance", this::handleSeasonAdvance);
         }
         executor = Executors.newFixedThreadPool(4, runnable -> {
             Thread thread = new Thread(runnable, "samsara-web");
@@ -785,35 +768,6 @@ public final class LocalWebServer {
                 status = 400;
             }
             json(exchange, status, result);
-        } catch (RuntimeException e) {
-            status = 500;
-            json(exchange, status, Map.of("error", "服务器内部错误"));
-            LOG.warn("[web] 处理 {} 失败: {}", exchange.getRequestURI().getPath(), e.getMessage());
-        } finally {
-            log(exchange, status, start);
-        }
-    }
-
-    private void handleSeasonAdvance(HttpExchange exchange) throws IOException {
-        long start = System.currentTimeMillis();
-        int status = 200;
-        try {
-            if (!authorized(exchange)) {
-                status = 401;
-                json(exchange, status, Map.of("error", "未授权：缺少或错误的 Bearer token"));
-                return;
-            }
-            if (seasonAdvanceService == null) {
-                status = 503;
-                json(exchange, status, Map.of("error", "投票状态服务未启动"));
-                return;
-            }
-            if (!"GET".equals(exchange.getRequestMethod())) {
-                status = 405;
-                json(exchange, status, Map.of("error", "Method Not Allowed"));
-                return;
-            }
-            json(exchange, 200, seasonAdvanceService.model());
         } catch (RuntimeException e) {
             status = 500;
             json(exchange, status, Map.of("error", "服务器内部错误"));

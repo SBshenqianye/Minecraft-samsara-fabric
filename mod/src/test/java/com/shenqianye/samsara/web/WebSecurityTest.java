@@ -28,7 +28,6 @@ class WebSecurityTest {
         assertEquals("/web/banners.js", WebSecurity.staticResource("/banners.js"));
         assertEquals("/web/map.js", WebSecurity.staticResource("/map.js"));
         assertEquals("/web/world-stack.js", WebSecurity.staticResource("/world-stack.js"));
-        assertEquals("/web/season-advance.js", WebSecurity.staticResource("/season-advance.js"));
         assertNull(WebSecurity.staticResource("/../config/storage.yml"));
         assertNull(WebSecurity.staticResource("/api/config"));
         assertTrue(WebSecurity.safeApiPath("/api/status"));
@@ -37,8 +36,6 @@ class WebSecurityTest {
         assertTrue(WebSecurity.safeApiPath("/api/world-stack"));
         assertTrue(WebSecurity.safeApiPath("/api/world-stack/import/preview"));
         assertTrue(WebSecurity.safeApiPath("/api/world-stack/jobs/imp-1"));
-        assertTrue(WebSecurity.safeApiPath("/api/season-advance"));
-        assertFalse(WebSecurity.safeApiPath("/api/season-advance/cancel"));
         assertFalse(WebSecurity.safeApiPath("/api/../config"));
     }
 

@@ -235,22 +235,6 @@ public final class SeasonAdvanceVoteManager {
 
     // ---- 事件钩子 ----
 
-    /** Web 只读状态快照；没有投票时 active=false。 */
-    public synchronized Map<String, Object> webModel(MinecraftServer server) {
-        long now = System.currentTimeMillis();
-        expireIfNeeded(server, now);
-        if (active == null) {
-            Map<String, Object> empty = new LinkedHashMap<>();
-            empty.put("active", false);
-            empty.put("now", now);
-            empty.put("message", "没有进行中的开新周目投票。");
-            return empty;
-        }
-        Map<String, Object> model = active.webModel(onlinePlayers(server), now);
-        model.put("now", now);
-        return model;
-    }
-
     /** 每 20 秒检查一次过期，并把期间新加入的在线玩家并入 eligible。 */
     public synchronized void tick(MinecraftServer server) {
         long now = System.currentTimeMillis();

@@ -7,7 +7,7 @@
 
 **v0.31.0** · Minecraft **26.3** · Fabric Loader **0.20.1** · Java **25**
 
-> **本轮状态**：**全员同意制已完成**（无管理员时由在线玩家发起，全员同意后开新周目；48 小时自动过期；发起者可撤回、管理员可取消；Web 新增只读投票状态页）；**世界栈已完成**（多栈地图/tile 缓存、导入/排序/归档、操作时间线与撤销、跨栈自动链、真实客户端回归）；**本体管理已加入**（同页折叠的结构化服务器配置、玩家选择、可分支存档时间线）；**共享表单/备份框架**已抽出（`form-kit.js`、`BackupTimeline`）；**track v2 未做**（装备、攻击/使用动作、真实载具类型、鞘翅 vs 创造飞行仍待后续轨迹格式升级）。
+> **本轮状态**：**全员同意制已完成**（无管理员时由在线玩家发起，全员同意后开新周目；48 小时自动过期；发起者可撤回、管理员可取消）；**世界栈已完成**（多栈地图/tile 缓存、导入/排序/归档、操作时间线与撤销、跨栈自动链、真实客户端回归）；**本体管理已加入**（同页折叠的结构化服务器配置、玩家选择、可分支存档时间线）；**共享表单/备份框架**已抽出（`form-kit.js`、`BackupTimeline`）；**track v2 未做**（装备、攻击/使用动作、真实载具类型、鞘翅 vs 创造飞行仍待后续轨迹格式升级）。
 
 ## 能做什么
 
@@ -44,7 +44,7 @@
 | TPA 传送 | ✅ 可用 | `/tpa`、`/tpahere` 发起请求，`/tpaccept`、`/tpdeny`、`/tpcancel` 处理；默认 60 秒过期、每人同时只有 1 个请求、仅同维度；请求消息带 `[同意] [拒绝]` / `[取消请求]` 可点击按钮 |
 | 命令短别名 | ✅ 可用 | `/season`、`/claim`、`/where`、`/version`、`/track`、`/tpa` 系列等；被其他模组占用时自动让位，只保留 `/samsara` 全名 |
 | 新世界与跨世界传送 | ✅ 可用 | `reset new [种子] [levelType] [archiveData]` 把当前 world 压入 `stack_<n>` 维度，新 world 用独立种子/生成器（flat/amplified 等）；`archiveData=true` 只把旧 `data/minecraft` 归档到旧栈层，运行期所有栈共享当前 data；旧世界原位保留；主世界/下界虚空与顶部阈值可连续穿越栈层，栈底下界虚空保留原版死亡；多个玩家可同时待在不同栈 |
-| 全员同意开新周目 | ✅ 可用 | 无管理员且在线 >1 人时，任何玩家可 `/samsara season advance [same\|new]` 发起；发起者自动同意，当前在线与新加入玩家都需 `/samsara season agree`；全员同意后执行一次同世界重置或新世界入栈；48 小时内未达成自动过期，重启后仍按发起时间计算；发起者可用 `/samsara season cancel` 撤回，管理员/控制台可取消；Web“投票”页只读展示状态；管理员在线时请直接 `/samsara reset same\|new` |
+| 全员同意开新周目 | ✅ 可用 | 无管理员且在线 >1 人时，任何玩家可 `/samsara season advance [same\|new]` 发起；发起者自动同意，当前在线与新加入玩家都需 `/samsara season agree`；全员同意后执行一次同世界重置或新世界入栈；48 小时内未达成自动过期，重启后仍按发起时间计算；发起者可用 `/samsara season cancel` 撤回，管理员/控制台可取消；管理员在线时请直接 `/samsara reset same\|new` |
 | 身份组 | ✅ 可用 | 把正版/离线/历史账号映射到同一个 data UUID；默认关闭，关闭时不解析、不同步；组由本地 Web 的“身份组”标签页以卡片方式维护，不提供注册/登录/密码 |
 | 账号切换同步 | ✅ 可用 | 同账号重连不同步；正版 ↔ 离线账号切换时同步背包/位置/进度/统计；失败保留 journal、`.bak` 与源数据 |
 | 宠物多主人 | ✅ 可用 | 保留原版主主人，额外主人写入 `samsara:owners`；所有主人可交互/坐下/染色/喂食/繁殖；跟随按主主人→最后手持驯服物品→最近在线主人 |
@@ -61,7 +61,7 @@
 | 看当前世界/轮次/出生点 | `/samsara world info`、`/samsara spawn`、`/samsara spawn history` |
 | 看圈地 | `/samsara claim info`、`/samsara claim boundary` |
 | 同世界重置 | `/samsara reset same`（在玩家当前栈层执行；倒流 + 删未保护区 + 排斥点重生；二次确认） |
-| 无管理员开新周目 | `/samsara season advance [same\|new]` 发起 → 在线玩家 `/samsara season agree` → `/samsara season vote-status` 查看名单与剩余时间；发起者/管理员可 `/samsara season cancel`；48 小时未全员同意自动过期；Web“投票”页只读查看 |
+| 无管理员开新周目 | `/samsara season advance [same\|new]` 发起 → 在线玩家 `/samsara season agree` → `/samsara season vote-status` 查看名单与剩余时间；发起者/管理员可 `/samsara season cancel`；48 小时未全员同意自动过期 |
 | 新世界入栈 | `/samsara reset new [种子] [normal\|flat\|amplified\|...] [true\|false]`（第三个参数 `archiveData` 只归档旧 data；二次确认） |
 | 看/切换世界栈 | `/samsara world list`、`/samsara world info`；管理员 `/samsara world enter <世界名>`、`/samsara world leave`（直接传送到栈维度，不再停服） |
 | 管理/调试 | `/samsara debug ...`（owner；圈地、倒流、轨迹、配置、测试数据） |

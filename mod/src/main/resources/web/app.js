@@ -11,15 +11,15 @@ const state = {
   tab: 'config',
   navTargets: [],
   navScrollHandler: null,
-  scrollPositions: { config: 0, identity: 0, 'claim-range': 0, output: 0, permissions: 0, map: 0, 'world-stack': 0, 'season-advance': 0 },
-  navScrollPositions: { config: 0, identity: 0, 'claim-range': 0, output: 0, permissions: 0, map: 0, 'world-stack': 0, 'season-advance': 0 },
+  scrollPositions: { config: 0, identity: 0, 'claim-range': 0, output: 0, permissions: 0, map: 0, 'world-stack': 0 },
+  navScrollPositions: { config: 0, identity: 0, 'claim-range': 0, output: 0, permissions: 0, map: 0, 'world-stack': 0 },
   claimPreview: null,
 };
 
 const connectHooks = [];
 const connectedHooks = [];
-const panelIds = ['panel-identity', 'panel-config', 'panel-claim-range', 'panel-output', 'panel-permissions', 'panel-map', 'panel-world-stack', 'panel-season-advance'];
-const tabNames = { 'panel-identity': 'identity', 'panel-config': 'config', 'panel-claim-range': 'claim-range', 'panel-output': 'output', 'panel-permissions': 'permissions', 'panel-map': 'map', 'panel-world-stack': 'world-stack', 'panel-season-advance': 'season-advance' };
+const panelIds = ['panel-identity', 'panel-config', 'panel-claim-range', 'panel-output', 'panel-permissions', 'panel-map', 'panel-world-stack'];
+const tabNames = { 'panel-identity': 'identity', 'panel-config': 'config', 'panel-claim-range': 'claim-range', 'panel-output': 'output', 'panel-permissions': 'permissions', 'panel-map': 'map', 'panel-world-stack': 'world-stack' };
 
 const $ = (id) => document.getElementById(id);
 
@@ -2232,8 +2232,6 @@ function setActiveTab(name) {
     window.SamsaraMap?.activate();
   } else if (name === 'world-stack') {
     window.SamsaraWorldStack?.activate();
-  } else if (name === 'season-advance') {
-    window.SamsaraSeasonAdvance?.activate();
   } else if (name === 'identity') {
     window.SamsaraIdentity?.activate();
   } else if (name === 'output') {
@@ -2273,11 +2271,6 @@ const TAB_ACTIONS = {
     hint: '导入/归档重启后执行；排序立即保存，只改逻辑顺序不改目录名',
     save: null,
   },
-  'season-advance': {
-    title: '投票',
-    hint: '只读状态；发起/同意/撤回仍在游戏内完成',
-    save: null,
-  },
   identity: {
     title: '身份组',
     hint: '保存会写入 identity.yml 并热重载',
@@ -2311,7 +2304,7 @@ function updateTabActions(name) {
 }
 
 function setTabCount(panel, count) {
-  const map = { config: 'config-count', identity: 'identity-count', 'claim-range': 'claim-range-count', output: 'output-count', permissions: 'perm-count', map: 'map-count', 'world-stack': 'world-stack-count', 'season-advance': 'season-advance-count' };
+  const map = { config: 'config-count', identity: 'identity-count', 'claim-range': 'claim-range-count', output: 'output-count', permissions: 'perm-count', map: 'map-count', 'world-stack': 'world-stack-count' };
   const el = $(map[panel]);
   if (el) el.textContent = String(count == null ? 0 : count);
 }
@@ -2327,7 +2320,6 @@ function refreshCounts() {
   window.SamsaraPermissions?.refreshCount?.();
   window.SamsaraMap?.refreshCount?.();
   window.SamsaraWorldStack?.refreshCount?.();
-  window.SamsaraSeasonAdvance?.refreshCount?.();
 }
 
 async function saveActive() {
@@ -2345,7 +2337,6 @@ async function reloadActive() {
   if (state.tab === 'permissions') return window.SamsaraPermissions?.reload?.();
   if (state.tab === 'map') return window.SamsaraMap?.reload?.();
   if (state.tab === 'world-stack') return window.SamsaraWorldStack?.reload?.();
-  if (state.tab === 'season-advance') return window.SamsaraSeasonAdvance?.reload?.();
   return reloadConfig();
 }
 
@@ -2447,7 +2438,7 @@ window.SamsaraUI = {
 };
 
 const initialTab = (location.hash || '').replace('#', '');
-if (['config', 'claim-range', 'identity', 'output', 'permissions', 'map', 'world-stack', 'season-advance'].includes(initialTab)) {
+if (['config', 'claim-range', 'identity', 'output', 'permissions', 'map', 'world-stack'].includes(initialTab)) {
   setActiveTab(initialTab);
 } else {
   updateTabActions('config');

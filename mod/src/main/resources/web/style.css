@@ -1031,35 +1031,7 @@ body.server-section #panel-permissions {
 .server-job-head strong { font-family: var(--mono); font-size: 12px; }
 .server-job-log { max-height: 180px; overflow: auto; padding: 8px; border-radius: 7px; background: rgba(15, 23, 42, .75); color: var(--muted); font: 11px/1.45 var(--mono); white-space: pre-wrap; }
 
-.season-vote-status { margin: 10px 0 12px; }
-.season-vote-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 12px 0; }
-.season-vote-column h3, #panel-season-advance h3 { margin: 0 0 8px; font-size: 13px; }
-.season-vote-list { display: flex; flex-direction: column; gap: 6px; }
-.season-vote-member {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 9px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--panel-soft);
-  min-width: 0;
-}
-.season-vote-member strong { font-size: 12px; }
-.season-vote-member .muted { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.season-vote-member.voted { border-color: color-mix(in srgb, var(--ok, #5eead4) 35%, var(--line)); }
-.season-vote-badge {
-  flex: 0 0 auto;
-  padding: 2px 7px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--ok, #5eead4) 40%, var(--line));
-  color: var(--ok, #5eead4);
-  font-size: 11px;
-}
-.season-vote-badge.missing { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 40%, var(--line)); }
-
 @media (max-width: 860px) {
-  .season-vote-columns { grid-template-columns: 1fr; }
   .timeline-card-head { flex-direction: column; }
   .timeline-card-head .timeline-badges { width: 100%; }
   .server-field-meta { flex: 0 0 100%; }

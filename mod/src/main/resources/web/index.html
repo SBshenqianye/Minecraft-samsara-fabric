@@ -44,9 +44,6 @@
       <button class="tab" data-panel="panel-world-stack">
         世界栈 <span class="tab-count" id="world-stack-count">0</span>
       </button>
-      <button class="tab" data-panel="panel-season-advance">
-        投票 <span class="tab-count" id="season-advance-count">0</span>
-      </button>
       <button class="tab" data-panel="panel-output">
         输出格式 <span class="tab-count" id="output-count">0</span>
       </button>
@@ -331,45 +328,6 @@
             </div>
           </div>
           <div id="world-stack-jobs" class="world-stack-jobs"></div>
-        </section>
-      </div>
-
-      <div id="panel-season-advance" class="panel-stack" hidden>
-        <section class="panel" id="season-advance-overview">
-          <div class="panel-head">
-            <div>
-              <h2>开新周目投票</h2>
-              <p class="panel-sub">只读状态。发起、同意、撤回/取消仍在游戏内用 <code>/samsara season ...</code> 完成；Web 不写投票状态。</p>
-            </div>
-            <div class="panel-tools">
-              <button id="season-advance-refresh" class="ghost" type="button">重新读取</button>
-            </div>
-          </div>
-          <div id="season-advance-message" class="message" role="status"></div>
-          <div id="season-advance-stats" class="stat-row"></div>
-        </section>
-
-        <section class="panel" id="season-advance-detail">
-          <div class="panel-head">
-            <div>
-              <h2>投票状态</h2>
-              <p class="panel-sub">发起时在线玩家与投票期间新加入的玩家都会进入名单；已投票记录不会因玩家下线而删除。</p>
-            </div>
-          </div>
-          <div id="season-advance-status" class="season-vote-status"></div>
-          <div id="season-advance-error" class="message warning" hidden></div>
-          <div class="season-vote-columns">
-            <div class="season-vote-column">
-              <h3>已同意 <span id="season-advance-agreed-count" class="muted small">0</span></h3>
-              <div id="season-advance-agreed" class="season-vote-list"></div>
-            </div>
-            <div class="season-vote-column">
-              <h3>未同意 <span id="season-advance-missing-count" class="muted small">0</span></h3>
-              <div id="season-advance-missing" class="season-vote-list"></div>
-            </div>
-          </div>
-          <h3>全部名单 <span id="season-advance-eligible-count" class="muted small">0</span></h3>
-          <div id="season-advance-eligible" class="season-vote-list"></div>
         </section>
       </div>
 
@@ -682,7 +640,6 @@
   <script src="/app.js"></script>
   <script src="/map.js"></script>
   <script src="/world-stack.js"></script>
-  <script src="/season-advance.js"></script>
   <script src="/output.js"></script>
   <script src="/identity.js"></script>
   <script src="/permissions.js"></script>
