@@ -35,7 +35,7 @@ class ServerConfigFilesTest {
         assertTrue(saved.backupPath.length() > 0);
         assertTrue(Files.readString(root.resolve("server.properties"), StandardCharsets.UTF_8)
                 .endsWith("server-port=25565\n"));
-        try (var stream = Files.walk(root.resolve("samsara/server-config-backups"))) {
+        try (var stream = Files.walk(root.resolve("backups/samsara/server-config-backups"))) {
             assertTrue(stream.anyMatch(Files::isRegularFile));
         }
     }

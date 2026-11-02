@@ -169,11 +169,11 @@ public final class ConfigSchema {
                         "允许 Web 导入世界栈的服务器本地目录（绝对路径）；服务器根目录始终允许。"
                                 + "留空时只允许服务器根目录下的 world；来源目录只读，不会被修改"),
                 ConfigEntry.integer("backupKeep", 5, 0, 100, "世界栈",
-                        "服务器级世界栈备份保留份数：只清理 samsara/world-stack-backup 下的"
+                        "服务器级世界栈备份保留份数：只清理 backups/samsara/world-stack-backup 下的"
                                 + "导入/提升栈顶备份，按时间保留最新 N 份；0 表示不自动清理；"
                                 + "world-stack-archive 是用户数据，永不自动删除"),
                 ConfigEntry.integer("serverBackupKeep", 5, 0, 100, "本体",
-                        "本体存档备份保留份数：只清理 samsara/server-backups 下由本功能创建的"
+                        "本体存档备份保留份数：只清理 backups/samsara/server-backups 下由本功能创建的"
                                 + " zip 备份，按时间保留最新 N 份；0 表示不自动清理；"
                                 + "源 world 与 pre-restore 回滚目录永不自动删除")
         ));

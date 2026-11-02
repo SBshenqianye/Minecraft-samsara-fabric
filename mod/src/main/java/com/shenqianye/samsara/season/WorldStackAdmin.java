@@ -5,6 +5,7 @@ import com.google.gson.GsonBuilder;
 import com.shenqianye.samsara.Samsara;
 import com.shenqianye.samsara.config.ConfigManager;
 import com.shenqianye.samsara.config.ConfigSchema;
+import com.shenqianye.samsara.server.ServerBackupPaths;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtAccounter;
@@ -68,7 +69,7 @@ public final class WorldStackAdmin {
 
     private static Path serverDataRoot(Path worldDir) {
         Path parent = worldDir.toAbsolutePath().normalize().getParent();
-        return (parent == null ? worldDir : parent).resolve("samsara");
+        return ServerBackupPaths.root(parent == null ? worldDir : parent);
     }
 
     private static String serverRelative(Path worldDir, Path path) {
@@ -265,16 +266,16 @@ public final class WorldStackAdmin {
         addFile(out, 0, "服务器根", server, "模组配置与服务器级备份的根目录", false);
         addFile(out, 1, "config/samsara/", server.resolve("config/samsara"),
                 "YAML 配置（不随存档）", false);
-        addFile(out, 1, "samsara/world-stack-archive/", archiveRoot(worldDir),
+        addFile(out, 1, "backups/samsara/world-stack-archive/", archiveRoot(worldDir),
                 "栈层归档备份（不随存档；用户数据，不自动删除）", true);
-        addFile(out, 1, "samsara/world-stack-backup/", backupRoot(worldDir),
+        addFile(out, 1, "backups/samsara/world-stack-backup/", backupRoot(worldDir),
                 "导入/提升栈顶的备份（不随存档，保留最近 " + backupKeep() + " 份）", true);
-        addFile(out, 1, "samsara/server-backups/", server.resolve("samsara/server-backups"),
+        addFile(out, 1, "backups/samsara/server-backups/", server.resolve("backups/samsara/server-backups"),
                 "本体存档备份（world + 服务器配置，不随存档）", false);
-        addFile(out, 1, "samsara/server-backup-jobs/", server.resolve("samsara/server-backup-jobs"),
+        addFile(out, 1, "backups/samsara/server-backup-jobs/", server.resolve("backups/samsara/server-backup-jobs"),
                 "本体备份/恢复任务报告", false);
-        addFile(out, 1, "samsara/server-config-backups/",
-                server.resolve("samsara/server-config-backups"),
+        addFile(out, 1, "backups/samsara/server-config-backups/",
+                server.resolve("backups/samsara/server-config-backups"),
                 "服务器配置写入前备份", false);
         addFile(out, 1, "samsara/global/（服务器级）", server.resolve("samsara/global"),
                 "globalFollowWorld=false 时使用", false);
@@ -1768,8 +1769,8 @@ public final class WorldStackAdmin {
 
     static boolean serverBackupPending(Path worldDir) {
         Path server = serverRoot(worldDir);
-        return Files.isRegularFile(server.resolve("samsara/pending-server-backup.json"))
-                || Files.isRegularFile(server.resolve("samsara/pending-server-restore.json"));
+        return Files.isRegularFile(server.resolve("backups/samsara/pending-server-backup.json"))
+                || Files.isRegularFile(server.resolve("backups/samsara/pending-server-restore.json"));
     }
 
     static Path serverRoot(Path worldDir) {

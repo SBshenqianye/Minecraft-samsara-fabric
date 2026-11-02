@@ -206,7 +206,7 @@ class WorldStackAdminImportTest {
         assertEquals("old-level", Files.readString(
                 world.resolve("samsara/stack/stack_0/level.dat")));
         assertTrue(Files.isRegularFile(
-                server.resolve("samsara/world-stack-backup/import-" + scheduled.jobId)
+                server.resolve("backups/samsara/world-stack-backup/import-" + scheduled.jobId)
                         .resolve("data-minecraft/world_gen_settings.dat")));
         assertTrue(Files.readString(world.resolve("samsara/claims/claims.json"))
                 .contains("\"new\""), "栈顶导入应带走源目录的 claims");
@@ -300,7 +300,7 @@ class WorldStackAdminImportTest {
         WorldStackAdmin.consumePending(world);
 
         assertNull(StackManifest.load(world).byId("stack_0"));
-        Path archive = server.resolve("samsara/world-stack-archive");
+        Path archive = server.resolve("backups/samsara/world-stack-archive");
         try (var stream = Files.list(archive)) {
             Path backup = stream.filter(Files::isDirectory).findFirst().orElseThrow();
             assertTrue(Files.isRegularFile(backup.resolve(
@@ -313,7 +313,7 @@ class WorldStackAdminImportTest {
     @Test
     void pruneBackupsKeepsNewestAndNeverTouchesArchive() throws Exception {
         Path world = world();
-        Path backup = server.resolve("samsara/world-stack-backup");
+        Path backup = server.resolve("backups/samsara/world-stack-backup");
         for (int i = 0; i < 4; i++) {
             Path dir = backup.resolve("promote-prom-" + i);
             Files.createDirectories(dir);
@@ -321,7 +321,7 @@ class WorldStackAdminImportTest {
             Files.setLastModifiedTime(dir,
                     java.nio.file.attribute.FileTime.fromMillis(1_700_000_000_000L + i * 1000L));
         }
-        Path archive = server.resolve("samsara/world-stack-archive/stack_0-arc-1");
+        Path archive = server.resolve("backups/samsara/world-stack-archive/stack_0-arc-1");
         Files.createDirectories(archive);
         Files.writeString(archive.resolve("marker.txt"), "keep", StandardCharsets.UTF_8);
 

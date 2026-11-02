@@ -87,7 +87,7 @@ class WorldStackTimelineTest {
         assertTrue(first.ok, String.valueOf(first.preview.errors));
         WorldStackAdmin.consumePending(world);
 
-        Path opFile = server.resolve("samsara/world-stack-backup/import-" + first.jobId)
+        Path opFile = server.resolve("backups/samsara/world-stack-backup/import-" + first.jobId)
                 .resolve("operation.json");
         assertTrue(Files.isRegularFile(opFile), "新导入必须写 operation.json");
         WorldStackTimeline.Operation op = WorldStackTimeline.readOperation(world, opFile);
@@ -99,7 +99,7 @@ class WorldStackTimelineTest {
         assertTrue(op.affectedIds.contains("stack_0"));
         assertEquals(1, op.beforeManifest.layers.size());
         assertEquals(2, op.afterManifest.layers.size());
-        assertTrue(Files.isDirectory(server.resolve("samsara/world-stack-backup/import-"
+        assertTrue(Files.isDirectory(server.resolve("backups/samsara/world-stack-backup/import-"
                 + first.jobId)));
 
         Map<String, Object> timeline = WorldStackTimeline.timeline(world);
@@ -133,7 +133,7 @@ class WorldStackTimelineTest {
     @Test
     void legacyBackupWithoutOperationJsonIsReadOnly() throws Exception {
         Path world = world();
-        Path legacy = server.resolve("samsara/world-stack-backup/import-legacy-1");
+        Path legacy = server.resolve("backups/samsara/world-stack-backup/import-legacy-1");
         Files.createDirectories(legacy);
         Files.writeString(legacy.resolve("marker.txt"), "old", StandardCharsets.UTF_8);
 
@@ -202,7 +202,7 @@ class WorldStackTimelineTest {
                 + "00000000-0000-0000-0000-000000000001.dat")));
         assertFalse(Files.isRegularFile(world.resolve("samsara/pending-stack-restore.json")));
         String jobId = String.valueOf(queued.get("jobId"));
-        try (var stream = Files.list(server.resolve("samsara/world-stack-backup"))) {
+        try (var stream = Files.list(server.resolve("backups/samsara/world-stack-backup"))) {
             assertTrue(stream.anyMatch(path -> path.getFileName().toString()
                     .equals("pre-restore-" + jobId)), "执行前必须保留 pre-restore 快照");
         }
@@ -323,7 +323,7 @@ class WorldStackTimelineTest {
                 world.resolve("dimensions/samsara/stack_0/overworld/region/r.0.0.mca")));
         assertEquals("meta", Files.readString(
                 world.resolve("samsara/stack/stack_0/marker.txt")));
-        Path archiveRoot = server.resolve("samsara/world-stack-archive");
+        Path archiveRoot = server.resolve("backups/samsara/world-stack-archive");
         try (var stream = Files.list(archiveRoot)) {
             Path archive = stream.filter(Files::isDirectory).findFirst().orElseThrow();
             assertTrue(Files.isRegularFile(
@@ -336,7 +336,7 @@ class WorldStackTimelineTest {
     void hierarchyTestDataHasNoWorldGenSettingsStillCountsAsLegacy() throws Exception {
         // 旧备份没有 operation.json 时，即使目录里只有 level.dat 也不能猜测撤销。
         Path world = world();
-        Path legacy = server.resolve("samsara/world-stack-backup/promote-old");
+        Path legacy = server.resolve("backups/samsara/world-stack-backup/promote-old");
         Files.createDirectories(legacy);
         Files.writeString(legacy.resolve("top-level.dat"), "x", StandardCharsets.UTF_8);
         WorldStackTimeline.Operation op = WorldStackTimeline.find(world, "ws-legacy-old");

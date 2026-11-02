@@ -43,7 +43,7 @@ import java.util.zip.ZipOutputStream;
  * <p>创建/恢复都在服务器停止后、下一次启动、世界打开之前执行（由
  * {@link com.shenqianye.samsara.season.StackBootstrap#prepare()} 调用），
  * 避免运行中复制 region 产生不一致的备份。恢复前会把当前 world/配置移动到
- * {@code samsara/server-backups/pre-restore-<job>/}，失败自动回滚。
+ * {@code backups/samsara/server-backups/pre-restore-<job>/}，失败自动回滚。
  *
  * <p>备份内容：world（排除 session.lock 与 web-map-cache）+ 服务器配置
  * （server.properties/ops/whitelist/banned/eula）+ config/samsara。
@@ -92,19 +92,19 @@ public final class ServerBackup {
     }
 
     public static Path backupRoot(Path serverRoot) {
-        return serverRoot.resolve("samsara/server-backups");
+        return ServerBackupPaths.root(serverRoot).resolve("server-backups");
     }
 
     public static Path jobRoot(Path serverRoot) {
-        return serverRoot.resolve("samsara/server-backup-jobs");
+        return ServerBackupPaths.root(serverRoot).resolve("server-backup-jobs");
     }
 
     public static Path pendingBackupFile(Path serverRoot) {
-        return serverRoot.resolve("samsara/pending-server-backup.json");
+        return ServerBackupPaths.root(serverRoot).resolve("pending-server-backup.json");
     }
 
     public static Path pendingRestoreFile(Path serverRoot) {
-        return serverRoot.resolve("samsara/pending-server-restore.json");
+        return ServerBackupPaths.root(serverRoot).resolve("pending-server-restore.json");
     }
 
     public static Path backupFile(Path serverRoot, String id) {
@@ -116,7 +116,7 @@ public final class ServerBackup {
     }
 
     public static Path stateFile(Path serverRoot) {
-        return serverRoot.resolve("samsara/server-backup-state.json");
+        return ServerBackupPaths.root(serverRoot).resolve("server-backup-state.json");
     }
 
     // ---- models ----
@@ -352,7 +352,7 @@ public final class ServerBackup {
         out.put("steps", List.of(
                 "停服后、下一次启动前打包 world（排除 session.lock / web-map-cache）",
                 "同时打包 server.properties、白名单/OP/封禁、eula 与 config/samsara",
-                "写入服务器级 samsara/server-backups/<id>.zip，并生成 manifest",
+                "写入服务器级 backups/samsara/server-backups/<id>.zip，并生成 manifest",
                 "按 serverBackupKeep 只清理本功能创建的旧备份，源 world 永不自动删除"));
         if (!Files.isDirectory(world)) {
             out.put("error", "world 目录不存在");
@@ -579,6 +579,7 @@ public final class ServerBackup {
     }
 
     public static synchronized void prepare(Path serverRoot) {
+        ServerBackupPaths.migrateLegacyRoot(serverRoot);
         Path backupPending = pendingBackupFile(serverRoot);
         Path restorePending = pendingRestoreFile(serverRoot);
         boolean hasBackup = Files.isRegularFile(backupPending);

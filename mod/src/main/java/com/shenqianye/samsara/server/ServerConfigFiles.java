@@ -20,7 +20,7 @@ import java.util.Map;
 /**
  * 服务器本体配置文件（server.properties / 白名单 / OP / 封禁 / eula）的读写。
  *
- * <p>只允许固定文件；写入前备份到 {@code samsara/server-config-backups/}，原子替换。
+ * <p>只允许固定文件；写入前备份到 {@code backups/samsara/server-config-backups/}，原子替换。
  * JSON 文件只校验“是数组”，不猜测字段；非法内容直接拒绝，不写盘。
  */
 public final class ServerConfigFiles {
@@ -124,7 +124,7 @@ public final class ServerConfigFiles {
         Path file = serverRoot.resolve(spec.fileName());
         try {
             if (Files.isRegularFile(file)) {
-                Path backup = serverRoot.resolve("samsara/server-config-backups")
+                Path backup = ServerBackupPaths.root(serverRoot).resolve("server-config-backups")
                         .resolve(LocalDateTime.now().format(STAMP))
                         .resolve(spec.fileName());
                 Files.createDirectories(backup.getParent());
