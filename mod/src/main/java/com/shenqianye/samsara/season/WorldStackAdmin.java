@@ -41,6 +41,7 @@ public final class WorldStackAdmin {
     public static final String PENDING_IMPORT = "pending-import.json";
     public static final String PENDING_ARCHIVE = "pending-archive.json";
     public static final String PENDING_PROMOTE = "pending-promote.json";
+    public static final String PENDING_RESTORE = "pending-stack-restore.json";
     public static final String JOBS_DIR = "world-stack-jobs";
     public static final String LAST_RESULT = "last-result.json";
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
@@ -50,7 +51,8 @@ public final class WorldStackAdmin {
             "pending-delete.json", "pending-teleports.json", "level.dat_old");
     private static final List<String> SAMSARA_EXCLUDES = List.of(
             "stack.json", "stack", "web-map-cache", JOBS_DIR,
-            PENDING_IMPORT, PENDING_ARCHIVE, PENDING_PROMOTE, "pending-new.json");
+            PENDING_IMPORT, PENDING_ARCHIVE, PENDING_PROMOTE, PENDING_RESTORE,
+            "pending-new.json");
 
     private WorldStackAdmin() {
     }
@@ -129,7 +131,13 @@ public final class WorldStackAdmin {
         }
         List<Path> dirs = new ArrayList<>();
         try (Stream<Path> stream = Files.list(root)) {
-            stream.filter(Files::isDirectory).forEach(dirs::add);
+            stream.filter(Files::isDirectory)
+                    // pre-restore 是撤销前保留的当前状态，属于用户安全网，不参与自动清理。
+                    .filter(path -> {
+                        String name = path.getFileName().toString();
+                        return !name.startsWith("pre-restore-") && !name.startsWith("restore-");
+                    })
+                    .forEach(dirs::add);
         } catch (IOException e) {
             Samsara.LOGGER.warn("[世界栈] 读取备份目录失败 {}: {}", root, e.getMessage());
             return 0;
@@ -141,6 +149,9 @@ public final class WorldStackAdmin {
         int removed = 0;
         for (int i = keep; i < dirs.size(); i++) {
             Path old = dirs.get(i);
+            if (protectedBackup(worldDir, old)) {
+                continue;
+            }
             deleteRecursive(old);
             if (!Files.exists(old)) {
                 removed++;
@@ -151,6 +162,25 @@ public final class WorldStackAdmin {
                     keep, removed);
         }
         return removed;
+    }
+
+    /**
+     * pre-restore 是撤销/恢复的安全网，永不自动删除；时间线末端操作快照也保留，
+     * 否则用户刚排队撤销、重启前恰好触发保留策略时会丢失撤销依据。
+     */
+    private static boolean protectedBackup(Path worldDir, Path dir) {
+        String name = dir.getFileName().toString();
+        if (name.startsWith(WorldStackTimeline.PRE_RESTORE_PREFIX)
+                || name.startsWith(WorldStackTimeline.RESTORE_STAGING_PREFIX)) {
+            return true;
+        }
+        Path operation = dir.resolve(WorldStackTimeline.FILE_NAME);
+        if (!Files.isRegularFile(operation)) {
+            return false;
+        }
+        WorldStackTimeline.Operation op = WorldStackTimeline.readOperation(worldDir, operation);
+        return op != null && op.restorable && op.restoredAt == 0
+                && WorldStackTimeline.headId(worldDir).equals(op.id);
     }
 
     private static long lastModified(Path path) {
@@ -181,8 +211,10 @@ public final class WorldStackAdmin {
         model.pendingImport = read(worldDir, PENDING_IMPORT, PendingImport.class);
         model.pendingArchive = read(worldDir, PENDING_ARCHIVE, PendingArchive.class);
         model.pendingPromote = read(worldDir, PENDING_PROMOTE, PendingPromote.class);
+        model.pendingRestore = read(worldDir, PENDING_RESTORE,
+                WorldStackTimeline.PendingRestore.class);
         model.restartRequired = model.pendingImport != null || model.pendingArchive != null
-                || model.pendingPromote != null;
+                || model.pendingPromote != null || model.pendingRestore != null;
         model.jobs = jobs(worldDir, 8);
         model.lastReport = readJobFile(worldDir.resolve("samsara").resolve(JOBS_DIR)
                 .resolve(LAST_RESULT));
@@ -290,7 +322,8 @@ public final class WorldStackAdmin {
             addFile(out, 4, stack.id + "/", worldDir.resolve(stack.metaPath),
                     "旧栈层 level.dat / claims / diff / track / spawn-history", false);
         }
-        for (String pending : List.of(PENDING_IMPORT, PENDING_ARCHIVE, PENDING_PROMOTE)) {
+        for (String pending : List.of(PENDING_IMPORT, PENDING_ARCHIVE, PENDING_PROMOTE,
+                PENDING_RESTORE)) {
             Path file = data.resolve(pending);
             if (Files.exists(file)) {
                 addFile(out, 3, pending, file, "待重启执行", false);
@@ -825,13 +858,18 @@ public final class WorldStackAdmin {
 
     // ---- 启动时消费 ----
 
-    /** SERVER_STARTING 之前调用；处理 pending-import / pending-archive。 */
+    /** SERVER_STARTING 之前调用；处理 pending-import / pending-archive / pending-stack-restore。 */
     public static synchronized void consumePending(Path worldDir) {
         migrateLegacyBackups(worldDir);
-        pruneBackups(worldDir, backupKeep());
+        Path restoreFile = stackFile(worldDir, PENDING_RESTORE);
         Path importFile = stackFile(worldDir, PENDING_IMPORT);
         Path archiveFile = stackFile(worldDir, PENDING_ARCHIVE);
         Path promoteFile = stackFile(worldDir, PENDING_PROMOTE);
+        if (Files.isRegularFile(restoreFile)) {
+            WorldStackTimeline.consumePendingRestore(worldDir);
+            return;
+        }
+        pruneBackups(worldDir, backupKeep());
         int pendingCount = (Files.exists(importFile) ? 1 : 0)
                 + (Files.exists(archiveFile) ? 1 : 0) + (Files.exists(promoteFile) ? 1 : 0);
         if (Files.isRegularFile(worldDir.resolve("samsara/pending-new.json"))
@@ -878,6 +916,7 @@ public final class WorldStackAdmin {
         Path meta = null;
         boolean movedDims = false;
         boolean movedMeta = false;
+        WorldStackTimeline.Operation operation = null;
         try {
             job.status = "running";
             job.stage = "校验栈层";
@@ -890,6 +929,8 @@ public final class WorldStackAdmin {
             }
             archive = Path.of(pending.archivePath);
             Files.createDirectories(archive);
+            operation = WorldStackTimeline.beginOperation(worldDir, "archive", pending.jobId,
+                    archive, manifest, List.of(layer.id));
             dims = StackPaths.layerDimensions(worldDir, layer);
             meta = layer.metaDir(worldDir);
             moveIfExists(dims, archive.resolve("dimensions"));
@@ -901,6 +942,10 @@ public final class WorldStackAdmin {
             if (StackManifest.load(worldDir).byId(layer.id) != null) {
                 throw new IOException("stack.json 写入后仍存在该层");
             }
+            WorldStackTimeline.finishOperation(worldDir, archive, operation,
+                    StackManifest.load(worldDir), true,
+                    List.of("归档来源保留在 " + archive + "；撤销时从该目录复制回层"),
+                    null);
             job.status = "done";
             job.stage = "完成";
             job.progress = 100;
@@ -922,6 +967,7 @@ public final class WorldStackAdmin {
             } catch (Exception rollback) {
                 job.log.add("归档回滚失败：" + rollback.getMessage());
             }
+            markOperationFailed(worldDir, operation, e.getMessage());
             job.status = "failed";
             job.stage = "失败";
             job.finishedAt = System.currentTimeMillis();
@@ -953,6 +999,7 @@ public final class WorldStackAdmin {
         boolean topToTarget = false;
         boolean targetToTop = false;
         boolean targetGenMoved = false;
+        WorldStackTimeline.Operation operation = null;
         try {
             job.status = "running";
             job.stage = "校验排序";
@@ -974,6 +1021,12 @@ public final class WorldStackAdmin {
                     || !promoteId.equals(pending.order.get(pending.order.size() - 1))) {
                 throw new IOException("排序列表与当前栈层不一致；请重新预览排序");
             }
+            Files.createDirectories(backup);
+            operation = WorldStackTimeline.beginOperation(worldDir, "promote", pending.jobId,
+                    backup, manifest, List.of(StackPaths.TOP_ID, promoteId));
+            job.stage = "保留操作前快照";
+            WorldStackTimeline.snapshotTop(worldDir, backup);
+            WorldStackTimeline.snapshotLayer(worldDir, backup, promoteId);
             targetDims = StackPaths.layerDimensions(worldDir, target);
             targetMeta = target.metaDir(worldDir);
             tmpDims = backup.resolve("swap/target-dimensions");
@@ -1065,6 +1118,10 @@ public final class WorldStackAdmin {
                     || verify.byId(promoteId).top) {
                 throw new IOException("stack.json 写入后校验失败");
             }
+            WorldStackTimeline.finishOperation(worldDir, backup, operation, verify, true,
+                    List.of("栈顶交换：原 world 与 " + promoteId + " 的层位互换",
+                            "备份包含操作前栈顶与目标层的完整快照"),
+                    null);
             ensureSpawn(topDataRoot, LevelInfo.read(worldDir));
             deleteRecursive(tmpDims);
             deleteRecursive(tmpMeta);
@@ -1119,6 +1176,7 @@ public final class WorldStackAdmin {
             } catch (Exception rollback) {
                 job.log.add("栈顶交换回滚失败：" + rollback.getMessage());
             }
+            markOperationFailed(worldDir, operation, e.getMessage());
             job.status = "failed";
             job.stage = "失败";
             job.finishedAt = System.currentTimeMillis();
@@ -1213,6 +1271,10 @@ public final class WorldStackAdmin {
         deleteRecursive(stagingMeta);
         Path manifestBackup = backupManifest(worldDir);
         List<Path> addedPlayers = new ArrayList<>();
+        Path backup = backupRoot(worldDir).resolve("import-" + pending.jobId);
+        Files.createDirectories(backup);
+        WorldStackTimeline.Operation operation = WorldStackTimeline.beginOperation(worldDir,
+                "import", pending.jobId, backup, manifest, List.of(id));
         try {
             job.stage = "复制维度";
             writeJob(worldDir, job);
@@ -1247,6 +1309,11 @@ public final class WorldStackAdmin {
                 throw new IOException("stack.json 写入失败：新层未落盘");
             }
             ensureSpawn(finalMeta, level);
+            WorldStackTimeline.finishOperation(worldDir, backup, operation,
+                    StackManifest.load(worldDir), true,
+                    List.of("导入源目录保持只读：" + pending.source,
+                            "撤销时移除本次新增的 " + id + " 层与新增玩家文件"),
+                    addedPlayers);
             if (manifestBackup != null) {
                 Files.deleteIfExists(manifestBackup);
             }
@@ -1261,6 +1328,7 @@ public final class WorldStackAdmin {
             deleteRecursive(stagingMeta);
             deleteAddedPlayers(addedPlayers);
             restoreManifest(worldDir, manifestBackup);
+            markOperationFailed(worldDir, operation, e.getMessage());
             throw e instanceof IOException io ? io : new IOException(e.getMessage(), e);
         }
     }
@@ -1288,6 +1356,12 @@ public final class WorldStackAdmin {
         List<Path> addedPlayers = new ArrayList<>();
         Path importDims = worldDir.resolve("dimensions/minecraft.importing");
         deleteRecursive(importDims);
+        Files.createDirectories(backup);
+        WorldStackTimeline.Operation operation = WorldStackTimeline.beginOperation(worldDir,
+                "import", pending.jobId, backup, manifest,
+                List.of(StackPaths.TOP_ID, demoteId));
+        job.stage = "保留操作前顶层快照";
+        WorldStackTimeline.snapshotTop(worldDir, backup);
         boolean movedOldDims = false;
         boolean movedLevel = false;
         boolean movedData = false;
@@ -1362,6 +1436,11 @@ public final class WorldStackAdmin {
             manifest.layers = layers;
             manifest.normalize();
             manifest.save(worldDir);
+            WorldStackTimeline.finishOperation(worldDir, backup, operation,
+                    StackManifest.load(worldDir), true,
+                    List.of("导入源目录保持只读：" + pending.source,
+                            "操作前顶层完整快照在 " + backup.resolve("before/top")),
+                    addedPlayers);
             ensureSpawn(worldDir.resolve("samsara"), level);
             Files.deleteIfExists(backup.resolve("level.dat"));
             if (manifestBackup != null) {
@@ -1394,6 +1473,7 @@ public final class WorldStackAdmin {
             }
             deleteAddedPlayers(addedPlayers);
             restoreManifest(worldDir, manifestBackup);
+            markOperationFailed(worldDir, operation, e.getMessage());
             throw e instanceof IOException io ? io : new IOException(e.getMessage(), e);
         }
     }
@@ -1665,17 +1745,42 @@ public final class WorldStackAdmin {
 
     private static void moveFailed(Path worldDir, String name, Path file) {
         try {
+            if (file == null || !Files.isRegularFile(file)) {
+                return;
+            }
             Files.move(file, file.resolveSibling(name + ".failed-" + System.currentTimeMillis()),
                     StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException ignored) {
         }
     }
 
+    static void moveFailedFile(Path worldDir, String name, Path file) {
+        moveFailed(worldDir, name, file);
+    }
+
+    static boolean writePending(Path worldDir, String name, Object value) {
+        return write(worldDir, name, value);
+    }
+
+    static <T> T readPending(Path worldDir, String name, Class<T> type) {
+        return read(worldDir, name, type);
+    }
+
+    static boolean serverBackupPending(Path worldDir) {
+        Path server = serverRoot(worldDir);
+        return Files.isRegularFile(server.resolve("samsara/pending-server-backup.json"))
+                || Files.isRegularFile(server.resolve("samsara/pending-server-restore.json"));
+    }
+
+    static Path serverRoot(Path worldDir) {
+        return WorldStackTimeline.serverRoot(worldDir);
+    }
+
     private static void writeJobQuiet(Job job) {
         // 由调用方在 finally 写盘；这里只用于进度节流占位
     }
 
-    private static void writeJob(Path worldDir, Job job) {
+    static void writeJob(Path worldDir, Job job) {
         Path dir = worldDir.resolve("samsara").resolve(JOBS_DIR);
         try {
             Files.createDirectories(dir);
@@ -1686,7 +1791,7 @@ public final class WorldStackAdmin {
         }
     }
 
-    private static Job readJob(Path worldDir, String id) {
+    static Job readJob(Path worldDir, String id) {
         return id == null ? null : readJobFile(worldDir.resolve("samsara").resolve(JOBS_DIR)
                 .resolve(id + ".json"));
     }
@@ -1731,7 +1836,19 @@ public final class WorldStackAdmin {
         }
     }
 
-    private static Job newJob(String id, String type, String targetId) {
+    private static void markOperationFailed(Path worldDir, WorldStackTimeline.Operation operation,
+                                            String reason) {
+        if (operation == null) {
+            return;
+        }
+        operation.restorable = false;
+        operation.failReason = reason == null ? "" : reason;
+        operation.notes.add("操作失败或已回滚：" + (reason == null ? "未知原因" : reason)
+                + "（没有可安全撤销的完成状态）");
+        WorldStackTimeline.write(worldDir, operation);
+    }
+
+    static Job newJob(String id, String type, String targetId) {
         Job job = new Job();
         job.id = id;
         job.type = type;
@@ -1742,7 +1859,7 @@ public final class WorldStackAdmin {
         return job;
     }
 
-    private static String newJobId(String prefix) {
+    static String newJobId(String prefix) {
         return prefix + "-" + System.currentTimeMillis() + "-"
                 + UUID.randomUUID().toString().substring(0, 6);
     }
@@ -1916,6 +2033,7 @@ public final class WorldStackAdmin {
         public PendingImport pendingImport;
         public PendingArchive pendingArchive;
         public PendingPromote pendingPromote;
+        public WorldStackTimeline.PendingRestore pendingRestore;
         public List<Job> jobs = new ArrayList<>();
         public Job lastReport;
         public List<FileNode> files = new ArrayList<>();
@@ -2057,6 +2175,10 @@ public final class WorldStackAdmin {
         public boolean requiresRestart;
         public String source = "";
         public String targetId = "";
+        public String operation = "";
+        public List<String> affectedIds = new ArrayList<>();
+        public StackManifest beforeManifest = new StackManifest();
+        public StackManifest afterManifest = new StackManifest();
         public List<String> log = new ArrayList<>();
     }
 

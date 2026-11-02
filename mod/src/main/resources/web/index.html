@@ -291,6 +291,25 @@
           <div id="world-stack-archive-preview" class="world-stack-preview" hidden></div>
         </section>
 
+        <section class="panel" id="world-stack-timeline-panel">
+          <div class="panel-head">
+            <div>
+              <h2>操作时间线</h2>
+              <p class="panel-sub">导入 / 提升栈顶 / 归档的操作前快照。时间线线性、无分支；仅末端节点可撤销。旧备份没有 <code>operation.json</code> 时只读展示并说明缺少的信息。撤销在停服后、下次启动前执行，先保留当前状态，失败回滚；源世界与归档不会自动删除。可导出 <code>operation.json</code> 排障；<code>pre-restore-*</code> 安全快照只能在这里手动清理。</p>
+            </div>
+            <div class="panel-tools">
+              <button id="world-stack-snapshot-refresh" class="ghost" type="button">刷新快照占用</button>
+            </div>
+          </div>
+          <div id="world-stack-timeline" class="backup-timeline"></div>
+          <div id="world-stack-timeline-preview" class="world-stack-preview" hidden></div>
+          <div class="world-stack-snapshot-head">
+            <h3>撤销前安全快照</h3>
+            <p class="muted small">执行撤销时保留的当前栈状态。永不自动删除；确认不再需要回滚后可手动释放空间。</p>
+          </div>
+          <div id="world-stack-snapshots" class="world-stack-snapshots"></div>
+        </section>
+
         <section class="panel" id="world-stack-files-panel">
           <div class="panel-head">
             <div>

@@ -3,6 +3,7 @@ package com.shenqianye.samsara.web;
 import com.shenqianye.samsara.config.ConfigManager;
 import com.shenqianye.samsara.config.ConfigSchema;
 import com.shenqianye.samsara.season.WorldStackAdmin;
+import com.shenqianye.samsara.season.WorldStackTimeline;
 import com.shenqianye.samsara.storage.StoragePaths;
 import net.fabricmc.loader.api.FabricLoader;
 
@@ -31,6 +32,8 @@ public class WorldStackWebService {
         out.put("pendingImport", model.pendingImport);
         out.put("pendingArchive", model.pendingArchive);
         out.put("pendingPromote", model.pendingPromote);
+        out.put("pendingRestore", model.pendingRestore);
+        out.put("timeline", WorldStackTimeline.timeline(worldRoot()));
         out.put("jobs", model.jobs);
         out.put("lastReport", model.lastReport);
         out.put("files", model.files);
@@ -91,6 +94,32 @@ public class WorldStackWebService {
         out.put("ok", true);
         out.put("jobs", WorldStackAdmin.jobs(worldRoot(), 20));
         return out;
+    }
+
+    public Map<String, Object> timeline() {
+        return WorldStackTimeline.timeline(worldRoot());
+    }
+
+    public Map<String, Object> previewTimelineRestore(Map<String, Object> body) {
+        return WorldStackTimeline.preview(worldRoot(), string(body, "id"));
+    }
+
+    public Map<String, Object> restoreTimeline(Map<String, Object> body) {
+        return WorldStackTimeline.schedule(worldRoot(), string(body, "id"),
+                bool(body, "confirm"));
+    }
+
+    public Map<String, Object> exportTimeline(String id) {
+        return WorldStackTimeline.export(worldRoot(), id);
+    }
+
+    public Map<String, Object> timelineSnapshots() {
+        return WorldStackTimeline.snapshots(worldRoot());
+    }
+
+    public Map<String, Object> cleanupTimelineSnapshot(Map<String, Object> body) {
+        return WorldStackTimeline.cleanup(worldRoot(), string(body, "name"),
+                bool(body, "confirm"));
     }
 
     public Map<String, Object> job(String id) {

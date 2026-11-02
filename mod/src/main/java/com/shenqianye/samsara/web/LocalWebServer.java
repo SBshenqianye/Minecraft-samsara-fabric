@@ -714,10 +714,17 @@ public final class LocalWebServer {
                     return;
                 }
             }
-            Map<String, Object> result;
+            Object result;
             if ("GET".equals(method)) {
                 if ("/api/world-stack".equals(path)) {
                     result = worldStackService.model();
+                } else if ("/api/world-stack/timeline".equals(path)) {
+                    result = worldStackService.timeline();
+                } else if ("/api/world-stack/timeline/export".equals(path)) {
+                    Map<String, String> query = parseQuery(exchange.getRequestURI().getRawQuery());
+                    result = worldStackService.exportTimeline(query.get("id"));
+                } else if ("/api/world-stack/timeline/snapshots".equals(path)) {
+                    result = worldStackService.timelineSnapshots();
                 } else if ("/api/world-stack/jobs".equals(path)) {
                     result = worldStackService.jobs();
                 } else if (path.startsWith("/api/world-stack/jobs/")) {
@@ -741,6 +748,12 @@ public final class LocalWebServer {
                             result = worldStackService.previewArchive(body);
                     case "/api/world-stack/archive" ->
                             result = worldStackService.archive(body);
+                    case "/api/world-stack/timeline/preview" ->
+                            result = worldStackService.previewTimelineRestore(body);
+                    case "/api/world-stack/timeline/restore" ->
+                            result = worldStackService.restoreTimeline(body);
+                    case "/api/world-stack/timeline/cleanup" ->
+                            result = worldStackService.cleanupTimelineSnapshot(body);
                     default -> {
                         status = 404;
                         result = Map.of("error", "Not Found");
@@ -750,7 +763,8 @@ public final class LocalWebServer {
                 status = 405;
                 result = Map.of("error", "Method Not Allowed");
             }
-            if (status == 200 && Boolean.FALSE.equals(result.get("ok"))) {
+            if (status == 200 && result instanceof Map<?, ?> map
+                    && Boolean.FALSE.equals(map.get("ok"))) {
                 status = 400;
             }
             json(exchange, status, result);

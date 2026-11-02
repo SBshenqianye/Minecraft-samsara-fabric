@@ -1087,6 +1087,7 @@ public final class ServerBackup {
         return Files.isRegularFile(samsara.resolve("pending-import.json"))
                 || Files.isRegularFile(samsara.resolve("pending-archive.json"))
                 || Files.isRegularFile(samsara.resolve("pending-promote.json"))
+                || Files.isRegularFile(samsara.resolve("pending-stack-restore.json"))
                 || Files.isRegularFile(samsara.resolve("pending-new.json"));
     }
 

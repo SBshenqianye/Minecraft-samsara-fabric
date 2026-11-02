@@ -364,7 +364,104 @@ async function main() {
       check('回滚预览打开', timeline.previewTitle.startsWith('恢复预览'), timeline.previewTitle);
     }
 
-    // ---- form-kit 推广 ----
+    // ---- 世界栈操作时间线 ----
+    const stackTimeline = await evaluate(`(async () => {
+      window.SamsaraUI.setActiveTab('world-stack');
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      await window.SamsaraWorldStack.load();
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      const nodes = [...document.querySelectorAll('#world-stack-timeline .timeline-node')];
+      const nav = document.querySelector('#global-nav .nav-title')?.textContent.trim() || '';
+      const buttons = [...document.querySelectorAll('#world-stack-timeline button')];
+      const undo = buttons.filter((node) => node.textContent.trim() === '撤销这次操作');
+      const enabled = undo.find((node) => !node.disabled) || null;
+      const disabled = undo.find((node) => node.disabled) || null;
+      const exports = buttons.filter((node) => node.textContent.trim() === '导出快照')
+        .map((node) => ({
+          id: node.closest('.timeline-node')?.dataset.id || '',
+          disabled: node.disabled,
+        }));
+      let previewTitle = '';
+      let previewText = '';
+      if (enabled) {
+        enabled.click();
+        await new Promise((resolve) => setTimeout(resolve, 700));
+        const preview = document.getElementById('world-stack-timeline-preview');
+        previewTitle = preview?.querySelector('.world-stack-preview-title')?.textContent || '';
+        previewText = preview?.textContent || '';
+        if (preview) preview.hidden = true;
+      }
+      const model = await window.SamsaraUI.api('/api/world-stack');
+      return {
+        nav,
+        nodes: nodes.map((node) => ({
+          id: node.dataset.id,
+          branchId: node.dataset.branchId,
+          operation: node.dataset.operation,
+          restorable: node.dataset.restorable,
+          legacy: node.dataset.legacy,
+          depth: node.dataset.depth,
+          current: node.classList.contains('current'),
+          text: node.textContent,
+        })),
+        enabled: Boolean(enabled),
+        disabled: Boolean(disabled),
+        exports,
+        previewTitle,
+        previewText,
+        snapshotText: document.getElementById('world-stack-snapshots')?.textContent || '',
+        pendingRestore: model.pendingRestore || null,
+      };
+    })()`);
+    check('世界栈时间线导航', stackTimeline.nav.startsWith('世界栈'), stackTimeline.nav);
+    if (stackTimeline.nodes.length === 0) {
+      check('世界栈时间线空态', true, '测试服没有世界栈操作备份，跳过节点断言');
+    } else {
+      check('世界栈时间线节点渲染', stackTimeline.nodes.length >= 1,
+          'nodes=' + stackTimeline.nodes.length);
+      check('世界栈时间线固定 branchId', stackTimeline.nodes.every((node) => node.branchId === 'world-stack'),
+          JSON.stringify(stackTimeline.nodes.map((node) => node.branchId)));
+      check('世界栈时间线线性不缩进', stackTimeline.nodes.every((node) => node.depth === '0'),
+          JSON.stringify(stackTimeline.nodes.map((node) => node.depth)));
+      check('世界栈时间线仅一个当前节点',
+          stackTimeline.nodes.filter((node) => node.current).length <= 1,
+          'current=' + stackTimeline.nodes.filter((node) => node.current).length);
+      const legacy = stackTimeline.nodes.find((node) => node.legacy === 'true');
+      if (legacy) {
+        check('旧备份标记只读不可撤销', legacy.restorable === 'false'
+            && legacy.text.includes('旧备份'), legacy.id);
+      } else {
+        check('旧备份标记只读不可撤销', true, '测试服没有旧备份节点，跳过');
+      }
+      if (stackTimeline.enabled) {
+        check('可撤销节点预览打开', stackTimeline.previewTitle.startsWith('撤销预览'),
+            stackTimeline.previewTitle);
+        check('预览显示当前受影响数据', stackTimeline.previewText.includes('当前受影响数据'),
+            stackTimeline.previewText.slice(0, 120));
+      } else {
+        check('可撤销节点预览打开', true, '测试服没有可撤销节点，跳过');
+        check('预览显示当前受影响数据', true, '测试服没有可撤销节点，跳过');
+      }
+      if (stackTimeline.disabled) {
+        check('不可撤销节点按钮禁用', true);
+      } else {
+        check('不可撤销节点按钮禁用', true, '测试服没有不可撤销节点，跳过');
+      }
+      const exportEnabled = stackTimeline.exports.find((item) => !item.disabled);
+      const exportDisabled = stackTimeline.exports.find((item) => item.disabled);
+      check('可撤销节点可导出快照', Boolean(exportEnabled), JSON.stringify(stackTimeline.exports));
+      if (exportDisabled) {
+        check('旧备份/撤销节点禁用导出', true, exportDisabled.id);
+      } else {
+        check('旧备份/撤销节点禁用导出', true, '测试服没有旧备份节点，跳过');
+      }
+      check('快照占用面板渲染', stackTimeline.snapshotText.includes('安全快照'),
+          stackTimeline.snapshotText.slice(0, 80));
+      check('预览不会排队撤销', stackTimeline.pendingRestore === null,
+          JSON.stringify(stackTimeline.pendingRestore));
+    }
+
+
     const mods = await evaluate(`(async () => {
       [...document.querySelectorAll('.top-tab')].find((tab) => tab.dataset.section === 'mods').click();
       await new Promise((resolve) => setTimeout(resolve, 500));

@@ -31,6 +31,9 @@ public final class PermissionDefaults {
         map.put("season skip", "owner");
         map.put("season status", "user");
         map.put("season respawn-groups", "owner");
+        map.put("season advance", "user");
+        map.put("season agree", "user");
+        map.put("season vote-status", "user");
         // world stack
         map.put("world", "user");
         map.put("world list", "user");

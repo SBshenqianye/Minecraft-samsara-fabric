@@ -556,6 +556,11 @@ public class SeasonManager {
         }
     }
 
+    /** 是否有尚未完成的同世界重置（投票执行前校验）。 */
+    public synchronized boolean hasPendingReset() {
+        return resetPending != null;
+    }
+
     /** {@code /samsara reset new [种子]}：仅栈顶；安排重启后生成独立世界并自动入栈。 */
     public synchronized String resetNew(MinecraftServer server, Long seed) {
         return resetNew(server, seed, "normal", false);

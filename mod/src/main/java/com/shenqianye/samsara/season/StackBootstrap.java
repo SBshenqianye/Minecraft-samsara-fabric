@@ -54,6 +54,11 @@ public final class StackBootstrap {
         return StackPaths.samsara(worldDir).resolve("pending-new.json");
     }
 
+    /** 是否已有待执行的新世界生成（投票执行前校验）。 */
+    public static synchronized boolean hasPendingNew(MinecraftServer server) {
+        return Files.exists(pendingFile(StackPaths.worldDir(server)));
+    }
+
     /** 命令阶段：写 pending，倒计时停服。 */
     public static synchronized String scheduleNew(MinecraftServer server, Long seed, String levelType,
                                                   String generatorSettings, boolean archiveData) {

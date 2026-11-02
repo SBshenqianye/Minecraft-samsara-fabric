@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$ServerDir = "",
     [string]$Base = "http://127.0.0.1:8730",
     [string]$Token = "testtoken",
@@ -11,6 +11,7 @@ param(
 $ErrorActionPreference = "Stop"
 $root = Split-Path $PSScriptRoot -Parent
 $started = $false
+$e2eFixtures = @()
 
 function Test-WebUp {
     try {
@@ -36,7 +37,7 @@ function Stop-TestServer {
     if (-not $started) { return }
     try {
         $classes = Get-RconClass
-        & $Java "-Dstdout.encoding=UTF-8" -cp $classes RconClient 127.0.0.1 $RconPort $RconPassword "stop" | Out-Null
+        & $Java "-Dstdout.encoding=UTF-8" -cp $classes RconClient 127.0.0.1 $RconPort $RconPassword "stop" 2>$null | Out-Null
         for ($i = 0; $i -lt 90; $i++) {
             if (-not (Get-NetTCPConnection -LocalPort $RconPort -State Listen -ErrorAction SilentlyContinue)) { break }
             Start-Sleep -Seconds 2
@@ -46,12 +47,96 @@ function Stop-TestServer {
     }
 }
 
+function New-E2ETimelineFixtures {
+    param([string]$ServerDir)
+    $created = @()
+    $stackJson = Join-Path $ServerDir "world\samsara\stack.json"
+    if (-not (Test-Path $stackJson)) { return $created }
+    $backupRoot = Join-Path $ServerDir "samsara\world-stack-backup"
+    $legacy = Join-Path $backupRoot "import-e2e-legacy"
+    New-Item -ItemType Directory -Force $legacy | Out-Null
+    [IO.File]::WriteAllText((Join-Path $legacy "marker.txt"), "legacy",
+        (New-Object Text.UTF8Encoding($false)))
+    $created += $legacy
+
+    $fixture = Join-Path $backupRoot "import-e2e-noop"
+    New-Item -ItemType Directory -Force $fixture | Out-Null
+    $manifest = Get-Content $stackJson -Raw | ConvertFrom-Json
+    $operation = [ordered]@{
+        format = 1
+        id = "ws-e2e-noop"
+        operation = "import"
+        jobId = "e2e-noop"
+        createdAt = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+        beforeManifest = $manifest
+        afterManifest = $manifest
+        affectedIds = @()
+        restorable = $true
+        backupDir = $fixture
+        notes = @("Web E2E 临时夹具；预览后不执行撤销")
+        failReason = ""
+        restoredAt = 0
+        restoreJobId = ""
+        sourcePath = ""
+        archivePath = ""
+        addedPlayers = @()
+        createdLayerIds = @()
+        removedLayerIds = @()
+    }
+    $json = $operation | ConvertTo-Json -Depth 40
+    [IO.File]::WriteAllText((Join-Path $fixture "operation.json"), $json,
+        (New-Object Text.UTF8Encoding($false)))
+    $created += $fixture
+    return $created
+}
+
 try {
     if (-not (Test-WebUp)) {
         if ($NoServer) { throw "Web 未启动，且指定了 -NoServer" }
         if (-not $ServerDir) { throw "Web 未启动；请用 -ServerDir 指定测试服目录，或加 -NoServer" }
         if (-not (Test-Path $ServerDir)) { throw "测试服目录不存在：$ServerDir" }
         if (-not (Test-Path $Java)) { throw "Java 不存在：$Java" }
+        $e2eServerDir = "$ServerDir"
+
+        # 在服务器启动前写临时时间线夹具，避免 Web 已起但 stack.json 尚未稳定时读到空时间线。
+        $e2eStackManifestPath = Join-Path $e2eServerDir "world\samsara\stack.json"
+        if (Test-Path $e2eStackManifestPath) {
+            $e2eBackupRoot = Join-Path $e2eServerDir "samsara\world-stack-backup"
+            $e2eLegacyDir = Join-Path $e2eBackupRoot "import-e2e-legacy"
+            New-Item -ItemType Directory -Force $e2eLegacyDir | Out-Null
+            [IO.File]::WriteAllText((Join-Path $e2eLegacyDir "marker.txt"), "legacy",
+                (New-Object Text.UTF8Encoding($false)))
+            $e2eFixtures += $e2eLegacyDir
+
+            $e2eNoopDir = Join-Path $e2eBackupRoot "import-e2e-noop"
+            New-Item -ItemType Directory -Force $e2eNoopDir | Out-Null
+            $e2eManifest = Get-Content $e2eStackManifestPath -Raw | ConvertFrom-Json
+            $e2eOperation = [ordered]@{
+                format = 1
+                id = "ws-e2e-noop"
+                operation = "import"
+                jobId = "e2e-noop"
+                createdAt = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+                beforeManifest = $e2eManifest
+                afterManifest = $e2eManifest
+                affectedIds = @()
+                restorable = $true
+                backupDir = $e2eNoopDir
+                notes = @("Web E2E 临时夹具；预览后不执行撤销")
+                failReason = ""
+                restoredAt = 0
+                restoreJobId = ""
+                sourcePath = ""
+                archivePath = ""
+                addedPlayers = @()
+                createdLayerIds = @()
+                removedLayerIds = @()
+            }
+            $e2eJson = $e2eOperation | ConvertTo-Json -Depth 40
+            [IO.File]::WriteAllText((Join-Path $e2eNoopDir "operation.json"), $e2eJson,
+                (New-Object Text.UTF8Encoding($false)))
+            $e2eFixtures += $e2eNoopDir
+        }
 
         New-Item -ItemType Directory -Force (Join-Path $ServerDir "logs") | Out-Null
         Start-Process -FilePath $Java -ArgumentList @(
@@ -70,6 +155,9 @@ try {
         if (-not (Test-WebUp)) { throw "测试服 Web 在 180 秒内没有启动" }
     } else {
         Write-Host "Web 已在运行：$Base（复用）"
+        if ($ServerDir) {
+            $e2eFixtures = @(New-E2ETimelineFixtures -ServerDir $ServerDir)
+        }
     }
 
     & node (Join-Path $root "tools\web-e2e.mjs") --base $Base --token $Token
@@ -77,4 +165,9 @@ try {
     exit $code
 } finally {
     Stop-TestServer
+    if (-not $env:SAMSARA_E2E_KEEP) {
+        foreach ($fixture in $e2eFixtures) {
+            try { Remove-Item -Recurse -Force $fixture -ErrorAction SilentlyContinue } catch { }
+        }
+    }
 }

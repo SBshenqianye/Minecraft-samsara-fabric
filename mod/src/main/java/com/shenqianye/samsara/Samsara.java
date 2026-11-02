@@ -105,6 +105,7 @@ public class Samsara implements DedicatedServerModInitializer {
             com.shenqianye.samsara.season.WorldStackManager.tick(server);
             com.shenqianye.samsara.season.StackBootstrap.tick(server);
             com.shenqianye.samsara.season.SeasonManager.getInstance().tick(server);
+            com.shenqianye.samsara.season.SeasonAdvanceVoteManager.getInstance().tick(server);
             com.shenqianye.samsara.season.WorldChainTeleport.tick(server);
             com.shenqianye.samsara.command.DebugCommand.onTick();
             if (++unloadFlushCounter[0] >= 20) {
@@ -162,6 +163,10 @@ public class Samsara implements DedicatedServerModInitializer {
         // 分组出生：倒流完成后的离线玩家上线补传送（放在身份同步之后）
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
                 SeasonManager.getInstance().onPlayerJoin(server, handler.getPlayer()));
+        // 全员同意制：投票期间新加入的玩家自动进入 eligible，需要同意
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
+                com.shenqianye.samsara.season.SeasonAdvanceVoteManager.getInstance()
+                        .onPlayerJoin(server, handler.getPlayer()));
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) ->
                 com.shenqianye.samsara.identity.IdentityService.getInstance()
                         .onDisconnect(handler.getPlayer()));

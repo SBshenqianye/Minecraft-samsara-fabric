@@ -11,6 +11,10 @@
     archive: null,
     importConfirmed: false,
     archiveConfirmed: false,
+    timeline: null,
+    timelinePreview: null,
+    timelineConfirmed: false,
+    snapshots: null,
   };
 
   const $ = (id) => document.getElementById(id);
@@ -32,6 +36,10 @@
       importPreviewButton: $('world-stack-import-preview-button'),
       importPreview: $('world-stack-import-preview'),
       archivePreview: $('world-stack-archive-preview'),
+      timeline: $('world-stack-timeline'),
+      timelinePreview: $('world-stack-timeline-preview'),
+      snapshots: $('world-stack-snapshots'),
+      snapshotRefresh: $('world-stack-snapshot-refresh'),
       files: $('world-stack-files'),
       jobs: $('world-stack-jobs'),
       refresh: $('world-stack-refresh'),
@@ -40,6 +48,7 @@
       orderPanel: $('world-stack-order-panel'),
       importPanel: $('world-stack-import-panel'),
       archivePanel: $('world-stack-archive-panel'),
+      timelinePanel: $('world-stack-timeline-panel'),
       filesPanel: $('world-stack-files-panel'),
       jobsPanel: $('world-stack-jobs-panel'),
     };
@@ -157,6 +166,18 @@
       state.archive = null;
       state.importConfirmed = false;
       state.archiveConfirmed = false;
+      try {
+        state.timeline = await window.SamsaraUI.api('/api/world-stack/timeline');
+      } catch (error) {
+        state.timeline = (data && data.timeline) || { nodes: [] };
+      }
+      state.timelinePreview = null;
+      state.timelineConfirmed = false;
+      try {
+        state.snapshots = await window.SamsaraUI.api('/api/world-stack/timeline/snapshots');
+      } catch (error) {
+        state.snapshots = { ok: false, totalBytes: 0, snapshots: [] };
+      }
       setMessage('');
       render();
     } catch (error) {
@@ -173,6 +194,9 @@
     renderAfterSelect();
     renderImportPreview();
     renderArchivePreview();
+    renderTimeline();
+    renderTimelinePreview();
+    renderSnapshots();
     renderFiles();
     renderJobs();
     renderNav();
@@ -622,6 +646,417 @@
     }
   }
 
+  // ---- 操作时间线 ----
+
+  function operationName(value) {
+    return ({
+      import: '导入',
+      promote: '提升栈顶',
+      archive: '归档',
+      restore: '撤销',
+    })[value] || value || '操作';
+  }
+
+  function renderTimeline() {
+    const { timeline } = ensureEls();
+    if (!timeline) return;
+    timeline.replaceChildren();
+    const data = state.timeline || { nodes: [] };
+    const nodes = Array.isArray(data.nodes) ? data.nodes : [];
+    if (nodes.length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'muted small';
+      empty.textContent = '还没有世界栈操作快照。导入/提升/归档完成后会在这里生成节点；'
+        + '旧备份没有 operation.json 时只读展示。';
+      timeline.append(empty);
+      return;
+    }
+    for (const node of nodes) {
+      const item = document.createElement('div');
+      item.className = 'timeline-node' + (node.current ? ' current' : '');
+      item.style.setProperty('--depth', String(node.depth || 0));
+      item.dataset.id = node.id || '';
+      item.dataset.branchId = node.branchId || '';
+      item.dataset.operation = node.operation || '';
+      item.dataset.restorable = String(Boolean(node.restorable));
+      item.dataset.legacy = String(Boolean(node.legacy));
+      item.dataset.depth = String(node.depth || 0);
+      if (node.depth > 0) item.classList.add('branch');
+
+      const rail = document.createElement('span');
+      rail.className = 'timeline-rail';
+      rail.setAttribute('aria-hidden', 'true');
+
+      const card = document.createElement('div');
+      card.className = 'timeline-card';
+      const head = document.createElement('div');
+      head.className = 'timeline-card-head';
+      const title = document.createElement('div');
+      title.className = 'timeline-card-title';
+      const strong = document.createElement('strong');
+      strong.textContent = fmtTime(node.createdAt);
+      const idText = document.createElement('span');
+      idText.className = 'muted small mono';
+      idText.textContent = node.id;
+      title.append(strong, idText);
+
+      const badges = document.createElement('div');
+      badges.className = 'timeline-badges';
+      const operation = document.createElement('span');
+      operation.className = 'world-stack-badge';
+      operation.textContent = operationName(node.operation);
+      badges.append(operation);
+      if (node.current) {
+        const current = document.createElement('span');
+        current.className = 'world-stack-badge ok';
+        current.textContent = '当前时间线';
+        badges.append(current);
+      }
+      if (node.restoredAt) {
+        const restored = document.createElement('span');
+        restored.className = 'world-stack-badge done';
+        restored.textContent = '已撤销 ' + fmtTime(node.restoredAt);
+        badges.append(restored);
+      }
+      if (node.legacy) {
+        const legacy = document.createElement('span');
+        legacy.className = 'world-stack-badge warn';
+        legacy.textContent = '旧备份 · 只读';
+        badges.append(legacy);
+      } else if (node.restorable) {
+        const ok = document.createElement('span');
+        ok.className = 'world-stack-badge ok';
+        ok.textContent = '可撤销';
+        badges.append(ok);
+      } else {
+        const readonly = document.createElement('span');
+        readonly.className = 'world-stack-badge';
+        readonly.textContent = '不可撤销';
+        badges.append(readonly);
+      }
+      head.append(title, badges);
+
+      const meta = document.createElement('p');
+      meta.className = 'muted small';
+      const affected = Array.isArray(node.affectedIds) && node.affectedIds.length
+        ? ' · 层 ' + node.affectedIds.join(' / ') : '';
+      meta.textContent = 'job=' + (node.jobId || '—')
+        + affected
+        + (node.parentId ? ' · 上一节点 ' + node.parentId : ' · 时间线起点')
+        + (node.restorableReason ? ' · ' + node.restorableReason : '');
+      card.append(head, meta);
+
+      const timelineActions = document.createElement('div');
+      timelineActions.className = 'timeline-actions';
+      const undo = document.createElement('button');
+      undo.type = 'button';
+      undo.className = 'danger';
+      undo.textContent = '撤销这次操作';
+      undo.disabled = !node.restorable;
+      undo.title = node.restorable
+        ? '停服后、下次启动前撤销；先预览并勾选确认'
+        : (node.restorableReason || '该节点没有完整可逆快照');
+      undo.addEventListener('click', () => previewTimelineRestore(node.id));
+      timelineActions.append(undo);
+
+      const jobButton = document.createElement('button');
+      jobButton.type = 'button';
+      jobButton.className = 'ghost';
+      jobButton.textContent = '查看 job';
+      const jobBox = document.createElement('pre');
+      jobBox.className = 'world-stack-log';
+      jobBox.hidden = true;
+      jobBox.textContent = timelineJobText(node);
+      jobButton.addEventListener('click', () => { jobBox.hidden = !jobBox.hidden; });
+      timelineActions.append(jobButton);
+
+      const manifestButton = document.createElement('button');
+      manifestButton.type = 'button';
+      manifestButton.className = 'ghost';
+      manifestButton.textContent = '查看 manifest 摘要';
+      const manifestBox = document.createElement('div');
+      manifestBox.className = 'world-stack-warning';
+      manifestBox.hidden = true;
+      appendList(manifestBox, 'world-stack-warning-list',
+        timelineManifestLines(node));
+      manifestButton.addEventListener('click', () => {
+        manifestBox.hidden = !manifestBox.hidden;
+      });
+      timelineActions.append(manifestButton);
+
+      const exportButton = document.createElement('button');
+      exportButton.type = 'button';
+      exportButton.className = 'ghost';
+      exportButton.textContent = '导出快照';
+      exportButton.disabled = Boolean(node.legacy) || node.operation === 'restore';
+      exportButton.title = exportButton.disabled
+        ? '旧备份或撤销任务没有 operation.json，不能导出操作快照'
+        : '下载 operation.json（含前后完整栈清单与 job 摘要）';
+      exportButton.addEventListener('click', () => exportTimelineNode(node));
+      timelineActions.append(exportButton);
+      card.append(timelineActions, jobBox, manifestBox);
+
+      item.append(rail, card);
+      timeline.append(item);
+    }
+  }
+
+  function timelineJobText(node) {
+    const model = state.model || {};
+    const jobs = Array.isArray(model.jobs) ? model.jobs.slice() : [];
+    if (model.lastReport) jobs.unshift(model.lastReport);
+    const job = jobs.find((item) => item && item.id === node.jobId);
+    const lines = [
+      'job=' + (node.jobId || '—'),
+      'operation=' + (node.operation || '—'),
+      'backup=' + (node.backupDir || '—'),
+    ];
+    if (job) {
+      lines.push('status=' + (job.status || '—') + ' · ' + (job.stage || ''));
+      lines.push('message=' + (job.message || ''));
+      if (Array.isArray(job.log) && job.log.length) {
+        lines.push('--- 日志 ---');
+        lines.push(...job.log.slice(-20));
+      }
+    } else {
+      lines.push('（任务报告已清理或只在备份快照中保留）');
+    }
+    return lines.join('\n');
+  }
+
+  function timelineManifestLines(node) {
+    const lines = [];
+    const before = Array.isArray(node.beforeSummary) ? node.beforeSummary : [];
+    const after = Array.isArray(node.afterSummary) ? node.afterSummary : [];
+    lines.push('操作前：');
+    lines.push(...(before.length ? before : ['—']));
+    lines.push('操作后：');
+    lines.push(...(after.length ? after : ['—']));
+    if (Array.isArray(node.notes) && node.notes.length) {
+      lines.push('备注：');
+      lines.push(...node.notes);
+    }
+    return lines;
+  }
+
+  async function exportTimelineNode(node) {
+    try {
+      const data = await window.SamsaraUI.api(
+        '/api/world-stack/timeline/export?id=' + encodeURIComponent(node.id));
+      if (!data.ok) {
+        setMessage(data.error || '导出操作快照失败', 'error');
+        return;
+      }
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = (data.id || node.id || 'world-stack') + '-operation.json';
+      document.body.append(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1200);
+      setMessage('已导出 ' + link.download, 'ok');
+    } catch (error) {
+      setMessage(window.SamsaraUI.authMessage(error, '导出操作快照失败'), 'error');
+    }
+  }
+
+  async function loadSnapshots() {
+    try {
+      state.snapshots = await window.SamsaraUI.api('/api/world-stack/timeline/snapshots');
+      renderSnapshots();
+    } catch (error) {
+      setMessage(window.SamsaraUI.authMessage(error, '读取快照占用失败'), 'error');
+    }
+  }
+
+  function renderSnapshots() {
+    const { snapshots } = ensureEls();
+    if (!snapshots) return;
+    snapshots.replaceChildren();
+    const data = state.snapshots || { snapshots: [] };
+    const list = Array.isArray(data.snapshots) ? data.snapshots : [];
+    if (list.length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'muted small';
+      empty.textContent = '没有撤销前安全快照。pre-restore-* 永不自动删除；需要释放空间时在这里手动清理。';
+      snapshots.append(empty);
+      return;
+    }
+    const head = document.createElement('p');
+    head.className = 'muted small';
+    head.textContent = '共 ' + list.length + ' 份，占用 ' + fmtBytes(data.totalBytes)
+      + '。这些是撤销/恢复前的安全网，不会被 backupKeep 自动清理。';
+    snapshots.append(head);
+    for (const item of list) {
+      const row = document.createElement('div');
+      row.className = 'world-stack-snapshot';
+      const info = document.createElement('div');
+      info.className = 'world-stack-snapshot-info';
+      const name = document.createElement('strong');
+      name.className = 'mono';
+      name.textContent = item.name || '—';
+      const meta = document.createElement('span');
+      meta.className = 'muted small';
+      const parts = [fmtBytes(item.bytes), fmtTime(item.createdAt || item.modifiedAt)];
+      if (item.operation) parts.push(operationName(item.operation));
+      if (item.operationId) parts.push(item.operationId);
+      meta.textContent = parts.join(' · ');
+      info.append(name, meta);
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'ghost danger';
+      remove.textContent = '删除快照';
+      remove.addEventListener('click', () => cleanupSnapshot(item));
+      row.append(info, remove);
+      snapshots.append(row);
+    }
+  }
+
+  async function cleanupSnapshot(item) {
+    const name = item && item.name ? item.name : '';
+    if (!name) return;
+    if (!window.confirm('删除安全快照 ' + name + '？此操作只删除撤销前保留的当前状态副本，'
+      + '不会删除源世界、归档或操作备份。')) {
+      return;
+    }
+    try {
+      const data = await post('/api/world-stack/timeline/cleanup', {
+        name,
+        confirm: true,
+      });
+      if (!data.ok) {
+        setMessage(data.error || '删除快照失败', 'error');
+        return;
+      }
+      setMessage(data.message || '已删除快照', 'ok');
+      await loadSnapshots();
+    } catch (error) {
+      setMessage(window.SamsaraUI.authMessage(error, '删除快照失败'), 'error');
+    }
+  }
+
+  async function previewTimelineRestore(id) {
+    try {
+      const data = await post('/api/world-stack/timeline/preview', { id });
+      state.timelinePreview = data;
+      state.timelineConfirmed = false;
+      renderTimelinePreview();
+      window.SamsaraUI.scrollToTarget?.('world-stack-timeline-panel');
+    } catch (error) {
+      setMessage(window.SamsaraUI.authMessage(error, '撤销预览失败'), 'error');
+    }
+  }
+
+  function renderTimelinePreview() {
+    const { timelinePreview } = ensureEls();
+    if (!timelinePreview) return;
+    timelinePreview.replaceChildren();
+    const preview = state.timelinePreview;
+    if (!preview) {
+      timelinePreview.hidden = true;
+      return;
+    }
+    timelinePreview.hidden = false;
+    const title = document.createElement('div');
+    title.className = 'world-stack-preview-title';
+    title.textContent = preview.ok ? '撤销预览：可以执行' : '撤销预览：不可执行';
+    timelinePreview.append(title);
+    appendRows(timelinePreview, [
+      ['节点', preview.id || '—'],
+      ['操作', operationName(preview.operation)],
+      ['job', preview.jobId || '—'],
+      ['受影响层', (preview.affectedIds || []).join(' / ') || '—'],
+      ['备份目录', preview.backupDir || '—'],
+      ['备份大小', fmtBytes(preview.backupBytes)],
+      ['当前受影响数据', fmtBytes(preview.currentBytes)],
+      ['预计需要', fmtBytes(preview.neededBytes) + '（可用 ' + fmtBytes(preview.freeBytes) + '）'],
+      ['执行时机', '停服后、下次启动前；先写 pre-restore 快照'],
+    ]);
+    if (Array.isArray(preview.beforeSummary) && preview.beforeSummary.length) {
+      const box = document.createElement('div');
+      box.className = 'world-stack-steps';
+      const h = document.createElement('strong');
+      h.textContent = '将恢复到（操作前栈清单）';
+      appendList(box, 'world-stack-warning-list', preview.beforeSummary);
+      box.prepend(h);
+      timelinePreview.append(box);
+    }
+    if (Array.isArray(preview.warnings) && preview.warnings.length) {
+      const box = document.createElement('div');
+      box.className = 'world-stack-warning';
+      appendList(box, 'world-stack-warning-list', preview.warnings);
+      timelinePreview.append(box);
+    }
+    if (Array.isArray(preview.steps) && preview.steps.length) {
+      const box = document.createElement('div');
+      box.className = 'world-stack-steps';
+      const h = document.createElement('strong');
+      h.textContent = '将执行';
+      const ol = document.createElement('ol');
+      for (const step of preview.steps) {
+        const li = document.createElement('li');
+        li.textContent = step;
+        ol.append(li);
+      }
+      box.append(h, ol);
+      timelinePreview.append(box);
+    }
+    if (Array.isArray(preview.errors) && preview.errors.length) {
+      const box = document.createElement('div');
+      box.className = 'world-stack-error';
+      appendList(box, 'world-stack-error-list', preview.errors);
+      timelinePreview.append(box);
+      return;
+    }
+    const confirm = document.createElement('label');
+    confirm.className = 'check-line world-stack-confirm';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = state.timelineConfirmed;
+    checkbox.addEventListener('change', () => {
+      state.timelineConfirmed = checkbox.checked;
+      renderTimelinePreview();
+    });
+    const text = document.createElement('span');
+    text.textContent = '我确认：停服后、下次启动前撤销这次操作；当前栈状态先写入 pre-restore-<job>，'
+      + '失败自动回滚；源世界、归档与用户备份不会自动删除';
+    confirm.append(checkbox, text);
+    const run = document.createElement('button');
+    run.type = 'button';
+    run.className = 'danger';
+    run.textContent = '确认撤销（需重启）';
+    run.disabled = !state.timelineConfirmed;
+    run.addEventListener('click', runTimelineRestore);
+    timelinePreview.append(confirm, run);
+  }
+
+  async function runTimelineRestore() {
+    const preview = state.timelinePreview;
+    if (!preview || !state.timelineConfirmed) return;
+    try {
+      const data = await post('/api/world-stack/timeline/restore', {
+        id: preview.id,
+        confirm: true,
+      });
+      if (!data.ok) {
+        state.timelinePreview = data.preview || preview;
+        state.timelineConfirmed = false;
+        renderTimelinePreview();
+        setMessage((data.errors && data.errors[0]) || data.error || '撤销排队失败', 'error');
+        return;
+      }
+      state.timelinePreview = null;
+      state.timelineConfirmed = false;
+      await load();
+      setMessage('已排队：' + data.jobId + '（' + data.operationId
+        + '）。请停服并重新启动，撤销会在世界打开前执行。', 'ok');
+    } catch (error) {
+      setMessage(window.SamsaraUI.authMessage(error, '撤销排队失败'), 'error');
+    }
+  }
+
   async function saveOrder() {
     if (state.order.join('|') === state.savedOrder.join('|')) return;
     try {
@@ -752,12 +1187,23 @@
         log: [],
       }));
     }
+    if (model.pendingRestore) {
+      jobs.append(jobCard({
+        id: model.pendingRestore.jobId,
+        type: 'restore',
+        status: 'queued',
+        stage: '等待重启',
+        progress: 0,
+        message: '重启后撤销世界栈操作 ' + model.pendingRestore.operationId,
+        log: [],
+      }));
+    }
     const list = (model.jobs || []).slice();
     if (model.lastReport && !list.some((job) => job.id === model.lastReport.id)) {
       list.unshift(model.lastReport);
     }
     if (list.length === 0 && !model.pendingImport && !model.pendingArchive
-        && !model.pendingPromote) {
+        && !model.pendingPromote && !model.pendingRestore) {
       const empty = document.createElement('p');
       empty.className = 'muted small';
       empty.textContent = '暂无导入/归档任务。排序是立即生效的，不会在这里生成任务。';
@@ -812,6 +1258,7 @@
     add('world-stack-order-panel', '栈位排序', e.orderPanel);
     add('world-stack-import-panel', '导入', e.importPanel);
     add('world-stack-archive-panel', '归档', e.archivePanel);
+    add('world-stack-timeline-panel', '操作时间线', e.timelinePanel);
     add('world-stack-files-panel', '文件位置', e.filesPanel);
     add('world-stack-jobs-panel', '任务与结果', e.jobsPanel);
     window.SamsaraUI.buildNav('世界栈导航', items, targets);
@@ -821,6 +1268,7 @@
     const e = ensureEls();
     if (!e.list) return;
     if (e.refresh) e.refresh.addEventListener('click', load);
+    if (e.snapshotRefresh) e.snapshotRefresh.addEventListener('click', loadSnapshots);
     if (e.orderSave) e.orderSave.addEventListener('click', saveOrder);
     if (e.importPreviewButton) e.importPreviewButton.addEventListener('click', previewImport);
     if (e.importPosition) {

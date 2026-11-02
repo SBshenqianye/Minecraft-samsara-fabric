@@ -832,6 +832,14 @@ body.locked .tabs, body.locked .tab-actions { opacity: .45; pointer-events: none
 .world-stack-job-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .world-stack-job-head strong { font-family: var(--mono); font-size: 12px; }
 .world-stack-log { max-height: 180px; overflow: auto; padding: 8px; border-radius: 7px; background: rgba(15, 23, 42, .75); color: var(--muted); font: 11px/1.45 var(--mono); white-space: pre-wrap; }
+.world-stack-snapshot-head { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
+.world-stack-snapshot-head h3 { margin: 0 0 3px; font-size: 13px; }
+.world-stack-snapshot-head p { margin: 0; }
+.world-stack-snapshots { display: flex; flex-direction: column; gap: 6px; margin-top: 9px; }
+.world-stack-snapshot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-soft); }
+.world-stack-snapshot-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.world-stack-snapshot-info strong { font-size: 12px; overflow-wrap: anywhere; }
+.world-stack-snapshot button { flex: 0 0 auto; }
 
 @media (max-width: 720px) {
   .world-stack-card-head { flex-direction: column; }

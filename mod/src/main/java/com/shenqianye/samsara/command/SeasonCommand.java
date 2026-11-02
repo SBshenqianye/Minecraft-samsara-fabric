@@ -8,6 +8,7 @@ import com.shenqianye.samsara.command.ui.SuggestionProviders;
 import com.shenqianye.samsara.output.OutputPreviewFragment;
 import com.shenqianye.samsara.output.OutputRenderer;
 import com.shenqianye.samsara.season.Season;
+import com.shenqianye.samsara.season.SeasonAdvanceVoteManager;
 import com.shenqianye.samsara.season.SeasonData;
 import com.shenqianye.samsara.season.SeasonManager;
 import net.minecraft.ChatFormatting;
@@ -82,6 +83,30 @@ public class SeasonCommand {
                 .then(Commands.literal("skip")
                         .requires(src -> isAdmin(src))
                         .executes(ctx -> reply(ctx.getSource(), manager().skip())))
+                .then(Commands.literal("advance")
+                        .requires(src -> com.shenqianye.samsara.permission.PermissionChecker
+                                .check(src, "season advance"))
+                        .executes(ctx -> reply(ctx.getSource(),
+                                SeasonAdvanceVoteManager.getInstance().requestAdvance(
+                                        ctx.getSource().getServer(), ctx.getSource().getPlayer(), "same")))
+                        .then(Commands.argument("mode", StringArgumentType.word())
+                                .suggests(SuggestionProviders.choicesWithHint("模式", "same", "new"))
+                                .executes(ctx -> reply(ctx.getSource(),
+                                        SeasonAdvanceVoteManager.getInstance().requestAdvance(
+                                                ctx.getSource().getServer(), ctx.getSource().getPlayer(),
+                                                StringArgumentType.getString(ctx, "mode"))))))
+                .then(Commands.literal("agree")
+                        .requires(src -> com.shenqianye.samsara.permission.PermissionChecker
+                                .check(src, "season agree"))
+                        .executes(ctx -> reply(ctx.getSource(),
+                                SeasonAdvanceVoteManager.getInstance().agree(
+                                        ctx.getSource().getServer(), ctx.getSource().getPlayer()))))
+                .then(Commands.literal("vote-status")
+                        .requires(src -> com.shenqianye.samsara.permission.PermissionChecker
+                                .check(src, "season vote-status"))
+                        .executes(ctx -> reply(ctx.getSource(),
+                                SeasonAdvanceVoteManager.getInstance().statusText(
+                                        ctx.getSource().getServer()))))
                 .then(Commands.literal("respawn-groups")
                         .requires(src -> isAdmin(src))
                         .executes(ctx -> reply(ctx.getSource(),
