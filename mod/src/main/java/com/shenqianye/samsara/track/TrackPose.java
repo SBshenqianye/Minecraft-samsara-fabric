@@ -32,6 +32,16 @@ public final class TrackPose {
     }
 
     public static State of(int flags) {
+        return of(flags, -1);
+    }
+
+    /**
+     * 带飞行类型解析：{@code flightMode} 为 -1（未知，旧轨迹）/0 none/1 elytra/2 creative。
+     * <p>
+     * 创造飞行不能被画成鞘翅：当轨迹 flags 带 FLYING 但事件明确记录为 creative/none 时，
+     * 姿态退回站立/潜行；只有 elytra 或未知（旧轨迹）才使用 {@link Posture#FLYING}。
+     */
+    public static State of(int flags, int flightMode) {
         int f = flags & FLAG_MASK;
         boolean sneak = (f & TrackStore.FLAG_SNEAK) != 0;
         boolean sprint = (f & TrackStore.FLAG_SPRINT) != 0;
@@ -40,17 +50,23 @@ public final class TrackPose {
         boolean riding = (f & TrackStore.FLAG_RIDING) != 0;
         boolean hurt = (f & TrackStore.FLAG_HURT) != 0;
         boolean dead = (f & TrackStore.FLAG_DEAD) != 0;
+        boolean elytra = flying && (flightMode < 0
+                || flightMode == TrackEvents.FLIGHT_ELYTRA);
         Posture posture = dead ? Posture.DEAD
                 : riding ? Posture.RIDING
-                : flying ? Posture.FLYING
+                : elytra ? Posture.FLYING
                 : swimming ? Posture.SWIMMING
                 : sneak ? Posture.SNEAK
                 : Posture.STANDING;
-        return new State(sneak, sprint, flying, swimming, riding, hurt, dead, posture);
+        return new State(sneak, sprint, elytra, swimming, riding, hurt, dead, posture);
     }
 
     /** 只取姿态（忽略疾跑/受伤）。 */
     public static Posture postureOf(int flags) {
         return of(flags).posture();
+    }
+
+    public static Posture postureOf(int flags, int flightMode) {
+        return of(flags, flightMode).posture();
     }
 }

@@ -1,6 +1,8 @@
 package com.shenqianye.samsara.track.view;
 
 import com.shenqianye.samsara.Samsara;
+import com.shenqianye.samsara.track.TrackEventStore;
+import com.shenqianye.samsara.track.TrackEvents;
 import com.shenqianye.samsara.track.TrackLayout;
 import com.shenqianye.samsara.track.TrackStore;
 
@@ -73,9 +75,10 @@ public final class ViewTrackReader {
         }
     }
 
-    /** 一次窗口加载结果 */
+    /** 一次窗口加载结果（events 来自同名 .evt；旧轨迹为空）。 */
     public record LoadResult(List<ViewCursor.Segment> segments, List<Path> files,
-                             boolean truncated, boolean cutoffApplied, int totalSamples) {
+                             boolean truncated, boolean cutoffApplied, int totalSamples,
+                             List<TrackEvents.Event> events, boolean eventsTruncated) {
     }
 
     /** 可回看时段（/track list） */
@@ -237,8 +240,10 @@ public final class ViewTrackReader {
                                   long from, long to, Long cutoff) throws IOException {
         List<ViewCursor.Segment> segments = new ArrayList<>();
         List<Path> files = new ArrayList<>();
+        List<TrackEvents.Event> events = new ArrayList<>();
         boolean truncated = false;
         boolean cutoffApplied = false;
+        boolean eventsTruncated = false;
         int total = 0;
 
         LocalDate day = ViewTime.dayOf(from);
@@ -252,6 +257,9 @@ public final class ViewTrackReader {
                 ParsedFile parsed = read(file);
                 files.add(file);
                 truncated |= parsed.truncated();
+                TrackEventStore.ReadResult evt = TrackEventStore.read(TrackLayout.evtFileFor(file));
+                events.addAll(evt.events());
+                eventsTruncated |= evt.truncated();
                 for (TrackStore.Segment seg : parsed.segments()) {
                     if (seg.samples.isEmpty()) {
                         continue;
@@ -275,7 +283,9 @@ public final class ViewTrackReader {
         if (files.isEmpty()) {
             throw new IOException("该时间窗口没有轨迹文件");
         }
-        return new LoadResult(List.copyOf(segments), List.copyOf(files), truncated, cutoffApplied, total);
+        events.sort(Comparator.comparingLong(TrackEvents.Event::timeMs));
+        return new LoadResult(List.copyOf(segments), List.copyOf(files), truncated, cutoffApplied, total,
+                List.copyOf(events), eventsTruncated);
     }
 
     /**
@@ -302,8 +312,10 @@ public final class ViewTrackReader {
             throws IOException {
         List<ViewCursor.Segment> segments = new ArrayList<>();
         List<Path> files = new ArrayList<>();
+        List<TrackEvents.Event> events = new ArrayList<>();
         boolean truncated = false;
         boolean cutoffApplied = false;
+        boolean eventsTruncated = false;
         int total = 0;
         LocalDate day = ViewTime.dayOf(from);
         LocalDate lastDay = ViewTime.dayOf(Math.max(from, to - 1));
@@ -320,6 +332,9 @@ public final class ViewTrackReader {
                         ParsedFile parsed = read(file);
                         files.add(file);
                         truncated |= parsed.truncated();
+                        TrackEventStore.ReadResult evt = TrackEventStore.read(TrackLayout.evtFileFor(file));
+                        events.addAll(evt.events());
+                        eventsTruncated |= evt.truncated();
                         for (TrackStore.Segment seg : parsed.segments()) {
                             if (seg.samples.isEmpty()) {
                                 continue;
@@ -345,7 +360,9 @@ public final class ViewTrackReader {
         if (files.isEmpty()) {
             throw new IOException("该时间窗口没有轨迹文件");
         }
-        return new LoadResult(List.copyOf(segments), List.copyOf(files), truncated, cutoffApplied, total);
+        events.sort(Comparator.comparingLong(TrackEvents.Event::timeMs));
+        return new LoadResult(List.copyOf(segments), List.copyOf(files), truncated, cutoffApplied, total,
+                List.copyOf(events), eventsTruncated);
     }
 
     // ---- 可回看时段 ----

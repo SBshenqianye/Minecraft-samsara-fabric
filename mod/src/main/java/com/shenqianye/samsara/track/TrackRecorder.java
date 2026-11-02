@@ -1,6 +1,7 @@
 package com.shenqianye.samsara.track;
 
 import com.shenqianye.samsara.Samsara;
+import com.shenqianye.samsara.config.CommandConfig;
 import com.shenqianye.samsara.rewind.DiffStore;
 import com.shenqianye.samsara.season.PlayerRegistry;
 import com.shenqianye.samsara.season.Season;
@@ -8,10 +9,18 @@ import com.shenqianye.samsara.season.SeasonData;
 import com.shenqianye.samsara.season.SeasonManager;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.fabric.api.event.player.AttackBlockCallback;
+import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
+import net.fabricmc.fabric.api.event.player.UseBlockCallback;
+import net.fabricmc.fabric.api.event.player.UseItemCallback;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
-import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.item.ItemStack;
 
 import java.io.BufferedOutputStream;
 import java.io.IOException;
@@ -46,11 +55,6 @@ import java.util.concurrent.ConcurrentHashMap;
  * 并用"每天至少 skeleton 点"兜底，避免远期轨迹被抽空。扫描口径 = 世界 + 周目 + 日期。
  */
 public final class TrackRecorder {
-    /** 保留档位：跨过阈值后把采样率降到对应档（Hz） */
-    private static final int[] TIER_DAYS = {1, 4, 16, 64, 256};
-    private static final double[] TIER_HZ = {2.5, 1.25, 0.625, 0.3125, 0.15625};
-    private static final double SKELETON_HZ = 0.05;
-
     private static TrackRecorder instance;
     /** track 根目录；服务器启动时由 StoragePaths 注入 */
     private volatile Path root;
@@ -67,6 +71,8 @@ public final class TrackRecorder {
     private final Map<UUID, State> states = new ConcurrentHashMap<>();
     /** 正在被在线玩家追加的文件：保留扫描不要碰 */
     private final java.util.Set<Path> openFiles = ConcurrentHashMap.newKeySet();
+    /** maxBytesPerPlayer 降级到 adaptive 后仍超限的玩家：拒绝新归档 */
+    private final java.util.Set<UUID> archiveRefused = ConcurrentHashMap.newKeySet();
     private volatile boolean sweeping;
     private long lastSweepMs;
 
@@ -86,6 +92,26 @@ public final class TrackRecorder {
         int cycleId = -1;
         /** 当前栈层的 track 根（栈顶/旧栈隔离） */
         Path layerRoot;
+
+        // ---- track v2：事件侧车与连续状态 ----
+        OutputStream evtOut;
+        Path evtFile;
+        TrackEventStore.Equipment lastEquipment;
+        int lastSelectedSlot = -1;
+        int lastFlightMode = -2;
+        String lastVehicle = null;
+        boolean lastUsing;
+        int lastUseHand = -1;
+        long lastUseStartedMs;
+        long lastUseFallbackStopMs;
+        long lastSwingMs = Long.MIN_VALUE;
+        int lastSwingHand = -1;
+        List<ItemStack> lastInventory;
+        long lastEventMs;
+        long lastEventFlushMs;
+        net.minecraft.core.RegistryAccess registries;
+        boolean archiveRefused;
+        long refusedLogMs;
     }
 
     private TrackRecorder() {
@@ -125,6 +151,33 @@ public final class TrackRecorder {
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> r.stopAll());
         ServerLifecycleEvents.SERVER_STARTED.register(r::initWorld);
         ServerLifecycleEvents.SERVER_STARTED.register(server -> r.sweepAsync());
+
+        // 攻击挥动兜底（26.3 的 ServerboundPunchPacket mixin 为主路径）
+        AttackEntityCallback.EVENT.register((player, world, hand, entity, hitResult) -> {
+            if (player instanceof ServerPlayer sp) {
+                r.recordSwing(sp, hand, 0);
+            }
+            return InteractionResult.PASS;
+        });
+        AttackBlockCallback.EVENT.register((player, world, hand, pos, direction) -> {
+            if (player instanceof ServerPlayer sp) {
+                r.recordSwing(sp, hand, 0);
+            }
+            return InteractionResult.PASS;
+        });
+        // 一次性使用（放置/瞬发物品）补事件；长按使用由 isUsingItem 起止补齐
+        UseItemCallback.EVENT.register((player, world, hand) -> {
+            if (player instanceof ServerPlayer sp) {
+                r.recordUseStart(sp, hand, System.currentTimeMillis());
+            }
+            return InteractionResult.PASS;
+        });
+        UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
+            if (player instanceof ServerPlayer sp) {
+                r.recordUseStart(sp, hand, System.currentTimeMillis());
+            }
+            return InteractionResult.PASS;
+        });
     }
 
     /**
@@ -220,6 +273,7 @@ public final class TrackRecorder {
                 return s;
             });
             st.settings = cfg;
+            continuousEvents(p, st, now);
             sample(p, st, now, cfg);
         }
         // 每 6 小时跑一次保留扫描（异步，不阻塞主线程）
@@ -257,11 +311,16 @@ public final class TrackRecorder {
         return dataRoot.resolve("track");
     }
 
-    private void sample(ServerPlayer player, State st, long now, SeasonData.Settings cfg) {        if (worldRoot == null) {
+    private void sample(ServerPlayer player, State st, long now, SeasonData.Settings cfg) {
+        if (worldRoot == null) {
             return;
         }
         if (st.settings == null) {
             st.settings = cfg;
+        }
+        var server = player.level().getServer();
+        if (server != null) {
+            st.registries = server.registryAccess();
         }
         double hz = Math.max(2, Math.min(20, cfg.trackSampleHz));
         long interval = Math.max(10, Math.round(1000.0 / hz));
@@ -277,9 +336,22 @@ public final class TrackRecorder {
             // 周目切换：目录跟着换（跨周目必须开新段，旧段留在旧周目目录）
             boolean rotateCycle = st.cycleId != cycleId;
             boolean rotateStack = st.layerRoot == null || !st.layerRoot.equals(layerRoot);
-            boolean newSegment = rotateDay || rotateCycle || rotateStack || st.dimension == null
+            boolean rotateFile = rotateDay || rotateCycle || rotateStack;
+
+            if (st.archiveRefused) {
+                if (archiveRefused.contains(st.uuid)) {
+                    logRefused(st, now);
+                    return;
+                }
+                st.archiveRefused = false;
+            }
+            if (rotateFile && !allowNewArchive(st, now)) {
+                return;
+            }
+
+            boolean newSegment = rotateFile || st.dimension == null
                     || !st.dimension.equals(dim) || st.out == null;
-            if (rotateDay || rotateCycle || rotateStack) {
+            if (rotateFile) {
                 closeStream(st);
                 st.cycleId = cycleId;
                 st.day = today;
@@ -287,12 +359,23 @@ public final class TrackRecorder {
                 st.file = TrackLayout.file(layerRoot, cycleId, today, st.uuid);
                 Files.createDirectories(st.file.getParent());
                 openAppend(st);
+                openEvents(st, layerRoot, cycleId, today);
+                if (Files.size(st.file) == 0) {
+                    st.out.write(TrackStore.header());
+                }
+                resetEventState(st);
+            }
+            if (st.out == null) {
+                openAppend(st);
                 if (Files.size(st.file) == 0) {
                     st.out.write(TrackStore.header());
                 }
             }
-            if (st.out == null) {
-                openAppend(st);
+            boolean eventsOpened = false;
+            if (st.evtOut == null) {
+                openEvents(st, layerRoot, cycleId, today);
+                resetEventState(st);
+                eventsOpened = true;
             }
             TrackStore.Sample cur = new TrackStore.Sample(
                     now,
@@ -306,18 +389,324 @@ public final class TrackRecorder {
                 st.segmentStartMs = now;
                 st.hz = hz;
                 st.last = null;
+                // 新段初始快照：首条事件必须是 EQUIP
+                resetEventState(st);
+                writeInitialEvents(player, st, now);
+            } else if (eventsOpened) {
+                writeInitialEvents(player, st, now);
             }
             st.out.write(TrackStore.encodeSample(st.last, cur));
             st.last = cur;
             st.lastSampleMs = now;
+
+            // 5Hz 采样时比较装备；有变化才写 EQUIP
+            maybeWriteEquipment(player, st, now);
+            if (CommandConfig.getInstance().trackRecordInventory()) {
+                maybeWriteInventory(player, st, now);
+            }
+
             if (now - st.lastFlushMs > 2000) {
                 st.out.flush();
+                if (st.evtOut != null) {
+                    st.evtOut.flush();
+                    st.lastEventFlushMs = now;
+                }
                 st.lastFlushMs = now;
             }
         } catch (IOException e) {
             Samsara.LOGGER.warn("[周目管理 samsara] 轨迹写入失败 {}: {}", st.uuid, e.getMessage());
             closeStream(st);
         }
+    }
+
+    /** 新归档前检查 maxBytesPerPlayer（降级由保留扫描完成；仍超限则拒绝）。 */
+    private boolean allowNewArchive(State st, long now) {
+        if (!archiveRefused.contains(st.uuid)) {
+            return true;
+        }
+        st.archiveRefused = true;
+        logRefused(st, now);
+        return false;
+    }
+
+    private void logRefused(State st, long now) {
+        if (now - st.refusedLogMs < 60_000L) {
+            return;
+        }
+        st.refusedLogMs = now;
+        Samsara.LOGGER.warn("[周目管理 samsara] 玩家 {} 的 .bin 轨迹已达到 maxBytesPerPlayer "
+                + "且 adaptive 降级后仍超限，拒绝新归档（已关闭当前事件流）", st.uuid);
+    }
+
+    // ---- track v2：事件侧车写入 ----
+
+    private void openEvents(State st, Path layerRoot, int cycleId, LocalDate day) throws IOException {
+        st.evtFile = TrackLayout.evtFile(layerRoot, cycleId, day, st.uuid);
+        Files.createDirectories(st.evtFile.getParent());
+        // 追加已有侧车时，dt 必须接在上一条事件之后；新文件首条用绝对 epoch 毫秒。
+        long previousEventMs = 0;
+        if (Files.isRegularFile(st.evtFile) && Files.size(st.evtFile) > 0) {
+            TrackEventStore.ReadResult existing = TrackEventStore.read(st.evtFile);
+            if (!existing.events().isEmpty()) {
+                previousEventMs = existing.events().get(existing.events().size() - 1).timeMs();
+            }
+            // 崩溃可能留下半条记录：追加前截断到最后一个完整事件，避免后续事件永远读不到
+            if (existing.truncated() && existing.validBytes() > 0
+                    && existing.validBytes() < Files.size(st.evtFile)) {
+                try (var channel = java.nio.channels.FileChannel.open(st.evtFile,
+                        StandardOpenOption.WRITE)) {
+                    channel.truncate(existing.validBytes());
+                }
+            }
+        }
+        st.evtOut = new BufferedOutputStream(Files.newOutputStream(st.evtFile,
+                StandardOpenOption.CREATE, StandardOpenOption.APPEND), 4096);
+        openFiles.add(st.evtFile);
+        if (Files.size(st.evtFile) == 0) {
+            st.evtOut.write(TrackEvents.header());
+        }
+        st.lastEventMs = previousEventMs;
+        st.lastEventFlushMs = System.currentTimeMillis();
+    }
+
+    private static void resetEventState(State st) {
+        st.lastEquipment = null;
+        st.lastSelectedSlot = -1;
+        st.lastFlightMode = -2;
+        st.lastVehicle = null;
+        st.lastUsing = false;
+        st.lastUseHand = -1;
+        st.lastUseStartedMs = 0;
+        st.lastUseFallbackStopMs = 0;
+        st.lastInventory = null;
+        // lastEventMs 由 openEvents 维护（追加文件时接上已有事件时间）
+    }
+
+    private static TrackEventStore.Equipment equipmentOf(ServerPlayer player) {
+        ItemStack[] slots = new ItemStack[TrackEvents.SLOT_COUNT];
+        slots[TrackEvents.SLOT_MAINHAND] = player.getItemBySlot(EquipmentSlot.MAINHAND);
+        slots[TrackEvents.SLOT_OFFHAND] = player.getItemBySlot(EquipmentSlot.OFFHAND);
+        slots[TrackEvents.SLOT_HEAD] = player.getItemBySlot(EquipmentSlot.HEAD);
+        slots[TrackEvents.SLOT_CHEST] = player.getItemBySlot(EquipmentSlot.CHEST);
+        slots[TrackEvents.SLOT_LEGS] = player.getItemBySlot(EquipmentSlot.LEGS);
+        slots[TrackEvents.SLOT_FEET] = player.getItemBySlot(EquipmentSlot.FEET);
+        return new TrackEventStore.Equipment(slots, player.getInventory().getSelectedSlot());
+    }
+
+    private void writeInitialEvents(ServerPlayer player, State st, long now) throws IOException {
+        if (st.evtOut == null) {
+            return;
+        }
+        TrackEventStore.Equipment equipment = equipmentOf(player);
+        writeEquip(st, now, equipment);
+        int flight = flightMode(player);
+        writeEvent(st, now, TrackEvents.TYPE_FLIGHT_MODE, TrackEvents.flightPayload(flight));
+        st.lastFlightMode = flight;
+        String vehicle = vehicleType(player);
+        writeEvent(st, now, TrackEvents.TYPE_VEHICLE, TrackEvents.vehiclePayload(vehicle));
+        st.lastVehicle = vehicle;
+        // 正在使用中开新段：先记 START，保证回放有起止
+        if (player.isUsingItem()) {
+            int hand = handId(player.getUsedItemHand());
+            writeEvent(st, now, TrackEvents.TYPE_USE_START, TrackEvents.useStartPayload(hand));
+            st.lastUsing = true;
+            st.lastUseHand = hand;
+        }
+        if (CommandConfig.getInstance().trackRecordInventory()) {
+            List<ItemStack> inventory = inventoryOf(player);
+            writeInventory(st, now, inventory);
+            st.lastInventory = inventory;
+        }
+        // 初始快照立即落盘：崩溃时可从段首恢复装备基线
+        st.evtOut.flush();
+        st.lastEventFlushMs = now;
+    }
+
+    private void maybeWriteEquipment(ServerPlayer player, State st, long now) throws IOException {
+        TrackEventStore.Equipment equipment = equipmentOf(player);
+        if (st.lastEquipment != null
+                && st.lastSelectedSlot == equipment.selectedSlot()
+                && sameEquipment(st.lastEquipment, equipment)) {
+            return;
+        }
+        writeEquip(st, now, equipment);
+    }
+
+    private static boolean sameEquipment(TrackEventStore.Equipment a, TrackEventStore.Equipment b) {
+        for (int i = 0; i < TrackEvents.SLOT_COUNT; i++) {
+            if (!ItemStack.matches(a.slots()[i], b.slots()[i])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private void writeEquip(State st, long now, TrackEventStore.Equipment equipment) throws IOException {
+        byte[] payload = TrackEventStore.encodeEquipment(equipment.slots(), equipment.selectedSlot(),
+                registryAccess(st));
+        writeEvent(st, now, TrackEvents.TYPE_EQUIP, payload);
+        st.lastEquipment = equipment;
+        st.lastSelectedSlot = equipment.selectedSlot();
+    }
+
+    private void maybeWriteInventory(ServerPlayer player, State st, long now) throws IOException {
+        List<ItemStack> inventory = inventoryOf(player);
+        if (st.lastInventory != null && sameInventory(st.lastInventory, inventory)) {
+            return;
+        }
+        writeInventory(st, now, inventory);
+        st.lastInventory = inventory;
+    }
+
+    private static List<ItemStack> inventoryOf(ServerPlayer player) {
+        List<ItemStack> out = new ArrayList<>();
+        for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
+            out.add(player.getInventory().getItem(i));
+        }
+        return out;
+    }
+
+    private static boolean sameInventory(List<ItemStack> a, List<ItemStack> b) {
+        if (a.size() != b.size()) {
+            return false;
+        }
+        for (int i = 0; i < a.size(); i++) {
+            if (!ItemStack.matches(a.get(i), b.get(i))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private void writeInventory(State st, long now, List<ItemStack> inventory) throws IOException {
+        byte[] payload = TrackEventStore.encodeInventory(inventory, registryAccess(st));
+        writeEvent(st, now, TrackEvents.TYPE_INVENTORY, payload);
+    }
+
+    private static net.minecraft.core.RegistryAccess registryAccess(State st) {
+        // 事件写入发生在主线程；registryAccess 在 sample() 里从当前服务器缓存。
+        return st.registries;
+    }
+
+    /** 每 tick 检查使用起止、飞行模式与载具变化（不依赖 5Hz 采样）。 */
+    private void continuousEvents(ServerPlayer player, State st, long now) {
+        if (st.evtOut == null) {
+            return;
+        }
+        try {
+            boolean using = player.isUsingItem();
+            int hand = using ? handId(player.getUsedItemHand()) : -1;
+            if (using && !st.lastUsing) {
+                writeEvent(st, now, TrackEvents.TYPE_USE_START, TrackEvents.useStartPayload(hand));
+                st.lastUsing = true;
+                st.lastUseHand = hand;
+                st.lastUseStartedMs = now;
+                st.lastUseFallbackStopMs = 0;
+            } else if (using && st.lastUsing && hand != st.lastUseHand) {
+                writeEvent(st, now, TrackEvents.TYPE_USE_STOP, new byte[0]);
+                writeEvent(st, now, TrackEvents.TYPE_USE_START, TrackEvents.useStartPayload(hand));
+                st.lastUseHand = hand;
+            } else if (!using && st.lastUsing && now >= st.lastUseFallbackStopMs) {
+                writeEvent(st, now, TrackEvents.TYPE_USE_STOP, new byte[0]);
+                st.lastUsing = false;
+                st.lastUseHand = -1;
+            }
+
+            int flight = flightMode(player);
+            if (flight != st.lastFlightMode) {
+                writeEvent(st, now, TrackEvents.TYPE_FLIGHT_MODE, TrackEvents.flightPayload(flight));
+                st.lastFlightMode = flight;
+            }
+            String vehicle = vehicleType(player);
+            if (st.lastVehicle == null || !st.lastVehicle.equals(vehicle)) {
+                writeEvent(st, now, TrackEvents.TYPE_VEHICLE, TrackEvents.vehiclePayload(vehicle));
+                st.lastVehicle = vehicle;
+            }
+            if (now - st.lastEventFlushMs > 2000L) {
+                st.evtOut.flush();
+                st.lastEventFlushMs = now;
+            }
+        } catch (IOException e) {
+            Samsara.LOGGER.warn("[周目管理 samsara] 轨迹事件写入失败 {}: {}", st.uuid, e.getMessage());
+            closeStream(st);
+        }
+    }
+
+    public void recordSwing(ServerPlayer player, InteractionHand hand, int animationId) {
+        State st = states.get(player.getUUID());
+        if (st == null || st.evtOut == null) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        int handId = handId(hand);
+        if (st.lastSwingHand == handId && now - st.lastSwingMs < 50L) {
+            return;
+        }
+        st.lastSwingHand = handId;
+        st.lastSwingMs = now;
+        try {
+            writeEvent(st, now, TrackEvents.TYPE_SWING,
+                    TrackEvents.swingPayload(handId, animationId));
+        } catch (IOException e) {
+            Samsara.LOGGER.warn("[周目管理 samsara] 挥动事件写入失败 {}: {}", st.uuid, e.getMessage());
+        }
+    }
+
+    private void recordUseStart(ServerPlayer player, InteractionHand hand, long now) {
+        State st = states.get(player.getUUID());
+        if (st == null || st.evtOut == null) {
+            return;
+        }
+        try {
+            int handId = player.isUsingItem() ? handId(player.getUsedItemHand()) : handId(hand);
+            // 同一个 tick 可能同时触发 UseItem/UseBlock 回调（主手+副手），只记一次
+            boolean duplicate = st.lastUsing && now - st.lastUseStartedMs < 100L;
+            if (!duplicate && (!st.lastUsing || st.lastUseHand != handId)) {
+                writeEvent(st, now, TrackEvents.TYPE_USE_START, TrackEvents.useStartPayload(handId));
+                st.lastUsing = true;
+                st.lastUseHand = handId;
+                st.lastUseStartedMs = now;
+            }
+            if (!player.isUsingItem()) {
+                // 一次性使用：给客户端一点时间看到起手，下一 tick 补 STOP
+                st.lastUseFallbackStopMs = now + 50L;
+            } else {
+                st.lastUseFallbackStopMs = 0;
+            }
+        } catch (IOException e) {
+            Samsara.LOGGER.warn("[周目管理 samsara] 使用事件写入失败 {}: {}", st.uuid, e.getMessage());
+        }
+    }
+
+    private static void writeEvent(State st, long now, int type, byte[] payload) throws IOException {
+        if (st.evtOut == null) {
+            return;
+        }
+        TrackEvents.write(st.evtOut, st.lastEventMs, new TrackEvents.Event(now, type, payload));
+        st.lastEventMs = now;
+        // 侧车与 .bin 同样在 2 秒窗口 flush；崩溃时允许尾部不完整
+    }
+
+    private static int handId(InteractionHand hand) {
+        return hand == InteractionHand.OFF_HAND ? 1 : 0;
+    }
+
+    private static int flightMode(ServerPlayer player) {
+        if (player.isFallFlying()) {
+            return TrackEvents.FLIGHT_ELYTRA;
+        }
+        if (player.getAbilities().flying) {
+            return TrackEvents.FLIGHT_CREATIVE;
+        }
+        return TrackEvents.FLIGHT_NONE;
+    }
+
+    private static String vehicleType(ServerPlayer player) {
+        if (player.getVehicle() == null) {
+            return "";
+        }
+        var key = BuiltInRegistries.ENTITY_TYPE.getKey(player.getVehicle().getType());
+        return key == null ? "" : key.toString();
     }
 
     private static int flags(ServerPlayer p) {
@@ -365,6 +754,17 @@ public final class TrackRecorder {
         if (st.file != null) {
             openFiles.remove(st.file);
         }
+        if (st.evtOut != null) {
+            try {
+                st.evtOut.flush();
+                st.evtOut.close();
+            } catch (IOException ignored) {
+            }
+            st.evtOut = null;
+        }
+        if (st.evtFile != null) {
+            openFiles.remove(st.evtFile);
+        }
     }
 
     private void close(State st) {
@@ -394,8 +794,23 @@ public final class TrackRecorder {
      */
     private void sweep() {
         try {
-            SeasonData.Settings cfg = SeasonManager.getInstance().settings();
-            int skeleton = Math.max(100, cfg.trackSkeletonPerDay);
+            TrackRetention.Settings retention = CommandConfig.getInstance().trackRetention();
+            int skeleton = Math.max(1, retention.skeletonPerDay());
+            Map<UUID, Long> before = trackBytesByPlayer();
+            Map<UUID, TrackRetention.Mode> modes = new java.util.HashMap<>();
+            TrackRetention.Mode configured = retention.effectiveMode();
+            for (Map.Entry<UUID, Long> entry : before.entrySet()) {
+                TrackRetention.Mode effective = TrackRetention.effectiveModeForBytes(
+                        retention, entry.getValue());
+                modes.put(entry.getKey(), effective);
+                if (configured != TrackRetention.Mode.ADAPTIVE
+                        && effective == TrackRetention.Mode.ADAPTIVE) {
+                    Samsara.LOGGER.info("[周目管理 samsara] 玩家 {} 的轨迹 {} 字节超过 maxBytesPerPlayer={}，"
+                                    + "保留策略从 {} 降级到 adaptive",
+                            entry.getKey(), entry.getValue(), retention.maxBytesPerPlayer(), configured.id());
+                }
+            }
+
             LocalDate today = LocalDate.now();
             for (Path trackRoot : trackRoots()) {
                 if (!Files.isDirectory(trackRoot)) {
@@ -408,13 +823,29 @@ public final class TrackRecorder {
                         }
                         // 更早的无世界层布局：track/<日期>/
                         if (TrackLayout.isDateDir(child.getFileName().toString())) {
-                            sweepDay(child, today, skeleton);
+                            sweepDay(child, today, retention, modes);
                             continue;
                         }
-                        sweepWorldLevel(child, today, skeleton);
+                        sweepWorldLevel(child, today, retention, modes);
                     }
                 }
             }
+
+            // 降级后仍超限：拒绝新归档（录制端在轮转/新段前检查）
+            Map<UUID, Long> after = trackBytesByPlayer();
+            long max = retention.maxBytesPerPlayer();
+            for (Map.Entry<UUID, Long> entry : after.entrySet()) {
+                if (max <= 0 || entry.getValue() < max) {
+                    archiveRefused.remove(entry.getKey());
+                    continue;
+                }
+                archiveRefused.add(entry.getKey());
+                Samsara.LOGGER.warn("[周目管理 samsara] 玩家 {} 的 .bin 轨迹 {} 字节仍超过 maxBytesPerPlayer={}"
+                                + "（已先降级到 adaptive）；将拒绝新归档",
+                        entry.getKey(), entry.getValue(), max);
+            }
+            // 已无文件/已降到上限以下的玩家也要解除
+            archiveRefused.removeIf(id -> !after.containsKey(id));
         } catch (Exception e) {
             Samsara.LOGGER.warn("[周目管理 samsara] 轨迹保留扫描异常: {}", e.getMessage());
         } finally {
@@ -422,46 +853,86 @@ public final class TrackRecorder {
         }
     }
 
+    /** 统计每个玩家所有栈层/周目/日期的 .bin 字节数（不扫描 .evt）。 */
+    private Map<UUID, Long> trackBytesByPlayer() {
+        Map<UUID, Long> out = new java.util.HashMap<>();
+        for (Path root : trackRoots()) {
+            if (!Files.isDirectory(root)) {
+                continue;
+            }
+            try (var stream = Files.walk(root)) {
+                stream.filter(Files::isRegularFile)
+                        .filter(p -> p.getFileName().toString().endsWith(".bin"))
+                        .forEach(p -> {
+                            UUID id = uuidOfTrackFile(p);
+                            if (id == null) {
+                                return;
+                            }
+                            try {
+                                out.merge(id, Files.size(p), Long::sum);
+                            } catch (IOException ignored) {
+                            }
+                        });
+            } catch (IOException ignored) {
+            }
+        }
+        return out;
+    }
+
+    private static UUID uuidOfTrackFile(Path file) {
+        String name = file.getFileName().toString();
+        if (!name.endsWith(".bin")) {
+            return null;
+        }
+        try {
+            return UUID.fromString(name.substring(0, name.length() - 4));
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
     /** 一个世界目录：子项可能是 cycle&lt;id&gt; 目录，也可能是尚未迁移的日期目录 */
-    private void sweepWorldLevel(Path worldDir, LocalDate today, int skeleton) throws IOException {
+    private void sweepWorldLevel(Path worldDir, LocalDate today,
+                                 TrackRetention.Settings retention,
+                                 Map<UUID, TrackRetention.Mode> modes) throws IOException {
         try (var children = Files.list(worldDir)) {
             for (Path child : (Iterable<Path>) children::iterator) {
                 if (!Files.isDirectory(child)) {
                     continue;
                 }
                 if (TrackLayout.isDateDir(child.getFileName().toString())) {
-                    sweepDay(child, today, skeleton);
+                    sweepDay(child, today, retention, modes);
                 } else if (TrackLayout.cycleIdOf(child.getFileName().toString()) >= 0) {
-                    sweepCycle(child, today, skeleton);
+                    sweepCycle(child, today, retention, modes);
                 }
             }
         }
     }
 
-    private void sweepCycle(Path cycleDir, LocalDate today, int skeleton) throws IOException {
+    private void sweepCycle(Path cycleDir, LocalDate today,
+                            TrackRetention.Settings retention,
+                            Map<UUID, TrackRetention.Mode> modes) throws IOException {
         try (var days = Files.list(cycleDir)) {
             for (Path dayDir : (Iterable<Path>) days::iterator) {
                 if (Files.isDirectory(dayDir)
                         && TrackLayout.isDateDir(dayDir.getFileName().toString())) {
-                    sweepDay(dayDir, today, skeleton);
+                    sweepDay(dayDir, today, retention, modes);
                 }
             }
         }
     }
 
-    /** 对一个日期目录做降采样（世界 + 周目 + 日期口径） */
-    private void sweepDay(Path dayDir, LocalDate today, int skeleton) throws IOException {
+    /** 对一个日期目录做降采样（世界 + 周目 + 日期口径）；只处理 .bin，不碰 .evt。 */
+    private void sweepDay(Path dayDir, LocalDate today,
+                          TrackRetention.Settings retention,
+                          Map<UUID, TrackRetention.Mode> modes) throws IOException {
         LocalDate date;
         try {
             date = LocalDate.parse(dayDir.getFileName().toString());
         } catch (Exception e) {
             return;
         }
-        long age = ChronoUnit.DAYS.between(date, today);
-        double targetHz = targetHz(age);
-        if (targetHz >= 5.0) {
-            return;
-        }
+        int age = (int) Math.max(0, ChronoUnit.DAYS.between(date, today));
         List<Path> files;
         try (var list = Files.list(dayDir)) {
             files = list.filter(Files::isRegularFile)
@@ -472,24 +943,28 @@ public final class TrackRecorder {
             if (openFiles.contains(f)) {
                 continue;
             }
+            UUID owner = uuidOfTrackFile(f);
+            TrackRetention.Mode mode = owner == null
+                    ? retention.effectiveMode()
+                    : modes.getOrDefault(owner, retention.effectiveMode());
+            if (mode == TrackRetention.Mode.KEEP_ALL) {
+                continue;
+            }
+            double targetHz = mode == TrackRetention.Mode.CURVE
+                    ? TrackRetention.curveTargetHz(age, retention.curve())
+                    : TrackRetention.adaptiveTargetHz(age);
+            if (targetHz >= TrackRetention.FRESH_HZ) {
+                continue;
+            }
             try {
-                if (TrackStore.decimate(f, targetHz, skeleton)) {
-                    Samsara.LOGGER.info("[周目管理 samsara] 轨迹降采样: {} → {}Hz（{} 天前）",
-                            f.getFileName(), targetHz, age);
+                if (TrackStore.decimate(f, targetHz, retention.skeletonPerDay())) {
+                    Samsara.LOGGER.info("[周目管理 samsara] 轨迹降采样: {} → {}Hz（{} 天前 · {}）",
+                            f.getFileName(), targetHz, age, mode.id());
                 }
             } catch (IOException e) {
                 Samsara.LOGGER.warn("[周目管理 samsara] 轨迹降采样失败 {}: {}", f, e.getMessage());
             }
         }
-    }
-
-    private static double targetHz(long ageDays) {
-        for (int i = 0; i < TIER_DAYS.length; i++) {
-            if (ageDays < TIER_DAYS[i]) {
-                return i == 0 ? 5.0 : TIER_HZ[i - 1];
-            }
-        }
-        return SKELETON_HZ;
     }
 
     // ---- 查询/回放支持 ----

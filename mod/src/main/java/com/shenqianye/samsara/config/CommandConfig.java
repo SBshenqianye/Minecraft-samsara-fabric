@@ -1,6 +1,9 @@
 package com.shenqianye.samsara.config;
 
+import com.shenqianye.samsara.track.TrackRetention;
+
 import java.nio.file.Path;
+import java.util.List;
 
 /**
  * 命令功能配置（{@code config/samsara/commands.yml}）。
@@ -31,6 +34,10 @@ public final class CommandConfig {
     private double viewAimEdge;
     private double viewAimMaxDegPerSec;
     private boolean viewAimPitch;
+    private boolean viewAllowEquipmentDrop;
+
+    private boolean trackRecordInventory;
+    private TrackRetention.Settings trackRetention = TrackRetention.Settings.defaults();
 
     private boolean chatCompletionEnabled;
     private boolean completionFuzzyEnabled;
@@ -125,6 +132,21 @@ public final class CommandConfig {
         return viewAimPitch;
     }
 
+    /** F-107：捕捉后普通实体死亡时默认允许掉落录制装备。 */
+    public boolean viewAllowEquipmentDrop() {
+        return viewAllowEquipmentDrop;
+    }
+
+    // ---- 轨迹 v2 查询 ----
+
+    public boolean trackRecordInventory() {
+        return trackRecordInventory;
+    }
+
+    public TrackRetention.Settings trackRetention() {
+        return trackRetention;
+    }
+
     // ---- 指令补全查询 ----
 
     public boolean isChatCompletionEnabled() {
@@ -187,6 +209,16 @@ public final class CommandConfig {
         viewAimEdge = Math.max(viewAimDeadzone + 1.0, config.decimal(id, "view.aim.edge"));
         viewAimMaxDegPerSec = config.decimal(id, "view.aim.maxDegPerSec");
         viewAimPitch = config.bool(id, "view.aim.pitch");
+        viewAllowEquipmentDrop = config.bool(id, "view.allowEquipmentDrop");
+
+        trackRecordInventory = config.bool(id, "track.recordInventory");
+        trackRetention = new TrackRetention.Settings(
+                TrackRetention.Mode.parse(config.string(id, "track.retention.mode")),
+                clamp(config.decimal(id, "track.retention.adaptive.q"), 0.0001, 0.9999),
+                Math.max(1, config.integer(id, "track.retention.adaptive.skeletonPerDay")),
+                config.bool(id, "track.retention.keepAll"),
+                Math.max(0, config.integer(id, "track.retention.maxBytesPerPlayer")),
+                TrackRetention.parseCurve(config.value(id, "track.retention.curve")));
 
         chatCompletionEnabled = config.bool(id, "completion.chatList");
         completionFuzzyEnabled = config.bool(id, "completion.fuzzy");
@@ -202,8 +234,15 @@ public final class CommandConfig {
                 + "（超时 " + tpaRequestTimeoutSeconds + "s）"
                 + " · 回看保护 " + (viewProtectViewer ? "开" : "关")
                 + " · 回看自瞄 " + (viewAimEnabled ? "默认开" : "默认关")
+                + " · 装备掉落 " + (viewAllowEquipmentDrop ? "允许" : "禁止")
+                + " · 背包快照 " + (trackRecordInventory ? "开" : "关")
+                + " · 保留策略 " + trackRetention.effectiveMode().id()
                 + " · 聊天栏补全 " + (chatCompletionEnabled ? "开" : "关")
                 + " · 来源 " + configPath();
+    }
+
+    private static double clamp(double value, double min, double max) {
+        return Math.max(min, Math.min(max, value));
     }
 
     /** 供测试/迁移后强制重读。 */

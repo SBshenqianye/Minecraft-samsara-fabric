@@ -20,7 +20,9 @@ public record ViewOptions(
         double aimDeadzone,
         double aimEdge,
         double aimSpeed,
-        boolean aimPitch) {
+        boolean aimPitch,
+        /** F-107：null = 使用 view.allowEquipmentDrop；true/false = 单次回看覆盖 */
+        Boolean equipmentDrop) {
 
     public static final double MIN_SPEED = 0.1;
     public static final double MAX_SPEED = 64.0;
@@ -29,7 +31,8 @@ public record ViewOptions(
     public static final double DEFAULT_AIM_SPEED = 90.0;
     public static final String SUPPORTED = "支持参数：--speed <0.1..64>、--to <时间>、--duration <30s/10m/2h>、"
             + "--follow[=on|off]、--spectator、--glow、--no-glow、--no-name-tag、--cycle <cycleN>、"
-            + "--aim[=on|off]、--aim-deadzone <2..45>、--aim-edge <外圈>、--aim-speed <10..360>、--aim-pitch on|off";
+            + "--aim[=on|off]、--aim-deadzone <2..45>、--aim-edge <外圈>、--aim-speed <10..360>、--aim-pitch on|off、"
+            + "--equipment-drop=on|off";
 
     public ViewOptions {
         if (speed < MIN_SPEED || speed > MAX_SPEED) {
@@ -63,6 +66,7 @@ public record ViewOptions(
         double aimEdge = DEFAULT_AIM_EDGE;
         double aimSpeed = DEFAULT_AIM_SPEED;
         boolean aimPitch = true;
+        Boolean equipmentDrop = null;
 
         String[] tokens = raw == null ? new String[0] : raw.trim().split("\\s+");
         for (int i = 0; i < tokens.length; i++) {
@@ -171,6 +175,18 @@ public record ViewOptions(
                     }
                     aimPitch = parseOnOff(value);
                 }
+                case "equipment-drop" -> {
+                    if (inline == null) {
+                        if (i + 1 < tokens.length && !tokens[i + 1].startsWith("--")
+                                && isOnOff(tokens[i + 1])) {
+                            equipmentDrop = parseOnOff(tokens[++i]);
+                        } else {
+                            throw new IllegalArgumentException("--equipment-drop 需要 on/off");
+                        }
+                    } else {
+                        equipmentDrop = parseOnOff(inline);
+                    }
+                }
                 case "cycle" -> {
                     String value = inline != null ? inline : value(key, tokens, ++i);
                     Integer parsed = com.shenqianye.samsara.track.TrackReplay.parseCycle(value);
@@ -189,7 +205,7 @@ public record ViewOptions(
         long effectiveEnd = end == null ? defaultEnd : end;
         return new ViewOptions(speed, follow, spectator, glow, nameTag,
                 effectiveEnd, end != null, cycle,
-                aim, aimDeadzone, aimEdge, aimSpeed, aimPitch);
+                aim, aimDeadzone, aimEdge, aimSpeed, aimPitch, equipmentDrop);
     }
 
     private static String value(String key, String[] tokens, int nextIndex) {

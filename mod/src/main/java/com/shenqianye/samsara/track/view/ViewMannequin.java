@@ -116,6 +116,11 @@ public class ViewMannequin extends TrackMannequin {
         return false;
     }
 
+    /** 回看人偶永不掉落录制装备；停止/替换走 discard，也不经过死亡掉落。 */
+    @Override
+    protected void dropEquipment(ServerLevel level) {
+    }
+
     @Override
     public void setCustomNameVisible(boolean visible) {
         super.setCustomNameVisible(nameTag && visible);

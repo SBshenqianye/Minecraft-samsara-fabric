@@ -61,6 +61,35 @@ public final class TrackLayout {
         return dayDir(trackRoot, cycleId, day).resolve(uuid + ".bin");
     }
 
+    /** track/cycle&lt;id&gt;/&lt;日期&gt;/&lt;uuid&gt;.evt（轨道事件侧车） */
+    public static Path evtFile(Path trackRoot, int cycleId, LocalDate day, UUID uuid) {
+        return dayDir(trackRoot, cycleId, day).resolve(uuid + ".evt");
+    }
+
+    /** 由 .bin 路径推导同名 .evt。 */
+    public static Path evtFileFor(Path binFile) {
+        if (binFile == null) {
+            return null;
+        }
+        String name = binFile.getFileName().toString();
+        if (name.endsWith(".bin")) {
+            name = name.substring(0, name.length() - 4);
+        }
+        return binFile.resolveSibling(name + ".evt");
+    }
+
+    /** 由 .evt 路径推导同名 .bin。 */
+    public static Path binFileFor(Path evtFile) {
+        if (evtFile == null) {
+            return null;
+        }
+        String name = evtFile.getFileName().toString();
+        if (name.endsWith(".evt")) {
+            name = name.substring(0, name.length() - 4);
+        }
+        return evtFile.resolveSibling(name + ".bin");
+    }
+
     /** 目录名是否是 {@code YYYY-MM-DD} */
     public static boolean isDateDir(String name) {
         try {
@@ -150,7 +179,11 @@ public final class TrackLayout {
             for (Path f : files) {
                 Path to = dst.resolve(f.getFileName());
                 if (Files.exists(to)) {
-                    mergeTrackFile(f, to);
+                    if (f.getFileName().toString().endsWith(".evt")) {
+                        TrackEventStore.mergeFile(f, to);
+                    } else {
+                        mergeTrackFile(f, to);
+                    }
                 } else {
                     Files.move(f, to);
                 }

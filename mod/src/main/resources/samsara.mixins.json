@@ -11,7 +11,9 @@
     "CommandsMixin",
     "CommandDispatcherMixin",
     "CompletionPageMixin",
-    "TamableAnimalMixin"
+    "TamableAnimalMixin",
+    "ServerboundPunchMixin",
+    "LivingEntitySwingMixin"
   ],
   "injectors": {
     "defaultRequire": 1

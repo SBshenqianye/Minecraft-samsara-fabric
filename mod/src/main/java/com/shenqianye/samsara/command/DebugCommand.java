@@ -243,6 +243,9 @@ public class DebugCommand {
                                     // 再由 reloadHook 刷新 PermissionConfig，补全谓词立即跟随。
                                     com.shenqianye.samsara.config.ConfigManager.getInstance()
                                             .reload(com.shenqianye.samsara.config.ConfigSchema.PERMISSIONS);
+                                    // track v2 的 view.drop / recordInventory / retention 也走同一条磁盘重读
+                                    com.shenqianye.samsara.config.ConfigManager.getInstance()
+                                            .reload(com.shenqianye.samsara.config.ConfigSchema.COMMANDS);
                                     com.shenqianye.samsara.permission.PermissionConfig.getInstance().reload();
                                     return reply(ctx.getSource(), manager().reload()
                                             + "\n" + com.shenqianye.samsara.config.CommandConfig

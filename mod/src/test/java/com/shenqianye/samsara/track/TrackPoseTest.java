@@ -96,6 +96,20 @@ class TrackPoseTest {
     }
 
     @Test
+    void creativeFlightIsNotRenderedAsElytra() {
+        int flying = TrackStore.FLAG_FLYING;
+        assertEquals(TrackPose.Posture.FLYING,
+                TrackPose.postureOf(flying, TrackEvents.FLIGHT_ELYTRA));
+        assertEquals(TrackPose.Posture.FLYING, TrackPose.postureOf(flying, -1));
+        assertEquals(TrackPose.Posture.STANDING,
+                TrackPose.postureOf(flying, TrackEvents.FLIGHT_CREATIVE));
+        assertEquals(TrackPose.Posture.STANDING,
+                TrackPose.postureOf(flying, TrackEvents.FLIGHT_NONE));
+        assertEquals(TrackPose.Posture.SNEAK,
+                TrackPose.postureOf(flying | TrackStore.FLAG_SNEAK, TrackEvents.FLIGHT_CREATIVE));
+    }
+
+    @Test
     void reservedHighBitsAreIgnored() {
         // v1 只写低 7 位；高位/负数脏数据按 0 处理，避免误判姿态
         TrackPose.State s = TrackPose.of(0x80 | TrackStore.FLAG_SPRINT);

@@ -6,6 +6,9 @@ import com.shenqianye.samsara.command.ui.ChatUi;
 import com.shenqianye.samsara.config.CommandConfig;
 import com.shenqianye.samsara.rewind.DiffStore;
 import com.shenqianye.samsara.season.SeasonManager;
+import com.shenqianye.samsara.track.TrackEventApplier;
+import com.shenqianye.samsara.track.TrackEventCursor;
+import com.shenqianye.samsara.track.TrackEventStore;
 import com.shenqianye.samsara.track.TrackLayout;
 import com.shenqianye.samsara.track.TrackRecorder;
 import com.shenqianye.samsara.track.TrackReplay;
@@ -306,6 +309,10 @@ public final class ViewManager {
             p.session.cursor = cursor;
             p.session.truncated = result.truncated();
             p.session.cutoffApplied = result.cutoffApplied();
+            p.session.events = new TrackEventCursor(result.events(), server.registryAccess());
+            p.session.eventsTruncated = result.eventsTruncated();
+            p.session.legacyEquipment = !p.session.events.hasEquipment();
+            p.session.eventsJumpPending = true;
             p.session.sourceSummary = summarize(result.files(), p.session.cycleId)
                     + " · " + ViewTime.format(cursor.startMs()) + " → " + ViewTime.format(cursor.endMs());
             apply(server, p);
@@ -365,6 +372,15 @@ public final class ViewManager {
         }
         // 加入世界后再应用：受伤闪烁需要广播给已追踪该实体的玩家
         entity.applyTrackFlags(first.flags());
+        CommandConfig cfg0 = CommandConfig.getInstance();
+        s.equipmentDrop = s.options.equipmentDrop() != null
+                ? s.options.equipmentDrop() : cfg0.viewAllowEquipmentDrop();
+        entity.setEquipmentDropAllowed(s.equipmentDrop);
+        if (s.events != null) {
+            TrackEventApplier.applySnapshot(entity, s.events, first.timeMs());
+            s.lastEventTrackMs = first.timeMs();
+            s.eventsJumpPending = false;
+        }
 
         // 2) 旧会话先结束（同观看者替换，不叠加实体）
         if (p.old != null) {
@@ -410,6 +426,8 @@ public final class ViewManager {
                     + (s.aimEnabled ? " · 自瞄" : "") + "）"
                     + (s.cutoffApplied ? " · 已按捕捉截断" : "")
                     + (s.truncated ? " · 文件尾部已截断" : "")
+                    + (s.legacyEquipment ? " · 该段录制于装备事件之前（空手）" : "")
+                    + (s.eventsTruncated ? " · 事件尾部已截断" : "")
                     + "\n停止：/samsara track view stop";
             Samsara.LOGGER.info("[回看] 开始: viewer={} target={} cycle={} window={} → {} speed={} samples={} cutoff={} truncated={}",
                     s.viewerName, s.targetName, s.cycleId, ViewTime.format(s.startTrackMs),
@@ -482,6 +500,7 @@ public final class ViewManager {
         m.yBodyRotO = point.yaw();
         m.setDeltaMovement(Vec3.ZERO);
         m.applyTrackFlags(point.flags());
+        applyTrackEvents(s, m, trackTime);
         if (s.hasPrevMannequin) {
             double jx = point.x() - s.prevMannequinX;
             double jy = point.y() - s.prevMannequinY;
@@ -503,6 +522,24 @@ public final class ViewManager {
         s.prevMannequinZ = point.z();
         s.hasPrevMannequin = true;
         return true;
+    }
+
+    /**
+     * 事件应用：正放跨越 SWING/USE；跳转、倒放、拖动只按快照重建并清空动作。
+     */
+    private static void applyTrackEvents(ViewSession s, ViewMannequin mannequin, long trackTime) {
+        if (s.events == null || s.events.isEmpty() || mannequin == null) {
+            return;
+        }
+        boolean jump = s.eventsJumpPending || s.direction() < 0
+                || trackTime < s.lastEventTrackMs;
+        if (jump) {
+            TrackEventApplier.resetTo(mannequin, s.events, trackTime);
+        } else if (trackTime > s.lastEventTrackMs) {
+            TrackEventApplier.advance(mannequin, s.events, s.lastEventTrackMs, trackTime);
+        }
+        s.lastEventTrackMs = trackTime;
+        s.eventsJumpPending = false;
     }
 
     /** 跟随观察点：人偶身后 4.5 格、上方 2 格，并面向人偶（不是贴在人偶身体里）。 */
@@ -664,6 +701,7 @@ public final class ViewManager {
                 input.left(), input.right(), input.shift(), dt);
         if (target != current) {
             s.seekTo(target);
+            s.eventsJumpPending = true;
             if (!updateMannequin(server, s, target)) {
                 restore(s, "拖动到不可用维度");
                 return;
@@ -729,6 +767,8 @@ public final class ViewManager {
                 ChatUi.run("对齐", "/samsara track view align", "一键回到人偶观察点"),
                 ChatUi.run("自瞄", "/samsara track view aim", "即时开关自动瞄准"),
                 ChatUi.run("拖动", "/samsara track view scrub", "A/D 后退/快进，空格暂停，Shift 加速"),
+                ChatUi.run("背包", "/samsara track view inspect", "只读查看录制的完整背包（分页）"),
+                ChatUi.run("掉落", "/samsara track view drop", "切换本次回看的装备掉落开关"),
                 ChatUi.run("停止", "/samsara track view stop", "停止回看并恢复状态"));
         MutableComponent line3 = ChatUi.line(
                 ChatUi.text("[进度]", ChatFormatting.GRAY),
@@ -1097,6 +1137,7 @@ public final class ViewManager {
             return e.getMessage();
         }
         s.seekTo(targetMs);
+        s.eventsJumpPending = true;
         if (!updateMannequin(server, s, targetMs)) {
             return "跳转后的人偶维度不可用: " + s.targetName;
         }
@@ -1134,6 +1175,90 @@ public final class ViewManager {
         s.aimEnabled = on == null ? !s.aimEnabled : on;
         s.lastAimAtMs = System.currentTimeMillis();
         return "自动瞄准已" + (s.aimEnabled ? "开启" : "关闭");
+    }
+
+    /** F-107：本次回看的装备掉落开关（只影响捕捉后普通实体的死亡掉落）。 */
+    public synchronized String setEquipmentDrop(MinecraftServer server, ServerPlayer actor,
+                                                String target, Boolean on, boolean allowOthers) {
+        ViewSession s = findSession(server, actor, target);
+        if (s == null) {
+            return target == null || target.isBlank() ? "你当前没有进行中的回看"
+                    : "没有该观看者的进行中回看: " + target;
+        }
+        if (actor != null && !actor.getUUID().equals(s.viewer) && !allowOthers) {
+            return "控制他人回看需要管理员权限";
+        }
+        boolean value = on == null ? !s.equipmentDrop : on;
+        s.equipmentDrop = value;
+        if (s.mannequin != null) {
+            s.mannequin.setEquipmentDropAllowed(value);
+        }
+        return "本次回看的装备掉落已" + (value ? "开启" : "关闭")
+                + "（只影响捕捉后普通实体死亡；回看停止/人偶 discard 永不掉落）";
+    }
+
+    /**
+     * F-108：只读、分页查看录制的完整背包快照。
+     * 不贴到实体库存、不生成 ItemEntity/容器，因此不会产生可拾取物品。
+     */
+    public synchronized String inspect(MinecraftServer server, ServerPlayer actor,
+                                       String target, int page, boolean allowOthers) {
+        ViewSession s = findSession(server, actor, target);
+        if (s == null) {
+            return target == null || target.isBlank() ? "你当前没有进行中的回看"
+                    : "没有该观看者的进行中回看: " + target;
+        }
+        if (actor != null && !actor.getUUID().equals(s.viewer) && !allowOthers) {
+            return "查看他人回看背包需要管理员权限";
+        }
+        if (s.cursor == null || s.events == null) {
+            return "回看仍在加载或该段没有事件数据";
+        }
+        try {
+        long time = s.trackTime(System.currentTimeMillis());
+        TrackEventStore.InventorySnapshot snapshot;
+        try {
+            snapshot = s.events.inventoryAt(time);
+        } catch (RuntimeException e) {
+            Samsara.LOGGER.warn("[回看] 背包快照读取失败 viewer={} target={}: {}",
+                    s.viewerName, s.targetName, e.getMessage());
+            return "背包快照读取失败（事件可能仍在写入）：" + e.getMessage();
+        }
+        if (snapshot == null) {
+            return "该时刻没有完整背包快照（track.recordInventory=false，或该段录制于开启之前）；"
+                    + "已记录的可见装备仍显示在人偶身上";
+        }
+        List<TrackEventStore.InventoryItem> items = new ArrayList<>(snapshot.items());
+        items.sort(java.util.Comparator.comparingInt(TrackEventStore.InventoryItem::slot));
+        int pageSize = 10;
+        int pages = Math.max(1, (items.size() + pageSize - 1) / pageSize);
+        int current = Math.max(1, Math.min(pages, page));
+        StringBuilder sb = new StringBuilder("[回看] ").append(s.targetName)
+                .append(" 的只读背包快照（").append(ViewTime.format(time)).append("）")
+                .append(" · 第 ").append(current).append("/").append(pages).append(" 页")
+                .append(" · 共 ").append(items.size()).append(" 件（只读，不会生成物品）");
+        int from = (current - 1) * pageSize;
+        int to = Math.min(items.size(), from + pageSize);
+        for (int i = from; i < to; i++) {
+            TrackEventStore.InventoryItem item = items.get(i);
+            sb.append("\n  槽 ").append(item.slot()).append(": ")
+                    .append(item.stack().getItemName().getString())
+                    .append(" ×").append(item.stack().getCount());
+        }
+        if (items.isEmpty()) {
+            sb.append("\n  （空背包）");
+        }
+        if (current < pages) {
+            sb.append("\n下一页：/samsara track view inspect ")
+                    .append(s.viewerName).append(" ").append(current + 1);
+        }
+        return sb.toString();
+        } catch (RuntimeException e) {
+            Samsara.LOGGER.warn("[回看] 背包快照读取失败 viewer={} target={}: {}",
+                    s.viewerName, s.targetName, e.toString(), e);
+            return "背包快照读取失败（事件可能仍在写入）：" + e.getClass().getSimpleName()
+                    + (e.getMessage() == null ? "" : " " + e.getMessage());
+        }
     }
 
     /** 拖动模式开关（F-102）：A/D/空格/Shift；滚轮不可用。 */
@@ -1194,7 +1319,8 @@ public final class ViewManager {
             return "当前状态不能倒放: " + s.state;
         }
         s.toggleDirection();
-        return s.direction() < 0 ? "已切换为倒放" : "已切换为正放";
+        s.eventsJumpPending = true;
+        return s.direction() < 0 ? "已切换为倒放（已清空动作状态）" : "已切换为正放（按快照重建动作状态）";
     }
 
     private ViewSession findSession(MinecraftServer server, ServerPlayer actor, String target) {
@@ -1265,6 +1391,15 @@ public final class ViewManager {
         }
         if (s.truncated) {
             sb.append("\n⚠ 文件尾部不完整，已播到最后一个完整样本");
+        }
+        if (s.legacyEquipment) {
+            sb.append("\n⚠ 该段录制于装备事件之前（空手）");
+        } else if (s.events != null) {
+            sb.append("\n").append(s.events.describeAt(s.trackTime(now)));
+        }
+        sb.append("\n装备掉落: ").append(s.equipmentDrop ? "on" : "off");
+        if (s.eventsTruncated) {
+            sb.append("\n⚠ 事件文件尾部不完整，已读到最后一个完整事件");
         }
         return sb.toString();
     }

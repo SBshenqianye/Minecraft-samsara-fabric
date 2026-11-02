@@ -64,6 +64,14 @@ public final class ViewSession {
     long lastScrubAtMs;
     boolean truncated;
     boolean cutoffApplied;
+    /** track v2 事件侧车（旧轨迹为空） */
+    com.shenqianye.samsara.track.TrackEventCursor events;
+    long lastEventTrackMs;
+    boolean eventsJumpPending = true;
+    boolean eventsTruncated;
+    boolean legacyEquipment;
+    /** F-107：本次回看是否允许捕捉后人偶掉落录制装备（回看本身永不掉落） */
+    boolean equipmentDrop;
     boolean restored;
     /** 自由活动/跟随状态 */
     boolean followInitialized;
