@@ -38,7 +38,7 @@ public class ClaimBreakListener {
 
             List<ClaimNode.PatternEntry> patterns = ClaimInteractions.readPatterns(be);
             if (patterns.isEmpty()) return true;
-            if (!ClaimInteractions.hasDirectionPatterns(patterns)) return true;
+            if (!ClaimInteractions.isClaimBanner(patterns)) return true;
 
             ChunkCoord chunkPos = new ChunkCoord(pos.getX() >> 4, pos.getZ() >> 4);
             ClaimNode node = AreaService.getInstance().getNode(level.dimension(), chunkPos);

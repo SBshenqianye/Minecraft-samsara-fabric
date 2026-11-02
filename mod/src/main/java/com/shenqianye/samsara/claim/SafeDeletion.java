@@ -288,6 +288,17 @@ public class SafeDeletion {
         sb.append("  扫描: ").append(scanned).append(" 个区域文件\n");
         sb.append("  备份: ").append(backedUp).append(" 个（包含非白名单区块）\n");
         sb.append("  路径: ").append(backupDir);
+        if (backedUp > 0) {
+            Path zipFile = backupDir.resolveSibling(backupDir.getFileName() + ".zip");
+            try {
+                BackupZip.zipDirectory(backupDir, zipFile);
+                sb.append("\n  整档 zip: ").append(zipFile)
+                        .append("（").append(Files.size(zipFile) / 1024).append(" KiB）");
+            } catch (IOException e) {
+                Samsara.LOGGER.warn("[周目管理 samsara] 圈地删除备份 zip 失败: {}", e.getMessage());
+                sb.append("\n  ⚠ 整档 zip 失败: ").append(e.getMessage());
+            }
+        }
         return sb.toString();
     }
 

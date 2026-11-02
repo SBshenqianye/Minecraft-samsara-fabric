@@ -183,7 +183,7 @@ public class ClaimCommand {
                 if (!(entry.getValue() instanceof BannerBlockEntity be)) continue;
                 List<ClaimNode.PatternEntry> patterns = ClaimInteractions.readPatterns(be);
                 if (patterns.isEmpty()) continue;
-                if (!ClaimInteractions.hasDirectionPatterns(patterns)) continue;
+                if (!ClaimInteractions.isClaimBanner(patterns)) continue;
                 BlockPos pos = entry.getKey();
                 worldBanners.add(pos.getX() + "," + pos.getY() + "," + pos.getZ());
             }
@@ -198,7 +198,7 @@ public class ClaimCommand {
                 if (!(entry.getValue() instanceof BannerBlockEntity be)) continue;
                 List<ClaimNode.PatternEntry> patterns = ClaimInteractions.readPatterns(be);
                 if (patterns.isEmpty()) continue;
-                if (!ClaimInteractions.hasDirectionPatterns(patterns)) continue;
+                if (!ClaimInteractions.isClaimBanner(patterns)) continue;
                 BlockPos pos = entry.getKey();
                 ChunkCoord chunkPos = new ChunkCoord(pos.getX() >> 4, pos.getZ() >> 4);
                 ClaimNode existing = AreaService.getInstance().getNode(level.dimension(), chunkPos);

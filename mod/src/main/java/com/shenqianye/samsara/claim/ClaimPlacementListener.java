@@ -61,7 +61,7 @@ public class ClaimPlacementListener {
         }
         List<ClaimNode.PatternEntry> patterns = ClaimInteractions.readPatterns(be);
         if (patterns.isEmpty()) return;
-        if (!ClaimInteractions.hasDirectionPatterns(patterns)) return;
+        if (!ClaimInteractions.isClaimBanner(patterns)) return;
 
         // ===== 方向判断（无论 debugMode 都需要） =====
         var state = level.getBlockState(pos);

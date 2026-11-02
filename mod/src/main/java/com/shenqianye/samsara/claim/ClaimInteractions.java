@@ -318,6 +318,23 @@ public class ClaimInteractions {
         return node.getExtension().hasAnyDirection();
     }
 
+    /** 判断旗帜是否含非方向的“图标/盾徽”图案（F-01）。 */
+    public static boolean hasIconPattern(List<ClaimNode.PatternEntry> patterns) {
+        if (patterns == null) {
+            return false;
+        }
+        List<String> ids = new ArrayList<>();
+        for (ClaimNode.PatternEntry pattern : patterns) {
+            ids.add(pattern.patternId());
+        }
+        return ClaimPatternRules.hasIconPattern(ids);
+    }
+
+    /** F-01：方向图案 + 图标图案同时存在，才识别为圈地旗。 */
+    public static boolean isClaimBanner(List<ClaimNode.PatternEntry> patterns) {
+        return hasDirectionPatterns(patterns) && hasIconPattern(patterns);
+    }
+
     /**
      * 获取站立旗帜朝向（facing = 旗面朝向方向）
      * <p>
