@@ -7,6 +7,7 @@ import com.mojang.brigadier.context.CommandContext;
 import com.shenqianye.samsara.command.ui.ChatUi;
 import com.shenqianye.samsara.command.ui.SuggestionProviders;
 import com.shenqianye.samsara.output.OutputRenderer;
+import com.shenqianye.samsara.permission.PermissionRequirements;
 import com.shenqianye.samsara.rewind.RewindEngine;
 import com.shenqianye.samsara.season.PlayerRegistry;
 import com.shenqianye.samsara.season.Season;
@@ -64,8 +65,10 @@ public class DebugCommand {
         //   text 用 BlockPosArgument（方块坐标 x y z）
         com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> diffCmd =
                 Commands.literal("diff")
+                        .requires(PermissionRequirements.ownerAnd("debug diff"))
                         .executes(ctx -> reply(ctx.getSource(), manager().diffStatus()))
                         .then(Commands.literal("fake")
+                                .requires(PermissionRequirements.ownerAnd("debug diff fake"))
                                 .then(Commands.argument("pos", net.minecraft.commands.arguments.coordinates.ColumnPosArgument.columnPos())
                                         .then(Commands.argument("count", IntegerArgumentType.integer(1, 4096))
                                                 .executes(ctx -> reply(ctx.getSource(),
@@ -82,6 +85,7 @@ public class DebugCommand {
                                                                         IntegerArgumentType.getInteger(ctx, "count"),
                                                                         IntegerArgumentType.getInteger(ctx, "stateId"))))))))
                         .then(Commands.literal("text")
+                                .requires(PermissionRequirements.ownerAnd("debug diff text"))
                                 .then(Commands.argument("pos", net.minecraft.commands.arguments.coordinates.BlockPosArgument.blockPos())
                                         .then(Commands.argument("text", StringArgumentType.string())
                                                 .executes(ctx -> reply(ctx.getSource(),
@@ -144,10 +148,10 @@ public class DebugCommand {
                 .then(TpaCommand.denyNode())
                 .then(TpaCommand.cancelNode())
                 .then(Commands.literal("debug")
-                        .requires(src -> isOwner(src)
-                                && com.shenqianye.samsara.permission.PermissionChecker.check(src, "debug"))
+                        .requires(PermissionRequirements.ownerAnd("debug"))
                         // debug info — 切换式
                         .then(Commands.literal("info")
+                                .requires(PermissionRequirements.ownerAnd("debug info"))
                                 .executes(ctx -> {
                                     boolean now = com.shenqianye.samsara.DebugToggle.toggle();
                                     return reply(ctx.getSource(), "调试信息已" + (now ? "开启" : "关闭"));
@@ -158,13 +162,17 @@ public class DebugCommand {
                                 .then(Commands.literal("off")
                                         .executes(ctx -> { com.shenqianye.samsara.DebugToggle.set(false); return reply(ctx.getSource(), "调试信息已关闭"); })))
                         .then(Commands.literal("status")
+                                .requires(PermissionRequirements.ownerAnd("debug status"))
                                 .executes(ctx -> reply(ctx.getSource(), debugStatus())))
                         .then(Commands.literal("spawninfo")
+                                .requires(PermissionRequirements.ownerAnd("debug spawninfo"))
                                 .executes(ctx -> reply(ctx.getSource(), manager().spawnInfo(
                                         ctx.getSource().getPlayerOrException(),
                                         ctx.getSource().getLevel()))))
                         .then(Commands.literal("world")
+                                .requires(PermissionRequirements.ownerAnd("debug world"))
                                 .then(Commands.literal("push")
+                                        .requires(PermissionRequirements.ownerAnd("debug world push"))
                                         .then(Commands.argument("world", StringArgumentType.word())
                                                 .executes(ctx -> reply(ctx.getSource(),
                                                         com.shenqianye.samsara.season.WorldStackManager
@@ -172,21 +180,25 @@ public class DebugCommand {
                                                                         ctx.getSource().getServer(),
                                                                         StringArgumentType.getString(ctx, "world"))))))
                                 .then(Commands.literal("pop")
+                                        .requires(PermissionRequirements.ownerAnd("debug world pop"))
                                         .executes(ctx -> reply(ctx.getSource(),
                                                 com.shenqianye.samsara.season.WorldStackManager
                                                         .getInstance().debugPop(
                                                                 ctx.getSource().getServer()))))
                                 .then(Commands.literal("reset")
+                                        .requires(PermissionRequirements.ownerAnd("debug world reset"))
                                         .executes(ctx -> reply(ctx.getSource(),
                                                 com.shenqianye.samsara.season.WorldStackManager
                                                         .getInstance().debugReset(
                                                                 ctx.getSource().getServer()))))
                                 .then(Commands.literal("multi")
+                                        .requires(PermissionRequirements.ownerAnd("debug world multi"))
                                         .executes(ctx -> reply(ctx.getSource(),
                                                 com.shenqianye.samsara.season.WorldChainTeleport
                                                         .statusText())))
                                 // 测试/演示：强制某栈层加载失败，或立即重试（不等待退避）
                                 .then(Commands.literal("failstack")
+                                        .requires(PermissionRequirements.ownerAnd("debug world failstack"))
                                         .then(Commands.argument("world", StringArgumentType.word())
                                                 .then(Commands.argument("state", StringArgumentType.word())
                                                         .executes(ctx -> reply(ctx.getSource(),
@@ -196,6 +208,7 @@ public class DebugCommand {
                                                                                 !"off".equalsIgnoreCase(
                                                                                         StringArgumentType.getString(ctx, "state"))))))))
                                 .then(Commands.literal("retrystack")
+                                        .requires(PermissionRequirements.ownerAnd("debug world retrystack"))
                                         .then(Commands.argument("world", StringArgumentType.word())
                                                 .executes(ctx -> reply(ctx.getSource(),
                                                         com.shenqianye.samsara.season.StackDimensionLoader
@@ -203,28 +216,46 @@ public class DebugCommand {
                                                                         StringArgumentType.getString(ctx, "world")))))))
                         .then(diffCmd)
                         .then(Commands.literal("flow")
+                                .requires(PermissionRequirements.ownerAnd("debug flow"))
                                 .then(Commands.literal("setup")
+                                        .requires(PermissionRequirements.ownerAnd("debug flow setup"))
                                         .executes(ctx -> reply(ctx.getSource(),
                                                 manager().setupSeason(ctx.getSource().getServer()))))
                                 .then(Commands.literal("rewind")
+                                        .requires(PermissionRequirements.ownerAnd("debug flow rewind"))
                                         .then(Commands.argument("teleportAfter", StringArgumentType.word())
                                                 .suggests(SuggestionProviders.boolProvider())
                                                 .executes(ctx -> reply(ctx.getSource(),
                                                         manager().startRewindOnly(ctx.getSource().getServer(),
                                                                 Boolean.parseBoolean(StringArgumentType.getString(ctx, "teleportAfter")))))))
                                 .then(Commands.literal("teleport")
+                                        .requires(PermissionRequirements.ownerAnd("debug flow teleport"))
                                         .executes(ctx -> reply(ctx.getSource(),
                                                 manager().teleportOnly(ctx.getSource().getServer())))))
                         .then(Commands.literal("json")
+                                .requires(PermissionRequirements.ownerAnd("debug json"))
                                 .executes(ctx -> reply(ctx.getSource(), manager().rawJson()
                                         + "\n\n↑ season.json 位置: " + manager().configPath())))
                         .then(Commands.literal("reload")
-                                .executes(ctx -> reply(ctx.getSource(), manager().reload()
-                                        + "\n" + com.shenqianye.samsara.config.CommandConfig
-                                        .getInstance().reload())))
+                                .requires(PermissionRequirements.ownerAnd("debug reload"))
+                                .executes(ctx -> {
+                                    // 权限配置也走同一条热重载链路：先让 ConfigManager 重读 YAML，
+                                    // 再由 reloadHook 刷新 PermissionConfig，补全谓词立即跟随。
+                                    com.shenqianye.samsara.config.ConfigManager.getInstance()
+                                            .reload(com.shenqianye.samsara.config.ConfigSchema.PERMISSIONS);
+                                    com.shenqianye.samsara.permission.PermissionConfig.getInstance().reload();
+                                    return reply(ctx.getSource(), manager().reload()
+                                            + "\n" + com.shenqianye.samsara.config.CommandConfig
+                                            .getInstance().reload()
+                                            + "\n权限配置已重载："
+                                            + com.shenqianye.samsara.permission.PermissionConfig
+                                            .getInstance().getAllEntries().size() + " 条规则");
+                                }))
                         .then(Commands.literal("reset")
+                                .requires(PermissionRequirements.ownerAnd("debug reset"))
                                 .executes(ctx -> reply(ctx.getSource(), doReset())))
                         .then(Commands.literal("create")
+                                .requires(PermissionRequirements.ownerAnd("debug create"))
                                 .then(Commands.argument("name", StringArgumentType.word())
                                         .executes(ctx -> create(ctx, "same-world", 1))
                                         .then(Commands.argument("mode", StringArgumentType.word())
@@ -234,6 +265,7 @@ public class DebugCommand {
                                                                 StringArgumentType.getString(ctx, "mode"),
                                                                 IntegerArgumentType.getInteger(ctx, "count")))))))
                         .then(Commands.literal("settime")
+                                .requires(PermissionRequirements.ownerAnd("debug settime"))
                                 .then(Commands.argument("id", IntegerArgumentType.integer(1))
                                         .then(Commands.argument("field", StringArgumentType.word())
                                                 .suggests(SuggestionProviders.choicesWithHint("时间字段", "start", "end"))
@@ -244,30 +276,39 @@ public class DebugCommand {
                                                                 StringArgumentType.getString(ctx, "field"),
                                                                 StringArgumentType.getString(ctx, "value"))))))))
                         .then(Commands.literal("fakeplayers")
+                                .requires(PermissionRequirements.ownerAnd("debug fakeplayers"))
                                 .then(Commands.argument("names", StringArgumentType.greedyString())
                                         .suggests(SuggestionProviders.fakePlayersProvider())
                                         .executes(DebugCommand::fakePlayers)))
                         .then(Commands.literal("groups")
+                                .requires(PermissionRequirements.ownerAnd("debug groups"))
                                 .executes(ctx -> reply(ctx.getSource(), previewGroups(ctx, null)))
                                 .then(Commands.argument("names", StringArgumentType.greedyString())
                                         .suggests(SuggestionProviders.playerListProvider())
                                         .executes(ctx -> reply(ctx.getSource(),
                                                 previewGroups(ctx, StringArgumentType.getString(ctx, "names"))))))
                         .then(Commands.literal("rewind")
+                                .requires(PermissionRequirements.ownerAnd("debug rewind"))
                                 .then(Commands.literal("preview")
+                                        .requires(PermissionRequirements.ownerAnd("debug rewind preview"))
                                         .executes(ctx -> reply(ctx.getSource(),
                                                 RewindEngine.getInstance().preview(ctx.getSource().getServer()))))
                                 .then(Commands.literal("status")
+                                        .requires(PermissionRequirements.ownerAnd("debug rewind status"))
                                         .executes(ctx -> reply(ctx.getSource(), RewindEngine.getInstance().status())))
                                 .then(Commands.literal("abort")
+                                        .requires(PermissionRequirements.ownerAnd("debug rewind abort"))
                                         .executes(ctx -> reply(ctx.getSource(), RewindEngine.getInstance().abort())))
                                 .then(Commands.literal("purge")
+                                        .requires(PermissionRequirements.ownerAnd("debug rewind purge"))
                                         .executes(ctx -> reply(ctx.getSource(),
                                                 debugRewindPurge(ctx.getSource()))))
                                 .then(Commands.literal("compact")
+                                        .requires(PermissionRequirements.ownerAnd("debug rewind compact"))
                                         .executes(ctx -> reply(ctx.getSource(),
                                                 RewindEngine.getInstance().compactNow(ctx.getSource().getServer()))))
                                 .then(Commands.literal("restore")
+                                        .requires(PermissionRequirements.ownerAnd("debug rewind restore"))
                                         .then(Commands.argument("pos", net.minecraft.commands.arguments.coordinates.ColumnPosArgument.columnPos())
                                                 .executes(ctx -> reply(ctx.getSource(),
                                                         RewindEngine.getInstance().restoreChunkNow(
@@ -275,12 +316,15 @@ public class DebugCommand {
                                                                 posToChunkX(ctx, "pos"),
                                                                 posToChunkZ(ctx, "pos"))))))
                                 .then(Commands.literal("set")
+                                        .requires(PermissionRequirements.ownerAnd("debug rewind set"))
                                         .then(Commands.argument("dur", StringArgumentType.greedyString())
                                                 .suggests(SuggestionProviders.durationsProvider())
                                                 .executes(ctx -> reply(ctx.getSource(), manager().setRewindDuration(
                                                         StringArgumentType.getString(ctx, "dur")))))))
                         .then(Commands.literal("track")
+                                .requires(PermissionRequirements.ownerAnd("debug track"))
                                 .then(Commands.literal("replay")
+                                        .requires(PermissionRequirements.ownerAnd("debug track replay"))
                                         .then(Commands.argument("player", StringArgumentType.word())
                                                 .suggests(SuggestionProviders.knownPlayersProvider("监控目标"))
                                                 .then(Commands.argument("start", StringArgumentType.word())
@@ -297,6 +341,7 @@ public class DebugCommand {
                                                                                 debugTrackReplay(ctx,
                                                                                         parseDoubleArg(ctx, "speed")))))))))
                                 .then(Commands.literal("stop")
+                                        .requires(PermissionRequirements.ownerAnd("debug track stop"))
                                         .executes(ctx -> reply(ctx.getSource(),
                                                 com.shenqianye.samsara.track.TrackReplay.stop()))
                                         .then(Commands.argument("player", StringArgumentType.word())
@@ -305,19 +350,22 @@ public class DebugCommand {
                                                         com.shenqianye.samsara.track.TrackReplay.stop(
                                                                 StringArgumentType.getString(ctx, "player"))))))
                                 .then(Commands.literal("status")
+                                        .requires(PermissionRequirements.ownerAnd("debug track status"))
                                         .executes(ctx -> reply(ctx.getSource(), debugTrackStatus(ctx.getSource(), null)))
                                         .then(Commands.argument("player", StringArgumentType.word())
                                                 .suggests(SuggestionProviders.knownPlayersProvider("监控目标"))
                                                 .executes(ctx -> reply(ctx.getSource(), debugTrackStatus(ctx.getSource(),
                                                         StringArgumentType.getString(ctx, "player"))))))
                                 .then(TrackViewCommand.debugViewNode())
-                                .then(TrackViewCommand.listNode())
+                                .then(TrackViewCommand.debugListNode())
                                 .then(Commands.literal("sweep")
+                                        .requires(PermissionRequirements.ownerAnd("debug track sweep"))
                                         .executes(ctx -> {
                                             com.shenqianye.samsara.track.TrackRecorder.getInstance().sweepAsync();
                                             return reply(ctx.getSource(), "已在后台启动轨迹保留扫描（降采样）");
                                         })))
                         .then(Commands.literal("config")
+                                .requires(PermissionRequirements.ownerAnd("debug config"))
                                 .executes(ctx -> reply(ctx.getSource(), manager().config(null, null)))
                                 .then(Commands.argument("key", StringArgumentType.word())
                                         .executes(ctx -> replyOrErr(ctx, manager().config(
@@ -327,6 +375,7 @@ public class DebugCommand {
                                                         StringArgumentType.getString(ctx, "key"),
                                                         StringArgumentType.getString(ctx, "value")))))))
                         .then(Commands.literal("settings")
+                                .requires(PermissionRequirements.ownerAnd("debug settings"))
                                 .executes(ctx -> reply(ctx.getSource(), manager().settingsText()))
                                 .then(Commands.literal("groupdist")
                                         .then(Commands.argument("blocks", IntegerArgumentType.integer(0, 10000))
@@ -342,8 +391,10 @@ public class DebugCommand {
                                                 .executes(ctx -> reply(ctx.getSource(), manager().setResetIndividualBirthpoint(
                                                         Boolean.parseBoolean(StringArgumentType.getString(ctx, "on"))))))))
                         .then(Commands.literal("claim")
+                                .requires(PermissionRequirements.ownerAnd("debug claim"))
                                 // debug claim give <dir> <dist>
                                 .then(Commands.literal("give")
+                                        .requires(PermissionRequirements.ownerAnd("debug claim give"))
                                         .then(Commands.argument("dir", StringArgumentType.word())
                                                 .suggests(SuggestionProviders.choices(DebugCommand::claimDirTooltip,
                                                         "f", "b", "l", "r",
@@ -357,15 +408,19 @@ public class DebugCommand {
                                                                 IntegerArgumentType.getInteger(ctx, "dist")))))))
                                 // debug claim list
                                 .then(Commands.literal("list")
+                                        .requires(PermissionRequirements.ownerAnd("debug claim list"))
                                         .executes(ctx -> reply(ctx.getSource(), debugListNodes())))
                                 // debug claim rebuild
                                 .then(Commands.literal("rebuild")
+                                        .requires(PermissionRequirements.ownerAnd("debug claim rebuild"))
                                         .executes(ctx -> reply(ctx.getSource(), debugRebuild())))
                                 // debug claim scan
                                 .then(Commands.literal("scan")
+                                        .requires(PermissionRequirements.ownerAnd("debug claim scan"))
                                         .executes(ctx -> reply(ctx.getSource(), debugScan(ctx.getSource()))))
                                 // debug claim remove <x> <z>
                                 .then(Commands.literal("remove")
+                                        .requires(PermissionRequirements.ownerAnd("debug claim remove"))
                                         .then(Commands.argument("x", IntegerArgumentType.integer())
                                                 .suggests(SuggestionProviders.chunkXProvider())
                                                 .then(Commands.argument("z", IntegerArgumentType.integer())
@@ -376,6 +431,7 @@ public class DebugCommand {
                                                                         IntegerArgumentType.getInteger(ctx, "z")))))))
                                 // debug claim info <x> <z>
                                 .then(Commands.literal("info")
+                                        .requires(PermissionRequirements.ownerAnd("debug claim info"))
                                         .then(Commands.argument("x", IntegerArgumentType.integer())
                                                 .suggests(SuggestionProviders.chunkXProvider())
                                                 .then(Commands.argument("z", IntegerArgumentType.integer())
@@ -391,7 +447,9 @@ public class DebugCommand {
                                                         }))))
                                 // debug claim particle ...
                                 .then(Commands.literal("particle")
+                                        .requires(PermissionRequirements.ownerAnd("debug claim particle"))
                                         .then(Commands.literal("day")
+                                                .requires(PermissionRequirements.ownerAnd("debug claim particle day"))
                                                 .then(Commands.argument("name", StringArgumentType.word())
                                                         .suggests((ctx, builder) -> {
                                                             for (String name : com.shenqianye.samsara.claim.ClaimParticleConfig.getAvailableParticleNames()) {
@@ -402,6 +460,7 @@ public class DebugCommand {
                                                         .executes(ctx -> reply(ctx.getSource(),
                                                                 debugSetParticle("day", StringArgumentType.getString(ctx, "name"))))))
                                         .then(Commands.literal("night")
+                                                .requires(PermissionRequirements.ownerAnd("debug claim particle night"))
                                                 .then(Commands.argument("name", StringArgumentType.word())
                                                         .suggests((ctx, builder) -> {
                                                             for (String name : com.shenqianye.samsara.claim.ClaimParticleConfig.getAvailableParticleNames()) {
@@ -412,6 +471,7 @@ public class DebugCommand {
                                                         .executes(ctx -> reply(ctx.getSource(),
                                                                 debugSetParticle("night", StringArgumentType.getString(ctx, "name"))))))
                                         .then(Commands.literal("font")
+                                                .requires(PermissionRequirements.ownerAnd("debug claim particle font"))
                                                 .then(Commands.argument("name", StringArgumentType.word())
                                                         .suggests((ctx, builder) -> {
                                                             for (String name : com.shenqianye.samsara.claim.ClaimParticleConfig.getAvailableParticleNames()) {
@@ -422,6 +482,7 @@ public class DebugCommand {
                                                         .executes(ctx -> reply(ctx.getSource(),
                                                                 debugSetParticle("font", StringArgumentType.getString(ctx, "name"))))))
                                         .then(Commands.literal("beam")
+                                                .requires(PermissionRequirements.ownerAnd("debug claim particle beam"))
                                                 .then(Commands.argument("name", StringArgumentType.word())
                                                         .suggests((ctx, builder) -> {
                                                             for (String name : com.shenqianye.samsara.claim.ClaimParticleConfig.getAvailableParticleNames()) {
@@ -432,13 +493,16 @@ public class DebugCommand {
                                                         .executes(ctx -> reply(ctx.getSource(),
                                                                 debugSetParticle("beam", StringArgumentType.getString(ctx, "name"))))))
                                         .then(Commands.literal("list")
+                                                .requires(PermissionRequirements.ownerAnd("debug claim particle list"))
                                                 .executes(ctx -> reply(ctx.getSource(), debugListParticles())))
                                         .then(Commands.literal("shared")
+                                                .requires(PermissionRequirements.ownerAnd("debug claim particle shared"))
                                                 .then(Commands.argument("on_off", StringArgumentType.word())
                                                         .suggests(SuggestionProviders.boolProvider())
                                                         .executes(ctx -> reply(ctx.getSource(),
                                                                 debugSetSharedDisplay(StringArgumentType.getString(ctx, "on_off"))))))
                                         .then(Commands.literal("global")
+                                                .requires(PermissionRequirements.ownerAnd("debug claim particle global"))
                                                 .then(Commands.argument("on_off", StringArgumentType.word())
                                                         .suggests(SuggestionProviders.boolProvider())
                                                         .executes(ctx -> reply(ctx.getSource(),
@@ -449,16 +513,22 @@ public class DebugCommand {
                                 // execute: 报告待删除区块数（服务端运行时不直接删除，需停服手动操作）
                                 // report: 生成删除报告（白名单数、待删数、示例坐标）
                                 .then(Commands.literal("delete")
+                                        .requires(PermissionRequirements.ownerAnd("debug claim delete"))
                                         .then(Commands.literal("dryrun")
+                                                .requires(PermissionRequirements.ownerAnd("debug claim delete dryrun"))
                                                 .executes(ctx -> reply(ctx.getSource(), debugDeleteDryRun(ctx.getSource()))))
                                         .then(Commands.literal("backup")
+                                                .requires(PermissionRequirements.ownerAnd("debug claim delete backup"))
                                                 .executes(ctx -> reply(ctx.getSource(), debugDeleteBackup(ctx.getSource()))))
                                         .then(Commands.literal("execute")
+                                                .requires(PermissionRequirements.ownerAnd("debug claim delete execute"))
                                                 .executes(ctx -> reply(ctx.getSource(), debugDeleteExecute(ctx.getSource()))))
                                         .then(Commands.literal("report")
+                                                .requires(PermissionRequirements.ownerAnd("debug claim delete report"))
                                                 .executes(ctx -> reply(ctx.getSource(), debugDeleteReport(ctx.getSource())))))
                                 // debug claim owner <x> <z> — 查看指定区块的旗帜归属
                                 .then(Commands.literal("owner")
+                                        .requires(PermissionRequirements.ownerAnd("debug claim owner"))
                                         .then(Commands.argument("x", IntegerArgumentType.integer())
                                                 .suggests(SuggestionProviders.chunkXProvider())
                                                 .then(Commands.argument("z", IntegerArgumentType.integer())
@@ -509,7 +579,9 @@ public class DebugCommand {
     /** 构建 /samsara debug completion 子命令（补全诊断） */
     private static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> completionNode() {
         return Commands.literal("completion")
+                .requires(PermissionRequirements.ownerAnd("debug completion"))
                 .then(Commands.literal("page")
+                        .requires(PermissionRequirements.ownerAnd("debug completion page"))
                         .then(Commands.argument("page", IntegerArgumentType.integer(1, 5))
                                 .then(Commands.argument("input", StringArgumentType.greedyString())
                                         .executes(ctx -> reply(ctx.getSource(),
@@ -517,6 +589,7 @@ public class DebugCommand {
                                                         IntegerArgumentType.getInteger(ctx, "page"),
                                                         StringArgumentType.getString(ctx, "input")))))))
                 .then(Commands.literal("send")
+                        .requires(PermissionRequirements.ownerAnd("debug completion send"))
                         .then(Commands.argument("input", StringArgumentType.greedyString())
                                 .executes(ctx -> debugCompletionSend(ctx.getSource(),
                                         StringArgumentType.getString(ctx, "input")))))
@@ -586,27 +659,33 @@ public class DebugCommand {
     /** 构建 /samsara perm 子命令树 */
     private static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> permNode() {
         return Commands.literal("perm")
+                .requires(PermissionRequirements.ownerAnd("debug perm"))
                 .then(Commands.literal("list")
+                        .requires(PermissionRequirements.ownerAnd("debug perm list"))
                         .executes(ctx -> reply(ctx.getSource(), permList())))
                 // 语法说明：greedyString 必须位于末尾。旧写法 greedyString("command") + word("level")
                 // 的 level 分支永远解析不到，这里改为单个 greedyString 自己拆「路径 + 等级」。
                 .then(Commands.literal("set")
+                        .requires(PermissionRequirements.ownerAnd("debug perm set"))
                         .then(Commands.argument("input", StringArgumentType.greedyString())
                                 .suggests(SuggestionProviders.permInputProvider())
                                 .executes(ctx -> replyOrErr(ctx,
                                         permSet(ctx.getSource(),
                                                 StringArgumentType.getString(ctx, "input"))))))
                 .then(Commands.literal("reset")
+                        .requires(PermissionRequirements.ownerAnd("debug perm reset"))
                         .then(Commands.argument("command", StringArgumentType.greedyString())
                                 .suggests(SuggestionProviders.commandPathProvider())
                                 .executes(ctx -> reply(ctx.getSource(),
                                         permReset(StringArgumentType.getString(ctx, "command"))))))
                 .then(Commands.literal("info")
+                        .requires(PermissionRequirements.ownerAnd("debug perm info"))
                         .then(Commands.argument("command", StringArgumentType.greedyString())
                                 .suggests(SuggestionProviders.commandPathProvider())
                                 .executes(ctx -> reply(ctx.getSource(),
                                         permInfo(StringArgumentType.getString(ctx, "command"))))))
                 .then(Commands.literal("owner")
+                        .requires(PermissionRequirements.ownerAnd("debug perm owner"))
                         .then(Commands.argument("sub", StringArgumentType.word())
                                 .suggests(SuggestionProviders.choicesWithHint("add=加入 owner 名单；remove=移出",
                                         "add", "remove"))

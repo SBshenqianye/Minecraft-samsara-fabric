@@ -19,11 +19,25 @@ public class PermissionChecker {
      * @return true = 允许
      */
     public static boolean check(CommandSourceStack src, String commandPath) {
-        PermissionConfig config = PermissionConfig.getInstance();
+        return check(getPlayerLevel(src), commandPath);
+    }
+
+    /**
+     * 按已解析出的权限等级检查命令路径。
+     *
+     * <p>与 {@link #check(CommandSourceStack, String)} 共用同一套
+     * {@link PermissionConfig} 规则；拆出纯逻辑入口是为了单测补全所需的
+     * {@code requires(...)} 布尔结果，不另建一套判断。
+     */
+    public static boolean check(PermissionLevel playerLevel, String commandPath) {
+        return check(playerLevel, commandPath, PermissionConfig.getInstance());
+    }
+
+    /** 测试用：显式传入内存规则，避免改动全局配置单例。 */
+    static boolean check(PermissionLevel playerLevel, String commandPath, PermissionConfig config) {
         if (config.isDisabled(commandPath)) {
             return false;
         }
-        PermissionLevel playerLevel = getPlayerLevel(src);
         PermissionLevel required = config.getRequired(commandPath);
         return playerLevel.meets(required);
     }

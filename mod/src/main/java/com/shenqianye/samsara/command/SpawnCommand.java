@@ -1,7 +1,7 @@
 package com.shenqianye.samsara.command;
 
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
-import com.shenqianye.samsara.season.SeasonManager;
+import com.shenqianye.samsara.permission.PermissionRequirements;
 import com.shenqianye.samsara.season.WorldStackManager;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -17,12 +17,12 @@ public final class SpawnCommand {
 
     public static LiteralArgumentBuilder<CommandSourceStack> spawnNode() {
         return Commands.literal("spawn")
-                .requires(src -> com.shenqianye.samsara.permission.PermissionChecker
-                        .check(src, "spawn"))
+                .requires(PermissionRequirements.path("spawn"))
                 .executes(ctx -> reply(ctx.getSource(),
                         WorldStackManager.getInstance().spawnText(
                                 ctx.getSource().getServer(), ctx.getSource().getPlayer(), false)))
                 .then(Commands.literal("history")
+                        .requires(PermissionRequirements.path("spawn history"))
                         .executes(ctx -> reply(ctx.getSource(),
                                 WorldStackManager.getInstance().spawnText(
                                         ctx.getSource().getServer(),

@@ -167,6 +167,19 @@ class LocalWebServerTest {
         assertTrue(reorder.body().contains("ids"));
     }
 
+    @Test
+    void worldStackImportFailureExposesThrowableDetail() throws Exception {
+        server = new LocalWebServer(new FakeService(), null, null, null, null,
+                new FailingWorldStackService(), TOKEN, 0);
+        assertTrue(server.start());
+
+        HttpResponse<String> response = request("POST", "/api/world-stack/import",
+                "{\"path\":\"C:\\\\world\"}", TOKEN);
+        assertEquals(500, response.statusCode());
+        assertTrue(response.body().contains("NoClassDefFoundError"));
+        assertTrue(response.body().contains("WorldStackAdmin"));
+    }
+
     /** 假地图服务：只验证 HTTP 路由和参数校验，不读真实存档。 */
     private static final class FakeMapService extends WebMapService {
         private FakeMapService() {
@@ -216,6 +229,16 @@ class LocalWebServerTest {
                 return Map.of("ok", false, "error", "ids 缺失");
             }
             return Map.of("ok", true);
+        }
+    }
+
+    /** 模拟 jar 被热替换后的类加载失败：以前只会返回“服务器内部错误”，无法排障。 */
+    private static final class FailingWorldStackService extends WorldStackWebService {
+        @Override
+        public Map<String, Object> importWorld(Map<String, Object> body) {
+            throw new NoClassDefFoundError(
+                    "Failed to load class file for "
+                            + "'com.shenqianye.samsara.season.WorldStackAdmin$ScheduleResult'!");
         }
     }
 

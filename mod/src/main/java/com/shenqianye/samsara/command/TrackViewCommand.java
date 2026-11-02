@@ -8,7 +8,7 @@ import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.shenqianye.samsara.command.ui.SuggestionProviders;
 import com.shenqianye.samsara.output.OutputRenderer;
-import com.shenqianye.samsara.permission.PermissionChecker;
+import com.shenqianye.samsara.permission.PermissionRequirements;
 import com.shenqianye.samsara.track.view.ViewManager;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -42,18 +42,29 @@ public final class TrackViewCommand {
     /** {@code /samsara track ...}（也是 {@code /track ...} 别名树） */
     public static LiteralArgumentBuilder<CommandSourceStack> trackNode() {
         return Commands.literal("track")
-                .requires(src -> PermissionChecker.check(src, "track"))
-                .then(viewNode())
-                .then(listNode());
+                .requires(PermissionRequirements.path("track"))
+                .then(viewNode("track"))
+                .then(listNode("track"));
     }
 
-    /** 供 {@code /samsara debug track view} 复用（调用方已要求 OWNER） */
+    /** 供 {@code /samsara debug track view} 复用（调用方已要求 OWNER）。 */
     public static LiteralArgumentBuilder<CommandSourceStack> debugViewNode() {
-        return viewNode();
+        return viewNode("debug track");
+    }
+
+    /** 供 {@code /samsara debug track list} 复用。 */
+    public static LiteralArgumentBuilder<CommandSourceStack> debugListNode() {
+        return listNode("debug track");
     }
 
     public static LiteralArgumentBuilder<CommandSourceStack> listNode() {
+        return listNode("track");
+    }
+
+    private static LiteralArgumentBuilder<CommandSourceStack> listNode(String prefix) {
+        String path = prefix + " list";
         return Commands.literal("list")
+                .requires(PermissionRequirements.path(path))
                 .then(Commands.argument("player", StringArgumentType.word())
                         .suggests(SuggestionProviders.knownPlayersProvider("监控目标"))
                         .executes(ctx -> list(ctx, 1))
@@ -62,62 +73,76 @@ public final class TrackViewCommand {
                                         IntegerArgumentType.getInteger(ctx, "page")))));
     }
 
-    private static LiteralArgumentBuilder<CommandSourceStack> viewNode() {
+    private static LiteralArgumentBuilder<CommandSourceStack> viewNode(String prefix) {
+        String path = prefix + " view";
         return Commands.literal("view")
+                .requires(PermissionRequirements.path(path))
                 .then(Commands.literal("stop")
+                        .requires(PermissionRequirements.path(path + " stop"))
                         .executes(ctx -> stop(ctx, null))
                         .then(Commands.argument("player", StringArgumentType.word())
                                 .suggests(SuggestionProviders.playersProvider("观看者"))
                                 .executes(ctx -> stop(ctx, StringArgumentType.getString(ctx, "player")))))
                 .then(Commands.literal("status")
+                        .requires(PermissionRequirements.path(path + " status"))
                         .executes(ctx -> status(ctx, null))
                         .then(Commands.argument("player", StringArgumentType.word())
                                 .suggests(SuggestionProviders.playersProvider("观看者"))
                                 .executes(ctx -> status(ctx, StringArgumentType.getString(ctx, "player")))))
                 .then(Commands.literal("pause")
+                        .requires(PermissionRequirements.path(path + " pause"))
                         .executes(ctx -> pause(ctx, null))
                         .then(Commands.argument("player", StringArgumentType.word())
                                 .suggests(SuggestionProviders.playersProvider("观看者"))
                                 .executes(ctx -> pause(ctx,
                                         StringArgumentType.getString(ctx, "player")))))
                 .then(Commands.literal("resume")
+                        .requires(PermissionRequirements.path(path + " resume"))
                         .executes(ctx -> resume(ctx, null))
                         .then(Commands.argument("player", StringArgumentType.word())
                                 .suggests(SuggestionProviders.playersProvider("观看者"))
                                 .executes(ctx -> resume(ctx,
                                         StringArgumentType.getString(ctx, "player")))))
                 .then(Commands.literal("speed")
+                        .requires(PermissionRequirements.path(path + " speed"))
                         .then(Commands.argument("value", DoubleArgumentType.doubleArg(0.1, 64))
                                 .suggests(SuggestionProviders.speedProvider())
                                 .executes(ctx -> speed(ctx,
                                         DoubleArgumentType.getDouble(ctx, "value")))))
                 .then(Commands.literal("reverse")
+                        .requires(PermissionRequirements.path(path + " reverse"))
                         .executes(ctx -> reverse(ctx)))
                 .then(Commands.literal("align")
+                        .requires(PermissionRequirements.path(path + " align"))
                         .executes(ctx -> align(ctx, null))
                         .then(Commands.argument("player", StringArgumentType.word())
                                 .suggests(SuggestionProviders.playersProvider("观看者"))
                                 .executes(ctx -> align(ctx,
                                         StringArgumentType.getString(ctx, "player")))))
                 .then(Commands.literal("ui")
+                        .requires(PermissionRequirements.path(path + " ui"))
                         .executes(ctx -> ui(ctx, null))
                         .then(Commands.literal("broadcast")
+                                .requires(PermissionRequirements.path(path + " ui broadcast"))
                                 .executes(TrackViewCommand::uiBroadcast))
                         .then(Commands.argument("player", StringArgumentType.word())
                                 .suggests(SuggestionProviders.playersProvider("接收者（观看者）"))
                                 .executes(ctx -> ui(ctx,
                                         StringArgumentType.getString(ctx, "player")))))
                 .then(Commands.literal("seek")
+                        .requires(PermissionRequirements.path(path + " seek"))
                         .then(Commands.argument("input", StringArgumentType.greedyString())
                                 .suggests(SuggestionProviders.seekProvider())
                                 .executes(TrackViewCommand::seek)))
                 .then(Commands.literal("scrub")
+                        .requires(PermissionRequirements.path(path + " scrub"))
                         .executes(ctx -> scrub(ctx, ""))
                         .then(Commands.argument("input", StringArgumentType.greedyString())
                                 .suggests(SuggestionProviders.scrubProvider())
                                 .executes(ctx -> scrub(ctx,
                                         StringArgumentType.getString(ctx, "input")))))
                 .then(Commands.literal("aim")
+                        .requires(PermissionRequirements.path(path + " aim"))
                         .executes(ctx -> aim(ctx, ""))
                         .then(Commands.argument("input", StringArgumentType.greedyString())
                                 .suggests(SuggestionProviders.aimProvider())

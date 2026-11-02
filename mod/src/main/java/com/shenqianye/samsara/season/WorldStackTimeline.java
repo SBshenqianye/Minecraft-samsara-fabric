@@ -796,6 +796,7 @@ public final class WorldStackTimeline {
         Path samsara = worldDir.resolve("samsara");
         return Files.isRegularFile(samsara.resolve(PENDING_RESTORE))
                 || Files.isRegularFile(samsara.resolve(WorldStackAdmin.PENDING_IMPORT))
+                || Files.isRegularFile(samsara.resolve(WorldStackAdmin.PENDING_IMPORTS))
                 || Files.isRegularFile(samsara.resolve(WorldStackAdmin.PENDING_ARCHIVE))
                 || Files.isRegularFile(samsara.resolve(WorldStackAdmin.PENDING_PROMOTE))
                 || Files.isRegularFile(samsara.resolve("pending-new.json"));
@@ -969,6 +970,7 @@ public final class WorldStackTimeline {
         boolean conflict;
         Path samsara = worldDir.resolve("samsara");
         conflict = Files.exists(samsara.resolve(WorldStackAdmin.PENDING_IMPORT))
+                || Files.exists(samsara.resolve(WorldStackAdmin.PENDING_IMPORTS))
                 || Files.exists(samsara.resolve(WorldStackAdmin.PENDING_ARCHIVE))
                 || Files.exists(samsara.resolve(WorldStackAdmin.PENDING_PROMOTE))
                 || Files.isRegularFile(samsara.resolve("pending-new.json"));

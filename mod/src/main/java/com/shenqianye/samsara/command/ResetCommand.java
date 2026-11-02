@@ -5,6 +5,7 @@ import com.mojang.brigadier.arguments.LongArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.builder.RequiredArgumentBuilder;
+import com.shenqianye.samsara.permission.PermissionRequirements;
 import com.shenqianye.samsara.season.DurationUtil;
 import com.shenqianye.samsara.season.SeasonManager;
 import com.shenqianye.samsara.season.SpawnHistory;
@@ -13,7 +14,6 @@ import com.shenqianye.samsara.season.WorldStackManager;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.SharedSuggestionProvider;
-import net.minecraft.server.permissions.Permissions;
 
 /**
  * 两个「开新一轮」动作：
@@ -52,21 +52,16 @@ public final class ResetCommand {
                         .then(levelType);
 
         LiteralArgumentBuilder<CommandSourceStack> newNode = Commands.literal("new")
-                .requires(ResetCommand::isAdmin)
+                .requires(PermissionRequirements.adminAnd("reset new"))
                 .executes(ctx -> confirmNew(ctx.getSource(), null, "normal", false))
                 .then(seed);
 
         return Commands.literal("reset")
-                .requires(src -> com.shenqianye.samsara.permission.PermissionChecker
-                        .check(src, "reset"))
+                .requires(PermissionRequirements.path("reset"))
                 .then(Commands.literal("same")
-                        .requires(ResetCommand::isAdmin)
+                        .requires(PermissionRequirements.adminAnd("reset same"))
                         .executes(ctx -> confirmSame(ctx.getSource())))
                 .then(newNode);
-    }
-
-    private static boolean isAdmin(CommandSourceStack src) {
-        return src.permissions().hasPermission(Permissions.COMMANDS_ADMIN);
     }
 
     private static int confirmSame(CommandSourceStack src) {

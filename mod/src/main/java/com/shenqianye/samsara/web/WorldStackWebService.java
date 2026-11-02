@@ -29,6 +29,7 @@ public class WorldStackWebService {
         out.put("stackPath", model.stackPath);
         out.put("importRoots", model.importRoots);
         out.put("stacks", model.stacks);
+        out.put("pendingImports", model.pendingImports);
         out.put("pendingImport", model.pendingImport);
         out.put("pendingArchive", model.pendingArchive);
         out.put("pendingPromote", model.pendingPromote);
@@ -60,6 +61,10 @@ public class WorldStackWebService {
         out.put("requiresRestart", result.requiresRestart);
         out.put("job", result.job);
         return out;
+    }
+
+    public Map<String, Object> cancelImport(Map<String, Object> body) {
+        return WorldStackAdmin.cancelImport(worldRoot(), string(body, "jobId"));
     }
 
     public Map<String, Object> reorder(Map<String, Object> body) {

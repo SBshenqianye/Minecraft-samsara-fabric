@@ -9,6 +9,7 @@ import com.shenqianye.samsara.command.ui.ChatUi;
 import com.shenqianye.samsara.command.ui.SuggestionProviders;
 import com.shenqianye.samsara.geometry.ChunkCoord;
 import com.shenqianye.samsara.output.OutputRenderer;
+import com.shenqianye.samsara.permission.PermissionRequirements;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
@@ -35,9 +36,10 @@ public class ClaimCommand {
     /** /samsara claim ... 子树（玩家命令） */
     public static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> claimNode() {
         return Commands.literal("claim")
-                .requires(src -> com.shenqianye.samsara.permission.PermissionChecker.check(src, "claim"))
+                .requires(PermissionRequirements.path("claim"))
                 // claim info [x] [z]
                 .then(Commands.literal("info")
+                        .requires(PermissionRequirements.path("claim info"))
                         .executes(ctx -> infoReply(ctx.getSource(), infoAtPlayer(ctx.getSource())))
                         .then(Commands.argument("x", IntegerArgumentType.integer())
                                 .suggests(SuggestionProviders.chunkXProvider())
@@ -54,10 +56,13 @@ public class ClaimCommand {
                                         }))))
                 // claim boundary — 持续显示边界开关
                 .then(Commands.literal("boundary")
+                        .requires(PermissionRequirements.path("claim boundary"))
                         .executes(ctx -> toggleBoundary(ctx.getSource()))
                         .then(Commands.literal("fixed")
+                                .requires(PermissionRequirements.path("claim boundary fixed"))
                                 .executes(ctx -> toggleFixed(ctx.getSource())))
                         .then(Commands.literal("dynamic")
+                                .requires(PermissionRequirements.path("claim boundary dynamic"))
                                 .executes(ctx -> toggleDynamic(ctx.getSource()))));
     }
 

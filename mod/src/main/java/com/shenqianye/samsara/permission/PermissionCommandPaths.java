@@ -51,7 +51,9 @@ public final class PermissionCommandPaths {
         if (!(node instanceof LiteralCommandNode<CommandSourceStack> literal)) {
             return;
         }
-        String path = prefix.isBlank() ? literal.getLiteral() : prefix + " " + literal.getLiteral();
+        String path = canonicalPath(prefix.isBlank()
+                ? literal.getLiteral()
+                : prefix + " " + literal.getLiteral());
         out.add(path);
         for (CommandNode<CommandSourceStack> child : node.getChildren()) {
             captureNode(child, path, out);
@@ -64,6 +66,25 @@ public final class PermissionCommandPaths {
         if (!tokens.isEmpty() && "samsara".equals(tokens.get(0))) {
             tokens.remove(0);
         }
-        return String.join(" ", tokens);
+        return canonicalPath(String.join(" ", tokens));
+    }
+
+    /**
+     * 别名根节点归一化到主命令路径，保证补全期与执行期使用同一个权限 key。
+     *
+     * <p>{@code /tpyes} → {@code tpaccept}、{@code /tpno} → {@code tpdeny}；
+     * 其他短别名（如 {@code /season}）去掉根斜杠后本来就和 {@code /samsara season}
+     * 使用同一路径，不需要额外映射。
+     */
+    public static String canonicalPath(String path) {
+        if (path == null) {
+            return "";
+        }
+        String value = path.trim();
+        return switch (value) {
+            case "tpyes" -> "tpaccept";
+            case "tpno" -> "tpdeny";
+            default -> value;
+        };
     }
 }

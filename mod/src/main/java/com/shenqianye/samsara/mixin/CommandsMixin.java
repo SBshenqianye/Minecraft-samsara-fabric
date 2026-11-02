@@ -1,6 +1,7 @@
 package com.shenqianye.samsara.mixin;
 
 import com.mojang.brigadier.ParseResults;
+import com.mojang.brigadier.tree.CommandNode;
 import com.mojang.brigadier.tree.LiteralCommandNode;
 import com.shenqianye.samsara.command.IncompleteCommandHandler;
 import com.shenqianye.samsara.permission.PermissionChecker;
@@ -32,13 +33,7 @@ public class CommandsMixin {
                                                             CallbackInfo ci) {
         if (parse != null && IncompleteCommandHandler.isSamsaraCommand(command)) {
             CommandSourceStack source = parse.getContext().getSource();
-            List<String> literals = new ArrayList<>();
-            for (var parsed : parse.getContext().getNodes()) {
-                if (parsed.getNode() instanceof LiteralCommandNode<?> literal) {
-                    literals.add(literal.getLiteral());
-                }
-            }
-            String path = PermissionCommandPaths.pathOf(literals);
+            String path = permissionPath(parse);
             if (!PermissionChecker.check(source, path.isBlank() ? "*" : path)) {
                 source.sendFailure(Component.literal("samsara 已被关闭或你没有权限执行"));
                 ci.cancel();
@@ -48,6 +43,38 @@ public class CommandsMixin {
         if (IncompleteCommandHandler.tryHandle(parse, command)) {
             ci.cancel();
         }
+    }
+
+    /**
+     * 拼出本次输入对应的权限路径。
+     *
+     * <p>Brigadier 在叶子的 {@code requires(...)} 不通过时不会把该 literal 放进解析结果，
+     * 只靠 {@code getNodes()} 会退化成父路径（例如把 {@code season advance} 当成
+     * {@code season}），从而把“无权限执行”误判成“未完成指令”。这里把游标处紧邻的
+     * literal 子节点补回路径，保持直接执行时的拒绝提示不变。
+     */
+    private static String permissionPath(ParseResults<CommandSourceStack> parse) {
+        List<String> literals = new ArrayList<>();
+        CommandNode<CommandSourceStack> deepest = parse.getContext().getRootNode();
+        for (var parsed : parse.getContext().getNodes()) {
+            deepest = parsed.getNode();
+            if (parsed.getNode() instanceof LiteralCommandNode<?> literal) {
+                literals.add(literal.getLiteral());
+            }
+        }
+        String remaining = parse.getReader().getRemaining();
+        int end = 0;
+        while (end < remaining.length() && !Character.isWhitespace(remaining.charAt(end))) {
+            end++;
+        }
+        String token = remaining.substring(0, end);
+        if (!token.isEmpty()) {
+            CommandNode<CommandSourceStack> child = deepest.getChild(token);
+            if (child instanceof LiteralCommandNode<?> literal) {
+                literals.add(literal.getLiteral());
+            }
+        }
+        return PermissionCommandPaths.pathOf(literals);
     }
 
     /**

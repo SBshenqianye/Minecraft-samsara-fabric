@@ -94,7 +94,7 @@ class WorldStackAdminImportTest {
                 List.of(), source.toString(), "bottom", "", false);
         assertTrue(scheduled.ok, String.valueOf(scheduled.preview.errors));
         assertNotNull(scheduled.jobId);
-        assertTrue(Files.isRegularFile(world.resolve("samsara/pending-import.json")));
+        assertTrue(Files.isRegularFile(world.resolve("samsara/pending-imports.json")));
 
         WorldStackAdmin.consumePending(world);
 
@@ -111,7 +111,7 @@ class WorldStackAdminImportTest {
                 world.resolve("players/data/00000000-0000-0000-0000-000000000001.dat")));
         assertTrue(Files.isRegularFile(
                 world.resolve("samsara/stack/stack_0/spawn-history.json")));
-        assertFalse(Files.exists(world.resolve("samsara/pending-import.json")));
+        assertFalse(Files.exists(world.resolve("samsara/pending-imports.json")));
 
         WorldStackAdmin.Model model = WorldStackAdmin.model(world, server, List.of());
         assertTrue(model.files.stream().anyMatch(f -> f.label.contains("world-stack-archive")),
@@ -124,6 +124,72 @@ class WorldStackAdminImportTest {
                 source.resolve("dimensions/minecraft/overworld/region/r.0.0.mca")));
         assertTrue(Files.isRegularFile(
                 source.resolve("players/data/00000000-0000-0000-0000-000000000001.dat")));
+    }
+
+    @Test
+    void multipleBottomImportsQueueAndExecuteInOneRestart() throws Exception {
+        Path world = world();
+        Path first = sourceWorld("queue-first");
+        Path second = sourceWorld("queue-second");
+
+        WorldStackAdmin.ScheduleResult scheduledFirst = WorldStackAdmin.scheduleImport(world, server,
+                List.of(), first.toString(), "bottom", "", false);
+        assertTrue(scheduledFirst.ok, String.valueOf(scheduledFirst.preview.errors));
+
+        WorldStackAdmin.Preview previewSecond = WorldStackAdmin.previewImport(world, server,
+                List.of(), second.toString(), "bottom", "", false);
+        assertTrue(previewSecond.ok, String.valueOf(previewSecond.errors));
+        assertEquals("stack_1", previewSecond.targetId, "第二次栈底导入应排在队列之后");
+        assertEquals(0, previewSecond.targetIndex);
+        assertTrue(previewSecond.warnings.stream().anyMatch(w -> w.contains("队列已有 1 项")),
+                String.valueOf(previewSecond.warnings));
+
+        WorldStackAdmin.ScheduleResult scheduledSecond = WorldStackAdmin.scheduleImport(world, server,
+                List.of(), second.toString(), "bottom", "", false);
+        assertTrue(scheduledSecond.ok, String.valueOf(scheduledSecond.preview.errors));
+
+        WorldStackAdmin.Model model = WorldStackAdmin.model(world, server, List.of());
+        assertEquals(2, model.pendingImports.size());
+        assertTrue(model.restartRequired);
+
+        WorldStackAdmin.consumePending(world);
+
+        StackManifest manifest = StackManifest.load(world);
+        assertEquals(List.of("stack_1", "stack_0", "world"),
+                manifest.layers.stream().map(l -> l.id).toList(),
+                "后确认的栈底导入应变成最下层");
+        assertEquals(first.toRealPath().toString(), manifest.byId("stack_0").importedFrom);
+        assertEquals(second.toRealPath().toString(), manifest.byId("stack_1").importedFrom);
+        assertFalse(Files.exists(world.resolve("samsara/pending-imports.json")));
+    }
+
+    @Test
+    void cancelQueuedImportRemovesOnlyThatItem() throws Exception {
+        Path world = world();
+        Path first = sourceWorld("cancel-first");
+        Path second = sourceWorld("cancel-second");
+        WorldStackAdmin.ScheduleResult scheduledFirst = WorldStackAdmin.scheduleImport(world, server,
+                List.of(), first.toString(), "bottom", "", false);
+        WorldStackAdmin.ScheduleResult scheduledSecond = WorldStackAdmin.scheduleImport(world, server,
+                List.of(), second.toString(), "bottom", "", false);
+        assertTrue(scheduledFirst.ok && scheduledSecond.ok);
+
+        var cancel = WorldStackAdmin.cancelImport(world, scheduledFirst.jobId);
+        assertEquals(true, cancel.get("ok"), String.valueOf(cancel));
+        assertEquals(1, cancel.get("remaining"));
+
+        WorldStackAdmin.Model model = WorldStackAdmin.model(world, server, List.of());
+        assertEquals(1, model.pendingImports.size());
+        assertEquals(scheduledSecond.jobId, model.pendingImports.get(0).jobId);
+        assertEquals("canceled", WorldStackAdmin.jobs(world, 10).stream()
+                .filter(job -> scheduledFirst.jobId.equals(job.id))
+                .findFirst().orElseThrow().status);
+
+        WorldStackAdmin.consumePending(world);
+        StackManifest manifest = StackManifest.load(world);
+        assertEquals(List.of("stack_1", "world"),
+                manifest.layers.stream().map(l -> l.id).toList());
+        assertFalse(Files.exists(world.resolve("samsara/pending-imports.json")));
     }
 
     @Test
@@ -419,7 +485,7 @@ class WorldStackAdminImportTest {
         assertNotNull(manifest.byId("world"));
         assertTrue(Files.isDirectory(world.resolve("dimensions/minecraft")),
                 "中止后原 world 维度必须保留");
-        assertFalse(Files.exists(world.resolve("samsara/pending-import.json")));
+        assertFalse(Files.exists(world.resolve("samsara/pending-imports.json")));
         WorldStackAdmin.Model model = WorldStackAdmin.model(world, server, List.of());
         assertNotNull(model.lastReport);
         assertEquals("failed", model.lastReport.status);

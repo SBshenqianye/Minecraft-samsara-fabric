@@ -620,6 +620,16 @@ details.output-group > summary { padding: 3px 2px; }
 
 .pool-panel { margin-top: 18px; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel-soft); }
 .pool-title { margin: 12px 0 6px; font-size: 11px; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; }
+.pool-filter-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 10px 0 4px; }
+.pool-filter-bar input[type="search"] { width: 180px; padding: 5px 8px; }
+.pool-section { margin-top: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.pool-section > summary { cursor: pointer; padding: 8px 10px; font-size: 12px; font-weight: 700; color: var(--muted); letter-spacing: .04em; }
+.pool-section[open] > summary { border-bottom: 1px solid var(--line); }
+.pool-section .chip-pool { border: 0; border-radius: 0 0 10px 10px; min-height: 40px; }
+.identity-suggestions { margin: 10px 0 2px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line)); border-radius: 10px; background: var(--panel); }
+.identity-suggestion { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 0; border-top: 1px dashed var(--line); }
+.identity-suggestion:first-of-type { border-top: 0; }
+.identity-suggestion .grow { flex: 1; min-width: 180px; }
 .chip-pool { display: flex; flex-wrap: wrap; gap: 6px; min-height: 34px; padding: 8px; border: 1px dashed var(--line-strong); border-radius: 10px; background: var(--panel); }
 .pool-empty { color: var(--muted); font-size: 12px; padding: 2px 0; }
 .inline-field { display: flex; align-items: center; gap: 6px; }
@@ -806,6 +816,10 @@ body.locked .tabs, body.locked .tab-actions { opacity: .45; pointer-events: none
 .world-stack-path { flex: 1 1 360px; }
 .world-stack-path input { width: 100%; }
 .world-stack-preview { margin-top: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-soft); }
+.world-stack-queue, .world-stack-archive-list { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-soft); }
+.world-stack-archive-list:empty { display: none; }
+.world-stack-queue-item { display: flex; align-items: center; gap: 8px; margin-top: 6px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); font-size: 12px; }
+.world-stack-queue-item .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .world-stack-preview-title { font-weight: 700; margin-bottom: 8px; }
 .world-stack-warning, .world-stack-error { margin-top: 9px; padding: 8px 10px; border-radius: 8px; font-size: 12px; }
 .world-stack-warning { border: 1px solid rgba(251, 191, 36, .35); background: rgba(251, 191, 36, .08); }

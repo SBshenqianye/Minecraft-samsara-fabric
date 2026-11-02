@@ -232,7 +232,7 @@
           <div class="panel-head">
             <div>
               <h2>栈层</h2>
-              <p class="panel-sub">world 固定是栈顶；旧栈层是 world 内部的自定义维度，按从栈底往上数（stack_0 是最下层）。归档只在这里发起，先备份再移除。</p>
+              <p class="panel-sub">world 固定是栈顶；旧栈层是 world 内部的自定义维度，按从栈底往上数（stack_0 是最下层）。卡片显示存档名、存档创建/最后游玩时间、版本、种子、出生点、维度和数据大小。</p>
             </div>
           </div>
           <div id="world-stack-list" class="world-stack-list"></div>
@@ -242,7 +242,7 @@
           <div class="panel-head">
             <div>
               <h2>栈位排序</h2>
-              <p class="panel-sub">拖动或上下移动，保存前先看预览。只调整栈顶以下时立即生效；把旧栈层拖到栈顶会交换 world 与该层数据，需重启并在失败时回滚。</p>
+              <p class="panel-sub">列表从上到下 = 栈顶 → 栈底（world 在最上面）。拖动或上下移动，保存前先看预览。只调整栈顶以下时立即生效；把旧栈层拖到栈顶会交换 world 与该层数据，需重启并在失败时回滚。</p>
             </div>
             <div class="panel-tools world-stack-order-actions">
               <span id="world-stack-order-preview" class="muted small"></span>
@@ -256,7 +256,7 @@
           <div class="panel-head">
             <div>
               <h2>导入本地世界</h2>
-              <p class="panel-sub">只接受服务器本地路径；允许范围 = 服务器根目录 + <code>web.yml</code> 的 <code>importRoots</code>。第一版只复制，不移动/删除源目录。</p>
+              <p class="panel-sub">只接受服务器本地路径；允许范围 = 服务器根目录 + <code>web.yml</code> 的 <code>importRoots</code>。只复制，不移动/删除源目录。可连续确认多个世界，按队列顺序在下次重启时依次执行，不需要多次重启。</p>
             </div>
           </div>
           <div class="world-stack-form">
@@ -278,6 +278,8 @@
             </label>
             <button id="world-stack-import-preview-button" class="ghost" type="button">预览导入</button>
           </div>
+          <div id="world-stack-import-error" class="world-stack-error" role="alert" hidden></div>
+          <div id="world-stack-import-queue" class="world-stack-queue" hidden></div>
           <div id="world-stack-import-preview" class="world-stack-preview" hidden></div>
         </section>
 
@@ -285,9 +287,11 @@
           <div class="panel-head">
             <div>
               <h2>归档 / 删除栈层</h2>
-              <p class="panel-sub">危险操作：从卡片上的“归档…”开始，先预览；确认后排队，重启时把维度和元数据移到 stack-archive 备份，不直接删除。</p>
+              <p class="panel-sub">危险操作：下列旧栈层可直接点“归档…”，先预览；确认后排队，重启时把维度和元数据移到 stack-archive 备份，不直接删除。栈顶 world 不能归档。</p>
             </div>
           </div>
+          <div id="world-stack-archive-error" class="world-stack-error" role="alert" hidden></div>
+          <div id="world-stack-archive-list" class="world-stack-archive-list"></div>
           <div id="world-stack-archive-preview" class="world-stack-preview" hidden></div>
         </section>
 
@@ -295,12 +299,13 @@
           <div class="panel-head">
             <div>
               <h2>操作时间线</h2>
-              <p class="panel-sub">导入 / 提升栈顶 / 归档的操作前快照。时间线线性、无分支；仅末端节点可撤销。旧备份没有 <code>operation.json</code> 时只读展示并说明缺少的信息。撤销在停服后、下次启动前执行，先保留当前状态，失败回滚；源世界与归档不会自动删除。可导出 <code>operation.json</code> 排障；<code>pre-restore-*</code> 安全快照只能在这里手动清理。</p>
+              <p class="panel-sub">待执行任务（导入/归档/提升/撤销）会先列在最上面；重启完成后再生成可撤销的时间线节点。时间线线性、无分支，仅末端节点可撤销。旧备份没有 <code>operation.json</code> 时只读展示并说明缺少的信息。撤销在停服后、下次启动前执行，先保留当前状态，失败回滚；源世界与归档不会自动删除。可导出 <code>operation.json</code> 排障；<code>pre-restore-*</code> 安全快照只能在这里手动清理。</p>
             </div>
             <div class="panel-tools">
               <button id="world-stack-snapshot-refresh" class="ghost" type="button">刷新快照占用</button>
             </div>
           </div>
+          <div id="world-stack-timeline-error" class="world-stack-error" role="alert" hidden></div>
           <div id="world-stack-timeline" class="backup-timeline"></div>
           <div id="world-stack-timeline-preview" class="world-stack-preview" hidden></div>
           <div class="world-stack-snapshot-head">
@@ -308,16 +313,6 @@
             <p class="muted small">执行撤销时保留的当前栈状态。永不自动删除；确认不再需要回滚后可手动释放空间。</p>
           </div>
           <div id="world-stack-snapshots" class="world-stack-snapshots"></div>
-        </section>
-
-        <section class="panel" id="world-stack-files-panel">
-          <div class="panel-head">
-            <div>
-              <h2>文件位置</h2>
-              <p class="panel-sub">动态列出本模组创建/使用的目录。服务器级备份不随存档移动；缓存目录可安全删除；<code>world-stack-backup</code> 只保留最近 N 份（由配置项 <code>backupKeep</code> 控制），<code>world-stack-archive</code> 是用户数据不会自动删除。点击行或 ⧉ 可复制绝对路径。</p>
-            </div>
-          </div>
-          <div id="world-stack-files" class="world-stack-files"></div>
         </section>
 
         <section class="panel" id="world-stack-jobs-panel">
@@ -397,12 +392,34 @@
               </div>
             </div>
             <div id="identity-resolve-result" class="resolve-result" hidden></div>
-            <h4 class="pool-title">正版 UUID（未进组）</h4>
-            <div id="identity-premium-pool" class="chip-pool"></div>
-            <h4 class="pool-title">离线 UUID（未进组）</h4>
-            <div id="identity-offline-pool" class="chip-pool"></div>
-            <h4 class="pool-title">数据 UUID（data）</h4>
-            <div id="identity-data-pool" class="chip-pool"></div>
+            <div class="pool-filter-bar">
+              <label class="inline-field">
+                <span>筛选</span>
+                <input id="identity-pool-search" type="search" placeholder="名称 / UUID" autocomplete="off">
+              </label>
+              <label class="check-line">
+                <input id="identity-hide-probe" type="checkbox" checked>
+                <span>隐藏疑似 probe / 测试 ID</span>
+              </label>
+              <label class="check-line">
+                <input id="identity-hide-unknown" type="checkbox" checked>
+                <span>隐藏占位名（玩家-xxxxxxxx）</span>
+              </label>
+              <span id="identity-pool-count" class="muted small"></span>
+            </div>
+            <div id="identity-suggestions" class="identity-suggestions" hidden></div>
+            <details class="pool-section" id="identity-premium-section" open>
+              <summary>正版 UUID（未进组） <span id="identity-premium-count" class="muted small"></span></summary>
+              <div id="identity-premium-pool" class="chip-pool"></div>
+            </details>
+            <details class="pool-section" id="identity-offline-section" open>
+              <summary>离线 UUID（未进组） <span id="identity-offline-count" class="muted small"></span></summary>
+              <div id="identity-offline-pool" class="chip-pool"></div>
+            </details>
+            <details class="pool-section" id="identity-data-section">
+              <summary>数据 UUID（data） <span id="identity-data-count" class="muted small"></span></summary>
+              <div id="identity-data-pool" class="chip-pool"></div>
+            </details>
           </div>
 
           <details class="audit-card" id="identity-audit-card" hidden>
@@ -531,6 +548,16 @@
             </div>
             <div id="server-job-list" class="server-job-list"></div>
           </section>
+
+          <section class="panel" id="world-stack-files-panel">
+            <div class="panel-head">
+              <div>
+                <h2>文件位置</h2>
+                <p class="panel-sub">动态列出本模组创建/使用的服务器级目录。备份不随存档移动；缓存目录可安全删除；<code>world-stack-backup</code> 只保留最近 N 份（由 <code>backupKeep</code> 控制），<code>world-stack-archive</code> 是用户数据不会自动删除。点击行或 ⧉ 可复制绝对路径。</p>
+              </div>
+            </div>
+            <div id="world-stack-files" class="world-stack-files"></div>
+          </section>
         </div>
       </div>
     </div>
@@ -552,6 +579,32 @@
         <span class="spacer"></span>
         <button type="button" id="uuid-cancel" class="ghost">取消</button>
         <button type="button" id="uuid-apply" class="primary">确定</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="assign-dialog" class="app-dialog">
+    <form method="dialog" class="dialog-body" id="assign-form">
+      <h3>放入身份组</h3>
+      <p id="assign-target" class="dialog-sub"></p>
+      <label class="field-card">
+        <span>目标组</span>
+        <select id="assign-group"></select>
+        <small>没有合适的组时，先关闭本窗口、在下方新增一个组。</small>
+      </label>
+      <label class="field-card">
+        <span>放到哪个区域</span>
+        <select id="assign-role">
+          <option value="data">数据 UUID（可共享）</option>
+          <option value="premium">正版 UUID（仅一个组）</option>
+          <option value="offline">离线 UUID（仅一个组）</option>
+        </select>
+      </label>
+      <div id="assign-error" class="message error"></div>
+      <div class="dialog-actions">
+        <span class="spacer"></span>
+        <button type="button" id="assign-cancel" class="ghost">取消</button>
+        <button type="button" id="assign-apply" class="primary">放入</button>
       </div>
     </form>
   </dialog>

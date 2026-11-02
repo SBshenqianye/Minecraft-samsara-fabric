@@ -10,10 +10,15 @@
     preview: null,
     archive: null,
     importConfirmed: false,
+    importError: '',
+    importBusy: false,
     archiveConfirmed: false,
+    archiveError: '',
+    archiveBusy: false,
     timeline: null,
     timelinePreview: null,
     timelineConfirmed: false,
+    timelineError: '',
     snapshots: null,
   };
 
@@ -34,9 +39,14 @@
       importAfter: $('world-stack-import-after'),
       importAfterWrap: $('world-stack-after-wrap'),
       importPreviewButton: $('world-stack-import-preview-button'),
+      importError: $('world-stack-import-error'),
+      importQueue: $('world-stack-import-queue'),
       importPreview: $('world-stack-import-preview'),
+      archiveError: $('world-stack-archive-error'),
+      archiveList: $('world-stack-archive-list'),
       archivePreview: $('world-stack-archive-preview'),
       timeline: $('world-stack-timeline'),
+      timelineError: $('world-stack-timeline-error'),
       timelinePreview: $('world-stack-timeline-preview'),
       snapshots: $('world-stack-snapshots'),
       snapshotRefresh: $('world-stack-snapshot-refresh'),
@@ -60,6 +70,20 @@
     if (!el) return;
     el.textContent = text || '';
     el.className = 'message' + (kind ? ' ' + kind : '');
+  }
+
+  // 操作按钮在页面下方，顶部 message 常常在视口外；失败时同时写进操作面板内的错误框。
+  function renderInlineError(el, text) {
+    if (!el) return;
+    el.replaceChildren();
+    el.hidden = !text;
+    if (text) appendList(el, 'world-stack-error-list', [text]);
+  }
+
+  function fail(panelId, errorEl, text) {
+    setMessage(text, 'error');
+    renderInlineError(errorEl, text);
+    window.SamsaraUI?.scrollToTarget?.(panelId);
   }
 
   function stacks() {
@@ -165,7 +189,11 @@
       state.preview = null;
       state.archive = null;
       state.importConfirmed = false;
+      state.importError = '';
+      state.importBusy = false;
       state.archiveConfirmed = false;
+      state.archiveError = '';
+      state.archiveBusy = false;
       try {
         state.timeline = await window.SamsaraUI.api('/api/world-stack/timeline');
       } catch (error) {
@@ -173,6 +201,7 @@
       }
       state.timelinePreview = null;
       state.timelineConfirmed = false;
+      state.timelineError = '';
       try {
         state.snapshots = await window.SamsaraUI.api('/api/world-stack/timeline/snapshots');
       } catch (error) {
@@ -192,9 +221,11 @@
     renderList();
     renderOrder();
     renderAfterSelect();
-    renderImportPreview();
-    renderArchivePreview();
-    renderTimeline();
+    renderImportQueue();
+    renderImportState();
+    renderArchiveList();
+    renderArchiveState();
+    renderTimelineError();
     renderTimelinePreview();
     renderSnapshots();
     renderFiles();
@@ -277,14 +308,23 @@
       const dims = (stack.dimensions || [])
         .map((dim) => dim.id + ' ' + (dim.regions || 0))
         .join(' · ');
+      const version = stack.versionName
+        ? stack.versionName + (stack.snapshot ? ' · 快照' : '')
+          + (stack.dataVersion ? ' · DataVersion ' + stack.dataVersion : '')
+        : (stack.dataVersion ? 'DataVersion ' + stack.dataVersion : '—');
       appendRows(card, [
+        ['世界名', stack.saveName || '—'],
+        ['存档创建', fmtTime(stack.saveCreatedAt)],
+        ['最后游玩', fmtTime(stack.lastPlayed)],
+        ['存档版本', version],
         ['种子', String(stack.seed)],
         ['出生点', stack.spawnX + ', ' + stack.spawnY + ', ' + stack.spawnZ],
         ['出生历史', stack.spawnCycles + ' 轮'],
         ['维度 region', dims || '—'],
         ['数据大小', fmtBytes(stack.dataBytes)],
         ['来源', sourceName(stack.source) + (stack.importedFrom ? ' · ' + stack.importedFrom : '')],
-        ['创建时间', fmtTime(stack.createdAt)],
+        ['加入栈时间', fmtTime(stack.createdAt)],
+        ['导入时间', stack.importedAt ? fmtTime(stack.importedAt) : '—'],
         ['元数据', stack.metaPath],
         ['维度', stack.dimensionsPath],
       ]);
@@ -299,11 +339,12 @@
     const old = state.savedOrder;
     const changed = state.order.join('|') !== old.join('|');
     const topMoved = changed && state.order[state.order.length - 1] !== 'world';
+    const display = (ids) => ids.slice().reverse().join(' → ');
     if (orderPreview) {
       orderPreview.textContent = changed
-        ? '原：' + old.join(' → ') + ' ／ 新：' + state.order.join(' → ')
+        ? '原：' + display(old) + ' ／ 新：' + display(state.order)
           + (topMoved ? '（保存后提升栈顶，需重启）' : '')
-        : '顺序未改变';
+        : '顺序未改变（从上到下 = 栈顶 → 栈底）';
     }
     if (orderSave) orderSave.disabled = !changed || Boolean(state.model && state.model.restartRequired);
     if (state.order.length === 0) {
@@ -313,7 +354,10 @@
       order.append(empty);
       return;
     }
-    state.order.forEach((id, index) => {
+    // state.order 仍按栈底→栈顶保存给 API；界面从上到下显示栈顶→栈底。
+    const view = state.order.slice().reverse();
+    view.forEach((id, visualIndex) => {
+      const index = state.order.indexOf(id);
       const stack = byId(id);
       const row = document.createElement('div');
       row.className = 'world-stack-order-item' + (stack && stack.top ? ' top' : '');
@@ -328,6 +372,8 @@
       const strong = document.createElement('strong');
       strong.textContent = stack && stack.top
         ? 'world（栈顶）' : id + '（第 ' + (index + 1) + ' 层）';
+      if (visualIndex === 0) strong.textContent += ' · 最上层';
+      if (visualIndex === view.length - 1) strong.textContent += ' · 最下层';
       const meta = document.createElement('span');
       meta.className = 'muted small';
       meta.textContent = stack
@@ -341,16 +387,16 @@
       up.type = 'button';
       up.className = 'ghost';
       up.textContent = '↑';
-      up.title = '上移';
-      up.disabled = index === 0;
-      up.addEventListener('click', () => moveOrder(index, index - 1));
+      up.title = '向栈顶方向移动';
+      up.disabled = index === state.order.length - 1;
+      up.addEventListener('click', () => moveOrder(index, index + 1));
       const down = document.createElement('button');
       down.type = 'button';
       down.className = 'ghost';
       down.textContent = '↓';
-      down.title = '下移';
-      down.disabled = index === state.order.length - 1;
-      down.addEventListener('click', () => moveOrder(index, index + 1));
+      down.title = '向栈底方向移动';
+      down.disabled = index === 0;
+      down.addEventListener('click', () => moveOrder(index, index - 1));
       tools.append(up, down);
       row.append(handle, label, tools);
       row.addEventListener('dragstart', (event) => {
@@ -410,6 +456,130 @@
     }
     const between = importPosition && importPosition.value === 'between';
     importAfterWrap.hidden = !between;
+  }
+
+  function pendingImports() {
+    const model = state.model || {};
+    if (Array.isArray(model.pendingImports) && model.pendingImports.length) {
+      return model.pendingImports;
+    }
+    return model.pendingImport ? [model.pendingImport] : [];
+  }
+
+  function importPositionLabel(item) {
+    if (item.position === 'top') return '栈顶（替换 world）';
+    if (item.position === 'between') return '插到 ' + (item.afterId || '?') + ' 之上';
+    return '栈底';
+  }
+
+  function renderImportQueue() {
+    const { importQueue } = ensureEls();
+    if (!importQueue) return;
+    importQueue.replaceChildren();
+    const list = pendingImports();
+    importQueue.hidden = list.length === 0;
+    if (list.length === 0) return;
+    const head = document.createElement('p');
+    head.className = 'muted small';
+    head.textContent = '待导入队列（' + list.length
+      + ' 项）：重启时按下列顺序依次执行，不需要多次重启。';
+    importQueue.append(head);
+    list.forEach((item, index) => {
+      const row = document.createElement('div');
+      row.className = 'world-stack-queue-item';
+      const title = document.createElement('strong');
+      title.textContent = '#' + (index + 1);
+      const label = document.createElement('span');
+      label.className = 'grow';
+      label.textContent = (item.sourceWorldName || item.source || '世界')
+        + ' → ' + importPositionLabel(item)
+        + (item.position === 'top' ? '' : ' · ' + (item.targetId || '—'));
+      label.title = item.source || '';
+      const size = document.createElement('span');
+      size.className = 'muted small';
+      size.textContent = fmtBytes(item.sourceBytes);
+      const cancel = document.createElement('button');
+      cancel.type = 'button';
+      cancel.className = 'ghost danger';
+      cancel.textContent = '取消';
+      cancel.title = '取消这条尚未执行的导入';
+      cancel.addEventListener('click', () => cancelImport(item.jobId));
+      row.append(title, label, size, cancel);
+      importQueue.append(row);
+    });
+  }
+
+  async function cancelImport(jobId) {
+    if (!jobId) return;
+    if (!window.confirm('取消排队中的导入 ' + jobId + '？源目录不会被修改。')) return;
+    try {
+      const data = await post('/api/world-stack/import/cancel', { jobId });
+      if (!data.ok) {
+        setMessage(data.error || '取消导入失败', 'error');
+        return;
+      }
+      await load();
+      setMessage('已取消 ' + jobId + '；队列剩余 ' + data.remaining + ' 项。', 'ok');
+    } catch (error) {
+      setMessage(window.SamsaraUI.authMessage(error, '取消导入失败'), 'error');
+    }
+  }
+
+  function renderImportState() {
+    const { importPreviewButton, importError } = ensureEls();
+    if (importPreviewButton) {
+      importPreviewButton.disabled = state.importBusy;
+      importPreviewButton.textContent = state.importBusy ? '处理中…' : '预览导入';
+    }
+    renderInlineError(importError, state.importError);
+    renderImportPreview();
+  }
+
+  function renderArchiveList() {
+    const { archiveList } = ensureEls();
+    if (!archiveList) return;
+    archiveList.replaceChildren();
+    const list = nonTop().slice().sort((a, b) => b.index - a.index);
+    if (list.length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'muted small';
+      empty.textContent = '没有可归档的旧栈层；world 是栈顶，不能归档。导入新栈层或提升其他栈层后，这里会出现归档入口。';
+      archiveList.append(empty);
+      return;
+    }
+    const head = document.createElement('p');
+    head.className = 'muted small';
+    head.textContent = '可归档的旧栈层（不含栈顶 world）。点“归档…”先预览，确认后排队，重启时先备份再移除。';
+    archiveList.append(head);
+    for (const stack of list) {
+      const row = document.createElement('div');
+      row.className = 'world-stack-queue-item';
+      const title = document.createElement('strong');
+      title.textContent = stack.id;
+      const label = document.createElement('span');
+      label.className = 'grow';
+      label.textContent = '第 ' + (stack.index + 1) + ' 层 · '
+        + (stack.saveName || '未命名世界') + ' · ' + fmtBytes(stack.dataBytes)
+        + ' · 存档创建 ' + fmtTime(stack.saveCreatedAt);
+      const action = document.createElement('button');
+      action.type = 'button';
+      action.className = 'ghost danger';
+      action.textContent = '归档…';
+      action.addEventListener('click', () => previewArchive(stack.id));
+      row.append(title, label, action);
+      archiveList.append(row);
+    }
+  }
+
+  function renderArchiveState() {
+    const { archiveError } = ensureEls();
+    renderInlineError(archiveError, state.archiveError);
+    renderArchivePreview();
+  }
+
+  function renderTimelineError() {
+    const { timelineError } = ensureEls();
+    renderInlineError(timelineError, state.timelineError);
   }
 
   function renderImportPreview() {
@@ -494,16 +664,19 @@
     const run = document.createElement('button');
     run.type = 'button';
     run.className = 'primary';
-    run.textContent = '确认导入（需重启）';
-    run.disabled = !state.importConfirmed;
+    run.textContent = state.importBusy ? '排队中…' : '确认导入（需重启）';
+    run.disabled = !state.importConfirmed || state.importBusy;
     run.addEventListener('click', runImport);
     importPreview.append(confirm, run);
   }
 
   async function previewImport() {
-    const { importPath, importPosition, importAfter } = ensureEls();
-    if (!importPath) return;
+    const { importPath, importPosition, importAfter, importError } = ensureEls();
+    if (!importPath || state.importBusy) return;
     const path = importPath.value.trim();
+    state.importBusy = true;
+    state.importError = '';
+    renderImportState();
     try {
       const data = await post('/api/world-stack/import/preview', {
         path,
@@ -513,16 +686,23 @@
       });
       state.preview = data;
       state.importConfirmed = false;
-      renderImportPreview();
       window.SamsaraUI.scrollToTarget?.('world-stack-import-panel');
     } catch (error) {
-      setMessage(window.SamsaraUI.authMessage(error, '导入预览失败'), 'error');
+      state.preview = null;
+      fail('world-stack-import-panel', importError,
+        window.SamsaraUI.authMessage(error, '导入预览失败'));
+    } finally {
+      state.importBusy = false;
+      renderImportState();
     }
   }
 
   async function runImport() {
-    const { importPath, importPosition, importAfter } = ensureEls();
-    if (!state.importConfirmed) return;
+    const { importPath, importPosition, importAfter, importError } = ensureEls();
+    if (!state.importConfirmed || state.importBusy) return;
+    state.importBusy = true;
+    state.importError = '';
+    renderImportState();
     try {
       const data = await post('/api/world-stack/import', {
         path: importPath ? importPath.value.trim() : '',
@@ -533,27 +713,41 @@
       if (!data.ok) {
         state.preview = data;
         state.importConfirmed = false;
-        renderImportPreview();
-        setMessage((data.errors && data.errors[0]) || data.error || '导入排队失败', 'error');
+        fail('world-stack-import-panel', importError,
+          (data.errors && data.errors[0]) || data.error || '导入排队失败');
         return;
       }
       state.preview = null;
       await load();
-      setMessage('已排队：' + data.jobId + '。重启服务器后执行；源目录保持不变。', 'ok');
+      const queuedMessage = data.job && data.job.message ? data.job.message : ('已排队：' + data.jobId);
+      setMessage(queuedMessage + '。重启服务器后按队列依次执行；源目录保持不变。', 'ok');
     } catch (error) {
-      setMessage(window.SamsaraUI.authMessage(error, '导入排队失败'), 'error');
+      fail('world-stack-import-panel', importError,
+        window.SamsaraUI.authMessage(error, '导入排队失败'));
+    } finally {
+      state.importBusy = false;
+      renderImportState();
     }
   }
 
   async function previewArchive(id) {
+    const { archiveError } = ensureEls();
+    if (state.archiveBusy) return;
+    state.archiveBusy = true;
+    state.archiveError = '';
+    renderArchiveState();
     try {
       const data = await post('/api/world-stack/archive/preview', { id });
       state.archive = data;
       state.archiveConfirmed = false;
-      renderArchivePreview();
       window.SamsaraUI.scrollToTarget?.('world-stack-archive-panel');
     } catch (error) {
-      setMessage(window.SamsaraUI.authMessage(error, '归档预览失败'), 'error');
+      state.archive = null;
+      fail('world-stack-archive-panel', archiveError,
+        window.SamsaraUI.authMessage(error, '归档预览失败'));
+    } finally {
+      state.archiveBusy = false;
+      renderArchiveState();
     }
   }
 
@@ -621,28 +815,36 @@
     const run = document.createElement('button');
     run.type = 'button';
     run.className = 'danger';
-    run.textContent = '确认归档（需重启）';
-    run.disabled = !state.archiveConfirmed;
+    run.textContent = state.archiveBusy ? '排队中…' : '确认归档（需重启）';
+    run.disabled = !state.archiveConfirmed || state.archiveBusy;
     run.addEventListener('click', runArchive);
     archivePreview.append(confirm, run);
   }
 
   async function runArchive() {
-    if (!state.archiveConfirmed || !state.archive) return;
+    const { archiveError } = ensureEls();
+    if (!state.archiveConfirmed || !state.archive || state.archiveBusy) return;
+    state.archiveBusy = true;
+    state.archiveError = '';
+    renderArchiveState();
     try {
       const data = await post('/api/world-stack/archive', { id: state.archive.targetId });
       if (!data.ok) {
         state.archive = data;
         state.archiveConfirmed = false;
-        renderArchivePreview();
-        setMessage((data.errors && data.errors[0]) || data.error || '归档排队失败', 'error');
+        fail('world-stack-archive-panel', archiveError,
+          (data.errors && data.errors[0]) || data.error || '归档排队失败');
         return;
       }
       state.archive = null;
       await load();
       setMessage('已排队：' + data.jobId + '。重启服务器后归档；备份会保留。', 'ok');
     } catch (error) {
-      setMessage(window.SamsaraUI.authMessage(error, '归档排队失败'), 'error');
+      fail('world-stack-archive-panel', archiveError,
+        window.SamsaraUI.authMessage(error, '归档排队失败'));
+    } finally {
+      state.archiveBusy = false;
+      renderArchiveState();
     }
   }
 
@@ -663,14 +865,92 @@
     timeline.replaceChildren();
     const data = state.timeline || { nodes: [] };
     const nodes = Array.isArray(data.nodes) ? data.nodes : [];
+    const model = state.model || {};
+    let pendingCount = 0;
+    const appendPending = (operation, titleText, metaText, jobId, cancelJobId) => {
+      pendingCount += 1;
+      const item = document.createElement('div');
+      item.className = 'timeline-node pending';
+      item.dataset.operation = operation;
+      const rail = document.createElement('span');
+      rail.className = 'timeline-rail';
+      rail.setAttribute('aria-hidden', 'true');
+      const card = document.createElement('div');
+      card.className = 'timeline-card';
+      const head = document.createElement('div');
+      head.className = 'timeline-card-head';
+      const title = document.createElement('div');
+      title.className = 'timeline-card-title';
+      const strong = document.createElement('strong');
+      strong.textContent = titleText;
+      const idText = document.createElement('span');
+      idText.className = 'muted small mono';
+      idText.textContent = jobId || 'queued';
+      title.append(strong, idText);
+      const badges = document.createElement('div');
+      badges.className = 'timeline-badges';
+      const badge = document.createElement('span');
+      badge.className = 'world-stack-badge warn';
+      badge.textContent = '待执行 · 需重启';
+      badges.append(badge);
+      head.append(title, badges);
+      const meta = document.createElement('p');
+      meta.className = 'muted small';
+      meta.textContent = metaText;
+      card.append(head, meta);
+      if (cancelJobId) {
+        const actions = document.createElement('div');
+        actions.className = 'timeline-actions';
+        const cancel = document.createElement('button');
+        cancel.type = 'button';
+        cancel.className = 'ghost danger';
+        cancel.textContent = '取消排队';
+        cancel.addEventListener('click', () => cancelImport(cancelJobId));
+        actions.append(cancel);
+        card.append(actions);
+      }
+      item.append(rail, card);
+      timeline.append(item);
+    };
+    for (const pending of pendingImports()) {
+      appendPending('import', '导入 · ' + fmtTime(pending.createdAt),
+        (pending.sourceWorldName || pending.source || '世界')
+          + ' → ' + (pending.position === 'top' ? '栈顶 world'
+            : importPositionLabel(pending) + ' ' + (pending.targetId || ''))
+          + ' · ' + fmtBytes(pending.sourceBytes)
+          + ' · 源 ' + (pending.source || '—'),
+        pending.jobId, pending.jobId);
+    }
+    if (model.pendingArchive) {
+      appendPending('archive', '归档 · ' + fmtTime(model.pendingArchive.createdAt),
+        '栈层 ' + model.pendingArchive.id + ' → ' + (model.pendingArchive.archivePath || 'stack-archive'),
+        model.pendingArchive.jobId, '');
+    }
+    if (model.pendingPromote) {
+      appendPending('promote', '提升栈顶 · ' + fmtTime(model.pendingPromote.createdAt),
+        (model.pendingPromote.demoteId || '原 world') + ' 压入旧栈，'
+          + (model.pendingPromote.promoteId || '目标层') + ' 成为新 world',
+        model.pendingPromote.jobId, '');
+    }
+    if (model.pendingRestore) {
+      appendPending('restore', '撤销操作 · ' + fmtTime(model.pendingRestore.createdAt),
+        '撤销 ' + (model.pendingRestore.operationId || model.pendingRestore.id || '—'),
+        model.pendingRestore.jobId, '');
+    }
     if (nodes.length === 0) {
       const empty = document.createElement('p');
       empty.className = 'muted small';
-      empty.textContent = '还没有世界栈操作快照。导入/提升/归档完成后会在这里生成节点；'
-        + '旧备份没有 operation.json 时只读展示。';
+      empty.textContent = pendingCount > 0
+        ? '以上任务会在下次重启时执行；完成后才会生成可撤销的时间线节点。'
+        : '还没有世界栈操作快照。导入/提升/归档完成后会在这里生成节点；'
+          + '旧备份没有 operation.json 时只读展示。';
       timeline.append(empty);
       return;
     }
+    const doneHead = document.createElement('p');
+    doneHead.className = 'muted small';
+    doneHead.textContent = '已完成操作（仅末端节点可撤销）';
+    timeline.append(doneHead);
     for (const node of nodes) {
       const item = document.createElement('div');
       item.className = 'timeline-node' + (node.current ? ' current' : '');
@@ -694,7 +974,7 @@
       const title = document.createElement('div');
       title.className = 'timeline-card-title';
       const strong = document.createElement('strong');
-      strong.textContent = fmtTime(node.createdAt);
+      strong.textContent = operationName(node.operation) + ' · ' + fmtTime(node.createdAt);
       const idText = document.createElement('span');
       idText.className = 'muted small mono';
       idText.textContent = node.id;
@@ -840,11 +1120,14 @@
   }
 
   async function exportTimelineNode(node) {
+    const { timelineError } = ensureEls();
+    state.timelineError = '';
+    renderTimelineError();
     try {
       const data = await window.SamsaraUI.api(
         '/api/world-stack/timeline/export?id=' + encodeURIComponent(node.id));
       if (!data.ok) {
-        setMessage(data.error || '导出操作快照失败', 'error');
+        fail('world-stack-timeline-panel', timelineError, data.error || '导出操作快照失败');
         return;
       }
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -858,16 +1141,19 @@
       window.setTimeout(() => URL.revokeObjectURL(url), 1200);
       setMessage('已导出 ' + link.download, 'ok');
     } catch (error) {
-      setMessage(window.SamsaraUI.authMessage(error, '导出操作快照失败'), 'error');
+      fail('world-stack-timeline-panel', timelineError,
+        window.SamsaraUI.authMessage(error, '导出操作快照失败'));
     }
   }
 
   async function loadSnapshots() {
+    const { timelineError } = ensureEls();
     try {
       state.snapshots = await window.SamsaraUI.api('/api/world-stack/timeline/snapshots');
       renderSnapshots();
     } catch (error) {
-      setMessage(window.SamsaraUI.authMessage(error, '读取快照占用失败'), 'error');
+      fail('world-stack-timeline-panel', timelineError,
+        window.SamsaraUI.authMessage(error, '读取快照占用失败'));
     }
   }
 
@@ -916,28 +1202,35 @@
 
   async function cleanupSnapshot(item) {
     const name = item && item.name ? item.name : '';
+    const { timelineError } = ensureEls();
     if (!name) return;
     if (!window.confirm('删除安全快照 ' + name + '？此操作只删除撤销前保留的当前状态副本，'
       + '不会删除源世界、归档或操作备份。')) {
       return;
     }
+    state.timelineError = '';
+    renderTimelineError();
     try {
       const data = await post('/api/world-stack/timeline/cleanup', {
         name,
         confirm: true,
       });
       if (!data.ok) {
-        setMessage(data.error || '删除快照失败', 'error');
+        fail('world-stack-timeline-panel', timelineError, data.error || '删除快照失败');
         return;
       }
       setMessage(data.message || '已删除快照', 'ok');
       await loadSnapshots();
     } catch (error) {
-      setMessage(window.SamsaraUI.authMessage(error, '删除快照失败'), 'error');
+      fail('world-stack-timeline-panel', timelineError,
+        window.SamsaraUI.authMessage(error, '删除快照失败'));
     }
   }
 
   async function previewTimelineRestore(id) {
+    const { timelineError } = ensureEls();
+    state.timelineError = '';
+    renderTimelineError();
     try {
       const data = await post('/api/world-stack/timeline/preview', { id });
       state.timelinePreview = data;
@@ -945,7 +1238,10 @@
       renderTimelinePreview();
       window.SamsaraUI.scrollToTarget?.('world-stack-timeline-panel');
     } catch (error) {
-      setMessage(window.SamsaraUI.authMessage(error, '撤销预览失败'), 'error');
+      state.timelinePreview = null;
+      fail('world-stack-timeline-panel', timelineError,
+        window.SamsaraUI.authMessage(error, '撤销预览失败'));
+      renderTimelinePreview();
     }
   }
 
@@ -1034,7 +1330,10 @@
 
   async function runTimelineRestore() {
     const preview = state.timelinePreview;
+    const { timelineError } = ensureEls();
     if (!preview || !state.timelineConfirmed) return;
+    state.timelineError = '';
+    renderTimelineError();
     try {
       const data = await post('/api/world-stack/timeline/restore', {
         id: preview.id,
@@ -1043,8 +1342,9 @@
       if (!data.ok) {
         state.timelinePreview = data.preview || preview;
         state.timelineConfirmed = false;
+        fail('world-stack-timeline-panel', timelineError,
+          (data.errors && data.errors[0]) || data.error || '撤销排队失败');
         renderTimelinePreview();
-        setMessage((data.errors && data.errors[0]) || data.error || '撤销排队失败', 'error');
         return;
       }
       state.timelinePreview = null;
@@ -1053,7 +1353,8 @@
       setMessage('已排队：' + data.jobId + '（' + data.operationId
         + '）。请停服并重新启动，撤销会在世界打开前执行。', 'ok');
     } catch (error) {
-      setMessage(window.SamsaraUI.authMessage(error, '撤销排队失败'), 'error');
+      fail('world-stack-timeline-panel', timelineError,
+        window.SamsaraUI.authMessage(error, '撤销排队失败'));
     }
   }
 
@@ -1151,19 +1452,20 @@
     if (!jobs) return;
     jobs.replaceChildren();
     const model = state.model || {};
-    if (model.pendingImport) {
+    const importQueue = pendingImports();
+    importQueue.forEach((pending, index) => {
       jobs.append(jobCard({
-        id: model.pendingImport.jobId,
+        id: pending.jobId,
         type: 'import',
         status: 'queued',
-        stage: '等待重启',
+        stage: '等待重启 · 队列第 ' + (index + 1) + ' 项',
         progress: 0,
-        message: '重启后导入到 ' + (model.pendingImport.position === 'top'
-          ? '栈顶 world' : model.pendingImport.targetId)
-          + '；源 ' + model.pendingImport.source,
+        message: '重启后导入到 ' + (pending.position === 'top'
+          ? '栈顶 world' : pending.targetId)
+          + '；源 ' + pending.source,
         log: [],
       }));
-    }
+    });
     if (model.pendingArchive) {
       jobs.append(jobCard({
         id: model.pendingArchive.jobId,
@@ -1202,7 +1504,7 @@
     if (model.lastReport && !list.some((job) => job.id === model.lastReport.id)) {
       list.unshift(model.lastReport);
     }
-    if (list.length === 0 && !model.pendingImport && !model.pendingArchive
+    if (list.length === 0 && importQueue.length === 0 && !model.pendingArchive
         && !model.pendingPromote && !model.pendingRestore) {
       const empty = document.createElement('p');
       empty.className = 'muted small';
@@ -1259,7 +1561,6 @@
     add('world-stack-import-panel', '导入', e.importPanel);
     add('world-stack-archive-panel', '归档', e.archivePanel);
     add('world-stack-timeline-panel', '操作时间线', e.timelinePanel);
-    add('world-stack-files-panel', '文件位置', e.filesPanel);
     add('world-stack-jobs-panel', '任务与结果', e.jobsPanel);
     window.SamsaraUI.buildNav('世界栈导航', items, targets);
   }
@@ -1275,12 +1576,18 @@
       e.importPosition.addEventListener('change', () => {
         renderAfterSelect();
         state.preview = null;
-        renderImportPreview();
+        state.importError = '';
+        renderImportState();
       });
     }
     if (e.importPath) {
       e.importPath.addEventListener('keydown', (event) => {
         if (event.key === 'Enter') previewImport();
+      });
+      e.importPath.addEventListener('input', () => {
+        if (!state.importError) return;
+        state.importError = '';
+        renderImportState();
       });
     }
     if (window.SamsaraUI && window.SamsaraUI.onConnect) {

@@ -1086,6 +1086,7 @@ public final class ServerBackup {
         Path world = worldDir(serverRoot);
         Path samsara = world.resolve("samsara");
         return Files.isRegularFile(samsara.resolve("pending-import.json"))
+                || Files.isRegularFile(samsara.resolve("pending-imports.json"))
                 || Files.isRegularFile(samsara.resolve("pending-archive.json"))
                 || Files.isRegularFile(samsara.resolve("pending-promote.json"))
                 || Files.isRegularFile(samsara.resolve("pending-stack-restore.json"))

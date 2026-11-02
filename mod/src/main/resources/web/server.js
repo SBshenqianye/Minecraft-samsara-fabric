@@ -126,8 +126,12 @@
       try { history.replaceState(null, '', SERVER_HASH[id] || '#server'); } catch (e) { /* file:// 等场景忽略 */ }
       renderServerNav();
     }
-    if (id === 'server-backup-panel') loadBackupsOnly();
-    else updateDirtyIndicator();
+    if (id === 'server-backup-panel') {
+      loadBackupsOnly();
+      window.SamsaraWorldStack?.load();
+    } else {
+      updateDirtyIndicator();
+    }
   }
 
   function renderServerNav() {
@@ -137,6 +141,7 @@
       const items = [
         { label: '备份时间线', target: 'server-backup-timeline', count: (timeline.nodes || []).length },
         { label: '任务与回滚', target: 'server-job-list' },
+        { label: '文件位置', target: 'world-stack-files-panel' },
       ];
       const targets = items
           .map((item) => ({ id: item.target, el: document.getElementById(item.target) }))

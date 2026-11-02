@@ -21,6 +21,8 @@ const I = {
   uuidContext: null,
   selectedUuid: null,
   rebindGroup: null,
+  assign: null,
+  pool: { text: '', hideProbe: true, hideUnknown: true },
 };
 
 const $i = (id) => document.getElementById(id);
@@ -452,6 +454,175 @@ function poolEmpty(text) {
   return empty;
 }
 
+function allCandidates() {
+  const map = new Map();
+  for (const item of [...I.candidates, ...I.extraCandidates]) {
+    if (item && item.uuid && !map.has(item.uuid)) map.set(item.uuid, item);
+  }
+  return [...map.values()];
+}
+
+function isUnknownName(item) {
+  const name = (item && item.name ? item.name : '').trim();
+  return item?.nameKnown === false || /^玩家-[0-9a-f]{8}$/i.test(name);
+}
+
+function isProbeName(item) {
+  const name = (item && item.name ? item.name : '').trim();
+  if (!name) return true;
+  if (isUnknownName(item)) return false;
+  return /^probe[_-]?\d*$/i.test(name)
+    || /^dsh[_-]/i.test(name)
+    || /^(test|bench|debug)[_-]?\d*$/i.test(name)
+    || name === 'Y'
+    || /^0+(_0+)*$/.test(name);
+}
+
+function probeBadge(item) {
+  if (isUnknownName(item)) return '占位名';
+  if (isProbeName(item)) return 'probe';
+  return '';
+}
+
+function normalizeName(name) {
+  return (name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function levenshtein(a, b) {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i += 1) {
+    const row = [i];
+    for (let j = 1; j <= b.length; j += 1) {
+      row[j] = Math.min(row[j - 1] + 1, prev[j] + 1,
+        prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = row;
+  }
+  return prev[b.length];
+}
+
+function similarName(a, b) {
+  const x = normalizeName(a);
+  const y = normalizeName(b);
+  if (!x || !y) return false;
+  if (x === y) return true;
+  if (Math.min(x.length, y.length) < 5) return false;
+  if (x.startsWith(y) || y.startsWith(x)) return true;
+  return levenshtein(x, y) <= 2;
+}
+
+function filteredCandidates() {
+  const q = I.pool.text.trim().toLowerCase();
+  return allCandidates().filter((item) => {
+    if (I.pool.hideProbe && isProbeName(item)) return false;
+    if (I.pool.hideUnknown && isUnknownName(item)) return false;
+    if (!q) return true;
+    return (item.name || '').toLowerCase().includes(q)
+      || item.uuid.toLowerCase().includes(q);
+  }).sort((a, b) => (b.lastLoginMs || 0) - (a.lastLoginMs || 0)
+    || (a.name || '').localeCompare(b.name || ''));
+}
+
+function renderSuggestions(candidates) {
+  const host = $i('identity-suggestions');
+  if (!host) return;
+  host.replaceChildren();
+  const assigned = new Set();
+  for (const group of I.groups) {
+    if (group.premium) assigned.add(group.premium);
+    if (group.offline) assigned.add(group.offline);
+  }
+  const items = candidates.filter((item) => !assigned.has(item.uuid)
+    && !isProbeName(item) && !isUnknownName(item));
+  if (items.length < 2) {
+    host.hidden = true;
+    return;
+  }
+  const parent = items.map((_, index) => index);
+  const find = (x) => {
+    let i = x;
+    while (parent[i] !== i) i = parent[i];
+    return i;
+  };
+  const union = (x, y) => {
+    const a = find(x);
+    const b = find(y);
+    if (a !== b) parent[b] = a;
+  };
+  for (let i = 0; i < items.length; i += 1) {
+    for (let j = i + 1; j < items.length; j += 1) {
+      if (similarName(items[i].name, items[j].name)) union(i, j);
+    }
+  }
+  const clusters = new Map();
+  items.forEach((item, index) => {
+    const root = find(index);
+    if (!clusters.has(root)) clusters.set(root, []);
+    clusters.get(root).push(item);
+  });
+  const groups = [...clusters.values()].filter((list) => list.length > 1).slice(0, 6);
+  if (!groups.length) {
+    host.hidden = true;
+    return;
+  }
+  host.hidden = false;
+  const head = document.createElement('p');
+  head.className = 'muted small';
+  head.textContent = 'ID 相似度推荐（只是建议，不会自动保存）：同一名字的正版/离线入口可以合成一个组；同类型多个账号只能选一个入口。';
+  host.append(head);
+  for (const cluster of groups) {
+    const row = document.createElement('div');
+    row.className = 'identity-suggestion';
+    const label = document.createElement('div');
+    label.className = 'grow';
+    const title = document.createElement('strong');
+    const premium = cluster.find((item) => item.type === 'premium');
+    const offline = cluster.find((item) => item.type === 'offline');
+    const titleName = premium?.name || offline?.name || cluster[0].name;
+    title.textContent = titleName + (premium && offline ? ' · 正版 + 离线' : ' · 相似 ID');
+    const detail = document.createElement('div');
+    detail.className = 'muted small';
+    detail.textContent = cluster.map((item) =>
+      (item.name || '未命名') + ' (' + typeLabel(item.type) + ' ' + shortUuid(item.uuid) + ')')
+      .join(' · ');
+    label.append(title, detail);
+    const create = document.createElement('button');
+    create.type = 'button';
+    create.className = 'ghost';
+    create.textContent = premium && offline ? '建组（正版+离线）' : '建组（取第一个）';
+    create.addEventListener('click', () => createDraftGroup(cluster));
+    row.append(label, create);
+    host.append(row);
+  }
+}
+
+function createDraftGroup(cluster) {
+  const premium = cluster.find((item) => item.type === 'premium');
+  const offline = cluster.find((item) => item.type === 'offline');
+  const first = premium || offline || cluster[0];
+  let name = (premium?.name || offline?.name || first.name || '新身份组')
+    .replace(/^玩家-[0-9a-f]{8}$/i, '').trim() || '新身份组';
+  const normalized = normalizeName(name);
+  if (I.groups.some((group) => normalizeName(group.name) === normalized)) {
+    name += ' (推荐)';
+  }
+  I.groups.push({
+    name,
+    data: (premium || offline || first).uuid,
+    premium: premium ? premium.uuid : null,
+    offline: offline ? offline.uuid : null,
+    note: '由相似 ID 推荐创建，请确认',
+    _id: nextGroupId(),
+    _originalName: '',
+  });
+  I.dirty = true;
+  renderAll();
+  identityMessage('已创建草稿组「' + name + '」；同类型多余账号仍需手动处理，确认后再保存。', 'ok');
+}
+
 function renderPool() {
   const premiumPool = $i('identity-premium-pool');
   const offlinePool = $i('identity-offline-pool');
@@ -460,21 +631,34 @@ function renderPool() {
   premiumPool.replaceChildren();
   offlinePool.replaceChildren();
   dataPool.replaceChildren();
+  const hideProbe = $i('identity-hide-probe');
+  const hideUnknown = $i('identity-hide-unknown');
+  const search = $i('identity-pool-search');
+  if (hideProbe) {
+    I.pool.hideProbe = hideProbe.checked;
+  }
+  if (hideUnknown) {
+    I.pool.hideUnknown = hideUnknown.checked;
+  }
+  if (search && search.value !== I.pool.text) search.value = I.pool.text;
 
   const assigned = new Set();
   for (const group of I.groups) {
     if (group.premium) assigned.add(group.premium);
     if (group.offline) assigned.add(group.offline);
   }
-  const seen = new Set();
+  const candidates = filteredCandidates();
   let premiumCount = 0;
   let offlineCount = 0;
-  for (const item of [...I.candidates, ...I.extraCandidates]) {
-    if (!item.uuid || assigned.has(item.uuid) || seen.has(item.uuid)) continue;
-    seen.add(item.uuid);
+  for (const item of candidates) {
+    if (assigned.has(item.uuid)) continue;
     const offline = item.type === 'offline';
-    (offline ? offlinePool : premiumPool).append(
-        poolChip(item.uuid, item.name, item.online, offline ? '离线' : '正版'));
+    (offline ? offlinePool : premiumPool).append(poolChip(
+      item.uuid, item.name, item.online, offline ? '离线' : '正版', {
+        assignRole: offline ? 'offline' : 'premium',
+        type: item.type,
+        badge: probeBadge(item),
+      }));
     if (offline) offlineCount++;
     else premiumCount++;
   }
@@ -484,38 +668,57 @@ function renderPool() {
   const usedData = new Set(I.groups.map((group) => group.data).filter(Boolean));
   const dataSeen = new Set();
   let dataCount = 0;
-  // 账号派生的 data 候选：名称 + 正版/离线，拖到数据区即可直接用这个账号当数据键。
-  for (const item of [...I.candidates, ...I.extraCandidates]) {
-    if (!item.uuid || usedData.has(item.uuid) || dataSeen.has(item.uuid)) continue;
+  // 账号派生的 data 候选：名称 + 正版/离线，可直接用这个账号当数据键。
+  for (const item of candidates) {
+    if (usedData.has(item.uuid) || dataSeen.has(item.uuid)) continue;
     const accountGroup = I.groups.find((group) =>
       group.premium === item.uuid || group.offline === item.uuid);
-    // 账号已经是某个组的入口、且该组 data 不是它自己时，再当 data 会产生歧义。
     if (accountGroup && accountGroup.data !== item.uuid) continue;
     dataSeen.add(item.uuid);
     dataPool.append(poolChip(item.uuid, item.name, item.online,
-        typeLabel(item.type) + '数据'));
+      typeLabel(item.type) + '数据', {
+        assignRole: 'data',
+        type: item.type,
+        badge: probeBadge(item),
+      }));
     dataCount++;
   }
   // 随机生成的空白 data / 历史 state 里的闲置 data。
   const blankData = [...I.generated];
   for (const key of Object.keys(I.model?.states || {})) blankData.push(key);
+  const q = I.pool.text.trim().toLowerCase();
   for (const uuid of blankData) {
     if (!uuid || usedData.has(uuid) || dataSeen.has(uuid)) continue;
+    if (q && !uuid.toLowerCase().includes(q)) continue;
     dataSeen.add(uuid);
     const generated = I.generated.includes(uuid);
-    dataPool.append(poolChip(uuid, '空白 data', I.online[uuid], 'data', generated ? {
-      onRemove: () => {
+    dataPool.append(poolChip(uuid, '空白 data', I.online[uuid], 'data', {
+      assignRole: 'data',
+      type: 'data',
+      onRemove: generated ? () => {
         I.generated = I.generated.filter((item) => item !== uuid);
         renderPool();
         renderDatalists();
         identityMessage('已从池子移除空白 data：' + uuid, 'ok');
-      },
-    } : null));
+      } : null,
+    }));
     dataCount++;
   }
   if (!dataCount) {
     dataPool.append(poolEmpty('没有闲置 data UUID；点“生成 data UUID”创建一把空白钥匙。'));
   }
+  const all = allCandidates();
+  const setCount = (id, text) => {
+    const el = $i(id);
+    if (el) el.textContent = text;
+  };
+  setCount('identity-premium-count', String(premiumCount));
+  setCount('identity-offline-count', String(offlineCount));
+  setCount('identity-data-count', String(dataCount));
+  setCount('identity-pool-count', '显示 ' + candidates.length + ' 个账号候选'
+    + ' · 隐藏 probe ' + all.filter(isProbeName).length
+    + ' · 占位名 ' + all.filter(isUnknownName).length);
+  renderSuggestions(candidates);
 }
 
 function poolChip(uuid, name, online, tag, options) {
@@ -538,11 +741,30 @@ function poolChip(uuid, name, online, tag, options) {
     role.textContent = tag;
     chip.append(role);
   }
+  if (opts.badge) {
+    const badge = document.createElement('span');
+    badge.className = 'uuid-role';
+    badge.style.color = 'var(--amber)';
+    badge.textContent = opts.badge;
+    chip.append(badge);
+  }
   if (online) {
     const live = document.createElement('span');
     live.className = 'uuid-role';
     live.textContent = '在线';
     chip.append(live);
+  }
+  if (opts.assignRole) {
+    const assign = document.createElement('button');
+    assign.type = 'button';
+    assign.className = 'chip-action';
+    assign.textContent = '→组';
+    assign.title = '放入身份组…（不需要拖动）';
+    assign.addEventListener('click', (event) => {
+      event.stopPropagation();
+      openAssignDialog(uuid, name, opts.assignRole, opts.type || candidateType(uuid));
+    });
+    chip.append(assign);
   }
   const copy = document.createElement('button');
   copy.type = 'button';
@@ -573,6 +795,57 @@ function poolChip(uuid, name, online, tag, options) {
   });
   chip.addEventListener('dragend', () => { I.drag = null; });
   return chip;
+}
+
+function openAssignDialog(uuid, name, role, type) {
+  if (!I.groups.length) {
+    identityMessage('还没有身份组，请先点右上角“新增组”。', 'error');
+    return;
+  }
+  const dialog = $i('assign-dialog');
+  const select = $i('assign-group');
+  const roleSelect = $i('assign-role');
+  if (!dialog || !select || !roleSelect) return;
+  I.assign = { uuid, name: name || '', type: type || candidateType(uuid) };
+  select.replaceChildren();
+  for (const group of I.groups) {
+    const option = document.createElement('option');
+    option.value = group._id;
+    option.textContent = (group.name || '未命名')
+      + (group.data ? '' : '（未设 data）');
+    select.append(option);
+  }
+  for (const option of roleSelect.options) {
+    option.disabled = (type !== 'offline' && type !== 'premium' && option.value !== 'data')
+      || (type === 'offline' && option.value === 'premium')
+      || (type === 'premium' && option.value === 'offline');
+  }
+  roleSelect.value = role || 'data';
+  if (roleSelect.selectedOptions[0]?.disabled) roleSelect.value = 'data';
+  const target = $i('assign-target');
+  if (target) {
+    target.textContent = (name || shortUuid(uuid)) + ' · ' + uuid
+      + (type ? ' · ' + typeLabel(type) : '');
+  }
+  const error = $i('assign-error');
+  if (error) error.textContent = '';
+  dialog.showModal();
+}
+
+function applyAssignDialog() {
+  const context = I.assign;
+  if (!context) return;
+  const groupId = $i('assign-group')?.value;
+  const role = $i('assign-role')?.value || 'data';
+  const group = I.groups.find((item) => item._id === groupId);
+  if (!group) {
+    const error = $i('assign-error');
+    if (error) error.textContent = '请选择目标组。';
+    return;
+  }
+  $i('assign-dialog')?.close();
+  I.assign = null;
+  assignRole(groupId, role, context.uuid, context.name);
 }
 
 function assignRole(groupId, role, uuid, name) {
@@ -1142,6 +1415,43 @@ function wireEvents() {
   if (resolveInput) resolveInput.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') { event.preventDefault(); resolveToolbar(); }
   });
+
+  const poolSearch = $i('identity-pool-search');
+  if (poolSearch) {
+    poolSearch.addEventListener('input', () => {
+      I.pool.text = poolSearch.value;
+      renderPool();
+    });
+  }
+  const hideProbe = $i('identity-hide-probe');
+  if (hideProbe) {
+    hideProbe.checked = I.pool.hideProbe;
+    hideProbe.addEventListener('change', () => {
+      I.pool.hideProbe = hideProbe.checked;
+      renderPool();
+    });
+  }
+  const hideUnknown = $i('identity-hide-unknown');
+  if (hideUnknown) {
+    hideUnknown.checked = I.pool.hideUnknown;
+    hideUnknown.addEventListener('change', () => {
+      I.pool.hideUnknown = hideUnknown.checked;
+      renderPool();
+    });
+  }
+  $i('assign-apply')?.addEventListener('click', applyAssignDialog);
+  $i('assign-cancel')?.addEventListener('click', () => {
+    I.assign = null;
+    $i('assign-dialog')?.close();
+  });
+
+  // HTML5 拖拽不会自动滚动长页面；靠近视口上下边缘时手动滚。
+  document.addEventListener('dragover', (event) => {
+    if (!I.drag) return;
+    const margin = 90;
+    if (event.clientY < margin) window.scrollBy(0, -24);
+    else if (event.clientY > window.innerHeight - margin) window.scrollBy(0, 24);
+  }, { passive: true });
 
   const uuidInput = $i('uuid-input');
   if (uuidInput) {

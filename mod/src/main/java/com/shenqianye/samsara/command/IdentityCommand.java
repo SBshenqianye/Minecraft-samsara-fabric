@@ -9,6 +9,7 @@ import com.shenqianye.samsara.identity.IdentityService;
 import com.shenqianye.samsara.identity.IdentityStateStore;
 import com.shenqianye.samsara.identity.IdentityValidator;
 import com.shenqianye.samsara.output.OutputRenderer;
+import com.shenqianye.samsara.permission.PermissionRequirements;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.server.level.ServerPlayer;
@@ -30,9 +31,9 @@ public final class IdentityCommand {
     /** {@code /samsara identity status} 与短别名 {@code /identity}。 */
     public static LiteralArgumentBuilder<CommandSourceStack> identityNode() {
         return Commands.literal("identity")
-                .requires(src -> com.shenqianye.samsara.permission.PermissionChecker
-                        .check(src, "identity"))
+                .requires(PermissionRequirements.path("identity"))
                 .then(Commands.literal("status")
+                        .requires(PermissionRequirements.path("identity status"))
                         .executes(ctx -> status(ctx.getSource(), player(ctx.getSource()))));
     }
 
@@ -86,9 +87,12 @@ public final class IdentityCommand {
     /** {@code /samsara debug identity map|preview|reload|audit}（OWNER）。 */
     public static LiteralArgumentBuilder<CommandSourceStack> debugIdentityNode() {
         return Commands.literal("identity")
+                .requires(PermissionRequirements.ownerAnd("debug identity"))
                 .then(Commands.literal("map")
+                        .requires(PermissionRequirements.ownerAnd("debug identity map"))
                         .executes(ctx -> reply(ctx.getSource(), IdentityService.getInstance().map())))
                 .then(Commands.literal("preview")
+                        .requires(PermissionRequirements.ownerAnd("debug identity preview"))
                         .executes(ctx -> reply(ctx.getSource(),
                                 IdentityService.getInstance().preview(
                                         player(ctx.getSource()) == null ? null
@@ -106,8 +110,10 @@ public final class IdentityCommand {
                                             IdentityService.getInstance().preview(uuid));
                                 })))
                 .then(Commands.literal("reload")
+                        .requires(PermissionRequirements.ownerAnd("debug identity reload"))
                         .executes(ctx -> reply(ctx.getSource(), IdentityService.getInstance().reload())))
                 .then(Commands.literal("audit")
+                        .requires(PermissionRequirements.ownerAnd("debug identity audit"))
                         .executes(ctx -> reply(ctx.getSource(),
                                 IdentityService.getInstance().auditReport())));
     }

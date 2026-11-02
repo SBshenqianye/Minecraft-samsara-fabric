@@ -53,9 +53,25 @@ public class PermissionConfig {
         reload();
     }
 
+    /** 测试用：不读盘，直接用显式内存规则构造实例。 */
+    private PermissionConfig(boolean skipReload) {
+    }
+
     public static synchronized PermissionConfig getInstance() {
         if (instance == null) instance = new PermissionConfig();
         return instance;
+    }
+
+    /** 测试用：用显式内存规则构造实例，不触碰全局 {@link ConfigManager}。 */
+    static PermissionConfig forTests(Map<String, PermissionLevel> entries, Set<String> disabled) {
+        PermissionConfig config = new PermissionConfig(true);
+        if (entries != null) {
+            config.entries.putAll(entries);
+        }
+        if (disabled != null) {
+            config.disabled.addAll(disabled);
+        }
+        return config;
     }
 
     // ---- 查询 ----

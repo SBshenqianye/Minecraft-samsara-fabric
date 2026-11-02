@@ -479,6 +479,8 @@ public final class WebIdentityService implements IdentityWebService {
             item.put("online", service.server().getPlayerList().getPlayer(player.uuid) != null);
             item.put("type", player.uuid.equals(PlayerRegistry.offlineUuid(player.name))
                     ? "offline" : "premium");
+            item.put("lastLoginMs", player.lastLoginMs);
+            item.put("nameKnown", player.nameKnown);
             out.add(item);
         }
         return out;

@@ -740,6 +740,8 @@ public final class LocalWebServer {
                 switch (path) {
                     case "/api/world-stack/import/preview" ->
                             result = worldStackService.previewImport(body);
+                    case "/api/world-stack/import/cancel" ->
+                            result = worldStackService.cancelImport(body);
                     case "/api/world-stack/import" ->
                             result = worldStackService.importWorld(body);
                     case "/api/world-stack/reorder" ->
@@ -768,10 +770,10 @@ public final class LocalWebServer {
                 status = 400;
             }
             json(exchange, status, result);
-        } catch (RuntimeException e) {
+        } catch (RuntimeException | LinkageError e) {
             status = 500;
-            json(exchange, status, Map.of("error", "服务器内部错误"));
-            LOG.warn("[web] 处理 {} 失败: {}", exchange.getRequestURI().getPath(), e.getMessage());
+            json(exchange, status, Map.of("error", "服务器内部错误：" + errorDetail(e)));
+            LOG.warn("[web] 处理 {} 失败: {}", exchange.getRequestURI().getPath(), e.toString());
         } finally {
             log(exchange, status, start);
         }
@@ -885,6 +887,22 @@ public final class LocalWebServer {
         } catch (RuntimeException e) {
             return null;
         }
+    }
+
+    /**
+     * 本地面板排障用：把异常类型/消息带回前端，避免只看到“服务器内部错误”。
+     * 只保留一行并截断，避免把超长堆栈或路径塞进响应。
+     */
+    private static String errorDetail(Throwable error) {
+        String message = error.getMessage();
+        if (message == null || message.isBlank()) {
+            return error.getClass().getSimpleName();
+        }
+        String singleLine = message.replace('\r', ' ').replace('\n', ' ').trim();
+        if (singleLine.length() > 300) {
+            singleLine = singleLine.substring(0, 300) + "...";
+        }
+        return error.getClass().getSimpleName() + ": " + singleLine;
     }
 
     private static void json(HttpExchange exchange, int status, Object body) throws IOException {

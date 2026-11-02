@@ -9,6 +9,7 @@ import com.shenqianye.samsara.command.ui.SuggestionProviders;
 import com.shenqianye.samsara.config.CommandConfig;
 import com.shenqianye.samsara.output.OutputRenderer;
 import com.shenqianye.samsara.permission.PermissionChecker;
+import com.shenqianye.samsara.permission.PermissionCommandPaths;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.MutableComponent;
@@ -72,6 +73,11 @@ public final class TpaCommand {
         return actionNode(literal, TpaCommand::accept);
     }
 
+    /** 别名根节点（tpyes/tpno）与主命令使用同一个权限 key。 */
+    public static String permissionPath(String literal) {
+        return PermissionCommandPaths.canonicalPath(literal);
+    }
+
     /** {@code /samsara tpdeny}（也用于短别名 {@code /tpno}） */
     public static LiteralArgumentBuilder<CommandSourceStack> denyNode() {
         return denyNode("tpdeny");
@@ -87,9 +93,10 @@ public final class TpaCommand {
     }
 
     private static LiteralArgumentBuilder<CommandSourceStack> requestNode(String literal, boolean here) {
+        String permissionPath = permissionPath(literal);
         return Commands.literal(literal)
                 .requires(src -> CommandConfig.getInstance().isTpaEnabled()
-                        && PermissionChecker.check(src, literal))
+                        && PermissionChecker.check(src, permissionPath))
                 .then(Commands.argument("player", StringArgumentType.word())
                         .suggests(SuggestionProviders.playersProvider("传送请求接收者"))
                         .executes(ctx -> request(ctx, here)));
@@ -97,9 +104,10 @@ public final class TpaCommand {
 
     private static LiteralArgumentBuilder<CommandSourceStack> actionNode(String literal,
                                                                         Command<CommandSourceStack> action) {
+        String permissionPath = permissionPath(literal);
         return Commands.literal(literal)
                 .requires(src -> CommandConfig.getInstance().isTpaEnabled()
-                        && PermissionChecker.check(src, literal))
+                        && PermissionChecker.check(src, permissionPath))
                 .executes(action);
     }
 

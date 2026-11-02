@@ -39,7 +39,10 @@ import java.util.stream.Stream;
  * 这样运行中的旧栈维度不会被边写边读。源目录始终只读，导入默认复制。
  */
 public final class WorldStackAdmin {
+    /** 旧版单任务文件；只读兼容，新任务统一写入 {@link #PENDING_IMPORTS}。 */
     public static final String PENDING_IMPORT = "pending-import.json";
+    /** 导入队列：一次重启可依次执行多个导入。 */
+    public static final String PENDING_IMPORTS = "pending-imports.json";
     public static final String PENDING_ARCHIVE = "pending-archive.json";
     public static final String PENDING_PROMOTE = "pending-promote.json";
     public static final String PENDING_RESTORE = "pending-stack-restore.json";
@@ -52,7 +55,7 @@ public final class WorldStackAdmin {
             "pending-delete.json", "pending-teleports.json", "level.dat_old");
     private static final List<String> SAMSARA_EXCLUDES = List.of(
             "stack.json", "stack", "web-map-cache", JOBS_DIR,
-            PENDING_IMPORT, PENDING_ARCHIVE, PENDING_PROMOTE, PENDING_RESTORE,
+            PENDING_IMPORT, PENDING_IMPORTS, PENDING_ARCHIVE, PENDING_PROMOTE, PENDING_RESTORE,
             "pending-new.json");
 
     private WorldStackAdmin() {
@@ -209,12 +212,13 @@ public final class WorldStackAdmin {
             model.stacks.add(layerView(worldDir, layer));
             model.totalBytes += model.stacks.get(model.stacks.size() - 1).dataBytes;
         }
-        model.pendingImport = read(worldDir, PENDING_IMPORT, PendingImport.class);
+        model.pendingImports = readImportQueue(worldDir);
+        model.pendingImport = model.pendingImports.isEmpty() ? null : model.pendingImports.get(0);
         model.pendingArchive = read(worldDir, PENDING_ARCHIVE, PendingArchive.class);
         model.pendingPromote = read(worldDir, PENDING_PROMOTE, PendingPromote.class);
         model.pendingRestore = read(worldDir, PENDING_RESTORE,
                 WorldStackTimeline.PendingRestore.class);
-        model.restartRequired = model.pendingImport != null || model.pendingArchive != null
+        model.restartRequired = !model.pendingImports.isEmpty() || model.pendingArchive != null
                 || model.pendingPromote != null || model.pendingRestore != null;
         model.jobs = jobs(worldDir, 8);
         model.lastReport = readJobFile(worldDir.resolve("samsara").resolve(JOBS_DIR)
@@ -254,6 +258,14 @@ public final class WorldStackAdmin {
         }
         view.spawnCycles = SpawnHistory.loadFrom(layer.metaDir(worldDir)).size();
         view.dataBytes = layerBytes(worldDir, layer);
+        view.importedAt = layer.importedAt;
+        LevelInfo level = LevelInfo.read(layer.top ? worldDir : layer.metaDir(worldDir));
+        view.saveName = level.worldName;
+        view.saveCreatedAt = level.createdAt;
+        view.lastPlayed = level.lastPlayed;
+        view.dataVersion = level.dataVersion;
+        view.versionName = level.versionName;
+        view.snapshot = level.snapshot;
         return view;
     }
 
@@ -323,8 +335,8 @@ public final class WorldStackAdmin {
             addFile(out, 4, stack.id + "/", worldDir.resolve(stack.metaPath),
                     "旧栈层 level.dat / claims / diff / track / spawn-history", false);
         }
-        for (String pending : List.of(PENDING_IMPORT, PENDING_ARCHIVE, PENDING_PROMOTE,
-                PENDING_RESTORE)) {
+        for (String pending : List.of(PENDING_IMPORTS, PENDING_IMPORT, PENDING_ARCHIVE,
+                PENDING_PROMOTE, PENDING_RESTORE)) {
             Path file = data.resolve(pending);
             if (Files.exists(file)) {
                 addFile(out, 3, pending, file, "待重启执行", false);
@@ -363,6 +375,133 @@ public final class WorldStackAdmin {
         return total;
     }
 
+    // ---- 导入队列 ----
+
+    /** 读取导入队列；旧版单任务文件作为队列首项兼容。 */
+    static List<PendingImport> readImportQueue(Path worldDir) {
+        List<PendingImport> out = new ArrayList<>();
+        PendingImportQueue queue = read(worldDir, PENDING_IMPORTS, PendingImportQueue.class);
+        if (queue != null && queue.imports != null) {
+            for (PendingImport item : queue.imports) {
+                if (item != null) {
+                    out.add(item);
+                }
+            }
+        }
+        PendingImport legacy = read(worldDir, PENDING_IMPORT, PendingImport.class);
+        if (legacy != null && out.stream().noneMatch(item -> sameJob(item, legacy))) {
+            out.add(0, legacy);
+        }
+        return out;
+    }
+
+    private static boolean sameJob(PendingImport a, PendingImport b) {
+        if (a == null || b == null) {
+            return false;
+        }
+        if (a.jobId != null && !a.jobId.isBlank() && a.jobId.equals(b.jobId)) {
+            return true;
+        }
+        return a.source != null && !a.source.isBlank() && a.source.equals(b.source);
+    }
+
+    /** 原子写入队列；空队列时同时清理旧版单任务文件。 */
+    private static boolean saveImportQueue(Path worldDir, List<PendingImport> imports) {
+        List<PendingImport> clean = new ArrayList<>();
+        if (imports != null) {
+            for (PendingImport item : imports) {
+                if (item != null) {
+                    clean.add(item);
+                }
+            }
+        }
+        if (clean.isEmpty()) {
+            try {
+                Files.deleteIfExists(stackFile(worldDir, PENDING_IMPORTS));
+            } catch (IOException ignored) {
+            }
+            try {
+                Files.deleteIfExists(stackFile(worldDir, PENDING_IMPORT));
+            } catch (IOException ignored) {
+            }
+            return true;
+        }
+        PendingImportQueue queue = new PendingImportQueue();
+        queue.imports.addAll(clean);
+        if (!write(worldDir, PENDING_IMPORTS, queue)) {
+            return false;
+        }
+        try {
+            Files.deleteIfExists(stackFile(worldDir, PENDING_IMPORT));
+        } catch (IOException ignored) {
+        }
+        return true;
+    }
+
+    private static long estimateNeeded(long sourceBytes) {
+        return sourceBytes + Math.max(64L * 1024 * 1024, sourceBytes / 20);
+    }
+
+    private static long queuedNeededBytes(List<PendingImport> queue) {
+        long total = 0;
+        for (PendingImport item : queue) {
+            total += item.neededBytes > 0 ? item.neededBytes : estimateNeeded(item.sourceBytes);
+        }
+        return total;
+    }
+
+    /**
+     * 把队列中尚未执行的导入叠加到栈清单上，供下一项预览定位。
+     *
+     * <p>栈底导入每次都插到当前最下方，所以后确认的会变成新栈底；
+     * between 以当时的 afterId 为准；top 每次把上一个栈顶压成新栈层。
+     * 执行阶段会在真实 stack.json 上重新计算同样的位置，失败项不会让后续项错位。
+     */
+    private static StackManifest virtualManifest(Path worldDir, List<PendingImport> queue) {
+        StackManifest manifest = StackManifest.load(worldDir);
+        if (queue == null || queue.isEmpty()) {
+            return manifest;
+        }
+        for (PendingImport item : queue) {
+            String position = normalizePosition(item.position);
+            if ("top".equals(position)) {
+                StackLayer top = manifest.top();
+                if (top == null) {
+                    continue;
+                }
+                top.top = false;
+                top.id = freeId(manifest, item.demoteId);
+                StackLayer newTop = new StackLayer();
+                newTop.id = StackPaths.TOP_ID;
+                newTop.top = true;
+                newTop.source = "imported";
+                manifest.layers.add(newTop);
+            } else if ("between".equals(position)) {
+                StackLayer after = manifest.byId(item.afterId);
+                int index = after == null || after.top ? 0 : after.index + 1;
+                StackLayer layer = new StackLayer();
+                layer.id = freeId(manifest, item.targetId);
+                layer.source = "imported";
+                manifest.insertBelowTop(layer, index);
+            } else {
+                StackLayer layer = new StackLayer();
+                layer.id = freeId(manifest, item.targetId);
+                layer.source = "imported";
+                manifest.insertBelowTop(layer, 0);
+            }
+        }
+        manifest.normalize();
+        return manifest;
+    }
+
+    private static String freeId(StackManifest manifest, String preferred) {
+        String id = preferred == null ? "" : preferred.trim();
+        if (id.isEmpty() || StackPaths.TOP_ID.equals(id) || manifest.byId(id) != null) {
+            return allocateId(manifest);
+        }
+        return id;
+    }
+
     // ---- 导入预览 ----
 
     public static Preview previewImport(Path worldDir, Path serverRoot, List<Path> importRoots,
@@ -372,6 +511,7 @@ public final class WorldStackAdmin {
         p.position = normalizePosition(position);
         p.afterId = afterId == null ? "" : afterId.trim();
         p.mode = "copy";
+        List<PendingImport> queued = readImportQueue(worldDir);
         SourceInfo source = inspectSource(worldDir, serverRoot, importRoots, rawPath, p);
         if (source == null) {
             p.ok = false;
@@ -420,14 +560,16 @@ public final class WorldStackAdmin {
             p.errors.add("源目录的 session.lock 仍被占用：请先关闭正在使用该世界的客户端/服务器");
         }
         if (p.errors.isEmpty()) {
-            p.freeBytes = freeBytes(worldDir);
-            p.neededBytes = source.sizeBytes + Math.max(64L * 1024 * 1024, source.sizeBytes / 20);
+            long actualFree = freeBytes(worldDir);
+            long reserved = queuedNeededBytes(queued);
+            p.freeBytes = actualFree < 0 ? actualFree : Math.max(0, actualFree - reserved);
+            p.neededBytes = estimateNeeded(source.sizeBytes);
             if (p.freeBytes > 0 && p.freeBytes < p.neededBytes) {
                 p.errors.add("磁盘空间不足：需要约 " + human(p.neededBytes)
-                        + "，当前可用 " + human(p.freeBytes));
+                        + "，扣除队列预留后可用 " + human(p.freeBytes));
             }
         }
-        StackManifest manifest = StackManifest.load(worldDir);
+        StackManifest manifest = virtualManifest(worldDir, queued);
         if (manifest.byId(p.position.equals("top") ? StackPaths.TOP_ID : "__none__") != null
                 && p.position.equals("top")) {
             // top 总是存在，这里只用于分支可读性
@@ -454,17 +596,26 @@ public final class WorldStackAdmin {
             p.fields.put("position", "position 只能是 bottom / between / top");
             p.errors.add("position 只能是 bottom / between / top");
         }
-        if (pending(worldDir, PENDING_IMPORT) || pending(worldDir, PENDING_ARCHIVE)
-                || pending(worldDir, PENDING_PROMOTE)) {
-            p.errors.add("已有待执行的导入/归档/栈顶交换任务；请先重启服务器完成或手动清理 pending 文件");
+        if (pending(worldDir, PENDING_ARCHIVE) || pending(worldDir, PENDING_PROMOTE)
+                || pending(worldDir, PENDING_RESTORE)) {
+            p.errors.add("已有待执行的归档/栈顶交换/撤销任务；请先重启服务器完成或手动清理 pending 文件");
+        }
+        if (source != null && queued.stream().anyMatch(item -> source.canonicalPath
+                .equalsIgnoreCase(item.source))) {
+            p.errors.add("该源目录已在待导入队列中；请等待重启执行，或先在队列里取消该项");
         }
         if (Files.isRegularFile(worldDir.resolve("samsara/pending-new.json"))) {
             p.errors.add("已有 pending-new.json（新世界生成）；请先重启完成 reset new，再做导入/归档");
         }
         p.requiresRestart = true;
-        p.steps.addAll(stepsFor(worldDir, p, source));
+        p.steps.addAll(stepsFor(worldDir, p, source, queued.size()));
         p.warnings.add("导入在服务器重启时执行，源目录只读保持不变");
         p.warnings.add("运行中不会立即加载新栈维度；重启后 world list / 地图才会看到新层");
+        if (!queued.isEmpty()) {
+            p.warnings.add("待导入队列已有 " + queued.size() + " 项；本次为第 "
+                    + (queued.size() + 1) + " 项，重启时按确认顺序依次执行（无需多次重启）");
+            p.warnings.add("本次的栈层 id / 插入位置已按队列模拟；若前一项失败，后续项会在真实栈上重新定位");
+        }
         if (p.position.equals("top")) {
             p.warnings.add("导入到栈顶会先把当前 world 压成 " + p.demoteId
                     + "，并保留可回滚备份；失败会尝试恢复当前 world");
@@ -477,7 +628,8 @@ public final class WorldStackAdmin {
         return p;
     }
 
-    private static List<String> stepsFor(Path worldDir, Preview p, SourceInfo source) {
+    private static List<String> stepsFor(Path worldDir, Preview p, SourceInfo source,
+                                         int queuedCount) {
         List<String> steps = new ArrayList<>();
         if ("between".equals(p.position)) {
             steps.add("插入位置：" + p.afterId + " 与 "
@@ -498,7 +650,8 @@ public final class WorldStackAdmin {
         steps.add("记录 claims/diff/track/spawn-history 到对应栈层数据根");
         steps.add("写入 stack.json：新层逻辑位置 #" + (p.targetIndex + 1)
                 + "（栈底=#1），id=" + p.targetId);
-        steps.add("服务器重启时由 mod init 消费 pending-import.json；完成后写结果报告");
+        steps.add("服务器重启时由 mod init 读取 pending-imports.json，依次执行导入队列"
+                + "（本项为当前队列第 " + (queuedCount + 1) + " 项）；每项完成后写结果报告");
         return steps;
     }
 
@@ -649,9 +802,9 @@ public final class WorldStackAdmin {
 
     // ---- 排序/归档 ----
 
-    public static Map<String, Object> reorder(Path worldDir, List<String> orderedIds) {
+    public static synchronized Map<String, Object> reorder(Path worldDir, List<String> orderedIds) {
         Map<String, Object> out = new LinkedHashMap<>();
-        if (pending(worldDir, PENDING_IMPORT) || pending(worldDir, PENDING_ARCHIVE)
+        if (!readImportQueue(worldDir).isEmpty() || pending(worldDir, PENDING_ARCHIVE)
                 || pending(worldDir, PENDING_PROMOTE)) {
             out.put("ok", false);
             out.put("error", "已有待执行任务；请先重启服务器完成或手动清理 pending 文件");
@@ -742,7 +895,7 @@ public final class WorldStackAdmin {
             p.fields.put("id", "不允许归档栈顶 world");
             p.errors.add("不允许归档栈顶 world；请先导入新栈顶或使用 reset new");
         }
-        if (pending(worldDir, PENDING_IMPORT) || pending(worldDir, PENDING_ARCHIVE)
+        if (!readImportQueue(worldDir).isEmpty() || pending(worldDir, PENDING_ARCHIVE)
                 || pending(worldDir, PENDING_PROMOTE)) {
             p.errors.add("已有待执行任务；请先重启服务器完成或手动清理 pending 文件");
         }
@@ -774,7 +927,7 @@ public final class WorldStackAdmin {
         return p;
     }
 
-    public static ScheduleResult scheduleArchive(Path worldDir, String id) {
+    public static synchronized ScheduleResult scheduleArchive(Path worldDir, String id) {
         Preview preview = previewArchive(worldDir, id);
         ScheduleResult result = new ScheduleResult();
         result.preview = preview;
@@ -807,10 +960,10 @@ public final class WorldStackAdmin {
 
     // ---- 导入排队 ----
 
-    public static ScheduleResult scheduleImport(Path worldDir, Path serverRoot,
-                                                List<Path> importRoots, String path,
-                                                String position, String afterId,
-                                                boolean deleteSource) {
+    public static synchronized ScheduleResult scheduleImport(Path worldDir, Path serverRoot,
+                                                             List<Path> importRoots, String path,
+                                                             String position, String afterId,
+                                                             boolean deleteSource) {
         Preview preview = previewImport(worldDir, serverRoot, importRoots, path, position,
                 afterId, deleteSource);
         ScheduleResult result = new ScheduleResult();
@@ -839,16 +992,24 @@ public final class WorldStackAdmin {
         pending.spawnY = preview.source.spawnY;
         pending.spawnZ = preview.source.spawnZ;
         pending.playerConflicts = preview.playerConflicts;
-        if (!write(worldDir, PENDING_IMPORT, pending)) {
+        pending.neededBytes = preview.neededBytes;
+        List<PendingImport> queue = readImportQueue(worldDir);
+        if (queue.stream().anyMatch(item -> sameJob(item, pending))) {
             result.ok = false;
-            preview.errors.add("无法写入 pending-import.json");
+            preview.errors.add("该源目录已在待导入队列中；请等待重启执行，或先取消队列项");
+            return result;
+        }
+        queue.add(pending);
+        if (!saveImportQueue(worldDir, queue)) {
+            result.ok = false;
+            preview.errors.add("无法写入 pending-imports.json");
             return result;
         }
         Job job = newJob(jobId, "import", preview.targetId);
         job.source = pending.source;
         job.requiresRestart = true;
-        job.message = "已排队：重启服务器后导入到 "
-                + ("top".equals(pending.position) ? "栈顶 world" : pending.targetId);
+        job.message = "已排队（第 " + queue.size() + " 项）：重启服务器后导入到 "
+                + ("top".equals(pending.position) ? "栈顶 world" : preview.targetId);
         writeJob(worldDir, job);
         result.ok = true;
         result.jobId = jobId;
@@ -857,21 +1018,63 @@ public final class WorldStackAdmin {
         return result;
     }
 
+    /** 取消一条尚未执行的导入；jobId 或源目录二选一。 */
+    public static synchronized Map<String, Object> cancelImport(Path worldDir, String jobId) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        List<PendingImport> queue = readImportQueue(worldDir);
+        PendingImport removed = null;
+        if (jobId != null && !jobId.isBlank()) {
+            for (PendingImport item : queue) {
+                if (jobId.equals(item.jobId)) {
+                    removed = item;
+                    break;
+                }
+            }
+        }
+        if (removed == null) {
+            out.put("ok", false);
+            out.put("error", "队列中没有该导入任务");
+            return out;
+        }
+        queue.remove(removed);
+        if (!saveImportQueue(worldDir, queue)) {
+            out.put("ok", false);
+            out.put("error", "无法写入 pending-imports.json");
+            return out;
+        }
+        Job job = readJob(worldDir, removed.jobId);
+        if (job == null) {
+            job = newJob(removed.jobId, "import", removed.targetId);
+        }
+        job.status = "canceled";
+        job.stage = "已取消";
+        job.finishedAt = System.currentTimeMillis();
+        job.message = "已取消排队：未执行导入 " + removed.source;
+        job.log.add(job.message);
+        writeJob(worldDir, job);
+        out.put("ok", true);
+        out.put("jobId", removed.jobId);
+        out.put("removed", 1);
+        out.put("remaining", queue.size());
+        out.put("pendingImports", queue);
+        return out;
+    }
+
     // ---- 启动时消费 ----
 
     /** SERVER_STARTING 之前调用；处理 pending-import / pending-archive / pending-stack-restore。 */
     public static synchronized void consumePending(Path worldDir) {
         migrateLegacyBackups(worldDir);
         Path restoreFile = stackFile(worldDir, PENDING_RESTORE);
-        Path importFile = stackFile(worldDir, PENDING_IMPORT);
         Path archiveFile = stackFile(worldDir, PENDING_ARCHIVE);
         Path promoteFile = stackFile(worldDir, PENDING_PROMOTE);
+        List<PendingImport> imports = readImportQueue(worldDir);
         if (Files.isRegularFile(restoreFile)) {
             WorldStackTimeline.consumePendingRestore(worldDir);
             return;
         }
         pruneBackups(worldDir, backupKeep());
-        int pendingCount = (Files.exists(importFile) ? 1 : 0)
+        int pendingCount = (imports.isEmpty() ? 0 : 1)
                 + (Files.exists(archiveFile) ? 1 : 0) + (Files.exists(promoteFile) ? 1 : 0);
         if (Files.isRegularFile(worldDir.resolve("samsara/pending-new.json"))
                 && pendingCount > 0) {
@@ -898,12 +1101,27 @@ public final class WorldStackAdmin {
             }
             return;
         }
-        if (Files.exists(importFile)) {
-            PendingImport pending = read(worldDir, PENDING_IMPORT, PendingImport.class);
-            if (pending != null) {
-                executeImport(worldDir, pending);
+        if (!imports.isEmpty()) {
+            executeImportQueue(worldDir, imports);
+        }
+    }
+
+    /** 依次执行导入队列；单项失败时保留剩余项到下次重启，避免位置连锁错误。 */
+    private static void executeImportQueue(Path worldDir, List<PendingImport> queue) {
+        int total = queue.size();
+        for (int i = 0; i < queue.size(); ) {
+            PendingImport pending = queue.get(i);
+            boolean ok = executeImport(worldDir, pending);
+            queue.remove(i);
+            saveImportQueue(worldDir, queue);
+            if (!ok) {
+                write(worldDir, "pending-import.failed-" + pending.jobId + ".json", pending);
+                Samsara.LOGGER.warn("[世界栈] 导入队列第 {}/{} 项失败；剩余 {} 项保留到下次重启",
+                        i + 1, total, queue.size());
+                return;
             }
         }
+        Samsara.LOGGER.info("[世界栈] 导入队列执行完成：{} 项", total);
     }
 
     private static void executeArchive(Path worldDir, PendingArchive pending) {
@@ -1189,12 +1407,11 @@ public final class WorldStackAdmin {
         }
     }
 
-    private static void executeImport(Path worldDir, PendingImport pending) {
+    private static boolean executeImport(Path worldDir, PendingImport pending) {
         Job job = readJob(worldDir, pending.jobId);
         if (job == null) {
             job = newJob(pending.jobId, "import", pending.targetId);
         }
-        Path pendingFile = stackFile(worldDir, PENDING_IMPORT);
         try {
             job.status = "running";
             job.stage = "校验源目录";
@@ -1238,12 +1455,12 @@ public final class WorldStackAdmin {
             job.progress = 100;
             job.finishedAt = System.currentTimeMillis();
             job.message = "导入完成：" + pending.sourceWorldName + " -> "
-                    + ("top".equals(pending.position) ? "world" : pending.targetId)
+                    + ("top".equals(pending.position) ? "world" : job.targetId)
                     + "（源目录未修改）";
             job.log.add(job.message);
-            Files.deleteIfExists(pendingFile);
             writeJob(worldDir, job);
             Samsara.LOGGER.info("[世界栈] {}", job.message);
+            return true;
         } catch (Exception e) {
             job.status = "failed";
             job.stage = "失败";
@@ -1251,16 +1468,23 @@ public final class WorldStackAdmin {
             job.message = "导入失败：" + e.getMessage();
             job.log.add(job.message);
             writeJob(worldDir, job);
-            moveFailed(worldDir, PENDING_IMPORT, pendingFile);
             Samsara.LOGGER.error("[世界栈] {}（原栈与源目录保持可用）", job.message);
+            return false;
         }
     }
 
     private static void importLayer(Path worldDir, Path source, PendingImport pending, Job job)
             throws IOException {
         StackManifest manifest = StackManifest.load(worldDir);
-        String id = manifest.byId(pending.targetId) == null
-                ? pending.targetId : allocateId(manifest);
+        String id = freeId(manifest, pending.targetId);
+        int insertIndex = 0;
+        if ("between".equals(normalizePosition(pending.position))) {
+            StackLayer after = manifest.byId(pending.afterId);
+            if (after == null || after.top) {
+                throw new IOException("插入位置已不存在或现在是栈顶：" + pending.afterId);
+            }
+            insertIndex = after.index + 1;
+        }
         Path finalDims = worldDir.resolve("dimensions/samsara").resolve(id);
         Path finalMeta = worldDir.resolve("samsara/stack").resolve(id);
         if (Files.exists(finalDims) || Files.exists(finalMeta)) {
@@ -1304,7 +1528,7 @@ public final class WorldStackAdmin {
             moveIfExists(stagingMeta, finalMeta);
             LevelInfo level = LevelInfo.read(source);
             StackLayer layer = new LayerInfo(pending, level, id).toLayer();
-            manifest.insertBelowTop(layer, pending.targetIndex);
+            manifest.insertBelowTop(layer, insertIndex);
             manifest.save(worldDir);
             if (StackManifest.load(worldDir).byId(id) == null) {
                 throw new IOException("stack.json 写入失败：新层未落盘");
@@ -1320,8 +1544,7 @@ public final class WorldStackAdmin {
             }
             job.progress = 99;
             job.targetId = id;
-            job.log.add("新栈层 " + id + " index=" + pending.targetIndex
-                    + "，源 " + source);
+            job.log.add("新栈层 " + id + " index=" + insertIndex + "，源 " + source);
         } catch (Exception e) {
             deleteRecursive(finalDims);
             deleteRecursive(finalMeta);
@@ -1521,6 +1744,8 @@ public final class WorldStackAdmin {
         int spawnY = 64;
         int spawnZ;
         String levelType = "normal";
+        long createdAt;
+        long lastPlayed;
 
         static LevelInfo read(Path source) {
             LevelInfo info = new LevelInfo();
@@ -1530,6 +1755,16 @@ public final class WorldStackAdmin {
                         NbtAccounter.unlimitedHeap());
                 CompoundTag data = root.getCompoundOrEmpty("Data");
                 info.dataVersion = data.getIntOr("DataVersion", 0);
+                info.lastPlayed = data.getLongOr("LastPlayed", 0L);
+                info.createdAt = data.getLongOr("CreatedAt", 0L);
+                if (info.createdAt <= 0) {
+                    try {
+                        info.createdAt = Files.readAttributes(source.resolve("level.dat"),
+                                BasicFileAttributes.class).creationTime().toMillis();
+                    } catch (Exception ignored) {
+                        // 某些文件系统不支持创建时间；保持 0
+                    }
+                }
                 CompoundTag version = data.getCompoundOrEmpty("Version");
                 info.snapshot = version.getBooleanOr("Snapshot", false);
                 info.versionName = version.getStringOr("Name", "");
@@ -2031,6 +2266,9 @@ public final class WorldStackAdmin {
         public String stackPath = "";
         public List<String> importRoots = new ArrayList<>();
         public List<LayerView> stacks = new ArrayList<>();
+        /** 待执行的导入队列，按确认顺序执行。 */
+        public List<PendingImport> pendingImports = new ArrayList<>();
+        /** 兼容旧前端：队列首项。 */
         public PendingImport pendingImport;
         public PendingArchive pendingArchive;
         public PendingPromote pendingPromote;
@@ -2053,9 +2291,17 @@ public final class WorldStackAdmin {
         public int spawnY;
         public int spawnZ;
         public long createdAt;
+        public long importedAt;
         public String levelType = "";
         public String source = "";
         public String importedFrom = "";
+        /** level.dat 里的世界名 / 存档创建时间 / 最后游玩时间 / 数据版本。 */
+        public String saveName = "";
+        public long saveCreatedAt;
+        public long lastPlayed;
+        public int dataVersion;
+        public String versionName = "";
+        public boolean snapshot;
         public String metaPath = "";
         public String dimensionsPath = "";
         public long dataBytes;
@@ -2145,6 +2391,14 @@ public final class WorldStackAdmin {
         public int spawnY;
         public int spawnZ;
         public int playerConflicts;
+        /** 预览时估算的磁盘占用，用于给后续队列项预留空间。 */
+        public long neededBytes;
+    }
+
+    /** {@code pending-imports.json} 的外层结构；数组本身也兼容读取。 */
+    public static final class PendingImportQueue {
+        public int schemaVersion = 1;
+        public List<PendingImport> imports = new ArrayList<>();
     }
 
     public static final class PendingArchive {

@@ -7,6 +7,7 @@ import com.shenqianye.samsara.command.ui.ChatUi;
 import com.shenqianye.samsara.command.ui.SuggestionProviders;
 import com.shenqianye.samsara.output.OutputPreviewFragment;
 import com.shenqianye.samsara.output.OutputRenderer;
+import com.shenqianye.samsara.permission.PermissionRequirements;
 import com.shenqianye.samsara.season.Season;
 import com.shenqianye.samsara.season.SeasonAdvanceVoteManager;
 import com.shenqianye.samsara.season.SeasonData;
@@ -18,7 +19,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.server.permissions.Permissions;
 import net.minecraft.world.level.Level;
 
 import java.time.Instant;
@@ -50,17 +50,19 @@ public class SeasonCommand {
     /** {@code /samsara season ...} 子树：由 DebugCommand 挂到 /samsara 根下 */
     public static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> seasonNode() {
         return Commands.literal("season")
-                .requires(src -> com.shenqianye.samsara.permission.PermissionChecker.check(src, "season"))
+                .requires(PermissionRequirements.path("season"))
                 .then(Commands.literal("status")
+                        .requires(PermissionRequirements.path("season status"))
                         .executes(ctx -> status(ctx.getSource(), 1))
                         .then(Commands.argument("page", IntegerArgumentType.integer(1))
                                 .suggests(SuggestionProviders.choicesWithHint("页码", "1", "2", "3"))
                                 .executes(ctx -> status(ctx.getSource(),
                                         IntegerArgumentType.getInteger(ctx, "page")))))
                 .then(Commands.literal("info")
+                        .requires(PermissionRequirements.path("season info"))
                         .executes(ctx -> infoReply(ctx.getSource())))
                 .then(Commands.literal("create")
-                        .requires(src -> isAdmin(src))
+                        .requires(PermissionRequirements.adminAnd("season create"))
                         .then(Commands.argument("name", StringArgumentType.string())
                                 .executes(ctx -> reply(ctx.getSource(), manager().create(
                                         StringArgumentType.getString(ctx, "name"), "same-world")))
@@ -75,17 +77,16 @@ public class SeasonCommand {
                                                         StringArgumentType.getString(ctx, "mode"),
                                                         LongArgumentType.getLong(ctx, "seed"))))))))
                 .then(Commands.literal("start")
-                        .requires(src -> isAdmin(src))
+                        .requires(PermissionRequirements.adminAnd("season start"))
                         .executes(ctx -> reply(ctx.getSource(), confirmStart(ctx.getSource()))))
                 .then(Commands.literal("end")
-                        .requires(src -> isAdmin(src))
+                        .requires(PermissionRequirements.adminAnd("season end"))
                         .executes(ctx -> reply(ctx.getSource(), manager().end())))
                 .then(Commands.literal("skip")
-                        .requires(src -> isAdmin(src))
+                        .requires(PermissionRequirements.adminAnd("season skip"))
                         .executes(ctx -> reply(ctx.getSource(), manager().skip())))
                 .then(Commands.literal("advance")
-                        .requires(src -> com.shenqianye.samsara.permission.PermissionChecker
-                                .check(src, "season advance"))
+                        .requires(PermissionRequirements.path("season advance"))
                         .executes(ctx -> reply(ctx.getSource(),
                                 SeasonAdvanceVoteManager.getInstance().requestAdvance(
                                         ctx.getSource().getServer(), ctx.getSource().getPlayer(), "same")))
@@ -96,31 +97,24 @@ public class SeasonCommand {
                                                 ctx.getSource().getServer(), ctx.getSource().getPlayer(),
                                                 StringArgumentType.getString(ctx, "mode"))))))
                 .then(Commands.literal("agree")
-                        .requires(src -> com.shenqianye.samsara.permission.PermissionChecker
-                                .check(src, "season agree"))
+                        .requires(PermissionRequirements.path("season agree"))
                         .executes(ctx -> reply(ctx.getSource(),
                                 SeasonAdvanceVoteManager.getInstance().agree(
                                         ctx.getSource().getServer(), ctx.getSource().getPlayer()))))
                 .then(Commands.literal("cancel")
-                        .requires(src -> com.shenqianye.samsara.permission.PermissionChecker
-                                .check(src, "season cancel"))
+                        .requires(PermissionRequirements.path("season cancel"))
                         .executes(ctx -> reply(ctx.getSource(),
                                 SeasonAdvanceVoteManager.getInstance().cancel(
                                         ctx.getSource().getServer(), ctx.getSource().getPlayer()))))
                 .then(Commands.literal("vote-status")
-                        .requires(src -> com.shenqianye.samsara.permission.PermissionChecker
-                                .check(src, "season vote-status"))
+                        .requires(PermissionRequirements.path("season vote-status"))
                         .executes(ctx -> reply(ctx.getSource(),
                                 SeasonAdvanceVoteManager.getInstance().statusText(
                                         ctx.getSource().getServer()))))
                 .then(Commands.literal("respawn-groups")
-                        .requires(src -> isAdmin(src))
+                        .requires(PermissionRequirements.adminAnd("season respawn-groups"))
                         .executes(ctx -> reply(ctx.getSource(),
                                 manager().respawnGroups(ctx.getSource().getServer()))));
-    }
-
-    private static boolean isAdmin(CommandSourceStack src) {
-        return src.permissions().hasPermission(Permissions.COMMANDS_ADMIN);
     }
 
     /** 周目状态/信息：只读，附 [刷新] 点击即执行（保留当前页码）。 */
