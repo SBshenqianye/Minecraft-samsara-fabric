@@ -6,6 +6,7 @@ import com.shenqianye.samsara.output.OutputTemplate;
 import com.shenqianye.samsara.output.TemplateCodec;
 import com.shenqianye.samsara.output.TemplatePart;
 import com.shenqianye.samsara.permission.PermissionDefaults;
+import com.shenqianye.samsara.track.TrackRetention;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -101,6 +102,32 @@ public final class ConfigSchema {
                         "自动瞄准最大角速度（度/秒）"),
                 ConfigEntry.bool("view.aim.pitch", true, "回看",
                         "自动瞄准是否包含俯仰角"),
+                ConfigEntry.bool("view.allowEquipmentDrop", true, "回看",
+                        "捕捉后变成普通实体的人偶死亡时是否掉落录制装备（F-107；"
+                                + "回看停止/人偶 discard 永不掉落）"),
+                ConfigEntry.bool("track.recordInventory", false, "轨迹",
+                        "是否额外记录完整背包快照（F-108）；只用于只读查看，"
+                                + "不会贴到实体库存、不会产生可拾取物品"),
+                ConfigEntry.choice("track.retention.mode", "adaptive",
+                        List.of("adaptive", "keepAll", "curve"), "轨迹保留",
+                        "保留策略：adaptive = 与 v1 等价的 1/4/16/64/256 天档位；"
+                                + "keepAll = 不降采样；curve = 按 track.retention.curve 的比例"),
+                ConfigEntry.decimal("track.retention.adaptive.q", 0.9,
+                        0.000001, 0.999999, "轨迹保留",
+                        "adaptive 的每日保留率（(0,1)，用于容量预估；默认档位与 v1 等价）"),
+                ConfigEntry.integer("track.retention.adaptive.skeletonPerDay", 2000,
+                        1, 1_000_000, "轨迹保留",
+                        "每天至少保留的骨架点数"),
+                ConfigEntry.bool("track.retention.keepAll", false, "轨迹保留",
+                        "是否保存全部原始采样（与 mode=keepAll 等价；可能无限增长）"),
+                ConfigEntry.integer("track.retention.maxBytesPerPlayer", 0,
+                        0, 2_000_000_000, "轨迹保留",
+                        "单个玩家 .bin 轨迹总字节上限；0 = 不限制。超出先降级到 adaptive，"
+                                + "仍超出则拒绝新归档"),
+                ConfigEntry.curve("track.retention.curve",
+                        TrackRetention.defaultCurveConfig(), "轨迹保留",
+                        "curve 模式的时间曲线：ageDays 严格递增（最后一档可为 0 = 更老），"
+                                + "keepRatio 在 [0,1] 且单调不增"),
                 ConfigEntry.bool("completion.chatList", true, "补全",
                         "未完成指令是否在聊天栏列出可点击候选"),
                 ConfigEntry.bool("completion.fuzzy", true, "补全",
@@ -359,12 +386,14 @@ public final class ConfigSchema {
                 return value;
             }
             case ENUM -> {
-                String value = String.valueOf(raw).trim().toLowerCase(Locale.ROOT);
-                if (!entry.choices().contains(value)) {
-                    throw new ConfigValidationException(path,
-                            "可选值：" + String.join(" / ", entry.choices()));
+                String value = String.valueOf(raw).trim();
+                for (String choice : entry.choices()) {
+                    if (choice.equalsIgnoreCase(value)) {
+                        return choice;
+                    }
                 }
-                return value;
+                throw new ConfigValidationException(path,
+                        "可选值：" + String.join(" / ", entry.choices()));
             }
             case STRING_LIST -> {
                 List<String> values = new ArrayList<>();
@@ -438,6 +467,54 @@ public final class ConfigSchema {
                     out.put(key, value);
                 }
                 return out;
+            }
+            case CURVE -> {
+                if (!(raw instanceof List<?> list) || list.isEmpty()) {
+                    throw new ConfigValidationException(path, "应为非空列表（ageDays + keepRatio）");
+                }
+                List<Map<String, Object>> out = new ArrayList<>();
+                for (Object item : list) {
+                    if (!(item instanceof Map<?, ?> map)) {
+                        throw new ConfigValidationException(path, "每一档应为 ageDays + keepRatio 对象");
+                    }
+                    Object ageRaw = map.get("ageDays");
+                    Object ratioRaw = map.get("keepRatio");
+                    if (ageRaw == null || ratioRaw == null) {
+                        throw new ConfigValidationException(path, "每一档必须同时包含 ageDays 与 keepRatio");
+                    }
+                    int age;
+                    double ratio;
+                    try {
+                        double value = Double.parseDouble(String.valueOf(ageRaw).trim());
+                        if (value != Math.rint(value)) {
+                            throw new NumberFormatException();
+                        }
+                        age = (int) value;
+                        ratio = Double.parseDouble(String.valueOf(ratioRaw).trim());
+                    } catch (NumberFormatException e) {
+                        throw new ConfigValidationException(path, "ageDays 应为整数、keepRatio 应为数字");
+                    }
+                    if (age < 0) {
+                        throw new ConfigValidationException(path, "ageDays 不能为负");
+                    }
+                    if (!Double.isFinite(ratio) || ratio < 0 || ratio > 1) {
+                        throw new ConfigValidationException(path, "keepRatio 必须在 [0,1] 内");
+                    }
+                    Map<String, Object> normalized = new LinkedHashMap<>();
+                    normalized.put("ageDays", age);
+                    normalized.put("keepRatio", ratio);
+                    out.add(normalized);
+                }
+                List<TrackRetention.CurvePoint> points = new ArrayList<>();
+                for (Map<String, Object> map : out) {
+                    points.add(new TrackRetention.CurvePoint(
+                            (int) map.get("ageDays"), (double) map.get("keepRatio")));
+                }
+                List<String> errors = TrackRetention.validateCurve(points);
+                if (!errors.isEmpty()) {
+                    throw new ConfigValidationException(path, errors.get(0));
+                }
+                return List.copyOf(out);
             }
             case TEMPLATE -> {
                 try {

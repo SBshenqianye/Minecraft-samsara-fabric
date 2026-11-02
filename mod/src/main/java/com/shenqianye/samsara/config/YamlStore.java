@@ -281,7 +281,7 @@ public final class YamlStore {
             String rest = prefix.isEmpty() ? entry.path()
                     : entry.path().substring(prefix.length() + 1);
             if (entry.type() == ConfigType.LEVEL_MAP || entry.type() == ConfigType.STRING_LIST
-                    || entry.type() == ConfigType.INT_LIST) {
+                    || entry.type() == ConfigType.INT_LIST || entry.type() == ConfigType.CURVE) {
                 JsonElement element = findJson(root, entry.path());
                 if (element != null) {
                     out.put(entry.path(), jsonToJava(element));
@@ -443,6 +443,35 @@ public final class YamlStore {
     }
 
     private static void appendValue(StringBuilder out, ConfigEntry entry, Object value, int indent) {
+        if (entry.type() == ConfigType.CURVE) {
+            out.append("\n");
+            appendComment(out, entry.description(), indent + 2);
+            List<?> list = value instanceof List<?> l ? l : List.of();
+            if (list.isEmpty()) {
+                appendIndent(out, indent + 2);
+                out.append("[]\n");
+            }
+            for (Object item : list) {
+                if (!(item instanceof Map<?, ?> map) || map.isEmpty()) {
+                    appendIndent(out, indent + 2);
+                    out.append("- {}\n");
+                    continue;
+                }
+                boolean first = true;
+                for (Map.Entry<?, ?> e : map.entrySet()) {
+                    if (first) {
+                        appendIndent(out, indent + 2);
+                        out.append("- ");
+                        first = false;
+                    } else {
+                        appendIndent(out, indent + 4);
+                    }
+                    out.append(quoteKey(String.valueOf(e.getKey()))).append(": ")
+                            .append(scalar(e.getValue())).append("\n");
+                }
+            }
+            return;
+        }
         if (entry.type() == ConfigType.TEMPLATE) {
             out.append("\n");
             appendComment(out, entry.description(), indent + 2);

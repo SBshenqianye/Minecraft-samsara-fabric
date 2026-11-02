@@ -593,6 +593,27 @@ function buildInput(file, entry) {
       body.append(hint, editor);
       return bucket(`${entry.path} · ${keys.length} 条`, body, true);
     }
+    case 'curve': {
+      // 轨迹保留曲线：先用 JSON 文本编辑（专用可视化编辑器可后置）
+      const area = document.createElement('textarea');
+      area.className = 'entry-textarea';
+      area.rows = 8;
+      area.spellcheck = false;
+      const current = Array.isArray(value) ? value : (entry.default || []);
+      area.value = JSON.stringify(current, null, 2);
+      area.title = '每项形如 {"ageDays": 7, "keepRatio": 1.0}；ageDays 严格递增，最后一档可为 0';
+      area.addEventListener('change', () => {
+        try {
+          const parsed = JSON.parse(area.value);
+          if (!Array.isArray(parsed)) throw new Error('not array');
+          area.style.borderColor = '';
+          markEdited(file.id, entry, parsed);
+        } catch (e) {
+          area.style.borderColor = 'var(--danger, #c0392b)';
+        }
+      });
+      return area;
+    }
     default: {
       const input = document.createElement('input');
       input.type = 'text';

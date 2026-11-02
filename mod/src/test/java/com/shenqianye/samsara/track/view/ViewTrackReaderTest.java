@@ -41,6 +41,9 @@ class ViewTrackReaderTest {
         assertTrue(result.cutoffApplied());
         assertEquals(2, result.files().size());
         assertEquals(2, result.segments().size());
+        // 旧 .bin v1 没有 .evt：正常加载，事件为空（回放降级为空手）
+        assertTrue(result.events().isEmpty());
+        assertEquals(false, result.eventsTruncated());
 
         ViewCursor cursor = ViewCursor.build(result.segments(), d0, d1 + 10_000,
                 result.truncated(), result.cutoffApplied());

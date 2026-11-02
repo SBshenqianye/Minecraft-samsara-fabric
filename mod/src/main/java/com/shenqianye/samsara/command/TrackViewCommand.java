@@ -148,6 +148,24 @@ public final class TrackViewCommand {
                                 .suggests(SuggestionProviders.aimProvider())
                                 .executes(ctx -> aim(ctx,
                                         StringArgumentType.getString(ctx, "input")))))
+                .then(Commands.literal("drop")
+                        .requires(PermissionRequirements.path(path + " drop"))
+                        .executes(ctx -> drop(ctx, null))
+                        .then(Commands.literal("on")
+                                .executes(ctx -> drop(ctx, true)))
+                        .then(Commands.literal("off")
+                                .executes(ctx -> drop(ctx, false))))
+                .then(Commands.literal("inspect")
+                        .requires(PermissionRequirements.path(path + " inspect"))
+                        .executes(ctx -> inspect(ctx, null, 1))
+                        .then(Commands.argument("player", StringArgumentType.word())
+                                .suggests(SuggestionProviders.playersProvider("观看者"))
+                                .executes(ctx -> inspect(ctx,
+                                        StringArgumentType.getString(ctx, "player"), 1))
+                                .then(Commands.argument("page", IntegerArgumentType.integer(1))
+                                        .executes(ctx -> inspect(ctx,
+                                                StringArgumentType.getString(ctx, "player"),
+                                                IntegerArgumentType.getInteger(ctx, "page"))))))
                 .then(Commands.argument("player", StringArgumentType.word())
                         .suggests(SuggestionProviders.knownPlayersProvider("监控目标"))
                         .then(Commands.argument("input", StringArgumentType.greedyString())
@@ -302,6 +320,20 @@ public final class TrackViewCommand {
         }
         String msg = ViewManager.getInstance().setAim(ctx.getSource().getServer(), viewer,
                 target, on, isAdmin(ctx.getSource()));
+        return reply(ctx.getSource(), msg);
+    }
+
+    private static int drop(CommandContext<CommandSourceStack> ctx, Boolean on) {
+        ServerPlayer viewer = ctx.getSource().getPlayer();
+        String msg = ViewManager.getInstance().setEquipmentDrop(ctx.getSource().getServer(), viewer,
+                null, on, isAdmin(ctx.getSource()));
+        return reply(ctx.getSource(), msg);
+    }
+
+    private static int inspect(CommandContext<CommandSourceStack> ctx, String target, int page) {
+        ServerPlayer viewer = ctx.getSource().getPlayer();
+        String msg = ViewManager.getInstance().inspect(ctx.getSource().getServer(), viewer,
+                target, page, isAdmin(ctx.getSource()));
         return reply(ctx.getSource(), msg);
     }
 

@@ -60,6 +60,9 @@ public final class TrackReplay {
         String dimension;
         Path file;
         boolean captured;
+        TrackEventCursor events;
+        long lastEventMs;
+        boolean legacyEquipment;
 
         /** 当前轨迹时间（按墙钟 × 倍速推进，钳到区间内） */
         long cursorMs(long nowWallMs) {
@@ -107,6 +110,8 @@ public final class TrackReplay {
         } catch (IOException e) {
             return "轨迹文件读取失败: " + e.getMessage();
         }
+        TrackEventStore.ReadResult eventResult = TrackEventStore.read(TrackLayout.evtFileFor(file));
+        TrackEventCursor eventCursor = new TrackEventCursor(eventResult.events(), server.registryAccess());
         TrackStore.Segment seg = pickSegment(segments, startMs);
         if (seg == null || seg.samples.isEmpty()) {
             return "轨迹文件里没有可用样本";
@@ -146,6 +151,8 @@ public final class TrackReplay {
         }
 
         ReplayMannequin entity = new ReplayMannequin(level, uuid, cycleId, TrackReplay::onCaptured);
+        entity.setEquipmentDropAllowed(
+                com.shenqianye.samsara.config.CommandConfig.getInstance().viewAllowEquipmentDrop());
         entity.applyProfile(resolveProfile(server, uuid, name));
         entity.setCustomName(Component.literal(cycleId > 0 ? name + " · 周目 " + cycleId : name));
         entity.snapTo(first.x(), first.y(), first.z(), first.yaw(), first.pitch());
@@ -158,6 +165,7 @@ public final class TrackReplay {
         }
         // 加入世界后再应用：受伤闪烁需要广播给已追踪该实体的玩家
         entity.applyTrackFlags(first.flags());
+        TrackEventApplier.applySnapshot(entity, eventCursor, first.timeMs());
 
         Replay r = new Replay();
         r.uuid = uuid;
@@ -171,6 +179,9 @@ public final class TrackReplay {
         r.cycleId = cycleId;
         r.dimension = seg.dimension;
         r.file = file;
+        r.events = eventCursor;
+        r.lastEventMs = first.timeMs();
+        r.legacyEquipment = !eventCursor.hasEquipment();
         ACTIVE.put(uuid, r);
 
         StringBuilder sb = new StringBuilder("开始回放 ").append(name)
@@ -180,6 +191,12 @@ public final class TrackReplay {
         if (cutoff != null) {
             sb.append(" · 已按捕捉截断到 ")
                     .append(Instant.ofEpochMilli(cutoff).atZone(ZoneId.systemDefault()).toLocalDateTime());
+        }
+        if (r.legacyEquipment) {
+            sb.append(" · 该段录制于装备事件之前（空手）");
+        }
+        if (eventResult.truncated()) {
+            sb.append(" · 事件尾部已截断");
         }
         sb.append("）\n当前同屏回放 ").append(ACTIVE.size())
                 .append(" 个\n停止：/samsara debug track stop [玩家|all]");
@@ -234,6 +251,11 @@ public final class TrackReplay {
                     .append(Instant.ofEpochMilli(r.cursorMs(now)).atZone(ZoneId.systemDefault()).toLocalDateTime())
                     .append(" / 止于 ")
                     .append(Instant.ofEpochMilli(r.endTrackMs).atZone(ZoneId.systemDefault()).toLocalDateTime());
+            if (r.legacyEquipment) {
+                sb.append("\n    装备：该段录制于装备事件之前（空手）");
+            } else if (r.events != null) {
+                sb.append("\n    ").append(r.events.describeAt(r.cursorMs(now)));
+            }
         }
         return sb.toString();
     }
@@ -287,6 +309,15 @@ public final class TrackReplay {
             r.entity.setDeltaMovement(0, 0, 0);
             // flags 取当前所在样本（不插值）：姿态是离散状态，越过样本时刻才切换
             r.entity.applyTrackFlags(a.flags());
+            // 事件：正放跨越动作；跳变（卡顿/时钟跳变）按最近快照重建并清空动作
+            if (r.events != null && !r.events.isEmpty()) {
+                if (trackTime < r.lastEventMs || trackTime - r.lastEventMs > 1000L) {
+                    TrackEventApplier.resetTo(r.entity, r.events, trackTime);
+                } else if (trackTime > r.lastEventMs) {
+                    TrackEventApplier.advance(r.entity, r.events, r.lastEventMs, trackTime);
+                }
+                r.lastEventMs = trackTime;
+            }
         }
     }
 

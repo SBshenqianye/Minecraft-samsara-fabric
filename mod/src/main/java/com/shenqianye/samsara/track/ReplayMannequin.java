@@ -76,6 +76,12 @@ public class ReplayMannequin extends TrackMannequin implements Leashable {
         return captured;
     }
 
+    /** 只有捕捉后变成普通实体的人偶才允许死亡掉落录制装备（F-107）。 */
+    @Override
+    protected boolean equipmentDroppable() {
+        return captured;
+    }
+
     /**
      * 设置玩家皮肤/名称：{@code ResolvableProfile.createResolved(GameProfile)} +
      * 受保护的 {@code DATA_PROFILE}。客户端按原版人偶渲染，无需额外模组。

@@ -3,6 +3,31 @@
 > 面向玩家与服主的功能变化；实现细节、未达标项与证据见[《实现状态》](docs/实现状态.md)。
 > 每个版本按「新增 / 修复 / 优化 / 变更 / 重构 / 文档」分组，只写功能口径。
 
+## v0.36.1-trackv2（2026-11-03）· Track v2（临时分支测试版）
+
+### 新增
+
+- **装备外观**：人偶回放/回看显示录制时的主手、副手、头盔、胸甲、护腿、靴子，并记录选中快捷栏；旧轨迹无事件数据时降级为空手并提示。
+- **动作回放**：记录并还原攻击挥动、使用起手/停止；正放跨越事件时播放，跳转/倒放时清空残留动作。
+- **装备掉落开关**：默认允许捕捉后的普通实体人偶死亡时掉落录制装备（用户接受复制）；`view.allowEquipmentDrop`、单次 `--equipment-drop=on|off`、`view drop on|off`；回看停止/人偶 discard 永不掉落。
+- **背包只读**：`track.recordInventory=true` 时额外记录完整背包；`view inspect` 分页只读查看，不贴实体库存、不产生可拾取物品。
+- **保留策略**：`track.retention.mode=adaptive|keepAll|curve`，支持 `adaptive.q/skeletonPerDay`、`keepAll`、`maxBytesPerPlayer` 与 `curve`；默认 adaptive 与 v1 档位等价；超限先降级 adaptive，仍超限拒绝新归档。
+- **飞行/载具区分**：区分 `elytra`、`creative`、`none`，创造飞行不再画成鞘翅；记录真实载具实体类型并在状态/提示中体现。
+
+### 变更
+
+- 新增 `.evt` 侧车格式（`SARE` v1），`.bin` v1 保持不变；物品用 `ItemStack.CODEC` 长度前缀 NBT，首条事件 dt 为绝对 epoch 毫秒。
+- `/samsara debug reload` 现在同时重读 `commands.yml`，与 Web 保存后的热重载一致。
+
+### 测试
+
+- 新增 `.evt` 往返/尾部截断、装备时间查询、保留策略/曲线校验/掉落策略、旧 bin 无事件等单测；`gradle clean build` 通过。
+- 独立测试服 `test-server-trackv2`（25568 / RCON 25578 / Web 8726）实测装备同步、挥动/使用、回放与回看装备、`view inspect`、掉落 on/off、旧轨迹空手提示、keepAll/curve/adaptive 扫描只改 `.bin` 且 `.evt` SHA256 不变。
+
+### 文档
+
+- 同步《设计文档》〈轨迹保留策略〉〈轨迹事件〉、《设计规范》`.evt`/`commands.yml` 新键、《实现状态》F-105~F-108/F-163 与 README。
+
 ## v0.35.0（2026-11-02）· 虚空下坠改为下层主世界高空坠落
 
 ### 变更

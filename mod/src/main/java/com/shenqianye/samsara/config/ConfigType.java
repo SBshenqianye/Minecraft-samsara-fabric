@@ -10,7 +10,9 @@ public enum ConfigType {
     STRING_LIST("string-list"),
     INT_LIST("int-list"),
     LEVEL_MAP("level-map"),
-    TEMPLATE("template");
+    TEMPLATE("template"),
+    /** 有序对象列表（轨迹保留曲线：ageDays + keepRatio）。 */
+    CURVE("curve");
 
     private final String id;
 

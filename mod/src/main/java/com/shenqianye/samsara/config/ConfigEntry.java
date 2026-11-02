@@ -87,4 +87,11 @@ public record ConfigEntry(String path, ConfigType type, Object defaultValue,
         return new ConfigEntry(path, ConfigType.TEMPLATE, defaultValue, null, null,
                 List.of(), description, group, false, null);
     }
+
+    /** 有序对象列表：轨迹保留曲线（ageDays + keepRatio）。 */
+    public static ConfigEntry curve(String path, java.util.List<java.util.Map<String, Object>> defaultValue,
+                                    String group, String description) {
+        return new ConfigEntry(path, ConfigType.CURVE, defaultValue, null, null,
+                List.of(), description, group, false, null);
+    }
 }
