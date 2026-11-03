@@ -47,6 +47,22 @@ class TrackStoreTest {
     }
 
     @Test
+    void fileUsageCountsBytesAndSamplesWithoutLoadingFile() throws Exception {
+        UUID uuid = UUID.fromString("00000000-0000-0000-0000-000000000002");
+        TrackStore.Segment a = new TrackStore.Segment(uuid, "minecraft:overworld", 1_000L, 5.0);
+        a.samples.add(new TrackStore.Sample(1_000L, 0, 64, 0, 0, 0, 0));
+        a.samples.add(new TrackStore.Sample(1_200L, 1, 64, 1, 90, 0, 0));
+        TrackStore.Segment b = new TrackStore.Segment(uuid, "minecraft:the_nether", 2_000L, 5.0);
+        b.samples.add(new TrackStore.Sample(2_000L, 8, 32, 8, 0, 0, 0));
+        Path file = tmp.resolve("usage.bin");
+        TrackStore.write(file, List.of(a, b));
+
+        TrackStore.FileUsage usage = TrackStore.fileUsage(file);
+        assertEquals(java.nio.file.Files.size(file), usage.bytes());
+        assertEquals(3, usage.samples());
+    }
+
+    @Test
     void varintAndAngleRoundTrip() throws Exception {
         int[] values = {0, 1, -1, 127, 128, -128, 100000, -100000};
         for (int v : values) {

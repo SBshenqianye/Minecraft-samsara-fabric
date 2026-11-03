@@ -253,11 +253,22 @@ public final class LocalWebServer {
                 }
                 boolean keepAll = "1".equals(query.get("keepAll"))
                         || "true".equalsIgnoreCase(query.get("keepAll"));
+                var usage = com.shenqianye.samsara.track.TrackRecorder.getInstance().usage();
+                long actualPerSample = usage.totalSamples() > 0
+                        ? Math.max(1L, Math.round(usage.bytesPerSample()))
+                        : com.shenqianye.samsara.track.TrackRetention.BYTES_PER_SAMPLE;
                 var estimate = com.shenqianye.samsara.track.TrackRetention.estimate(
-                        com.shenqianye.samsara.track.TrackRetention.parseCurve(raw), keepAll);
+                        com.shenqianye.samsara.track.TrackRetention.parseCurve(raw),
+                        keepAll, actualPerSample);
                 Map<String, Object> out = new LinkedHashMap<>();
                 out.put("ok", true);
                 out.put("bytesPerSample", estimate.bytesPerSample());
+                out.put("actualBytesPerSample", usage.bytesPerSample());
+                out.put("actualTotalBytes", usage.totalBytes());
+                out.put("actualTotalSamples", usage.totalSamples());
+                out.put("actualFileCount", usage.fileCount());
+                out.put("actualPlayerCount", usage.playerCount());
+                out.put("actualBytesPerPlayer", usage.bytesPerPlayer());
                 out.put("freshSamplesPerDay", estimate.freshSamplesPerDay());
                 out.put("freshBytesPerDay", estimate.freshBytesPerDay());
                 out.put("steadyBytes", estimate.steadyBytes());

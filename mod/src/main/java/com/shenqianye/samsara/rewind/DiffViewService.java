@@ -169,7 +169,8 @@ public final class DiffViewService {
         if (!buildChunk(s, target, cx, cz, true)) {
             return "区块 (" + cx + "," + cz + ") 已加载但没有可回看的方块记录";
         }
-        return begin(server, viewer, s, "单区块 " + cx + "," + cz);
+        return begin(server, viewer, s, "单区块 " + cx + "," + cz
+                + "（磁盘有区块时会临时加载）");
     }
 
     public synchronized String startGlobal(MinecraftServer server, ServerPlayer viewer,
@@ -210,7 +211,8 @@ public final class DiffViewService {
         s.fromMs = from;
         s.toMs = Math.max(from + 1, to);
         s.speed = clampSpeed(speed);
-        return begin(server, viewer, s, "全局 · 半径 " + s.radius + " 区块");
+        return begin(server, viewer, s, "全局 · 半径 " + s.radius
+                + " 区块（仅当前已加载区块；未加载区块不显示）");
     }
 
     private String guardStart(ServerPlayer viewer) {

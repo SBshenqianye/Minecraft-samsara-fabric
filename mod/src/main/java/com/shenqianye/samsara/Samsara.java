@@ -37,6 +37,8 @@ public class Samsara implements DedicatedServerModInitializer {
 
     @Override
     public void onInitializeServer() {
+        // 专用服务器没有显示设备；地图 tile 的 Java2D 走 headless，避免停服后残留非守护 AWT 线程
+        System.setProperty("java.awt.headless", "true");
         LOGGER.info("[周目管理 samsara] 已加载 —— 空间/时间/逆熵，世界生命周期管理");
         // 存储分层：先把旧 config/samsara 整体改名备份，再建新配置目录
         com.shenqianye.samsara.storage.StoragePaths.bootstrapConfig();

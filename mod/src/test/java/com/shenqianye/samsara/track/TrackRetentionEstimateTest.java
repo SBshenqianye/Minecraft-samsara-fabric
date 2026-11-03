@@ -11,6 +11,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /** F-166 之后的 Web 容量预估：与 6B/点、5Hz 新鲜采样保持一致。 */
 class TrackRetentionEstimateTest {
     @Test
+    void calibratedBytesPerSampleChangesDailyEstimate() {
+        TrackRetention.Estimate estimate = TrackRetention.estimate(
+                TrackRetention.defaultCurve(), false, 12L);
+        assertEquals(12L, estimate.bytesPerSample());
+        assertEquals(12L * TrackRetention.FRESH_SAMPLES_PER_DAY, estimate.freshBytesPerDay());
+    }
+
+    @Test
     void defaultCurveEstimatesEachTierAndFiniteTotal() {
         TrackRetention.Estimate estimate = TrackRetention.estimate(
                 TrackRetention.defaultCurve(), false);

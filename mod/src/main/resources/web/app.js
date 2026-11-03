@@ -779,9 +779,20 @@ function buildCurve(file, entry, value) {
     }
     const head = document.createElement('div');
     head.className = 'curve-estimate-head';
-    head.textContent = '容量预估 · 每点 6B · 新鲜采样 5Hz/天 '
-      + humanBytes(data.freshBytesPerDay) + '（仅估算，按每档保留比例换算）';
+    const calibrated = data.actualTotalSamples > 0;
+    head.textContent = '容量预估 · 每点 ' + (data.bytesPerSample || 6) + 'B'
+      + (calibrated ? '（按实际 .bin 校准）' : '（默认假设）')
+      + ' · 新鲜采样 5Hz/天 ' + humanBytes(data.freshBytesPerDay)
+      + '（仅估算，按每档保留比例换算）';
     estimate.append(head);
+    const actual = document.createElement('div');
+    actual.className = 'curve-estimate-line';
+    actual.textContent = '当前实际 .bin：' + humanBytes(data.actualTotalBytes || 0)
+      + ' · ' + (data.actualFileCount || 0) + ' 个文件'
+      + ' · ' + (data.actualPlayerCount || 0) + ' 名玩家'
+      + ' · 平均 ' + humanBytes(Math.round(data.actualBytesPerPlayer || 0)) + '/玩家'
+      + (calibrated ? ' · 实测 ' + (data.actualBytesPerSample || 0).toFixed(2) + 'B/点' : '');
+    estimate.append(actual);
     for (const tier of data.tiers || []) {
       const line = document.createElement('div');
       line.className = 'curve-estimate-line';

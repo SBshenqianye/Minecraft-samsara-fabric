@@ -1,6 +1,8 @@
 package com.shenqianye.samsara.track;
 
+import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.EOFException;
 import java.io.IOException;
@@ -221,6 +223,72 @@ public final class TrackStore {
         int hzX100 = ((b[pos[0]] & 0xFF) << 8) | (b[pos[0] + 1] & 0xFF);
         pos[0] += 2;
         return new Segment(new UUID(msb, lsb), dim, start, hzX100 / 100.0);
+    }
+
+    // ---- 实际用量（容量预估校准）----
+
+    /** 单文件实际字节数与样本数。 */
+    public record FileUsage(long bytes, long samples) {
+    }
+
+    /**
+     * 流式统计样本数，不把整份轨迹读进内存；尾部不完整时只统计完整样本。
+     * 用于 Web 容量预估的“实测 B/点”校准。
+     */
+    public static FileUsage fileUsage(Path file) throws IOException {
+        long bytes = Files.size(file);
+        long samples = 0;
+        try (DataInputStream in = new DataInputStream(
+                new BufferedInputStream(Files.newInputStream(file), 8192))) {
+            byte[] header = new byte[MAGIC.length + 1];
+            in.readFully(header);
+            for (int i = 0; i < MAGIC.length; i++) {
+                if (header[i] != MAGIC[i]) {
+                    return new FileUsage(bytes, 0);
+                }
+            }
+            if ((header[MAGIC.length] & 0xFF) != VERSION) {
+                return new FileUsage(bytes, 0);
+            }
+            while (true) {
+                int tag = in.read();
+                if (tag < 0) {
+                    break;
+                }
+                if (tag == SEGMENT_TAG) {
+                    in.skipBytes(16); // uuid
+                    int dimLen = in.readUnsignedShort();
+                    in.skipBytes(dimLen + 8 + 2);
+                    continue;
+                }
+                readVarInt(in, tag); // dt（首字节已读）
+                readVarInt(in, -1);  // dx
+                readVarInt(in, -1);  // dy
+                readVarInt(in, -1);  // dz
+                in.skipBytes(3);     // yaw + pitch + flags
+                samples++;
+            }
+        } catch (EOFException e) {
+            // 尾部截断：保留已完整统计的样本
+        }
+        return new FileUsage(bytes, samples);
+    }
+
+    private static int readVarInt(DataInputStream in, int first) throws IOException {
+        int value = 0;
+        int shift = 0;
+        int b = first >= 0 ? first : in.readUnsignedByte();
+        while (true) {
+            value |= (b & 0x7F) << shift;
+            if ((b & 0x80) == 0) {
+                return value;
+            }
+            shift += 7;
+            if (shift > 28) {
+                throw new EOFException("varint 溢出");
+            }
+            b = in.readUnsignedByte();
+        }
     }
 
     // ---- 捕捉截断（capture cutoff）----

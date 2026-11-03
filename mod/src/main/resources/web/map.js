@@ -4,6 +4,11 @@
 // 圈地白名单/旗帜来自 claims.json。只读展示，不提供编辑入口。
 (function () {
   const STORE_CHUNKS = 'samsara.map.showChunks';
+  // 在线玩家：位置每 250ms 取一次快照，独立图层在两次快照之间做线性插值。
+  // 插值只重绘玩家，不重绘地形/圈地/旗帜，因此可以按显示器帧率跑。
+  const PLAYER_POLL_MS = 250;
+  const PLAYER_INTERP_MS = 240;
+  const PLAYER_TELEPORT_SNAP = 256;
   const state = {
     model: null,
     stackId: null,
@@ -20,6 +25,7 @@
     selectedSpawn: null,
     selectedChunk: null,
     chunkSummary: null,
+    statsKey: '',
     hover: null,
     drag: null,
     dragMoved: false,
@@ -34,6 +40,9 @@
     thumbTiles: new Map(),
     players: [],
     playersFetchedAt: 0,
+    playersLoading: false,
+    playerMotion: new Map(),
+    playerRaf: 0,
     playerTimer: 0,
     showPlayers: true,
     showChunks: storedFlag(STORE_CHUNKS, false),
@@ -77,6 +86,7 @@
       stats: $('map-stats'),
       stage: $('map-stage-anchor'),
       canvas: $('map-canvas'),
+      playerCanvas: $('map-players'),
       tooltip: $('map-tooltip'),
       selection: $('map-selection'),
       stack: $('map-stack'),
@@ -102,6 +112,10 @@
     if (els.canvas) {
       els.ctx = els.canvas.getContext('2d');
       els.ctx.imageSmoothingEnabled = false;
+    }
+    if (els.playerCanvas) {
+      els.playerCtx = els.playerCanvas.getContext('2d');
+      els.playerCtx.imageSmoothingEnabled = false;
     }
     return els;
   }
@@ -247,7 +261,6 @@
   function renderStats() {
     const { stats } = ensureEls();
     if (!stats) return;
-    stats.replaceChildren();
     const stack = currentStack();
     const dim = currentDim();
     const all = allDimensions();
@@ -276,6 +289,10 @@
         ['在线玩家', currentPlayers + ' / ' + totalPlayers + ' 人'],
         ['全服圈地', totalProtected + ' 区块 / ' + totalBanners + ' 旗'],
       ];
+    const key = chips.map(([label, value]) => label + '=' + value).join('\n');
+    if (key === state.statsKey) return;
+    state.statsKey = key;
+    stats.replaceChildren();
     for (const [label, value] of chips) {
       const chip = document.createElement('span');
       chip.className = 'map-stat';
@@ -451,15 +468,79 @@
     if (!el) return;
     const time = state.playersFetchedAt
       ? new Date(state.playersFetchedAt).toLocaleTimeString() : '—';
-    el.textContent = '在线 ' + state.players.length + ' 人 · 2 秒刷新 · ' + time;
+    const interval = PLAYER_POLL_MS >= 1000
+      ? (PLAYER_POLL_MS / 1000) + ' 秒' : PLAYER_POLL_MS + ' 毫秒';
+    el.textContent = '在线 ' + state.players.length + ' 人 · ' + interval + '刷新 · ' + time;
+  }
+
+  function playerKey(player) {
+    return String((player && (player.uuid || player.name)) || '') + '|'
+      + String((player && player.dimension) || '');
+  }
+
+  /** 根据上一帧的位置与本次快照，生成一个短插值；传送/换维度时直接吸附。 */
+  function syncPlayerMotion(players, now) {
+    const keep = new Set();
+    for (const player of players) {
+      const key = playerKey(player);
+      keep.add(key);
+      const x = Number(player.x) || 0;
+      const z = Number(player.z) || 0;
+      const previous = state.playerMotion.get(key);
+      let fromX = x;
+      let fromZ = z;
+      let duration = 0;
+      if (previous) {
+        const progressed = previous.duration > 0
+          ? Math.min(1, Math.max(0, (now - previous.startedAt) / previous.duration))
+          : 1;
+        fromX = previous.fromX + (previous.toX - previous.fromX) * progressed;
+        fromZ = previous.fromZ + (previous.toZ - previous.fromZ) * progressed;
+        const distance = Math.hypot(x - fromX, z - fromZ);
+        if (distance > 0.05 && distance <= PLAYER_TELEPORT_SNAP) {
+          duration = PLAYER_INTERP_MS;
+        } else {
+          fromX = x;
+          fromZ = z;
+        }
+      }
+      state.playerMotion.set(key, {
+        fromX, fromZ, toX: x, toZ: z, startedAt: now, duration,
+      });
+    }
+    for (const key of state.playerMotion.keys()) {
+      if (!keep.has(key)) state.playerMotion.delete(key);
+    }
+  }
+
+  function playerDisplayPosition(player, now) {
+    const motion = state.playerMotion.get(playerKey(player));
+    if (!motion || motion.duration <= 0) {
+      return { x: Number(player.x) || 0, z: Number(player.z) || 0 };
+    }
+    const t = Math.min(1, Math.max(0, (now - motion.startedAt) / motion.duration));
+    return {
+      x: motion.fromX + (motion.toX - motion.fromX) * t,
+      z: motion.fromZ + (motion.toZ - motion.fromZ) * t,
+    };
+  }
+
+  function playerMotionActive(now) {
+    for (const motion of state.playerMotion.values()) {
+      if (motion.duration > 0 && now < motion.startedAt + motion.duration) return true;
+    }
+    return false;
   }
 
   async function loadPlayers() {
-    if (!state.model) return;
+    if (!state.model || state.playersLoading) return;
     if (window.SamsaraUI && window.SamsaraUI.getToken && !window.SamsaraUI.getToken()) return;
+    state.playersLoading = true;
     try {
       const data = await window.SamsaraUI.api('/api/map/players');
-      state.players = Array.isArray(data.players) ? data.players : [];
+      const players = Array.isArray(data.players) ? data.players : [];
+      syncPlayerMotion(players, performance.now());
+      state.players = players;
       state.playersFetchedAt = Date.now();
       updatePlayerStatus();
       if (state.overview) {
@@ -467,10 +548,13 @@
         renderStats();
       } else {
         renderStats();
-        draw();
+        // 只重绘玩家图层；地形、圈地、旗帜不再因为轮询而重绘。
+        schedulePlayerDraw();
       }
     } catch (error) {
       // 玩家轮询失败不打断地图浏览；连接失效由统一 API 处理。
+    } finally {
+      state.playersLoading = false;
     }
   }
 
@@ -672,24 +756,36 @@
       });
   }
 
-  function createPlayerMarker(player, panel) {
+  function markerPosition(player, panel) {
     const { view } = panel;
     let x = (player.x - view.viewX) / view.viewW * 100;
     let z = (player.z - view.viewZ) / view.viewH * 100;
     const outside = x < 0 || x > 100 || z < 0 || z > 100;
-    x = Math.max(2, Math.min(98, x));
-    z = Math.max(5, Math.min(95, z));
-    const marker = document.createElement('button');
-    marker.type = 'button';
-    marker.className = 'map-player-marker' + (outside ? ' outside' : '');
-    marker.style.left = x + '%';
-    marker.style.top = z + '%';
+    return {
+      x: Math.max(2, Math.min(98, x)),
+      z: Math.max(5, Math.min(95, z)),
+      outside,
+    };
+  }
+
+  function applyPlayerMarker(marker, player, panel) {
+    const position = markerPosition(player, panel);
+    marker.style.left = position.x + '%';
+    marker.style.top = position.z + '%';
+    marker.classList.toggle('outside', position.outside);
+    marker.__player = player;
     marker.title = playerName(player) + ' · ' + stackLabelOf(player.stackId)
       + ' · ' + dimensionLabel(player.dimension)
       + '\n坐标 ' + fmtCoord(player.x) + ', ' + fmtCoord(player.y) + ', ' + fmtCoord(player.z)
-      + (outside ? '\n（在缩略图范围外，标记已贴边）' : '')
+      + (position.outside ? '\n（在缩略图范围外，标记已贴边）' : '')
       + '\n点击复制 TP 命令';
     marker.setAttribute('aria-label', playerName(player) + '，点击复制 TP 命令');
+  }
+
+  function createPlayerMarker(player, panel) {
+    const marker = document.createElement('button');
+    marker.type = 'button';
+    marker.className = 'map-player-marker';
     const dot = document.createElement('span');
     dot.className = 'dot';
     const name = document.createElement('span');
@@ -698,8 +794,9 @@
     marker.append(dot, name);
     marker.addEventListener('click', (event) => {
       event.stopPropagation();
-      copyPlayerCommand(player);
+      copyPlayerCommand(marker.__player || player);
     });
+    applyPlayerMarker(marker, player, panel);
     return marker;
   }
 
@@ -710,11 +807,32 @@
       const players = playersFor(panel.stack.id, panel.dim.dim);
       panel.meta.textContent = (panel.dim.protectedCount || 0) + ' 区块 · '
         + (panel.dim.bannerCount || 0) + ' 旗 · ' + players.length + ' 人';
-      panel.playerLayer.replaceChildren();
-      if (!showPlayers || !panel.view.hasRegion) continue;
-      for (const player of players) {
-        panel.playerLayer.append(createPlayerMarker(player, panel));
+      if (!showPlayers || !panel.view.hasRegion) {
+        panel.playerLayer.replaceChildren();
+        panel.markers = new Map();
+        continue;
       }
+      const markers = panel.markers || new Map();
+      const keep = new Set();
+      for (const player of players) {
+        const key = playerKey(player);
+        keep.add(key);
+        let marker = markers.get(key);
+        if (marker) {
+          applyPlayerMarker(marker, player, panel);
+        } else {
+          marker = createPlayerMarker(player, panel);
+          markers.set(key, marker);
+          panel.playerLayer.append(marker);
+        }
+      }
+      for (const [key, marker] of markers) {
+        if (!keep.has(key)) {
+          marker.remove();
+          markers.delete(key);
+        }
+      }
+      panel.markers = markers;
     }
     for (const stack of stacks()) {
       const el = document.getElementById('map-stack-players-' + safeId(stack.id));
@@ -878,6 +996,7 @@
     state.overview = Boolean(active);
     applyOverviewUi();
     if (state.overview) {
+      stopPlayerDraw();
       renderOverview();
       loadPlayers();
       window.SamsaraUI?.scrollToTarget?.('map-stack-overview');
@@ -936,7 +1055,7 @@
   }
 
   function resize() {
-    const { canvas, stage } = ensureEls();
+    const { canvas, stage, playerCanvas } = ensureEls();
     if (!canvas || !stage || state.overview) return;
     const width = Math.max(320, Math.round(stage.clientWidth));
     const height = Math.max(380, Math.min(820, Math.round(window.innerHeight * 0.64)));
@@ -952,6 +1071,15 @@
     const ctx = canvas.getContext('2d');
     ctx.imageSmoothingEnabled = false;
     els.ctx = ctx;
+    if (playerCanvas) {
+      playerCanvas.style.width = width + 'px';
+      playerCanvas.style.height = height + 'px';
+      playerCanvas.width = Math.round(width * dpr);
+      playerCanvas.height = Math.round(height * dpr);
+      const playerCtx = playerCanvas.getContext('2d');
+      playerCtx.imageSmoothingEnabled = false;
+      els.playerCtx = playerCtx;
+    }
     draw();
   }
 
@@ -1124,6 +1252,7 @@
       ctx.font = '13px system-ui, sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText('没有找到已加载的地图', width / 2, height / 2);
+      drawPlayerLayer(performance.now());
       return;
     }
 
@@ -1196,7 +1325,6 @@
     if (!ensureEls().spawns || ensureEls().spawns.checked) {
       drawSpawns(ctx, width, height);
     }
-    drawPlayers(ctx, dim, width, height);
     drawScale(ctx, width, height);
     ctx.fillStyle = 'rgba(226,232,240,.65)';
     ctx.font = '11px system-ui, sans-serif';
@@ -1211,6 +1339,11 @@
       ctx.arc(point.x, point.y, 10, 0, Math.PI * 2);
       ctx.stroke();
     }
+
+    // 地形/圈地重绘后同步玩家图层；移动中的玩家继续按帧插值。
+    const now = performance.now();
+    drawPlayerLayer(now);
+    if (playerMotionActive(now) && playerLayerActive()) schedulePlayerDraw();
   }
 
   function drawSpawns(ctx, width, height) {
@@ -1361,40 +1494,80 @@
     }
   }
 
-  function drawPlayers(ctx, dim, width, height) {
-    if (!state.showPlayers) return;
+  function drawPlayerMarker(ctx, player, position, width, height) {
+    const point = worldToScreen(position.x, position.z);
+    if (point.x < -30 || point.y < -30 || point.x > width + 30 || point.y > height + 30) {
+      return;
+    }
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, 8, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(96, 165, 250, .22)';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, 5, 0, Math.PI * 2);
+    ctx.fillStyle = '#60a5fa';
+    ctx.fill();
+    ctx.strokeStyle = '#eff6ff';
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+    const label = playerName(player);
+    const textX = point.x + 9;
+    const textY = point.y - 7;
+    ctx.font = 'bold 11px system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(8, 12, 17, .92)';
+    ctx.strokeText(label, textX, textY);
+    ctx.fillStyle = '#dbeafe';
+    ctx.fillText(label, textX, textY);
+    ctx.restore();
+  }
+
+  /** 玩家独立画布：每次只清空并重画在线玩家，不碰地形图层。 */
+  function drawPlayerLayer(now) {
+    const { playerCanvas, playerCtx } = ensureEls();
+    if (!playerCanvas || !playerCtx) return;
+    const width = state.cssWidth;
+    const height = state.cssHeight;
+    if (!width || !height) return;
+    playerCtx.setTransform(state.dpr, 0, 0, state.dpr, 0, 0);
+    playerCtx.clearRect(0, 0, width, height);
+    if (!state.showPlayers || state.overview) return;
     const stack = currentStack();
+    const dim = currentDim();
     if (!stack || !dim) return;
     for (const player of playersFor(stack.id, dim.dim)) {
-      const point = worldToScreen(player.x, player.z);
-      if (point.x < -30 || point.y < -30 || point.x > width + 30 || point.y > height + 30) {
-        continue;
-      }
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(point.x, point.y, 8, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(96, 165, 250, .22)';
-      ctx.fill();
-      ctx.beginPath();
-      ctx.arc(point.x, point.y, 5, 0, Math.PI * 2);
-      ctx.fillStyle = '#60a5fa';
-      ctx.fill();
-      ctx.strokeStyle = '#eff6ff';
-      ctx.lineWidth = 1.6;
-      ctx.stroke();
-      const label = playerName(player);
-      const textX = point.x + 9;
-      const textY = point.y - 7;
-      ctx.font = 'bold 11px system-ui, sans-serif';
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'alphabetic';
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = 'rgba(8, 12, 17, .92)';
-      ctx.strokeText(label, textX, textY);
-      ctx.fillStyle = '#dbeafe';
-      ctx.fillText(label, textX, textY);
-      ctx.restore();
+      drawPlayerMarker(playerCtx, player, playerDisplayPosition(player, now), width, height);
     }
+  }
+
+  function playerLayerActive() {
+    return state.showPlayers && !state.overview
+      && (!window.SamsaraUI?.isActiveTab || window.SamsaraUI.isActiveTab('map'));
+  }
+
+  function playerFrame(now) {
+    state.playerRaf = 0;
+    drawPlayerLayer(now);
+    if (playerMotionActive(now) && playerLayerActive()) {
+      state.playerRaf = requestAnimationFrame(playerFrame);
+    }
+  }
+
+  function schedulePlayerDraw() {
+    if (state.playerRaf) return;
+    if (!playerLayerActive()) {
+      drawPlayerLayer(performance.now());
+      return;
+    }
+    state.playerRaf = requestAnimationFrame(playerFrame);
+  }
+
+  function stopPlayerDraw() {
+    if (state.playerRaf) cancelAnimationFrame(state.playerRaf);
+    state.playerRaf = 0;
   }
 
   function playerAt(screenX, screenY) {
@@ -1403,8 +1576,10 @@
     if (!stack || !dim || !state.showPlayers) return null;
     let best = null;
     let bestDistance = 13 * 13;
+    const now = performance.now();
     for (const player of playersFor(stack.id, dim.dim)) {
-      const point = worldToScreen(player.x, player.z);
+      const position = playerDisplayPosition(player, now);
+      const point = worldToScreen(position.x, position.z);
       const dx = point.x - screenX;
       const dy = point.y - screenY;
       const distance = dx * dx + dy * dy;
@@ -1895,6 +2070,8 @@
   }
 
   function bind() {
+    document.documentElement.style.setProperty('--map-player-interp',
+      (PLAYER_INTERP_MS / 1000) + 's');
     const {
       canvas, stage, stack, dimension, reload, fit, zoomIn, zoomOut, claims, chunks,
       chunkMode, spawns, shading, showPlayers, overviewToggle,
@@ -1957,7 +2134,7 @@
       showPlayers.addEventListener('change', () => {
         state.showPlayers = showPlayers.checked;
         if (state.overview) updateOverviewPlayers();
-        else draw();
+        else schedulePlayerDraw();
       });
     }
     if (shading) {
@@ -2081,7 +2258,7 @@
     if (!state.playerTimer) {
       state.playerTimer = window.setInterval(() => {
         if (window.SamsaraUI?.isActiveTab?.('map')) loadPlayers();
-      }, 2000);
+      }, PLAYER_POLL_MS);
     }
     if (window.SamsaraBanners) {
       window.SamsaraBanners.ready(() => scheduleDraw());

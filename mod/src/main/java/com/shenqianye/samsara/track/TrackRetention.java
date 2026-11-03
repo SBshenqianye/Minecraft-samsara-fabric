@@ -254,9 +254,18 @@ public final class TrackRetention {
      * 因此 {@code unbounded=true}，{@code steadyBytes} 只统计有限档位。
      */
     public static Estimate estimate(List<CurvePoint> curve, boolean keepAll) {
-        long freshBytes = BYTES_PER_SAMPLE * FRESH_SAMPLES_PER_DAY;
+        return estimate(curve, keepAll, BYTES_PER_SAMPLE);
+    }
+
+    /**
+     * 用实测 B/点校准的容量预估；{@code bytesPerSample <= 0} 时回退到 6B/点。
+     */
+    public static Estimate estimate(List<CurvePoint> curve, boolean keepAll,
+                                    long bytesPerSample) {
+        long perSample = bytesPerSample > 0 ? bytesPerSample : BYTES_PER_SAMPLE;
+        long freshBytes = perSample * FRESH_SAMPLES_PER_DAY;
         if (keepAll) {
-            return new Estimate(BYTES_PER_SAMPLE, FRESH_SAMPLES_PER_DAY, freshBytes,
+            return new Estimate(perSample, FRESH_SAMPLES_PER_DAY, freshBytes,
                     List.of(), 0, freshBytes, true, true,
                     "keepAll：不降采样，容量会随时间无限增长");
         }
@@ -293,7 +302,7 @@ public final class TrackRetention {
                 ? "最后一档 keepRatio=" + formatRatio(lastRatio)
                 + "：更老数据每天约 " + humanBytes(growth) + " 增长，稳态无上限"
                 : "最后一档 keepRatio=0：容量有上限";
-        return new Estimate(BYTES_PER_SAMPLE, FRESH_SAMPLES_PER_DAY, freshBytes,
+        return new Estimate(perSample, FRESH_SAMPLES_PER_DAY, freshBytes,
                 List.copyOf(tiers), cumulative, growth, unbounded, false, warning);
     }
 

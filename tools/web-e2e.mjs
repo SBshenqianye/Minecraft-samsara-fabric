@@ -491,6 +491,71 @@ async function main() {
     check('权限树布尔改为按钮', mods.permissions > 0, 'segmented=' + mods.permissions);
     check('配置页布尔改为按钮', mods.configBool > 0, 'segmented=' + mods.configBool);
 
+    // ---- 权限分段控件：保存 deny → 回显 → 恢复原等级 ----
+    const permLevels = await evaluate(`(async () => {
+      const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      window.SamsaraUI.setActiveTab('permissions');
+      await wait(900);
+      const api = window.SamsaraUI.api;
+      const model = await api('/api/permissions');
+      const leaves = [];
+      const walk = (nodes) => {
+        for (const node of nodes || []) {
+          if (!node.children || node.children.length === 0) leaves.push(node);
+          else walk(node.children);
+        }
+      };
+      walk(model.tree || []);
+      const node = leaves.find((item) => item.path === 'where broadcast')
+        || leaves.find((item) => item.path.startsWith('where'))
+        || leaves[0];
+      if (!node) return { error: '没有可编辑的权限叶子' };
+      const before = node.level || 'inherit';
+      const rowFor = (path) => document.getElementById('perm-node-' + encodeURIComponent(path));
+      const active = (path) => rowFor(path)?.querySelector('.perm-levels .segmented-btn.active')?.dataset.value || '';
+      const effective = (path) => {
+        const row = rowFor(path);
+        if (!row) return '';
+        const badge = [...row.querySelectorAll('.perm-badge')]
+          .find((item) => item.textContent.startsWith('实际：'));
+        return badge ? badge.textContent.replace('实际：', '').trim() : '';
+      };
+      const click = async (path, value) => {
+        const row = rowFor(path);
+        const button = row?.querySelector('.perm-levels .segmented-btn[data-value="' + value + '"]');
+        if (!button) throw new Error('找不到分段按钮: ' + value);
+        button.click();
+        await wait(1000);
+      };
+      let denied = null;
+      try {
+        await click(node.path, 'deny');
+        denied = { active: active(node.path), effective: effective(node.path) };
+      } finally {
+        // 无论 UI 成功与否都通过 API 恢复，避免污染测试服权限配置
+        await api('/api/permissions', {
+          method: 'PUT',
+          body: JSON.stringify({ nodes: [{ path: node.path, level: before }] }),
+        });
+        if (window.SamsaraPermissions && window.SamsaraPermissions.load) {
+          await window.SamsaraPermissions.load();
+        }
+        await wait(700);
+      }
+      return {
+        path: node.path,
+        before,
+        denied,
+        restored: { active: active(node.path), effective: effective(node.path) },
+      };
+    })()`);
+    check('权限分段控件保存 deny 并回显',
+      permLevels.denied && permLevels.denied.active === 'deny' && permLevels.denied.effective === 'deny',
+      JSON.stringify(permLevels));
+    check('权限分段控件恢复原等级',
+      permLevels.restored && permLevels.restored.active === permLevels.before,
+      JSON.stringify(permLevels));
+
     // ---- 圈地范围：条件显示 / 色板 / 图案网格 / 朝向 / 缩放平移 ----
     const claim = await evaluate(`(async () => {
       const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -849,8 +914,14 @@ async function main() {
       const targetStack = target?.closest('.map-stack-block')?.dataset.stack || '';
       target?.click();
       await wait(600);
+      const baseCanvas = document.getElementById('map-canvas');
+      const playerCanvas = document.getElementById('map-players');
       return {
-        canvas: Boolean(document.getElementById('map-canvas')),
+        canvas: Boolean(baseCanvas),
+        playerLayer: Boolean(playerCanvas && baseCanvas
+          && playerCanvas.width === baseCanvas.width
+          && playerCanvas.height === baseCanvas.height
+          && playerCanvas.width > 0),
         stats: document.getElementById('map-stats')?.textContent.trim() || '',
         message: document.getElementById('map-message')?.textContent || '',
         hasMarkStale: typeof window.SamsaraMap?.markStale === 'function',
@@ -875,6 +946,8 @@ async function main() {
         && mapState.stats.length > 0 && !mapState.message.includes('失败'),
         JSON.stringify(mapState));
     check('地图页提供几何缓存失效入口', mapState.hasMarkStale);
+    check('详细地图玩家独立图层与底图同尺寸', mapState.playerLayer,
+        'playerLayer=' + mapState.playerLayer);
     check('世界栈总览按栈层渲染', mapState.overviewBlocks >= 1,
         'blocks=' + mapState.overviewBlocks);
     check('每栈含主世界/下界/末地三面板', mapState.panels >= 3
@@ -1045,13 +1118,19 @@ async function main() {
       return {
         summaryOk: summary.ok === true,
         edits: summary.editCount,
-        hasProtected: typeof summary.protected === 'boolean',
+        hasProtected: summary.protected === true,
+        canApply: summary.canApply === true,
         viewOk: view.ok === true,
         sessions: view.sessions,
       };
     })()`);
-    check('单区块 diff 摘要 API 可用', diffApi.summaryOk && diffApi.edits >= 0
-        && diffApi.hasProtected, JSON.stringify(diffApi));
+    check('单区块 diff 摘要 API 可用', diffApi.summaryOk && diffApi.edits >= 0,
+        JSON.stringify(diffApi));
+    if (diffApi.hasProtected) {
+      check('真实圈地保护的单区块拒绝回溯', !diffApi.canApply, JSON.stringify(diffApi));
+    } else {
+      console.log('  SKIP  真实圈地保护的单区块拒绝回溯（测试服当前没有圈地；由单测覆盖闸门）');
+    }
     check('Diff 回看状态 API 可用', diffApi.viewOk && diffApi.sessions === 0,
         JSON.stringify(diffApi));
 
