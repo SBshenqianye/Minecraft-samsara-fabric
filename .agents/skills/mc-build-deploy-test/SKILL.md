@@ -321,10 +321,12 @@ $rc = "E:\workspace\deepseek harness\mc-mod-samsara\.tmp\rcon"
 
 ---
 
-## 生产服优雅重启（2026-11-04 实践）
+## 生产服安装更新包的优雅重启（2026-11-04 实践）
 
 > 适用：`C:\Games\0-minecraft\server\servers\Vanilia 26.3`，由 `Launch Server.bat` 托管，`stop` 后约 5 秒自动重启。
-> 目标：在线玩家收到原因和倒计时；旧 jar 可回退；换 jar 与自动重启之间不留“双 jar / 旧 jar”窗口。
+> **仅用于安装新 jar / 更新包**，不是“所有重启”的通用模板。
+> 普通重启（不换包）是另一套：同一套公告节奏 → `stop` → 等自动重启 → 看日志/`list` 确认即可；不需要预拷贝、换 jar、版本/API/头像验收。
+> 真正优雅的是**公告节奏**（60 → 30 → 10 → 5 → 3 → 2 → 1），不是消息格式。
 
 ### 判据
 
@@ -342,14 +344,14 @@ $rc = "E:\workspace\deepseek harness\mc-mod-samsara\.tmp\rcon"
    Copy-Item "$prod\mods\samsara-0.38.1.jar" "$prod\backups\samsara\mod-jars\samsara-0.38.1.jar" -Force
    Copy-Item $new "$prod\mods\samsara-0.39.0.jar.new" -Force
    ```
-2. **RCON 倒计时**：`say` 在 60/30/10/5/3/2/1 秒发送原因；不要用 PowerShell 函数名 `R`（内置别名是 `Invoke-History`，会静默失败）。
+2. **公告节奏（核心）**：`say` 在 60/30/10/5/3/2/1 秒发送；首条说清原因/影响，最后 5 秒只报数，不再塞长句。不要用 PowerShell 函数名 `R`（内置别名是 `Invoke-History`，会静默失败）。
    ```powershell
    function SendRcon($cmd) {
      & java tools\RconClient.java 127.0.0.1 25585 <password> $cmd
    }
-   SendRcon 'say [samsara] 服务器将在 60 秒后重启：<原因>。'
+   SendRcon 'say [samsara] 服务器将在 60 秒后重启：<原因/更新内容>。'
    Start-Sleep 30; SendRcon 'say [samsara] 重启倒计时：30 秒。'
-   Start-Sleep 20; SendRcon 'say [samsara] 重启倒计时：10 秒。'
+   Start-Sleep 20; SendRcon 'say [samsara] 重启倒计时：10 秒，请回到安全位置。'
    Start-Sleep 5;  SendRcon 'say [samsara] 重启倒计时：5 秒。'
    Start-Sleep 2;  SendRcon 'say [samsara] 重启倒计时：3 秒。'
    Start-Sleep 1;  SendRcon 'say [samsara] 重启倒计时：2 秒。'
@@ -362,17 +364,17 @@ $rc = "E:\workspace\deepseek harness\mc-mod-samsara\.tmp\rcon"
    Remove-Item "$prod\mods\samsara-0.38.1.jar" -Force
    Move-Item "$prod\mods\samsara-0.39.0.jar.new" "$prod\mods\samsara-0.39.0.jar" -Force
    ```
-4. **等自动重启并验证**：
+4. **安装后验收（仅更新包；按实际改动选取，不是每次重启都做）**：
    ```powershell
-   # Web 8720 起来后，RCON：
-   SendRcon 'samsara version'   # 期望新版本
+   SendRcon 'samsara version'   # 只有换 jar 时核对版本
    SendRcon 'list'
    Invoke-WebRequest http://127.0.0.1:8720/ -UseBasicParsing
    ```
-   再查 `/api/status`、`/user`、`/api/user/map/avatar?name=Notch`（期望 200/image/png）。
+   只有本次更新涉及 Web/用户端/头像时，才查对应项（如 `/api/status`、`/user`、`/api/user/map/avatar?name=Notch`）。普通重启只确认 `Done`/`list` 即可，不要固化成一整套验收。
 
 ### 反例 / 坑
 
+- 把“安装更新包”误当成“普通重启”：普通重启不需要预拷贝/换 jar，也不需要版本、/api/status、/user、头像验收。
 - 未预拷贝 `.new`，stop 后再从构建目录拉 1.7MB，可能撞上 5 秒自动重启窗口。
 - 旧 jar 未删除时直接放新 jar：启动时两个 `samsara` jar 会重复加载。
 - 倒计时函数命名为 `R`：PowerShell 会解析成 `Invoke-History`，命令全部没发出去；用 `SendRcon` 这类明确名称。
