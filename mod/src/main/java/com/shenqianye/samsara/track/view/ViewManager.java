@@ -12,6 +12,8 @@ import com.shenqianye.samsara.track.TrackEventStore;
 import com.shenqianye.samsara.track.TrackLayout;
 import com.shenqianye.samsara.track.TrackRecorder;
 import com.shenqianye.samsara.track.TrackReplay;
+import com.shenqianye.samsara.track.FakeVehicle;
+import com.shenqianye.samsara.track.TrackMannequin;
 import net.minecraft.core.BlockPos;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
@@ -499,8 +501,9 @@ public final class ViewManager {
         m.yHeadRotO = point.yaw();
         m.yBodyRotO = point.yaw();
         m.setDeltaMovement(Vec3.ZERO);
-        m.applyTrackFlags(point.flags());
         applyTrackEvents(s, m, trackTime);
+        m.applyTrackFlags(point.flags());
+        updateFakeVehicle(s, m);
         if (s.hasPrevMannequin) {
             double jx = point.x() - s.prevMannequinX;
             double jy = point.y() - s.prevMannequinY;
@@ -522,6 +525,27 @@ public final class ViewManager {
         s.prevMannequinZ = point.z();
         s.hasPrevMannequin = true;
         return true;
+    }
+
+    /**
+     * 客户端假载具：按人偶当前 VEHICLE 类型向附近观看者发假实体包。
+     * 未知类型不创建实体，人偶回退蹲姿。
+     */
+    private static void updateFakeVehicle(ViewSession s, TrackMannequin mannequin) {
+        if (mannequin.vehicleType().isBlank()) {
+            if (s.vehicle != null) {
+                s.vehicle.setType("");
+                s.vehicle = null;
+            }
+            return;
+        }
+        if (s.vehicle == null) {
+            s.vehicle = new FakeVehicle();
+        }
+        s.vehicle.setType(mannequin.vehicleType());
+        if (mannequin.level() instanceof ServerLevel level) {
+            s.vehicle.tick(level, mannequin);
+        }
     }
 
     /**
@@ -982,6 +1006,10 @@ public final class ViewManager {
         }
         // 相机接管在人偶身上时先归还，再移除实体，避免黑屏/相机悬空
         releaseCamera(server, s, s.mannequin);
+        if (s.vehicle != null) {
+            s.vehicle.remove();
+            s.vehicle = null;
+        }
         if (s.mannequin != null) {
             s.mannequin.discard();
             s.mannequin = null;

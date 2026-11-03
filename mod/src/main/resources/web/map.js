@@ -3,6 +3,7 @@
 // 地图标签：地形底图来自服务端扫描 region 文件的 PNG tile；
 // 圈地白名单/旗帜来自 claims.json。只读展示，不提供编辑入口。
 (function () {
+  const STORE_CHUNKS = 'samsara.map.showChunks';
   const state = {
     model: null,
     stackId: null,
@@ -17,6 +18,8 @@
     pending: new Set(),
     selected: null,
     selectedSpawn: null,
+    selectedChunk: null,
+    chunkSummary: null,
     hover: null,
     drag: null,
     dragMoved: false,
@@ -33,6 +36,7 @@
     playersFetchedAt: 0,
     playerTimer: 0,
     showPlayers: true,
+    showChunks: storedFlag(STORE_CHUNKS, false),
   };
 
   const DIRECTION_NAMES = [
@@ -47,6 +51,24 @@
 
   const $ = (id) => document.getElementById(id);
   let els = null;
+
+  function storedFlag(key, fallback) {
+    try {
+      const value = window.localStorage.getItem(key);
+      if (value == null) return fallback;
+      return value === '1' || value === 'true';
+    } catch (error) {
+      return fallback;
+    }
+  }
+
+  function storeFlag(key, value) {
+    try {
+      window.localStorage.setItem(key, value ? '1' : '0');
+    } catch (error) {
+      // 隐私模式/存储被禁用时只保留本次页面状态。
+    }
+  }
 
   function ensureEls() {
     if (els) return els;
@@ -65,6 +87,9 @@
       zoomIn: $('map-zoom-in'),
       zoomOut: $('map-zoom-out'),
       claims: $('map-show-claims'),
+      chunks: $('map-show-chunks'),
+      chunkMode: $('map-chunk-mode'),
+      chunkLegend: $('map-chunk-grid-legend'),
       spawns: $('map-show-spawns'),
       shading: $('map-shading'),
       showPlayers: $('map-show-players'),
@@ -158,6 +183,8 @@
       state.overviewKey = '';
       state.selected = null;
       state.selectedSpawn = null;
+      state.selectedChunk = null;
+      state.chunkSummary = null;
       const allStacks = stacks();
       if (!state.stackId || !allStacks.some((stack) => stack.id === state.stackId)) {
         const top = allStacks.find((stack) => stack.top) || allStacks[0];
@@ -1005,6 +1032,78 @@
     });
   }
 
+  function chunkGridStep(chunkPixels) {
+    if (chunkPixels >= 6) return 1;
+    if (chunkPixels >= 2) return 4;
+    return 16;
+  }
+
+  function updateChunkLegend(chunkPixels) {
+    const el = ensureEls().chunkLegend;
+    if (!el) return;
+    if (!state.showChunks) {
+      el.textContent = '区块网格 关';
+      return;
+    }
+    const step = chunkGridStep(chunkPixels);
+    el.textContent = step > 1
+      ? '区块网格 开 · 抽稀 ' + step + '×' + step
+      : '区块网格 开';
+  }
+
+  /** 只读叠加：按当前缩放画 16 格区块边界；缩小到看不清时按 4/16 区块抽稀。 */
+  function drawChunkGrid(ctx, width, height) {
+    if (!state.showChunks) return;
+    const chunkPixels = 16 / state.scale;
+    const step = chunkGridStep(chunkPixels);
+    const stepBlocks = 16 * step;
+    const left = screenToWorld(0, 0);
+    const right = screenToWorld(width, height);
+    const startX = Math.floor(left.x / stepBlocks) * stepBlocks;
+    const startZ = Math.floor(left.z / stepBlocks) * stepBlocks;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, width, height);
+    ctx.clip();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = step === 1
+      ? 'rgba(148, 163, 184, .22)' : 'rgba(148, 163, 184, .38)';
+    ctx.beginPath();
+    for (let wx = startX; wx <= right.x; wx += stepBlocks) {
+      const screen = worldToScreen(wx, 0);
+      const x = Math.round(screen.x) + .5;
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, height);
+    }
+    for (let wz = startZ; wz <= right.z; wz += stepBlocks) {
+      const screen = worldToScreen(0, wz);
+      const y = Math.round(screen.y) + .5;
+      ctx.moveTo(0, y);
+      ctx.lineTo(width, y);
+    }
+    ctx.stroke();
+    // region 边界（512 格）加重，方便定位大范围。
+    if (stepBlocks < 512) {
+      const regionStartX = Math.floor(left.x / 512) * 512;
+      const regionStartZ = Math.floor(left.z / 512) * 512;
+      ctx.strokeStyle = 'rgba(94, 234, 212, .35)';
+      ctx.beginPath();
+      for (let wx = regionStartX; wx <= right.x; wx += 512) {
+        const x = Math.round(worldToScreen(wx, 0).x) + .5;
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+      }
+      for (let wz = regionStartZ; wz <= right.z; wz += 512) {
+        const y = Math.round(worldToScreen(0, wz).y) + .5;
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+    updateChunkLegend(chunkPixels);
+  }
+
   function draw() {
     const { canvas, ctx } = ensureEls();
     if (!canvas || !ctx) return;
@@ -1049,6 +1148,8 @@
       ctx.strokeRect(topLeft.x + .5, topLeft.y + .5, tilePixels - 1, tilePixels - 1);
     }
 
+    drawChunkGrid(ctx, width, height);
+
     const showClaims = !ensureEls().claims || ensureEls().claims.checked;
     if (showClaims) {
       const protectedSet = chunkSet(dim);
@@ -1090,6 +1191,7 @@
     }
 
     drawSelectedRange(ctx);
+    drawChunkSelection(ctx);
     drawBanners(ctx, dim, width, height);
     if (!ensureEls().spawns || ensureEls().spawns.checked) {
       drawSpawns(ctx, width, height);
@@ -1207,6 +1309,22 @@
     }
   }
 
+  /** 区块操作模式：高亮选中的单区块（不属于保存型回溯或回看本身）。 */
+  function drawChunkSelection(ctx) {
+    if (!state.selectedChunk) return;
+    const { cx, cz } = state.selectedChunk;
+    const point = worldToScreen(cx * 16, cz * 16);
+    const size = Math.max(2, 16 / state.scale);
+    ctx.save();
+    ctx.strokeStyle = 'rgba(251, 191, 36, .95)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.strokeRect(point.x + .5, point.y + .5, size, size);
+    ctx.restore();
+    ctx.fillStyle = 'rgba(251, 191, 36, .1)';
+    ctx.fillRect(point.x, point.y, size, size);
+  }
+
   function drawBanners(ctx, dim, width, height) {
     const banners = Array.isArray(dim.banners) ? dim.banners : [];
     const icon = window.SamsaraBanners;
@@ -1316,7 +1434,8 @@
     ctx.stroke();
     ctx.font = '11px system-ui, sans-serif';
     ctx.textAlign = 'left';
-    ctx.fillText(blocks + ' 格 · ' + state.scale + ' 格/像素', x, y - 9);
+    ctx.fillText(blocks + ' 格 · ' + state.scale + ' 格/像素'
+      + ' · 区块网格 ' + (state.showChunks ? '开' : '关'), x, y - 9);
   }
 
   function bannerAt(screenX, screenY) {
@@ -1480,6 +1599,8 @@
   function selectBanner(banner) {
     state.selected = banner;
     state.selectedSpawn = null;
+    state.selectedChunk = null;
+    state.chunkSummary = null;
     renderSelection();
     draw();
   }
@@ -1487,6 +1608,8 @@
   function selectSpawn(point) {
     state.selectedSpawn = point;
     state.selected = null;
+    state.selectedChunk = null;
+    state.chunkSummary = null;
     renderSelection();
     draw();
   }
@@ -1504,20 +1627,170 @@
     parent.append(list);
   }
 
+  function renderChunkSelection(selection, title) {
+    const stack = currentStack();
+    const dim = currentDim();
+    const { cx, cz } = state.selectedChunk;
+    title.textContent = '区块 (' + cx + ', ' + cz + ')';
+    appendRows(selection, [
+      ['栈层', stack ? stack.label : '—'],
+      ['维度', dim ? dim.name : '—'],
+      ['方块范围', (cx * 16) + '~' + (cx * 16 + 15) + ', ' + (cz * 16) + '~' + (cz * 16 + 15)],
+      ['说明', '回溯会写方块；回看只发客户端假方块，不写世界'],
+    ]);
+
+    const players = stack && dim ? playersFor(stack.id, dim.dim) : [];
+    const playerRow = document.createElement('label');
+    playerRow.className = 'map-chunk-player';
+    const playerLabel = document.createElement('span');
+    playerLabel.textContent = '回看观看者';
+    const playerSelect = document.createElement('select');
+    for (const player of players) {
+      const option = document.createElement('option');
+      option.value = player.name;
+      option.textContent = player.name;
+      playerSelect.append(option);
+    }
+    if (players.length === 0) {
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = '当前维度没有在线玩家';
+      playerSelect.append(option);
+      playerSelect.disabled = true;
+    }
+    playerRow.append(playerLabel, playerSelect);
+    selection.append(playerRow);
+
+    const actions = document.createElement('div');
+    actions.className = 'map-chunk-actions';
+    const preview = document.createElement('button');
+    preview.type = 'button';
+    preview.className = 'ghost';
+    preview.textContent = '预览回溯';
+    const restore = document.createElement('button');
+    restore.type = 'button';
+    restore.className = 'ghost';
+    restore.textContent = '执行回溯（需确认）';
+    const view = document.createElement('button');
+    view.type = 'button';
+    view.className = 'ghost';
+    view.textContent = '只读回看';
+    view.disabled = players.length === 0;
+    const stop = document.createElement('button');
+    stop.type = 'button';
+    stop.className = 'ghost';
+    stop.textContent = '停止回看';
+    stop.disabled = players.length === 0;
+    actions.append(preview, restore, view, stop);
+    selection.append(actions);
+
+    const status = document.createElement('div');
+    status.className = 'map-chunk-status';
+    status.textContent = '先预览，再执行；执行会写前备份并受圈地/倒流保护约束。';
+    selection.append(status);
+    const setStatus = (text, kind) => {
+      status.textContent = text;
+      status.className = 'map-chunk-status' + (kind ? ' ' + kind : '');
+    };
+    const body = (extra) => JSON.stringify(Object.assign({
+      stack: stack ? stack.id : '',
+      dim: dim ? dim.dim : '',
+      cx,
+      cz,
+    }, extra || {}));
+    const call = (path, options) => window.SamsaraUI.api(path, options);
+
+    preview.addEventListener('click', async () => {
+      setStatus('正在读取 diff 摘要…');
+      try {
+        const result = await call('/api/diff/chunk/restore', {
+          method: 'POST',
+          body: body({ preview: true }),
+        });
+        if (!result.ok) {
+          setStatus('预览失败：' + (result.error || '未知错误'), 'error');
+          return;
+        }
+        const changed = result.changedBlocks < 0 ? '未加载' : result.changedBlocks + ' 格';
+        setStatus('diff ' + result.editCount + ' 条 · 候选 ' + result.candidateBlocks
+          + ' · 将改动 ' + changed + ' · 目标 ' + formatTime(result.target)
+          + (result.protected ? ' · ⚠ 圈地保护' : '')
+          + (result.rewindRunning ? ' · ⚠ 倒流进行中' : ''));
+      } catch (e) {
+        setStatus('预览失败：' + (e && e.message ? e.message : '请求失败'), 'error');
+      }
+    });
+
+    restore.addEventListener('click', async () => {
+      if (!window.confirm('执行单区块回溯？会写方块并先备份 .mca。\n区块 (' + cx + ', ' + cz + ')')) {
+        return;
+      }
+      setStatus('正在执行回溯…');
+      try {
+        const result = await call('/api/diff/chunk/restore', {
+          method: 'POST',
+          body: body({ confirm: true }),
+        });
+        if (!result.ok) {
+          setStatus('回溯失败：' + (result.error || '未知错误'), 'error');
+          return;
+        }
+        setStatus(result.message || ('已回溯，改动 ' + result.applied + ' 格'), 'ok');
+        window.SamsaraMap?.markStale?.();
+      } catch (e) {
+        setStatus('回溯失败：' + (e && e.message ? e.message : '请求失败'), 'error');
+      }
+    });
+
+    view.addEventListener('click', async () => {
+      const player = playerSelect.value;
+      if (!player) return;
+      setStatus('正在启动只读回看…');
+      try {
+        const result = await call('/api/diff/view', {
+          method: 'POST',
+          body: body({ action: 'start', player, speed: 1 }),
+        });
+        setStatus(result.message || '回看已启动', 'ok');
+      } catch (e) {
+        setStatus('回看启动失败：' + (e && e.message ? e.message : '请求失败'), 'error');
+      }
+    });
+
+    stop.addEventListener('click', async () => {
+      const player = playerSelect.value;
+      if (!player) return;
+      try {
+        const result = await call('/api/diff/view', {
+          method: 'POST',
+          body: JSON.stringify({ action: 'stop', player }),
+        });
+        setStatus(result.message || '已停止回看', 'ok');
+      } catch (e) {
+        setStatus('停止回看失败：' + (e && e.message ? e.message : '请求失败'), 'error');
+      }
+    });
+  }
+
+
   function renderSelection() {
     const { selection } = ensureEls();
     if (!selection) return;
-    selection.hidden = !state.selected && !state.selectedSpawn;
+    selection.hidden = !state.selected && !state.selectedSpawn && !state.selectedChunk;
     selection.replaceChildren();
     const title = document.createElement('div');
     title.className = 'map-selection-title';
     selection.append(title);
-    if (!state.selected && !state.selectedSpawn) {
+    if (!state.selected && !state.selectedSpawn && !state.selectedChunk) {
       title.textContent = '地图详情';
       const empty = document.createElement('p');
       empty.className = 'muted small';
-      empty.textContent = '点击地图上的旗帜或出生点查看详情；拖动平移，滚轮缩放。';
+      empty.textContent = '点击地图上的旗帜或出生点查看详情；勾选“区块操作”后可点选区块做回溯/回看。拖动平移，滚轮缩放。';
       selection.append(empty);
+      return;
+    }
+    if (state.selectedChunk) {
+      renderChunkSelection(selection, title);
       return;
     }
     if (state.selectedSpawn) {
@@ -1594,6 +1867,8 @@
     state.pending.clear();
     state.selected = null;
     state.selectedSpawn = null;
+    state.selectedChunk = null;
+    state.chunkSummary = null;
     renderStats();
     renderSelection();
     fitView();
@@ -1609,6 +1884,8 @@
     state.pending.clear();
     state.selected = null;
     state.selectedSpawn = null;
+    state.selectedChunk = null;
+    state.chunkSummary = null;
     renderControls();
     renderStats();
     renderSelection();
@@ -1619,8 +1896,8 @@
 
   function bind() {
     const {
-      canvas, stage, stack, dimension, reload, fit, zoomIn, zoomOut, claims, spawns,
-      shading, showPlayers, overviewToggle,
+      canvas, stage, stack, dimension, reload, fit, zoomIn, zoomOut, claims, chunks,
+      chunkMode, spawns, shading, showPlayers, overviewToggle,
     } = ensureEls();
     if (!canvas || !stage) return;
     new ResizeObserver(resize).observe(stage);
@@ -1648,6 +1925,28 @@
         if (state.overview) {
           for (const panel of state.overviewPanels) drawOverviewPanel(panel);
         } else {
+          draw();
+        }
+      });
+    }
+    if (chunks) {
+      chunks.checked = state.showChunks;
+      chunks.addEventListener('change', () => {
+        state.showChunks = chunks.checked;
+        storeFlag(STORE_CHUNKS, state.showChunks);
+        updateChunkLegend(16 / state.scale);
+        if (!state.overview) {
+          scheduleDraw();
+        }
+      });
+      updateChunkLegend(16 / state.scale);
+    }
+    if (chunkMode) {
+      chunkMode.addEventListener('change', () => {
+        if (!chunkMode.checked && state.selectedChunk) {
+          state.selectedChunk = null;
+          state.chunkSummary = null;
+          renderSelection();
           draw();
         }
       });
@@ -1746,10 +2045,26 @@
         selectBanner(banner);
         return;
       }
-      // 点击地图空白处自动清除选择，不再单独放“清除选择”按钮。
-      if (state.selected || state.selectedSpawn) {
+      const chunkMode = ensureEls().chunkMode && ensureEls().chunkMode.checked;
+      if (chunkMode) {
+        const world = screenToWorld(x, y);
+        state.selectedChunk = {
+          cx: Math.floor(world.x / 16),
+          cz: Math.floor(world.z / 16),
+        };
         state.selected = null;
         state.selectedSpawn = null;
+        state.chunkSummary = null;
+        renderSelection();
+        draw();
+        return;
+      }
+      // 点击地图空白处自动清除选择，不再单独放“清除选择”按钮。
+      if (state.selected || state.selectedSpawn || state.selectedChunk) {
+        state.selected = null;
+        state.selectedSpawn = null;
+        state.selectedChunk = null;
+        state.chunkSummary = null;
         renderSelection();
         draw();
       }

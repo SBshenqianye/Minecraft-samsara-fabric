@@ -40,7 +40,7 @@ public final class WebLifecycle {
                 new WebIdentityService(), new WebOutputService(),
                 new WebPermissionService(), new WebMapService(minecraftServer),
                 new WorldStackWebService(), new ServerWebService(minecraftServer),
-                token, port);
+                new ChunkDiffWebService(minecraftServer), token, port);
         if (!candidate.start()) {
             return; // 端口占用：WARN 已记录，不阻塞服务器
         }

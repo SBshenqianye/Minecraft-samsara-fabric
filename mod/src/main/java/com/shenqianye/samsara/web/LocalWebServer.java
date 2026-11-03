@@ -21,6 +21,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -48,6 +49,7 @@ public final class LocalWebServer {
     private final WebMapService mapService;
     private final WorldStackWebService worldStackService;
     private final ServerWebService serverService;
+    private final ChunkDiffWebService diffService;
     private final String token;
     private final int port;
     private HttpServer server;
@@ -95,6 +97,18 @@ public final class LocalWebServer {
                           WorldStackWebService worldStackService,
                           ServerWebService serverService,
                           String token, int port) {
+        this(service, identityService, outputService, permissionService, mapService,
+                worldStackService, serverService, null, token, port);
+    }
+
+    public LocalWebServer(ConfigService service, IdentityWebService identityService,
+                          OutputWebService outputService,
+                          PermissionWebService permissionService,
+                          WebMapService mapService,
+                          WorldStackWebService worldStackService,
+                          ServerWebService serverService,
+                          ChunkDiffWebService diffService,
+                          String token, int port) {
         this.service = service;
         this.identityService = identityService;
         this.outputService = outputService;
@@ -102,6 +116,7 @@ public final class LocalWebServer {
         this.mapService = mapService;
         this.worldStackService = worldStackService;
         this.serverService = serverService;
+        this.diffService = diffService;
         this.token = token == null ? "" : token;
         this.port = port;
     }
@@ -138,6 +153,9 @@ public final class LocalWebServer {
         }
         if (mapService != null) {
             server.createContext("/api/map", this::handleMap);
+        }
+        if (diffService != null) {
+            server.createContext("/api/diff", this::handleDiff);
         }
         if (worldStackService != null) {
             server.createContext("/api/world-stack", this::handleWorldStack);
@@ -219,6 +237,48 @@ public final class LocalWebServer {
                 return;
             }
             String method = exchange.getRequestMethod();
+            if ("GET".equals(method)
+                    && "/api/config/retention-estimate".equals(exchange.getRequestURI().getPath())) {
+                Map<String, String> query = parseQuery(exchange.getRequestURI().getRawQuery());
+                String curveJson = query.get("curve");
+                List<Map<String, Object>> raw;
+                try {
+                    raw = curveJson == null || curveJson.isBlank() ? List.of()
+                            : GSON.fromJson(curveJson,
+                            new TypeToken<List<Map<String, Object>>>() { }.getType());
+                } catch (RuntimeException e) {
+                    status = 400;
+                    json(exchange, status, Map.of("error", "curve 应为 JSON 数组"));
+                    return;
+                }
+                boolean keepAll = "1".equals(query.get("keepAll"))
+                        || "true".equalsIgnoreCase(query.get("keepAll"));
+                var estimate = com.shenqianye.samsara.track.TrackRetention.estimate(
+                        com.shenqianye.samsara.track.TrackRetention.parseCurve(raw), keepAll);
+                Map<String, Object> out = new LinkedHashMap<>();
+                out.put("ok", true);
+                out.put("bytesPerSample", estimate.bytesPerSample());
+                out.put("freshSamplesPerDay", estimate.freshSamplesPerDay());
+                out.put("freshBytesPerDay", estimate.freshBytesPerDay());
+                out.put("steadyBytes", estimate.steadyBytes());
+                out.put("growthPerDay", estimate.growthPerDay());
+                out.put("unbounded", estimate.unbounded());
+                out.put("keepAll", estimate.keepAll());
+                out.put("warning", estimate.warning());
+                List<Map<String, Object>> tiers = new java.util.ArrayList<>();
+                for (var tier : estimate.tiers()) {
+                    Map<String, Object> item = new LinkedHashMap<>();
+                    item.put("ageDays", tier.ageDays());
+                    item.put("keepRatio", tier.keepRatio());
+                    item.put("bytesPerDay", tier.bytesPerDay());
+                    item.put("cumulativeBytes", tier.cumulativeBytes());
+                    item.put("older", tier.older());
+                    tiers.add(item);
+                }
+                out.put("tiers", tiers);
+                json(exchange, 200, out);
+                return;
+            }
             if ("GET".equals(method)) {
                 json(exchange, 200, service.configModel());
                 return;
@@ -591,6 +651,77 @@ public final class LocalWebServer {
                     return;
                 }
                 sendBytes(exchange, 200, "image/png", png);
+                return;
+            }
+            status = 404;
+            json(exchange, status, Map.of("error", "Not Found"));
+        } catch (RuntimeException e) {
+            status = 500;
+            json(exchange, status, Map.of("error", "服务器内部错误"));
+            LOG.warn("[web] 处理 {} 失败: {}", exchange.getRequestURI().getPath(), e.getMessage());
+        } finally {
+            log(exchange, status, start);
+        }
+    }
+
+    private void handleDiff(HttpExchange exchange) throws IOException {
+        long start = System.currentTimeMillis();
+        int status = 200;
+        try {
+            if (!authorized(exchange)) {
+                status = 401;
+                json(exchange, status, Map.of("error", "未授权：缺少或错误的 Bearer token"));
+                return;
+            }
+            if (diffService == null) {
+                status = 503;
+                json(exchange, status, Map.of("error", "Diff 服务未启动"));
+                return;
+            }
+            String path = exchange.getRequestURI().getPath();
+            String method = exchange.getRequestMethod();
+            Map<String, String> query = parseQuery(exchange.getRequestURI().getRawQuery());
+            if ("GET".equals(method)) {
+                if ("/api/diff/chunk".equals(path)) {
+                    Integer cx = intParam(query.get("cx"));
+                    Integer cz = intParam(query.get("cz"));
+                    boolean load = "1".equals(query.get("load"));
+                    json(exchange, 200, diffService.summary(
+                            query.getOrDefault("stack", ""), query.getOrDefault("dim", ""),
+                            cx, cz, query.get("to"), load));
+                    return;
+                }
+                if ("/api/diff/view".equals(path) || "/api/diff/view/status".equals(path)) {
+                    json(exchange, 200, diffService.viewStatus());
+                    return;
+                }
+                status = 404;
+                json(exchange, status, Map.of("error", "Not Found"));
+                return;
+            }
+            if (!"POST".equals(method)) {
+                status = 405;
+                json(exchange, status, Map.of("error", "Method Not Allowed"));
+                return;
+            }
+            Map<String, Object> body;
+            try {
+                body = parseObject(readBody(exchange));
+            } catch (BodyTooLarge e) {
+                status = 413;
+                json(exchange, status, Map.of("error", "请求体过大"));
+                return;
+            } catch (RuntimeException e) {
+                status = 400;
+                json(exchange, status, Map.of("error", "请求体应为 JSON 对象"));
+                return;
+            }
+            if ("/api/diff/chunk/restore".equals(path)) {
+                json(exchange, 200, diffService.restore(body));
+                return;
+            }
+            if ("/api/diff/view".equals(path)) {
+                json(exchange, 200, diffService.view(body));
                 return;
             }
             status = 404;

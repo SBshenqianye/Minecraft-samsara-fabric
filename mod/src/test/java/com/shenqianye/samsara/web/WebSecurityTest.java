@@ -33,6 +33,10 @@ class WebSecurityTest {
         assertTrue(WebSecurity.safeApiPath("/api/status"));
         assertTrue(WebSecurity.safeApiPath("/api/map"));
         assertTrue(WebSecurity.safeApiPath("/api/map/tile"));
+        assertTrue(WebSecurity.safeApiPath("/api/diff/chunk"));
+        assertTrue(WebSecurity.safeApiPath("/api/diff/chunk/restore"));
+        assertTrue(WebSecurity.safeApiPath("/api/diff/view"));
+        assertTrue(WebSecurity.safeApiPath("/api/config/retention-estimate"));
         assertTrue(WebSecurity.safeApiPath("/api/world-stack"));
         assertTrue(WebSecurity.safeApiPath("/api/world-stack/import/preview"));
         assertTrue(WebSecurity.safeApiPath("/api/world-stack/jobs/imp-1"));

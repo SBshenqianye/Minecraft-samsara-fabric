@@ -685,7 +685,7 @@ async function main() {
           bubbles: true, clientX: point.x, clientY: point.y, button: 0,
           pointerId, pointerType: 'mouse',
         }));
-        await wait(380);
+        await wait(650);
         if (i === 0) {
           singleStraightCrossCells = Number(canvas.dataset.protectedCells);
           singleDistance = Number(canvas.dataset.patternDistance);
@@ -833,13 +833,17 @@ async function main() {
       const endInSide = Boolean(first?.querySelector('.map-stack-end .map-stack-panel'));
       const playersData = await window.SamsaraUI.api('/api/map/players');
       const online = Array.isArray(playersData.players) ? playersData.players.length : -1;
-      let markers = document.querySelectorAll('#map-stack-overview .map-player-marker').length;
+      const markerTexts = () => [...document.querySelectorAll('#map-stack-overview .map-player-marker')]
+        .map((node) => node.textContent || '');
+      let markers = markerTexts().length;
       const deadline = Date.now() + 2500;
-      while (online > 0 && markers === 0 && Date.now() < deadline) {
+      while (online > 0 && !markerTexts().some((text) => text.includes('E2EPlayer'))
+          && Date.now() < deadline) {
         await wait(150);
-        markers = document.querySelectorAll('#map-stack-overview .map-player-marker').length;
+        markers = markerTexts().length;
       }
-      const markerName = document.querySelector('#map-stack-overview .map-player-marker')?.textContent || '';
+      const markerName = markerTexts().find((text) => text.includes('E2EPlayer'))
+        || markerTexts()[0] || '';
       window.SamsaraUI.api = originalApi;
       const target = panels.find((panel) => panel.classList.contains('dim-overworld'));
       const targetStack = target?.closest('.map-stack-block')?.dataset.stack || '';
@@ -891,6 +895,182 @@ async function main() {
         && mapState.selectedStack === mapState.targetStack,
         JSON.stringify({ detail: mapState.detailVisible, hidden: mapState.overviewHidden,
           selected: mapState.selectedStack, target: mapState.targetStack }));
+
+    // ---- F-164 地图区块网格 ----
+    const chunkGrid = await evaluate(`(async () => {
+      const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const box = document.getElementById('map-show-chunks');
+      const legend = document.getElementById('map-chunk-grid-legend');
+      const calls = [];
+      const originalFetch = window.fetch;
+      window.fetch = (...args) => {
+        calls.push(String(args[0]));
+        return originalFetch(...args);
+      };
+      box.checked = true;
+      box.dispatchEvent(new Event('change', { bubbles: true }));
+      await wait(120);
+      const on = { checked: box.checked, legend: legend.textContent,
+        stored: localStorage.getItem('samsara.map.showChunks') };
+      document.getElementById('map-zoom-out').click();
+      await wait(80);
+      document.getElementById('map-zoom-out').click();
+      await wait(160);
+      const thinned = legend.textContent;
+      const unrelated = calls.filter((url) => !url.includes('/api/map/tile')
+        && !url.includes('/api/map/players')).length;
+      window.fetch = originalFetch;
+      box.checked = false;
+      box.dispatchEvent(new Event('change', { bubbles: true }));
+      await wait(100);
+      const off = { checked: box.checked, legend: legend.textContent,
+        stored: localStorage.getItem('samsara.map.showChunks') };
+      // 留为开启，供稍后刷新页面验证持久化。
+      box.checked = true;
+      box.dispatchEvent(new Event('change', { bubbles: true }));
+      await wait(80);
+      return { on, thinned, off, nonTileRequests: unrelated };
+    })()`);
+    check('区块网格勾选即时开启并写入本地', chunkGrid.on.checked
+        && chunkGrid.on.legend.includes('开')
+        && chunkGrid.on.stored === '1', JSON.stringify(chunkGrid.on));
+    check('区块网格缩放后按 16×16 抽稀', chunkGrid.thinned.includes('16×16'),
+        chunkGrid.thinned);
+    check('区块网格开关不触发额外请求', chunkGrid.nonTileRequests === 0,
+        'requests=' + chunkGrid.nonTileRequests);
+    check('区块网格取消立即关闭', !chunkGrid.off.checked
+        && chunkGrid.off.legend.includes('关')
+        && chunkGrid.off.stored === '0', JSON.stringify(chunkGrid.off));
+
+    // ---- F-165/F-166 Web 区块操作面板（只预览，不执行写操作） ----
+    const chunkPanel = await evaluate(`(async () => {
+      const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const mode = document.getElementById('map-chunk-mode');
+      const spawns = document.getElementById('map-show-spawns');
+      const players = document.getElementById('map-show-players');
+      spawns.checked = false;
+      spawns.dispatchEvent(new Event('change', { bubbles: true }));
+      players.checked = false;
+      players.dispatchEvent(new Event('change', { bubbles: true }));
+      mode.checked = true;
+      mode.dispatchEvent(new Event('change', { bubbles: true }));
+      const canvas = document.getElementById('map-canvas');
+      const rect = canvas.getBoundingClientRect();
+      const x = rect.left + rect.width * 0.22;
+      const y = rect.top + rect.height * 0.78;
+      canvas.dispatchEvent(new PointerEvent('pointerdown', {
+        bubbles: true, clientX: x, clientY: y, button: 0, pointerId: 41, pointerType: 'mouse',
+      }));
+      canvas.dispatchEvent(new PointerEvent('pointerup', {
+        bubbles: true, clientX: x, clientY: y, button: 0, pointerId: 41, pointerType: 'mouse',
+      }));
+      canvas.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: x, clientY: y }));
+      await wait(250);
+      const title = document.querySelector('#map-selection .map-selection-title')?.textContent || '';
+      const buttons = [...document.querySelectorAll('.map-chunk-actions button')]
+        .map((button) => button.textContent);
+      const preview = [...document.querySelectorAll('.map-chunk-actions button')]
+        .find((button) => button.textContent === '预览回溯');
+      preview?.click();
+      await wait(1600);
+      const status = document.querySelector('.map-chunk-status')?.textContent || '';
+      mode.checked = false;
+      mode.dispatchEvent(new Event('change', { bubbles: true }));
+      return { title, buttons, status };
+    })()`);
+    check('区块操作可选中单区块', chunkPanel.title.startsWith('区块 ('),
+        chunkPanel.title);
+    check('区块面板提供预览/执行/回看', chunkPanel.buttons.includes('预览回溯')
+        && chunkPanel.buttons.includes('执行回溯（需确认）')
+        && chunkPanel.buttons.includes('只读回看'), JSON.stringify(chunkPanel.buttons));
+    check('区块回溯预览返回摘要', chunkPanel.status.includes('候选')
+        && (chunkPanel.status.includes('将改动') || chunkPanel.status.includes('失败')),
+        chunkPanel.status.slice(0, 160));
+
+    // ---- 保留曲线编辑器 / 容量预估 ----
+    const curve = await evaluate(`(async () => {
+      const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      window.SamsaraUI.setActiveTab('config');
+      await wait(900);
+      const editor = document.querySelector('.curve-editor');
+      if (!editor) return { found: false };
+      const rows = () => [...editor.querySelectorAll('.curve-row')];
+      const initialRows = rows().length;
+      const estimateText = editor.querySelector('.curve-estimate')?.textContent || '';
+      const firstRatio = editor.querySelector('.curve-ratio');
+      const original = firstRatio.value;
+      firstRatio.value = '1.5';
+      firstRatio.dispatchEvent(new Event('input', { bubbles: true }));
+      await wait(350);
+      const invalidError = editor.querySelector('.curve-error')?.textContent || '';
+      document.getElementById('save').click();
+      await wait(250);
+      const blocked = (document.getElementById('message')?.textContent || '').includes('阻止保存');
+      firstRatio.value = original;
+      firstRatio.dispatchEvent(new Event('input', { bubbles: true }));
+      await wait(350);
+      const fixedError = editor.querySelector('.curve-error')?.textContent || '';
+      const add = editor.querySelector('.curve-actions button');
+      add.click();
+      await wait(200);
+      const addedRows = rows().length;
+      const lastRemove = rows()[rows().length - 1].querySelector('button');
+      lastRemove.click();
+      await wait(200);
+      const removedRows = rows().length;
+      const estimateAfter = editor.querySelector('.curve-estimate')?.textContent || '';
+      return {
+        found: true, initialRows, estimateText, invalidError, blocked, fixedError,
+        addedRows, removedRows, estimateAfter,
+      };
+    })()`);
+    check('保留曲线使用逐行编辑器', curve.found === true && curve.initialRows >= 2,
+        JSON.stringify({ found: curve.found, rows: curve.initialRows }));
+    check('保留曲线初始容量预估可见',
+        curve.estimateText.includes('容量预估') && curve.estimateText.includes('有限档稳态合计'),
+        curve.estimateText.slice(0, 120));
+    check('非法保留曲线标红并阻止保存', curve.blocked === true
+        && curve.invalidError.includes('keepRatio'), curve.invalidError);
+    check('修正后校验恢复且可增删档位', curve.fixedError === ''
+        && curve.addedRows === curve.initialRows + 1
+        && curve.removedRows === curve.initialRows,
+        JSON.stringify({ fixed: curve.fixedError, added: curve.addedRows, removed: curve.removedRows }));
+    check('增删档位后容量预估刷新', curve.estimateAfter.includes('有限档稳态合计'),
+        curve.estimateAfter.slice(0, 120));
+
+    const diffApi = await evaluate(`(async () => {
+      const summary = await window.SamsaraUI.api(
+        '/api/diff/chunk?stack=world&dim=overworld&cx=0&cz=0');
+      const view = await window.SamsaraUI.api('/api/diff/view');
+      return {
+        summaryOk: summary.ok === true,
+        edits: summary.editCount,
+        hasProtected: typeof summary.protected === 'boolean',
+        viewOk: view.ok === true,
+        sessions: view.sessions,
+      };
+    })()`);
+    check('单区块 diff 摘要 API 可用', diffApi.summaryOk && diffApi.edits >= 0
+        && diffApi.hasProtected, JSON.stringify(diffApi));
+    check('Diff 回看状态 API 可用', diffApi.viewOk && diffApi.sessions === 0,
+        JSON.stringify(diffApi));
+
+    // ---- 刷新页面验证区块网格本地持久化 ----
+    await navigate(base + '/#map');
+    await until("window.SamsaraUI && document.getElementById('map-show-chunks')", 20000,
+        '刷新后的地图页');
+    await evaluate("window.SamsaraUI.setActiveTab('map'); true;");
+    await until("document.getElementById('map-stats') && "
+        + "document.getElementById('map-stats').textContent.trim().length > 0", 20000,
+        '刷新后的地图数据');
+    const persistedGrid = await evaluate(`(() => ({
+      checked: document.getElementById('map-show-chunks').checked,
+      legend: document.getElementById('map-chunk-grid-legend').textContent,
+      stored: localStorage.getItem('samsara.map.showChunks'),
+    }))()`);
+    check('区块网格勾选刷新页面后保持', persistedGrid.checked
+        && persistedGrid.legend.includes('开') && persistedGrid.stored === '1',
+        JSON.stringify(persistedGrid));
 
     if (process.env.SAMSARA_E2E_SCREENSHOT) {
       // 供人工快速看布局；默认不写文件。

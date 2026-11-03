@@ -471,34 +471,49 @@ public class DiffStore {
         } finally {
             globalLock.unlock();
         }
-        Path f = fileFor(cx, cz);
-        List<Edit> out = new ArrayList<>();
-        if (Files.exists(f)) {
-            try (RandomAccessFile raf = new RandomAccessFile(f.toFile(), "r")) {
-                long len = raf.length();
-                byte[] buf = new byte[RECORD_SIZE];
-                for (long pos = 0; pos + RECORD_SIZE <= len; pos += RECORD_SIZE) {
-                    raf.seek(pos);
-                    raf.readFully(buf);
-                    int stateId = ((buf[0] & 0xFF) << 24) | ((buf[1] & 0xFF) << 16) | ((buf[2] & 0xFF) << 8) | (buf[3] & 0xFF);
-                    int x = ((buf[4] & 0xFF) << 24) | ((buf[5] & 0xFF) << 16) | ((buf[6] & 0xFF) << 8) | (buf[7] & 0xFF);
-                    int y = ((buf[8] & 0xFF) << 24) | ((buf[9] & 0xFF) << 16) | ((buf[10] & 0xFF) << 8) | (buf[11] & 0xFF);
-                    int z = ((buf[12] & 0xFF) << 24) | ((buf[13] & 0xFF) << 16) | ((buf[14] & 0xFF) << 8) | (buf[15] & 0xFF);
-                    long time = 0;
-                    for (int i = 0; i < 8; i++) {
-                        time = (time << 8) | (buf[16 + i] & 0xFF);
-                    }
-                    out.add(new Edit(x, y, z, stateId, time));
-                }
-            } catch (IOException e) {
-                Samsara.LOGGER.error("[周目管理 samsara] diff 读取失败 {}: {}", f, e.getMessage());
-            }
-        }
+        List<Edit> out = readChunkFile(root, cx, cz);
         globalLock.lock();
         try {
             cache.putIfAbsent(key, new ArrayList<>(out));
         } finally {
             globalLock.unlock();
+        }
+        return out;
+    }
+
+    /**
+     * 只读解析指定维度根下的一个区块文件：不创建目录、不写任何数据，
+     * 供回看/预览等“绝不写 diff”的路径使用。
+     */
+    public static List<Edit> readChunkFile(Path dimRoot, int cx, int cz) {
+        int rx = Math.floorDiv(cx, 32);
+        int rz = Math.floorDiv(cz, 32);
+        return readEditsFile(dimRoot.resolve("r." + rx + "." + rz).resolve(cx + "_" + cz + ".dat"));
+    }
+
+    private static List<Edit> readEditsFile(Path f) {
+        List<Edit> out = new ArrayList<>();
+        if (!Files.exists(f)) {
+            return out;
+        }
+        try (RandomAccessFile raf = new RandomAccessFile(f.toFile(), "r")) {
+            long len = raf.length();
+            byte[] buf = new byte[RECORD_SIZE];
+            for (long pos = 0; pos + RECORD_SIZE <= len; pos += RECORD_SIZE) {
+                raf.seek(pos);
+                raf.readFully(buf);
+                int stateId = ((buf[0] & 0xFF) << 24) | ((buf[1] & 0xFF) << 16) | ((buf[2] & 0xFF) << 8) | (buf[3] & 0xFF);
+                int x = ((buf[4] & 0xFF) << 24) | ((buf[5] & 0xFF) << 16) | ((buf[6] & 0xFF) << 8) | (buf[7] & 0xFF);
+                int y = ((buf[8] & 0xFF) << 24) | ((buf[9] & 0xFF) << 16) | ((buf[10] & 0xFF) << 8) | (buf[11] & 0xFF);
+                int z = ((buf[12] & 0xFF) << 24) | ((buf[13] & 0xFF) << 16) | ((buf[14] & 0xFF) << 8) | (buf[15] & 0xFF);
+                long time = 0;
+                for (int i = 0; i < 8; i++) {
+                    time = (time << 8) | (buf[16 + i] & 0xFF);
+                }
+                out.add(new Edit(x, y, z, stateId, time));
+            }
+        } catch (IOException e) {
+            Samsara.LOGGER.error("[周目管理 samsara] diff 读取失败 {}: {}", f, e.getMessage());
         }
         return out;
     }

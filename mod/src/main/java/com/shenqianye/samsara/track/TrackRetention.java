@@ -233,4 +233,84 @@ public final class TrackRetention {
         }
         return 1.0 / (1.0 - q);
     }
+
+    /** 每点字节数与默认采样率（5Hz，一天 432000 点）。 */
+    public static final long BYTES_PER_SAMPLE = 6L;
+    public static final long FRESH_SAMPLES_PER_DAY = 5L * 86_400L;
+
+    public record TierEstimate(int ageDays, double keepRatio, long bytesPerDay,
+                               long cumulativeBytes, boolean older) {
+    }
+
+    public record Estimate(long bytesPerSample, long freshSamplesPerDay, long freshBytesPerDay,
+                           List<TierEstimate> tiers, long steadyBytes, long growthPerDay,
+                           boolean unbounded, boolean keepAll, String warning) {
+    }
+
+    /**
+     * Web 曲线编辑器容量预估：按 6B/点、5Hz 新鲜采样估算每档每日字节与有限档累计。
+     * <p>
+     * 最后一档表示“更老”的无限区间；其 keepRatio &gt; 0 时容量随时间线性增长，
+     * 因此 {@code unbounded=true}，{@code steadyBytes} 只统计有限档位。
+     */
+    public static Estimate estimate(List<CurvePoint> curve, boolean keepAll) {
+        long freshBytes = BYTES_PER_SAMPLE * FRESH_SAMPLES_PER_DAY;
+        if (keepAll) {
+            return new Estimate(BYTES_PER_SAMPLE, FRESH_SAMPLES_PER_DAY, freshBytes,
+                    List.of(), 0, freshBytes, true, true,
+                    "keepAll：不降采样，容量会随时间无限增长");
+        }
+        List<CurvePoint> points = curve == null || curve.isEmpty() ? defaultCurve() : curve;
+        List<TierEstimate> tiers = new ArrayList<>();
+        long cumulative = 0;
+        int previousAge = 0;
+        for (int i = 0; i < points.size(); i++) {
+            CurvePoint point = points.get(i);
+            if (point == null) {
+                continue;
+            }
+            boolean last = i == points.size() - 1;
+            int age = Math.max(0, point.ageDays());
+            double ratio = Double.isFinite(point.keepRatio())
+                    ? Math.max(0.0, Math.min(1.0, point.keepRatio())) : 0.0;
+            long perDay = Math.round(freshBytes * ratio);
+            if (!last) {
+                int days = Math.max(0, age - previousAge);
+                cumulative += perDay * days;
+                tiers.add(new TierEstimate(age, ratio, perDay, cumulative, false));
+                previousAge = Math.max(previousAge, age);
+            } else {
+                if (age > previousAge) {
+                    cumulative += perDay * (age - previousAge);
+                }
+                tiers.add(new TierEstimate(age, ratio, perDay, cumulative, age == 0));
+            }
+        }
+        double lastRatio = tiers.isEmpty() ? 0 : tiers.get(tiers.size() - 1).keepRatio();
+        long growth = Math.round(freshBytes * Math.max(0.0, Math.min(1.0, lastRatio)));
+        boolean unbounded = growth > 0;
+        String warning = unbounded
+                ? "最后一档 keepRatio=" + formatRatio(lastRatio)
+                + "：更老数据每天约 " + humanBytes(growth) + " 增长，稳态无上限"
+                : "最后一档 keepRatio=0：容量有上限";
+        return new Estimate(BYTES_PER_SAMPLE, FRESH_SAMPLES_PER_DAY, freshBytes,
+                List.copyOf(tiers), cumulative, growth, unbounded, false, warning);
+    }
+
+    private static String formatRatio(double ratio) {
+        return Math.round(ratio * 1000.0) / 10.0 + "%";
+    }
+
+    private static String humanBytes(long bytes) {
+        if (bytes >= 1_073_741_824L) {
+            return String.format(Locale.ROOT, "%.2f GiB", bytes / 1_073_741_824.0);
+        }
+        if (bytes >= 1_048_576L) {
+            return String.format(Locale.ROOT, "%.2f MiB", bytes / 1_048_576.0);
+        }
+        if (bytes >= 1024L) {
+            return String.format(Locale.ROOT, "%.1f KiB", bytes / 1024.0);
+        }
+        return bytes + " B";
+    }
 }

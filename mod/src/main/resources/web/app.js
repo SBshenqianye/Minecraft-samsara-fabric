@@ -8,6 +8,7 @@ const state = {
   model: null,
   status: null,
   edits: new Map(), // `${file}:${path}` -> value
+  invalidCurves: new Set(),
   tab: 'config',
   navTargets: [],
   navScrollHandler: null,
@@ -21,6 +22,7 @@ const connectedHooks = [];
 // 文件块 → 配置模型。条件显示需要在 markEdited 后立即重算，
 // 不能只依赖原生 input/change 或 DOM 冒泡（分段按钮不在表单事件链里）。
 const fileBlockFiles = new WeakMap();
+const curveEstimators = new Map();
 const panelIds = ['panel-identity', 'panel-config', 'panel-claim-range', 'panel-output', 'panel-permissions', 'panel-map', 'panel-world-stack'];
 const tabNames = { 'panel-identity': 'identity', 'panel-config': 'config', 'panel-claim-range': 'claim-range', 'panel-output': 'output', 'panel-permissions': 'permissions', 'panel-map': 'map', 'panel-world-stack': 'world-stack' };
 
@@ -220,6 +222,15 @@ function markEdited(fileId, entry, value) {
     detail: { fileId: fileId, path: entry.path },
   }));
 }
+
+// 保留曲线预估依赖同文件的其他配置（keepAll）；用单一监听器刷新，
+// 不随 render() 重复注册，避免页面重渲染后监听器累积。
+document.addEventListener('samsara:config-changed', (event) => {
+  const fileId = event && event.detail ? event.detail.fileId : null;
+  for (const [key, refresh] of curveEstimators) {
+    if (!fileId || key.startsWith(fileId + ':')) refresh();
+  }
+});
 
 function isMissingValue(entry) {
   return entry.value === undefined || entry.value === null;
@@ -609,25 +620,8 @@ function buildInput(file, entry) {
       return bucket(`${entry.path} · ${keys.length} 条`, body, true);
     }
     case 'curve': {
-      // 轨迹保留曲线：先用 JSON 文本编辑（专用可视化编辑器可后置）
-      const area = document.createElement('textarea');
-      area.className = 'entry-textarea';
-      area.rows = 8;
-      area.spellcheck = false;
-      const current = Array.isArray(value) ? value : (entry.default || []);
-      area.value = JSON.stringify(current, null, 2);
-      area.title = '每项形如 {"ageDays": 7, "keepRatio": 1.0}；ageDays 严格递增，最后一档可为 0';
-      area.addEventListener('change', () => {
-        try {
-          const parsed = JSON.parse(area.value);
-          if (!Array.isArray(parsed)) throw new Error('not array');
-          area.style.borderColor = '';
-          markEdited(file.id, entry, parsed);
-        } catch (e) {
-          area.style.borderColor = 'var(--danger, #c0392b)';
-        }
-      });
-      return area;
+      // 轨迹保留曲线：逐行编辑 ageDays / keepRatio，保存前校验并显示容量预估
+      return buildCurve(file, entry, value);
     }
     default: {
       const input = document.createElement('input');
@@ -666,7 +660,261 @@ function buildBoolean(file, entry, value) {
   return row;
 }
 
-// ---- 圈地保护范围：染料色块编辑 + 实时形状预览 ----
+// ---- 轨迹保留曲线：逐行编辑 + 校验 + 容量预估 ----
+
+function buildCurve(file, entry, value) {
+  const key = valueKey(file.id, entry.path);
+  const wrap = document.createElement('div');
+  wrap.className = 'curve-editor';
+  const rowsEl = document.createElement('div');
+  rowsEl.className = 'curve-rows';
+  const actions = document.createElement('div');
+  actions.className = 'curve-actions';
+  const add = document.createElement('button');
+  add.type = 'button';
+  add.className = 'ghost';
+  add.textContent = '+ 增加一档';
+  const hint = document.createElement('span');
+  hint.className = 'muted small';
+  hint.textContent = 'ageDays 严格递增；最后一档可为 0（表示“更老”）；keepRatio 单调不增';
+  actions.append(add, hint);
+  const error = document.createElement('div');
+  error.className = 'curve-error';
+  error.setAttribute('role', 'alert');
+  const estimate = document.createElement('div');
+  estimate.className = 'curve-estimate';
+  wrap.append(rowsEl, actions, error, estimate);
+
+  const initial = Array.isArray(value) ? value : (entry.default || []);
+  let points = initial.map((item) => ({
+    ageDays: Number(item && item.ageDays),
+    keepRatio: Number(item && item.keepRatio),
+  }));
+  if (points.length === 0) points = [{ ageDays: 7, keepRatio: 1 }];
+  let estimateTimer = 0;
+
+  const readRows = () => {
+    const out = [];
+    for (const row of rowsEl.querySelectorAll('.curve-row')) {
+      const age = Number(row.querySelector('.curve-age').value);
+      const ratio = Number(row.querySelector('.curve-ratio').value);
+      out.push({ ageDays: age, keepRatio: ratio });
+    }
+    return out;
+  };
+
+  const markRows = (rows, errors) => {
+    let previousAge = -1;
+    let previousRatio = 1;
+    rows.forEach((point, index) => {
+      const row = rowsEl.querySelectorAll('.curve-row')[index];
+      if (!row) return;
+      const ageInput = row.querySelector('.curve-age');
+      const ratioInput = row.querySelector('.curve-ratio');
+      const last = index === rows.length - 1;
+      const ageBad = !Number.isInteger(point.ageDays) || point.ageDays < 0
+        || (last ? (point.ageDays !== 0 && point.ageDays <= previousAge)
+          : (point.ageDays <= 0 || point.ageDays <= previousAge));
+      const ratioBad = !Number.isFinite(point.keepRatio)
+        || point.keepRatio < 0 || point.keepRatio > 1
+        || point.keepRatio > previousRatio + 1e-9;
+      ageInput.classList.toggle('invalid', ageBad);
+      ratioInput.classList.toggle('invalid', ratioBad);
+      const preview = row.querySelector('.curve-preview');
+      if (preview) {
+        preview.textContent = Number.isFinite(point.keepRatio)
+          ? Math.round(point.keepRatio * 100) + '%' : '—';
+      }
+      previousAge = Math.max(previousAge, point.ageDays);
+      previousRatio = point.keepRatio;
+    });
+    return errors;
+  };
+
+  const validate = (rows) => {
+    const errors = [];
+    if (rows.length === 0) {
+      errors.push('至少需要一档');
+      return errors;
+    }
+    let previousAge = -1;
+    let previousRatio = 1;
+    rows.forEach((point, index) => {
+      const last = index === rows.length - 1;
+      if (!Number.isInteger(point.ageDays) || point.ageDays < 0) {
+        errors.push('第 ' + (index + 1) + ' 档 ageDays 必须是非负整数');
+      } else if (last) {
+        if (point.ageDays !== 0 && point.ageDays <= previousAge) {
+          errors.push('最后一档 ageDays 必须为 0（更老）或大于前一档');
+        }
+      } else if (point.ageDays <= 0) {
+        errors.push('只有最后一档的 ageDays 允许为 0（第 ' + (index + 1) + ' 档）');
+      } else if (point.ageDays <= previousAge) {
+        errors.push('ageDays 必须严格递增（第 ' + (index + 1) + ' 档）');
+      }
+      if (!Number.isFinite(point.keepRatio) || point.keepRatio < 0 || point.keepRatio > 1) {
+        errors.push('keepRatio 必须在 [0,1] 内（第 ' + (index + 1) + ' 档）');
+      } else if (point.keepRatio > previousRatio + 1e-9) {
+        errors.push('keepRatio 必须单调不增（第 ' + (index + 1) + ' 档）');
+      }
+      previousAge = Math.max(previousAge, point.ageDays);
+      previousRatio = point.keepRatio;
+    });
+    return errors;
+  };
+
+  const humanBytes = (bytes) => {
+    const value = Number(bytes) || 0;
+    if (value >= 1073741824) return (value / 1073741824).toFixed(2) + ' GiB';
+    if (value >= 1048576) return (value / 1048576).toFixed(2) + ' MiB';
+    if (value >= 1024) return (value / 1024).toFixed(1) + ' KiB';
+    return value + ' B';
+  };
+
+  const renderEstimate = (data) => {
+    estimate.replaceChildren();
+    if (!data || data.ok === false) {
+      estimate.textContent = '容量预估暂不可用' + (data && data.error ? '：' + data.error : '');
+      return;
+    }
+    const head = document.createElement('div');
+    head.className = 'curve-estimate-head';
+    head.textContent = '容量预估 · 每点 6B · 新鲜采样 5Hz/天 '
+      + humanBytes(data.freshBytesPerDay) + '（仅估算，按每档保留比例换算）';
+    estimate.append(head);
+    for (const tier of data.tiers || []) {
+      const line = document.createElement('div');
+      line.className = 'curve-estimate-line';
+      const label = tier.ageDays === 0 ? '更老' : '≤ ' + tier.ageDays + ' 天';
+      line.textContent = label + ' · 保留 ' + Math.round(tier.keepRatio * 100) + '%'
+        + ' · 每日 ' + humanBytes(tier.bytesPerDay)
+        + ' · 有限档累计 ' + humanBytes(tier.cumulativeBytes);
+      estimate.append(line);
+    }
+    const summary = document.createElement('div');
+    summary.className = 'curve-estimate-line';
+    summary.textContent = '有限档稳态合计 ' + humanBytes(data.steadyBytes)
+      + ' · 新鲜数据每日 ' + humanBytes(data.freshBytesPerDay);
+    estimate.append(summary);
+    if (data.warning) {
+      const warn = document.createElement('div');
+      warn.className = 'curve-estimate-warn';
+      warn.textContent = (data.unbounded || data.keepAll ? '⚠ ' : '') + data.warning;
+      estimate.append(warn);
+    }
+  };
+
+  const fetchEstimate = (rows) => {
+    window.clearTimeout(estimateTimer);
+    estimateTimer = window.setTimeout(async () => {
+      const keepAllEntry = file.entries.find((item) => item.path === 'track.retention.keepAll');
+      const keepAll = keepAllEntry ? currentValue(file.id, keepAllEntry) === true : false;
+      const query = '?curve=' + encodeURIComponent(JSON.stringify(rows))
+        + '&keepAll=' + (keepAll ? '1' : '0');
+      try {
+        renderEstimate(await api('/api/config/retention-estimate' + query));
+      } catch (e) {
+        renderEstimate({ ok: false, error: e && e.message ? e.message : '请求失败' });
+      }
+    }, 220);
+  };
+
+  const apply = () => {
+    points = readRows();
+    const errors = validate(points);
+    markRows(points, errors);
+    if (errors.length > 0) {
+      error.textContent = errors[0];
+      state.invalidCurves.add(key);
+    } else {
+      error.textContent = '';
+      state.invalidCurves.delete(key);
+      markEdited(file.id, entry, points.map((point) => ({
+        ageDays: point.ageDays,
+        keepRatio: point.keepRatio,
+      })));
+    }
+    fetchEstimate(points);
+  };
+
+  const renderRows = () => {
+    rowsEl.replaceChildren();
+    points.forEach((point, index) => {
+      const row = document.createElement('div');
+      row.className = 'curve-row';
+      const ageLabel = document.createElement('label');
+      ageLabel.textContent = '年龄上限';
+      const age = document.createElement('input');
+      age.type = 'number';
+      age.min = '0';
+      age.step = '1';
+      age.className = 'curve-age';
+      age.value = String(point.ageDays);
+      age.title = 'ageDays（天）；最后一档填 0 表示“更老”';
+      const ageUnit = document.createElement('span');
+      ageUnit.className = 'muted small';
+      ageUnit.textContent = '天';
+      const ratioLabel = document.createElement('label');
+      ratioLabel.textContent = '保留比例';
+      const ratio = document.createElement('input');
+      ratio.type = 'number';
+      ratio.min = '0';
+      ratio.max = '1';
+      ratio.step = '0.01';
+      ratio.className = 'curve-ratio';
+      ratio.value = String(point.keepRatio);
+      ratio.title = 'keepRatio（0~1，单调不增）';
+      const preview = document.createElement('span');
+      preview.className = 'curve-preview';
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'ghost';
+      remove.textContent = '删除';
+      remove.disabled = points.length <= 1;
+      remove.addEventListener('click', () => {
+        points.splice(index, 1);
+        renderRows();
+        apply();
+      });
+      age.addEventListener('input', apply);
+      ratio.addEventListener('input', apply);
+      ageLabel.append(age, ageUnit);
+      ratioLabel.append(ratio, preview);
+      row.append(ageLabel, ratioLabel, remove);
+      rowsEl.append(row);
+    });
+    markRows(points, validate(points));
+  };
+
+  add.addEventListener('click', () => {
+    const rows = readRows();
+    const last = rows[rows.length - 1];
+    let insertAt = rows.length;
+    let age = 30;
+    if (last && last.ageDays === 0) {
+      insertAt = rows.length - 1;
+      const previous = rows.length >= 2 ? rows[rows.length - 2].ageDays : 0;
+      age = Math.max(1, previous + 30);
+    } else if (last) {
+      age = Math.max(1, last.ageDays + 30);
+    }
+    rows.splice(insertAt, 0, {
+      ageDays: age,
+      keepRatio: last && Number.isFinite(last.keepRatio) ? last.keepRatio : 1,
+    });
+    points = rows;
+    renderRows();
+    apply();
+  });
+
+  curveEstimators.set(key, () => fetchEstimate(readRows()));
+
+  renderRows();
+  apply();
+  return wrap;
+}
+
+
 
 const DYE_PALETTE = [
   { name: '白', id: 'white', hex: '#f9fffe' },
@@ -2621,6 +2869,10 @@ async function saveConfig(onlyFile) {
     setMessage('还没有读取配置', 'error');
     return false;
   }
+  if (!onlyFile && state.invalidCurves && state.invalidCurves.size > 0) {
+    setMessage('轨迹保留曲线有非法值，已阻止保存', 'error');
+    return false;
+  }
   setMessage('');
   let saved = 0;
   for (const file of state.model.files) {
@@ -2656,6 +2908,7 @@ async function saveConfig(onlyFile) {
     }
   } else {
     state.edits.clear();
+    state.invalidCurves.clear();
   }
   render();
   renderClaimRange();

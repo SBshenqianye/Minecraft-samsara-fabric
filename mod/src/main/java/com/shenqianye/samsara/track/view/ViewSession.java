@@ -35,6 +35,7 @@ public final class ViewSession {
     ViewCursor cursor;
     ViewMannequin mannequin;
     ViewDisplay display;
+    com.shenqianye.samsara.track.FakeVehicle vehicle;
     ViewSnapshot snapshot;
     ServerPlayer playerRef;
     java.util.UUID vehicleId;

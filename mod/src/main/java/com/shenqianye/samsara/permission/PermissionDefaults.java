@@ -22,6 +22,17 @@ public final class PermissionDefaults {
         map.put("debug", "owner");
         map.put("perm", "user");
         map.put("track", "user");
+
+        // 单区块回溯（保存）/ 回看（只读）
+        map.put("chunk", "owner");
+        map.put("chunk restore", "owner");
+        map.put("chunk view", "owner");
+        map.put("chunk view stop", "owner");
+        map.put("chunk view status", "owner");
+        map.put("diff", "owner");
+        map.put("diff view", "owner");
+        map.put("diff view stop", "owner");
+        map.put("diff view status", "owner");
         map.put("restart", "owner");
 
         // season

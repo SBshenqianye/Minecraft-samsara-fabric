@@ -63,6 +63,7 @@ public final class TrackReplay {
         TrackEventCursor events;
         long lastEventMs;
         boolean legacyEquipment;
+        FakeVehicle vehicle;
 
         /** 当前轨迹时间（按墙钟 × 倍速推进，钳到区间内） */
         long cursorMs(long nowWallMs) {
@@ -307,8 +308,6 @@ public final class TrackReplay {
             r.entity.yHeadRotO = yaw;
             r.entity.yBodyRotO = yaw;
             r.entity.setDeltaMovement(0, 0, 0);
-            // flags 取当前所在样本（不插值）：姿态是离散状态，越过样本时刻才切换
-            r.entity.applyTrackFlags(a.flags());
             // 事件：正放跨越动作；跳变（卡顿/时钟跳变）按最近快照重建并清空动作
             if (r.events != null && !r.events.isEmpty()) {
                 if (trackTime < r.lastEventMs || trackTime - r.lastEventMs > 1000L) {
@@ -318,6 +317,34 @@ public final class TrackReplay {
                 }
                 r.lastEventMs = trackTime;
             }
+            // flags 取当前所在样本（不插值）：姿态是离散状态，越过样本时刻才切换
+            r.entity.applyTrackFlags(a.flags());
+            updateVehicle(r);
+        }
+    }
+
+    /** 客户端假载具：与回看共用同一实现，不创建服务端实体。 */
+    private static void updateVehicle(Replay r) {
+        if (r.entity == null || r.entity.isRemoved()) {
+            if (r.vehicle != null) {
+                r.vehicle.remove();
+                r.vehicle = null;
+            }
+            return;
+        }
+        if (r.entity.vehicleType().isBlank()) {
+            if (r.vehicle != null) {
+                r.vehicle.setType("");
+                r.vehicle = null;
+            }
+            return;
+        }
+        if (r.vehicle == null) {
+            r.vehicle = new FakeVehicle();
+        }
+        r.vehicle.setType(r.entity.vehicleType());
+        if (r.entity.level() instanceof ServerLevel level) {
+            r.vehicle.tick(level, r.entity);
         }
     }
 
@@ -343,6 +370,10 @@ public final class TrackReplay {
         long captureTrackMs = r.cursorMs(now);
         r.captured = true;
         ACTIVE.remove(r.uuid);
+        if (r.vehicle != null) {
+            r.vehicle.remove();
+            r.vehicle = null;
+        }
         entity.markCaptured();
 
         TrackRecorder recorder = TrackRecorder.getInstance();
@@ -371,6 +402,10 @@ public final class TrackReplay {
     }
 
     private static void discardEntity(Replay r) {
+        if (r != null && r.vehicle != null) {
+            r.vehicle.remove();
+            r.vehicle = null;
+        }
         if (r != null && r.entity != null && !r.entity.isRemoved()) {
             r.entity.discard();
         }

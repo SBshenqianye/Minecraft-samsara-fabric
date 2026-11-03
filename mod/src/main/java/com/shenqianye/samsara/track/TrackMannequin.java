@@ -29,7 +29,7 @@ import java.util.Set;
  *   <li>骑乘：{@link Pose#CROUCHING} 作为「坐姿」可见近似——26.3 的
  *       {@code Mannequin} 只接受 STANDING/CROUCHING/SWIMMING/FALL_FLYING/SLEEPING，
  *       {@code Pose.SITTING} 不在人偶姿态表里、客户端也没有对应渲染分支；
- *       真实载具类型（马/船/矿车）需要 track v2 记录，届时再还原具体坐骑</li>
+ *       已知载具类型由客户端假实体承托（{@code FakeVehicle}），未知类型回退蹲姿</li>
  *   <li>受伤：只续客户端受击闪烁（damage event），不进入 {@code hurtServer}，不扣血/击退</li>
  *   <li>死亡：{@link Pose#SLEEPING} 表现倒地；不修改 health、不移除实体</li>
  * </ul>
@@ -48,6 +48,8 @@ public abstract class TrackMannequin extends Mannequin {
     private int flightMode = -1;
     /** 真实载具实体类型 id；空串 = 无载具。 */
     private String vehicleType = "";
+    /** 当前载具类型是否已成功映射为客户端假实体；true 时骑乘用站立姿态（由载具承托）。 */
+    private boolean vehicleRendered;
     /** 记录的选中快捷栏 0~8（只用于状态/检查，客户端人偶没有快捷栏）。 */
     private int selectedSlot;
     /** 捕捉后的普通实体死亡时是否掉落录制装备（F-107）。 */
@@ -100,10 +102,16 @@ public abstract class TrackMannequin extends Mannequin {
         String value = entityTypeId == null ? "" : entityTypeId;
         if (!value.equals(vehicleType)) {
             vehicleType = value;
+            vehicleRendered = FakeVehicle.supported(value);
             if (!value.isEmpty() && LOGGED_VEHICLES.add(value)) {
-                Samsara.LOGGER.info("[回放] 载具类型: {}（本轮以骑乘姿态近似，真实载具渲染待后续）", value);
+                Samsara.LOGGER.info("[回放] 载具类型: {}（{}）", value,
+                        vehicleRendered ? "客户端假实体渲染" : "未知类型，回退蹲姿");
             }
         }
+    }
+
+    public final boolean vehicleRendered() {
+        return vehicleRendered;
     }
 
     public final String vehicleType() {
@@ -184,10 +192,11 @@ public abstract class TrackMannequin extends Mannequin {
         // 26.3：Pose 只影响尺寸/视线高度，鞘翅姿态还要 shared flag 才会同步给客户端。
         // creative/none 已由 TrackPose 排除，不会再画成鞘翅。
         setSharedFlag(FLAG_FALL_FLYING, state.flying());
-        setPose(poseOf(state.posture()));
+        setPose(state.posture() == TrackPose.Posture.RIDING && vehicleRendered
+                ? Pose.STANDING : poseOf(state.posture()));
         if (state.posture() == TrackPose.Posture.RIDING && !ridingApproximationLogged) {
             ridingApproximationLogged = true;
-            Samsara.LOGGER.info("[回放] 骑乘姿态暂用蹲姿近似；真实载具类型已记录，实体渲染待后续");
+            Samsara.LOGGER.info("[回放] 骑乘姿态：已知载具类型显示客户端假载具，未知类型回退蹲姿");
         }
         applyHurt(state.hurt());
     }

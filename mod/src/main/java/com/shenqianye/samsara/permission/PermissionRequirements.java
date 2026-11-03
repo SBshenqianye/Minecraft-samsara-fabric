@@ -35,6 +35,12 @@ public final class PermissionRequirements {
                 PermissionChecker.getPlayerLevel(source), commandPath);
     }
 
+    /** 原版管理员或服主 + 完整命令路径（保存型回溯等“owner/admin”命令）。 */
+    public static Predicate<CommandSourceStack> adminOrOwnerAnd(String commandPath) {
+        return source -> (isAdmin(source) || isOwner(source))
+                && allows(PermissionChecker.getPlayerLevel(source), commandPath);
+    }
+
     // ---- 纯逻辑入口：与上面的谓词共用同一套判定，便于单测 ----
 
     public static boolean allows(PermissionLevel playerLevel, String commandPath) {
