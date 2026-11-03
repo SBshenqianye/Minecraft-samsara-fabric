@@ -20,6 +20,13 @@ import java.util.Map;
  * 世界打开之前执行；排序是立即写 stack.json，只改 index/parent，不改目录名。
  */
 public class WorldStackWebService {
+    private WorldStackIconService icons;
+
+    private WorldStackIconService icons() {
+        if (icons == null) icons = new WorldStackIconService();
+        return icons;
+    }
+
     public Map<String, Object> model() {
         WorldStackAdmin.Model model = WorldStackAdmin.model(worldRoot(), serverRoot(), importRoots());
         Map<String, Object> out = new LinkedHashMap<>();
@@ -28,6 +35,9 @@ public class WorldStackWebService {
         out.put("serverRoot", model.serverRoot);
         out.put("stackPath", model.stackPath);
         out.put("importRoots", model.importRoots);
+        for (WorldStackAdmin.LayerView layer : model.stacks) {
+            layer.icon = icons().describe(layer.id);
+        }
         out.put("stacks", model.stacks);
         out.put("pendingImports", model.pendingImports);
         out.put("pendingImport", model.pendingImport);
@@ -99,6 +109,14 @@ public class WorldStackWebService {
         out.put("ok", true);
         out.put("jobs", WorldStackAdmin.jobs(worldRoot(), 20));
         return out;
+    }
+
+    public Map<String, Object> saveIcon(Map<String, Object> body) {
+        return icons().save(string(body, "id"), string(body, "mime"), string(body, "data"));
+    }
+
+    public Map<String, Object> deleteIcon(Map<String, Object> body) {
+        return icons().delete(string(body, "id"));
     }
 
     public Map<String, Object> timeline() {

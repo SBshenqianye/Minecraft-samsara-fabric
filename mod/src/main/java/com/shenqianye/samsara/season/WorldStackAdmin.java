@@ -1210,6 +1210,7 @@ public final class WorldStackAdmin {
         Path topLevel = worldDir.resolve("level.dat");
         Path topGen = worldDir.resolve("data/minecraft/world_gen_settings.dat");
         Path topDataRoot = worldDir.resolve("samsara");
+        Path topIcon = worldDir.resolve("icon.png");
         Path targetDims = null;
         Path targetMeta = null;
         Path tmpDims = null;
@@ -1256,6 +1257,7 @@ public final class WorldStackAdmin {
             Files.createDirectories(backup.resolve("swap"));
             copyFile(topLevel, backup.resolve("top-level.dat"));
             copyFile(topGen, backup.resolve("top-world_gen_settings.dat"));
+            copyFile(topIcon, backup.resolve("top-icon.png"));
             job.stage = "交换目标层与当前 world";
             job.progress = 10;
             writeJob(worldDir, job);
@@ -1271,6 +1273,7 @@ public final class WorldStackAdmin {
             moveIfExists(topLevel, targetMeta.resolve("level.dat"));
             copyFile(topGen, targetMeta.resolve("data/minecraft/world_gen_settings.dat"));
             moveIfExists(topGen, backup.resolve("top-world_gen_settings.moved.dat"));
+            moveIfExists(topIcon, targetMeta.resolve("icon.png"));
             for (String name : List.of("claims", "diff", "track")) {
                 moveIfExists(topDataRoot.resolve(name), targetMeta.resolve(name));
             }
@@ -1284,6 +1287,7 @@ public final class WorldStackAdmin {
             writeJob(worldDir, job);
             moveIfExists(tmpDims, topDims);
             moveIfExists(tmpMeta.resolve("level.dat"), topLevel);
+            moveIfExists(tmpMeta.resolve("icon.png"), topIcon);
             if (Files.isRegularFile(tmpMeta.resolve("data/minecraft/world_gen_settings.dat"))) {
                 moveIfExists(tmpMeta.resolve("data/minecraft/world_gen_settings.dat"), topGen);
                 targetGenMoved = true;
@@ -1361,6 +1365,7 @@ public final class WorldStackAdmin {
                 if (targetToTop) {
                     moveIfExists(topDims, tmpDims);
                     moveIfExists(topLevel, tmpMeta.resolve("level.dat"));
+                    moveIfExists(topIcon, tmpMeta.resolve("icon.png"));
                     if (targetGenMoved && Files.isRegularFile(topGen)) {
                         moveIfExists(topGen, tmpMeta.resolve("data/minecraft/world_gen_settings.dat"));
                     } else {
@@ -1375,6 +1380,7 @@ public final class WorldStackAdmin {
                 if (topToTarget) {
                     moveIfExists(targetDims, topDims);
                     moveIfExists(targetMeta.resolve("level.dat"), topLevel);
+                    moveIfExists(targetMeta.resolve("icon.png"), topIcon);
                     Files.deleteIfExists(topGen);
                     copyFile(backup.resolve("top-world_gen_settings.dat"), topGen);
                     for (String name : List.of("claims", "diff", "track")) {
@@ -1507,6 +1513,8 @@ public final class WorldStackAdmin {
             job.stage = "复制元数据";
             writeJob(worldDir, job);
             copyFile(source.resolve("level.dat"), stagingMeta.resolve("level.dat"));
+            // 导入存档自带 icon.png：非默认灰白图会作为栈层卡片回退图，不复制目录其余截图。
+            copyFile(source.resolve("icon.png"), stagingMeta.resolve("icon.png"));
             copyTree(source.resolve("data/minecraft"), stagingMeta.resolve("data/minecraft"),
                     job, 55, 65);
             for (String name : List.of("claims", "diff", "track")) {
@@ -1601,6 +1609,9 @@ public final class WorldStackAdmin {
             moveIfExists(dimsMinecraft, oldDims);
             movedOldDims = true;
             copyFile(worldDir.resolve("level.dat"), oldMeta.resolve("level.dat"));
+            // 栈顶被压入旧栈时，world/icon.png 属于旧栈层；先备份再复制到旧栈元数据目录。
+            copyFile(worldDir.resolve("icon.png"), oldMeta.resolve("icon.png"));
+            copyFile(worldDir.resolve("icon.png"), backup.resolve("icon.png"));
             copyFile(worldDir.resolve("data/minecraft/world_gen_settings.dat"),
                     oldMeta.resolve("data/minecraft/world_gen_settings.dat"));
             movedTopData = true;
@@ -1622,6 +1633,9 @@ public final class WorldStackAdmin {
             job.progress = 62;
             writeJob(worldDir, job);
             copyFile(source.resolve("level.dat"), worldDir.resolve("level.dat"));
+            // 新栈顶的 icon.png 跟随存档；源没有图标时不能继续沿用旧栈顶的图。
+            Files.deleteIfExists(worldDir.resolve("icon.png"));
+            copyFile(source.resolve("icon.png"), worldDir.resolve("icon.png"));
             copyTree(source.resolve("data/minecraft"), worldDir.resolve("data/minecraft"),
                     job, 62, 78);
             if (!Files.isRegularFile(worldDir.resolve("level.dat"))
@@ -1684,6 +1698,7 @@ public final class WorldStackAdmin {
             if (movedLevel) {
                 moveIfExists(backup.resolve("level.dat"), worldDir.resolve("level.dat"));
             }
+            copyFile(backup.resolve("icon.png"), worldDir.resolve("icon.png"));
             deleteRecursive(worldDir.resolve("data/minecraft"));
             if (movedData) {
                 moveIfExists(backup.resolve("data-minecraft"), worldDir.resolve("data/minecraft"));
@@ -2307,6 +2322,8 @@ public final class WorldStackAdmin {
         public long dataBytes;
         public int spawnCycles;
         public boolean loaded;
+        /** 图标白名单：source/custom/mime/version/url；不含文件路径。 */
+        public Map<String, Object> icon;
         public List<DimView> dimensions = new ArrayList<>();
     }
 

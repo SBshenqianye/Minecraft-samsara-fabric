@@ -25,6 +25,8 @@ class WebSecurityTest {
     void staticPathsAreWhitelisted() {
         assertEquals("/web/index.html", WebSecurity.staticResource("/"));
         assertEquals("/web/app.js", WebSecurity.staticResource("/app.js"));
+        assertEquals("/web/user.html", WebSecurity.staticResource("/user"));
+        assertEquals("/web/user.js", WebSecurity.staticResource("/user.js"));
         assertEquals("/web/banners.js", WebSecurity.staticResource("/banners.js"));
         assertEquals("/web/map.js", WebSecurity.staticResource("/map.js"));
         assertEquals("/web/world-stack.js", WebSecurity.staticResource("/world-stack.js"));
@@ -33,6 +35,14 @@ class WebSecurityTest {
         assertTrue(WebSecurity.safeApiPath("/api/status"));
         assertTrue(WebSecurity.safeApiPath("/api/map"));
         assertTrue(WebSecurity.safeApiPath("/api/map/tile"));
+        assertTrue(WebSecurity.safeApiPath("/api/user/status"));
+        assertTrue(WebSecurity.safeApiPath("/api/user/worlds"));
+        assertTrue(WebSecurity.safeApiPath("/api/user/map"));
+        assertTrue(WebSecurity.safeApiPath("/api/user/map/players"));
+        assertTrue(WebSecurity.safeApiPath("/api/user/map/tile"));
+        assertTrue(WebSecurity.safeApiPath("/api/user/worlds/icon"));
+        assertTrue(WebSecurity.safeApiPath("/api/world-stack/icon"));
+        assertTrue(WebSecurity.safeApiPath("/api/world-stack/icon/delete"));
         assertTrue(WebSecurity.safeApiPath("/api/diff/chunk"));
         assertTrue(WebSecurity.safeApiPath("/api/diff/chunk/restore"));
         assertTrue(WebSecurity.safeApiPath("/api/diff/view"));
@@ -48,6 +58,10 @@ class WebSecurityTest {
         assertTrue(WebSecurity.bodyWithinLimit(0));
         assertTrue(WebSecurity.bodyWithinLimit(WebSecurity.MAX_BODY_BYTES));
         assertFalse(WebSecurity.bodyWithinLimit(WebSecurity.MAX_BODY_BYTES + 1));
+        assertTrue(WebSecurity.bodyWithinLimit(WebSecurity.MAX_ICON_BODY_BYTES,
+                WebSecurity.MAX_ICON_BODY_BYTES));
+        assertFalse(WebSecurity.bodyWithinLimit(WebSecurity.MAX_ICON_BODY_BYTES + 1,
+                WebSecurity.MAX_ICON_BODY_BYTES));
         assertFalse(WebSecurity.bodyWithinLimit(-1));
     }
 }

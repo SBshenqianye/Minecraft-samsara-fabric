@@ -152,6 +152,26 @@ class LocalWebServerTest {
     }
 
     @Test
+    void userApiIsPublicReadOnlyAndAdminStillRequiresToken() throws Exception {
+        FakeMapService map = new FakeMapService();
+        server = new LocalWebServer(new FakeService(), null, null, null, map,
+                null, null, null, new WebUserService(map, null), TOKEN, 0);
+        assertTrue(server.start());
+
+        HttpResponse<String> status = request("GET", "/api/user/status", null, null);
+        assertEquals(200, status.statusCode());
+        assertTrue(status.body().contains("\"scope\":\"user\""));
+
+        assertEquals(200, request("GET", "/api/user/worlds", null, null).statusCode());
+        assertEquals(200, request("GET", "/api/user/map", null, null).statusCode());
+        assertEquals(200, request("GET", "/api/user/map/players", null, null).statusCode());
+        assertEquals(405, request("POST", "/api/user/map", "{}", null).statusCode(),
+                "用户端只接受 GET");
+        assertEquals(401, request("GET", "/api/map", null, null).statusCode(),
+                "用户端公开不能把管理端地图一起放开");
+    }
+
+    @Test
     void worldStackApiRoutesAndFieldErrors() throws Exception {
         server = new LocalWebServer(new FakeService(), null, null, null, null,
                 new FakeWorldStackService(), TOKEN, 0);

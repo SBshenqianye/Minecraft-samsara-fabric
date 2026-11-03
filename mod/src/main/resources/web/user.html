@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>samsara · 用户视图</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%230d9488'/%3E%3Crect x='8' y='12' width='3' height='9' rx='1.5' fill='white'/%3E%3Crect x='14.5' y='8' width='3' height='16' rx='1.5' fill='white'/%3E%3Crect x='21' y='14' width='3' height='7' rx='1.5' fill='white'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="app-header user-header">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <span></span><span></span><span></span>
+      </div>
+      <div class="brand-text">
+        <h1>samsara</h1>
+        <p>服务器公开信息 <span class="version-pill">只读</span></p>
+      </div>
+    </div>
+    <div class="connection">
+      <span id="user-connection" class="conn-state">公开只读</span>
+      <a class="user-view-link" href="/" title="进入管理端，需要 token">管理端</a>
+    </div>
+  </header>
+
+  <main class="app-shell user-shell">
+    <div class="content">
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>服务器状态</h2>
+            <p class="panel-sub">公开只读信息；不包含配置、文件路径、备份、权限或 token。</p>
+          </div>
+        </div>
+        <div id="user-status" class="status-chips"></div>
+        <div id="user-message" class="message" role="status"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>世界栈</h2>
+            <p class="panel-sub">每个栈层的种子互相独立；这里只显示公开的栈层顺序、种子和在线人数。</p>
+          </div>
+        </div>
+        <div id="user-worlds" class="world-stack-list"></div>
+      </section>
+
+      <section class="panel map-panel">
+        <div class="panel-head">
+          <div>
+            <h2>地图</h2>
+            <p class="panel-sub">按世界栈读取各栈层的地表底图，并叠加圈地保护区块、旗帜与出生点历史；只读展示，不加载区块、不写世界数据。</p>
+            <p class="panel-sub">栈顶是 <code>world</code>；旧栈层按从栈底往上数。点“世界栈总览”查看各栈层缩略图与在线玩家；玩家标记每 250 毫秒刷新。</p>
+          </div>
+          <div class="panel-tools">
+            <label class="inline-field">
+              <span>栈层</span>
+              <select id="map-stack"></select>
+            </label>
+            <label class="inline-field">
+              <span>维度</span>
+              <select id="map-dimension"></select>
+            </label>
+            <label class="check-line">
+              <input id="map-show-claims" type="checkbox" checked>
+              <span>显示圈地</span>
+            </label>
+            <label class="check-line">
+              <input id="map-show-chunks" type="checkbox">
+              <span>区块网格</span>
+            </label>
+            <label class="check-line">
+              <input id="map-show-spawns" type="checkbox" checked>
+              <span>显示出生点</span>
+            </label>
+            <label class="check-line">
+              <input id="map-shading" type="checkbox" checked>
+              <span>高度明暗</span>
+            </label>
+            <label class="check-line">
+              <input id="map-show-players" type="checkbox" checked>
+              <span>显示玩家</span>
+            </label>
+            <label class="check-line">
+              <input id="map-show-entities" type="checkbox" checked>
+              <span>实体</span>
+            </label>
+            <label class="check-line">
+              <input id="map-show-trails" type="checkbox" checked>
+              <span>轨迹</span>
+            </label>
+            <label class="check-line">
+              <input id="map-show-separation" type="checkbox">
+              <span>排斥半径</span>
+            </label>
+            <button id="map-fit" class="ghost" type="button">定位全部圈地</button>
+            <button id="map-zoom-out" class="ghost map-zoom-button" type="button" title="缩小">−</button>
+            <span id="map-zoom-label" class="map-zoom-label">4 格/像素</span>
+            <button id="map-zoom-in" class="ghost map-zoom-button" type="button" title="放大">＋</button>
+            <button id="map-overview-toggle" class="ghost map-overview-toggle" type="button" aria-pressed="false">世界栈总览</button>
+            <button id="map-reload" class="ghost" type="button">重新读取</button>
+          </div>
+        </div>
+        <div id="map-message" class="message" role="status"></div>
+        <div id="map-stats" class="stat-row map-stats"></div>
+        <div id="map-stage-anchor" class="map-stage">
+          <canvas id="map-canvas" class="map-canvas" aria-label="地形与圈地地图"></canvas>
+          <canvas id="map-players" class="map-players" aria-hidden="true"></canvas>
+          <canvas id="map-live" class="map-live" aria-hidden="true"></canvas>
+          <div id="map-tooltip" class="map-tooltip" hidden></div>
+          <div id="map-dim-anchors" class="map-dim-anchors" aria-hidden="true"></div>
+          <div id="map-selection" class="map-selection map-hud"></div>
+        </div>
+        <div id="map-stack-overview" class="map-overview" hidden>
+          <div class="map-overview-head">
+            <div>
+              <strong>世界栈总览</strong>
+              <p class="muted small">每个栈：主世界在上、下界在下，中间留虚空/高空缝隙；末地在右侧。栈与栈之间也是虚空/高空缝隙。点击面板进入详细地图。</p>
+            </div>
+            <span id="map-overview-status" class="map-overview-status">在线玩家读取中…</span>
+          </div>
+          <div id="map-overview-stacks" class="map-overview-stacks"></div>
+        </div>
+        <div class="map-activity-wrap">
+          <div class="map-activity-head">
+            <strong>实时动态</strong>
+            <span id="map-live-status" class="muted small">读取中…</span>
+          </div>
+          <div id="map-activity" class="map-activity"></div>
+        </div>
+        <div class="map-footer">
+          <div class="map-legend">
+            <span><i class="map-swatch claim"></i>半透明青色 = 保护区块</span>
+            <span><i class="map-swatch banner"></i>圆点 = 旗帜（颜色取图案色）</span>
+            <span><i class="map-swatch player"></i>蓝色圆点 = 在线玩家</span>
+            <span><i class="map-swatch spawn"></i>菱形 = 出生点历史（独立颜色）</span>
+            <span><i class="map-swatch trail"></i>细线 = 玩家/实体短轨迹</span>
+            <span><i class="map-swatch separation"></i>虚线圆 = 出生点排斥半径</span>
+            <span><i class="map-swatch chunk"></i><span id="map-chunk-grid-legend">区块网格 关</span></span>
+            <span>拖动平移 · 滚轮缩放 · 点击旗帜/出生点看详情</span>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="/banners.js"></script>
+  <script src="/user.js"></script>
+  <script src="/map.js"></script>
+</body>
+</html>

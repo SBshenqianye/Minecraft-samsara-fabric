@@ -22,19 +22,27 @@ import java.util.Map;
 public class ServerWebService {
     private final MinecraftServer server;
     private final Path serverRoot;
+    private final WebConsoleService console;
 
     public ServerWebService(MinecraftServer server) {
         this.server = server;
         this.serverRoot = ServerBackup.serverRoot();
+        this.console = new WebConsoleService(server);
     }
 
     public ServerWebService(MinecraftServer server, Path serverRoot) {
         this.server = server;
         this.serverRoot = serverRoot.toAbsolutePath().normalize();
+        this.console = new WebConsoleService(server);
     }
 
     public Path serverRoot() {
         return serverRoot;
+    }
+
+    public Map<String, Object> console(Map<String, Object> body) {
+        Object value = body == null ? null : body.get("command");
+        return console.execute(value == null ? "" : String.valueOf(value));
     }
 
     public Map<String, Object> model() {

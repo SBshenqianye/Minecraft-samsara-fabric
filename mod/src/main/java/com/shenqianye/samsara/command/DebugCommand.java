@@ -137,6 +137,7 @@ public class DebugCommand {
                         .executes(ctx -> reply(ctx.getSource(), tps())))
                 .then(SeasonCommand.seasonNode())
                 .then(WorldCommand.worldNode())
+                .then(SeedCommand.seedNode())
                 .then(ResetCommand.resetNode())
                 .then(SpawnCommand.spawnNode())
                 .then(ClaimCommand.claimNode())

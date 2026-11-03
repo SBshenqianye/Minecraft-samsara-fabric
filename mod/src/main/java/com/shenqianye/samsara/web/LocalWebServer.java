@@ -50,6 +50,7 @@ public final class LocalWebServer {
     private final WorldStackWebService worldStackService;
     private final ServerWebService serverService;
     private final ChunkDiffWebService diffService;
+    private final WebUserService userService;
     private final String token;
     private final int port;
     private HttpServer server;
@@ -109,6 +110,19 @@ public final class LocalWebServer {
                           ServerWebService serverService,
                           ChunkDiffWebService diffService,
                           String token, int port) {
+        this(service, identityService, outputService, permissionService, mapService,
+                worldStackService, serverService, diffService, null, token, port);
+    }
+
+    public LocalWebServer(ConfigService service, IdentityWebService identityService,
+                          OutputWebService outputService,
+                          PermissionWebService permissionService,
+                          WebMapService mapService,
+                          WorldStackWebService worldStackService,
+                          ServerWebService serverService,
+                          ChunkDiffWebService diffService,
+                          WebUserService userService,
+                          String token, int port) {
         this.service = service;
         this.identityService = identityService;
         this.outputService = outputService;
@@ -117,6 +131,7 @@ public final class LocalWebServer {
         this.worldStackService = worldStackService;
         this.serverService = serverService;
         this.diffService = diffService;
+        this.userService = userService;
         this.token = token == null ? "" : token;
         this.port = port;
     }
@@ -154,6 +169,9 @@ public final class LocalWebServer {
         if (mapService != null) {
             server.createContext("/api/map", this::handleMap);
         }
+        if (userService != null) {
+            server.createContext("/api/user", this::handleUser);
+        }
         if (diffService != null) {
             server.createContext("/api/diff", this::handleDiff);
         }
@@ -163,6 +181,7 @@ public final class LocalWebServer {
         if (serverService != null) {
             server.createContext("/api/server", this::handleServer);
         }
+        server.createContext("/api/audit", this::handleAudit);
         executor = Executors.newFixedThreadPool(4, runnable -> {
             Thread thread = new Thread(runnable, "samsara-web");
             thread.setDaemon(true);
@@ -608,6 +627,106 @@ public final class LocalWebServer {
         }
     }
 
+    /**
+     * 用户端只读路由：不需要 token，也不接受任何写方法。
+     * 只暴露公开状态、世界栈列表、地图与在线玩家；管理端路径不在这里注册。
+     */
+    private void handleUser(HttpExchange exchange) throws IOException {
+        long start = System.currentTimeMillis();
+        int status = 200;
+        try {
+            if (userService == null) {
+                status = 503;
+                json(exchange, status, Map.of("error", "用户端 Web 未启动"));
+                return;
+            }
+            if (!"GET".equals(exchange.getRequestMethod())) {
+                status = 405;
+                json(exchange, status, Map.of("error", "Method Not Allowed"));
+                return;
+            }
+            String path = exchange.getRequestURI().getPath();
+            Map<String, String> query = parseQuery(exchange.getRequestURI().getRawQuery());
+            if ("/api/user/status".equals(path)) {
+                json(exchange, 200, userService.status());
+                return;
+            }
+            if ("/api/user/worlds".equals(path)) {
+                json(exchange, 200, userService.worlds());
+                return;
+            }
+            if ("/api/user/worlds/icon".equals(path)) {
+                WorldStackIconService.IconFile icon = userService.icon(query.getOrDefault("stack", ""));
+                if (icon == null) {
+                    status = 404;
+                    json(exchange, status, Map.of("error", "没有这个栈层图标"));
+                    return;
+                }
+                sendBytes(exchange, 200, icon.mime(), icon.bytes());
+                return;
+            }
+            if ("/api/user/map/avatar".equals(path)) {
+                MojangSkinService.Skin skin = userService.avatar(
+                        query.getOrDefault("uuid", ""), query.getOrDefault("name", ""));
+                if (skin == null) {
+                    status = 404;
+                    json(exchange, status, Map.of("error", "没有可用的 Mojang 皮肤"));
+                    return;
+                }
+                sendBytes(exchange, 200, skin.mime(), skin.bytes());
+                return;
+            }
+            if ("/api/user/map".equals(path)) {
+                json(exchange, 200, userService.mapModel());
+                return;
+            }
+            if ("/api/user/map/players".equals(path)) {
+                json(exchange, 200, userService.players());
+                return;
+            }
+            if ("/api/user/map/live".equals(path)) {
+                json(exchange, 200, userService.live());
+                return;
+            }
+            if ("/api/user/map/tile".equals(path)) {
+                String stack = query.getOrDefault("stack", "");
+                String dimension = query.getOrDefault("dim", "");
+                Integer rx = intParam(query.get("rx"));
+                Integer rz = intParam(query.get("rz"));
+                Integer scale = intParam(query.get("scale"));
+                if (dimension.isBlank() || rx == null || rz == null || scale == null) {
+                    status = 400;
+                    json(exchange, status, Map.of("error",
+                            "参数应为 stack=<栈层>&dim=<维度>&rx=<int>&rz=<int>&scale=1|2|4|8"));
+                    return;
+                }
+                if (scale != 1 && scale != 2 && scale != 4 && scale != 8) {
+                    status = 400;
+                    json(exchange, status, Map.of("error", "scale 只能是 1、2、4、8"));
+                    return;
+                }
+                byte[] png = userService.tile(stack, dimension, rx, rz, scale,
+                        !"0".equals(query.get("shade")));
+                if (png == null) {
+                    status = 404;
+                    json(exchange, status, Map.of("error", "没有这个地图区块"));
+                    return;
+                }
+                sendBytes(exchange, 200, "image/png", png);
+                return;
+            }
+            status = 404;
+            json(exchange, status, Map.of("error", "Not Found"));
+        } catch (RuntimeException e) {
+            status = 500;
+            json(exchange, status, Map.of("error", "服务器内部错误"));
+            LOG.warn("[web] 用户端处理 {} 失败: {}", exchange.getRequestURI().getPath(),
+                    e.getMessage());
+        } finally {
+            log(exchange, status, start);
+        }
+    }
+
     private void handleMap(HttpExchange exchange) throws IOException {
         long start = System.currentTimeMillis();
         int status = 200;
@@ -635,6 +754,10 @@ public final class LocalWebServer {
             }
             if ("/api/map/players".equals(path)) {
                 json(exchange, 200, mapService.players());
+                return;
+            }
+            if ("/api/map/live".equals(path)) {
+                json(exchange, 200, mapService.live());
                 return;
             }
             if ("/api/map/tile".equals(path)) {
@@ -808,6 +931,7 @@ public final class LocalWebServer {
                     case "/api/server/backups/preview-restore" ->
                             result = serverService.previewRestore(body);
                     case "/api/server/backups/restore" -> result = serverService.restore(body);
+                    case "/api/server/console" -> result = serverService.console(body);
                     default -> {
                         status = 404;
                         result = Map.of("error", "Not Found");
@@ -830,6 +954,62 @@ public final class LocalWebServer {
         }
     }
 
+    private void handleAudit(HttpExchange exchange) throws IOException {
+        long start = System.currentTimeMillis();
+        int status = 200;
+        try {
+            if (!authorized(exchange)) {
+                status = 401;
+                json(exchange, status, Map.of("error", "未授权：缺少或错误的 Bearer token"));
+                return;
+            }
+            String path = exchange.getRequestURI().getPath();
+            String method = exchange.getRequestMethod();
+            if ("GET".equals(method)) {
+                json(exchange, 200, Map.of("ok", true,
+                        "entries", WebAuditService.get().list(100)));
+                return;
+            }
+            if (!"POST".equals(method)) {
+                status = 405;
+                json(exchange, status, Map.of("error", "Method Not Allowed"));
+                return;
+            }
+            Map<String, Object> body;
+            try {
+                body = parseObject(readBody(exchange));
+            } catch (BodyTooLarge e) {
+                status = 413;
+                json(exchange, status, Map.of("error", "请求体过大"));
+                return;
+            } catch (RuntimeException e) {
+                status = 400;
+                json(exchange, status, Map.of("error", "请求体应为 JSON 对象"));
+                return;
+            }
+            String id = body.get("id") == null ? "" : String.valueOf(body.get("id"));
+            Map<String, Object> result;
+            if ("/api/audit/preview".equals(path)) {
+                result = WebAuditService.get().preview(id);
+            } else if ("/api/audit/rollback".equals(path)) {
+                result = WebAuditService.get().rollback(id,
+                        Boolean.TRUE.equals(body.get("confirm"))
+                                || "true".equalsIgnoreCase(String.valueOf(body.get("confirm"))));
+            } else {
+                status = 404;
+                result = Map.of("error", "Not Found");
+            }
+            if (status == 200 && Boolean.FALSE.equals(result.get("ok"))) status = 400;
+            json(exchange, status, result);
+        } catch (RuntimeException e) {
+            status = 500;
+            json(exchange, status, Map.of("error", "服务器内部错误：" + errorDetail(e)));
+            LOG.warn("[web] 审计处理失败: {}", e.toString());
+        } finally {
+            log(exchange, status, start);
+        }
+    }
+
     private void handleWorldStack(HttpExchange exchange) throws IOException {
         long start = System.currentTimeMillis();
         int status = 200;
@@ -846,10 +1026,12 @@ public final class LocalWebServer {
             }
             String path = exchange.getRequestURI().getPath();
             String method = exchange.getRequestMethod();
+            int bodyLimit = "/api/world-stack/icon".equals(path)
+                    ? WebSecurity.MAX_ICON_BODY_BYTES : WebSecurity.MAX_BODY_BYTES;
             Map<String, Object> body = Map.of();
             if ("POST".equals(method) || "PUT".equals(method)) {
                 try {
-                    body = parseObject(readBody(exchange));
+                    body = parseObject(readBody(exchange, bodyLimit));
                 } catch (BodyTooLarge e) {
                     status = 413;
                     json(exchange, status, Map.of("error", "请求体过大"));
@@ -896,6 +1078,10 @@ public final class LocalWebServer {
                             result = worldStackService.previewArchive(body);
                     case "/api/world-stack/archive" ->
                             result = worldStackService.archive(body);
+                    case "/api/world-stack/icon" ->
+                            result = worldStackService.saveIcon(body);
+                    case "/api/world-stack/icon/delete" ->
+                            result = worldStackService.deleteIcon(body);
                     case "/api/world-stack/timeline/preview" ->
                             result = worldStackService.previewTimelineRestore(body);
                     case "/api/world-stack/timeline/restore" ->
@@ -985,11 +1171,18 @@ public final class LocalWebServer {
     // ---- 工具 ----
 
     private boolean authorized(HttpExchange exchange) {
-        return WebSecurity.authorized(token, exchange.getRequestHeaders()
+        boolean allowed = WebSecurity.authorized(token, exchange.getRequestHeaders()
                 .getFirst("Authorization"));
+        if (allowed) WebAuditService.capture(exchange);
+        return allowed;
     }
 
     private static String readBody(HttpExchange exchange) throws IOException, BodyTooLarge {
+        return readBody(exchange, WebSecurity.MAX_BODY_BYTES);
+    }
+
+    private static String readBody(HttpExchange exchange, int maxBytes)
+            throws IOException, BodyTooLarge {
         String declared = exchange.getRequestHeaders().getFirst("Content-Length");
         if (declared != null) {
             long length;
@@ -998,13 +1191,13 @@ public final class LocalWebServer {
             } catch (NumberFormatException e) {
                 throw new BodyTooLarge();
             }
-            if (!WebSecurity.bodyWithinLimit(length)) {
+            if (!WebSecurity.bodyWithinLimit(length, maxBytes)) {
                 throw new BodyTooLarge();
             }
         }
         try (InputStream in = exchange.getRequestBody()) {
-            byte[] bytes = in.readNBytes(WebSecurity.MAX_BODY_BYTES + 1);
-            if (bytes.length > WebSecurity.MAX_BODY_BYTES) {
+            byte[] bytes = in.readNBytes(maxBytes + 1);
+            if (bytes.length > maxBytes) {
                 throw new BodyTooLarge();
             }
             return new String(bytes, StandardCharsets.UTF_8);

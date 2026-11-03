@@ -8,6 +8,8 @@ import java.util.Locale;
 public final class WebSecurity {
     /** 请求体上限（256 KiB）：配置表单远小于此，超限直接拒绝。 */
     public static final int MAX_BODY_BYTES = 256 * 1024;
+    /** 栈层图标上传单独放宽到 1 MiB（base64 内嵌在 JSON 里）。 */
+    public static final int MAX_ICON_BODY_BYTES = 1024 * 1024;
 
     private WebSecurity() {
     }
@@ -48,6 +50,8 @@ public final class WebSecurity {
     public static String staticResource(String path) {
         return switch (path) {
             case "/", "/index.html" -> "/web/index.html";
+            case "/user", "/user.html" -> "/web/user.html";
+            case "/user.js" -> "/web/user.js";
             case "/app.js" -> "/web/app.js";
             case "/identity", "/identity.html" -> "/web/identity.html";
             case "/identity.js" -> "/web/identity.js";
@@ -67,7 +71,15 @@ public final class WebSecurity {
 
     /** 拒绝目录穿越/异常路径；只允许固定 API 路径。 */
     public static boolean safeApiPath(String path) {
-        return "/api/config".equals(path) || "/api/reload".equals(path)
+        return "/api/user/status".equals(path)
+                || "/api/user/worlds".equals(path)
+                || "/api/user/map".equals(path)
+                || "/api/user/map/players".equals(path)
+                || "/api/user/map/live".equals(path)
+                || "/api/user/map/tile".equals(path)
+                || "/api/user/map/avatar".equals(path)
+                || "/api/user/worlds/icon".equals(path)
+                || "/api/config".equals(path) || "/api/reload".equals(path)
                 || "/api/status".equals(path)
                 || "/api/identity".equals(path)
                 || "/api/identity/preview".equals(path)
@@ -83,6 +95,7 @@ public final class WebSecurity {
                 || "/api/permissions/reload".equals(path)
                 || "/api/map".equals(path)
                 || "/api/map/players".equals(path)
+                || "/api/map/live".equals(path)
                 || "/api/map/tile".equals(path)
                 || "/api/diff".equals(path)
                 || "/api/diff/chunk".equals(path)
@@ -100,12 +113,20 @@ public final class WebSecurity {
                 || path.startsWith("/api/world-stack/import")
                 || path.startsWith("/api/world-stack/reorder")
                 || path.startsWith("/api/world-stack/archive")
+                || path.startsWith("/api/world-stack/icon")
                 || path.startsWith("/api/world-stack/jobs")
-                || path.equals("/api/server")
-                || path.startsWith("/api/server/");
+                || "/api/server".equals(path)
+                || path.startsWith("/api/server/")
+                || "/api/audit".equals(path)
+                || "/api/audit/preview".equals(path)
+                || "/api/audit/rollback".equals(path);
     }
 
     public static boolean bodyWithinLimit(long length) {
-        return length >= 0 && length <= MAX_BODY_BYTES;
+        return bodyWithinLimit(length, MAX_BODY_BYTES);
+    }
+
+    public static boolean bodyWithinLimit(long length, int maxBytes) {
+        return length >= 0 && length <= maxBytes;
     }
 }

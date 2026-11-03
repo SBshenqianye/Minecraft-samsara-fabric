@@ -46,6 +46,8 @@ public final class PermissionDefaults {
         map.put("season agree", "user");
         map.put("season cancel", "user");
         map.put("season vote-status", "user");
+        // 种子查询（只读，按玩家所在栈层）
+        map.put("seed", "user");
         // world stack
         map.put("world", "user");
         map.put("world list", "user");

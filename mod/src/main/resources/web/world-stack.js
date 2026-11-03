@@ -15,6 +15,8 @@
     archiveConfirmed: false,
     archiveError: '',
     archiveBusy: false,
+    iconBusy: false,
+    iconTarget: '',
     timeline: null,
     timelinePreview: null,
     timelineConfirmed: false,
@@ -43,13 +45,16 @@
       importQueue: $('world-stack-import-queue'),
       importPreview: $('world-stack-import-preview'),
       archiveError: $('world-stack-archive-error'),
-      archiveList: $('world-stack-archive-list'),
       archivePreview: $('world-stack-archive-preview'),
+      archiveDialog: $('world-stack-archive-dialog'),
       timeline: $('world-stack-timeline'),
       timelineError: $('world-stack-timeline-error'),
       timelinePreview: $('world-stack-timeline-preview'),
+      timelineDialog: $('world-stack-timeline-dialog'),
+      timelineOpen: $('world-stack-timeline-open'),
       snapshots: $('world-stack-snapshots'),
       snapshotRefresh: $('world-stack-snapshot-refresh'),
+      iconInput: $('world-stack-icon-input'),
       files: $('world-stack-files'),
       jobs: $('world-stack-jobs'),
       refresh: $('world-stack-refresh'),
@@ -57,8 +62,6 @@
       layers: $('world-stack-layers'),
       orderPanel: $('world-stack-order-panel'),
       importPanel: $('world-stack-import-panel'),
-      archivePanel: $('world-stack-archive-panel'),
-      timelinePanel: $('world-stack-timeline-panel'),
       filesPanel: $('world-stack-files-panel'),
       jobsPanel: $('world-stack-jobs-panel'),
     };
@@ -223,11 +226,11 @@
     renderAfterSelect();
     renderImportQueue();
     renderImportState();
-    renderArchiveList();
     renderArchiveState();
     renderTimelineError();
     renderTimelinePreview();
     renderSnapshots();
+    if (ensureEls().timelineDialog?.open) renderTimeline();
     renderFiles();
     renderJobs();
     // 存档备份页也会调用 load() 预取世界栈数据；只有世界栈标签真正激活时才接管左侧导航。
@@ -305,7 +308,10 @@
         actions.append(archive);
       }
       head.append(title, actions);
-      card.append(head);
+      const body = document.createElement('div');
+      body.className = 'world-stack-card-body';
+      const main = document.createElement('div');
+      main.className = 'world-stack-card-main';
       const dims = (stack.dimensions || [])
         .map((dim) => dim.id + ' ' + (dim.regions || 0))
         .join(' · ');
@@ -313,7 +319,7 @@
         ? stack.versionName + (stack.snapshot ? ' · 快照' : '')
           + (stack.dataVersion ? ' · DataVersion ' + stack.dataVersion : '')
         : (stack.dataVersion ? 'DataVersion ' + stack.dataVersion : '—');
-      appendRows(card, [
+      appendRows(main, [
         ['世界名', stack.saveName || '—'],
         ['存档创建', fmtTime(stack.saveCreatedAt)],
         ['最后游玩', fmtTime(stack.lastPlayed)],
@@ -329,6 +335,15 @@
         ['元数据', stack.metaPath],
         ['维度', stack.dimensionsPath],
       ]);
+      body.append(main);
+      if (window.SamsaraStackIcon?.build) {
+        body.append(window.SamsaraStackIcon.build(stack, {
+          admin: true,
+          onUpload: () => chooseIcon(stack),
+          onDelete: () => deleteIcon(stack),
+        }));
+      }
+      card.append(head, body);
       list.append(card);
     }
   }
@@ -536,46 +551,49 @@
     renderImportPreview();
   }
 
-  function renderArchiveList() {
-    const { archiveList } = ensureEls();
-    if (!archiveList) return;
-    archiveList.replaceChildren();
-    const list = nonTop().slice().sort((a, b) => b.index - a.index);
-    if (list.length === 0) {
-      const empty = document.createElement('p');
-      empty.className = 'muted small';
-      empty.textContent = '没有可归档的旧栈层；world 是栈顶，不能归档。导入新栈层或提升其他栈层后，这里会出现归档入口。';
-      archiveList.append(empty);
-      return;
-    }
-    const head = document.createElement('p');
-    head.className = 'muted small';
-    head.textContent = '可归档的旧栈层（不含栈顶 world）。点“归档…”先预览，确认后排队，重启时先备份再移除。';
-    archiveList.append(head);
-    for (const stack of list) {
-      const row = document.createElement('div');
-      row.className = 'world-stack-queue-item';
-      const title = document.createElement('strong');
-      title.textContent = stack.id;
-      const label = document.createElement('span');
-      label.className = 'grow';
-      label.textContent = '第 ' + (stack.index + 1) + ' 层 · '
-        + (stack.saveName || '未命名世界') + ' · ' + fmtBytes(stack.dataBytes)
-        + ' · 存档创建 ' + fmtTime(stack.saveCreatedAt);
-      const action = document.createElement('button');
-      action.type = 'button';
-      action.className = 'ghost danger';
-      action.textContent = '归档…';
-      action.addEventListener('click', () => previewArchive(stack.id));
-      row.append(title, label, action);
-      archiveList.append(row);
-    }
-  }
-
   function renderArchiveState() {
     const { archiveError } = ensureEls();
     renderInlineError(archiveError, state.archiveError);
     renderArchivePreview();
+  }
+
+  function openArchiveDialog() {
+    const { archiveDialog } = ensureEls();
+    if (!archiveDialog) return;
+    if (!archiveDialog.open) {
+      try { archiveDialog.showModal(); } catch (error) { archiveDialog.setAttribute('open', ''); }
+    }
+  }
+
+  function closeArchiveDialog() {
+    const { archiveDialog } = ensureEls();
+    if (archiveDialog?.open) archiveDialog.close();
+  }
+
+  function showTimelineDialog() {
+    const { timelineDialog } = ensureEls();
+    if (!timelineDialog) return;
+    if (!timelineDialog.open) {
+      try { timelineDialog.showModal(); } catch (error) { timelineDialog.setAttribute('open', ''); }
+    }
+    renderTimeline();
+    renderSnapshots();
+    renderTimelineError();
+    renderTimelinePreview();
+  }
+
+  async function openTimeline() {
+    const { timelineDialog } = ensureEls();
+    if (!timelineDialog) return;
+    showTimelineDialog();
+    try {
+      state.timeline = await window.SamsaraUI.api('/api/world-stack/timeline');
+      state.snapshots = await window.SamsaraUI.api('/api/world-stack/timeline/snapshots');
+      state.timelineError = '';
+    } catch (error) {
+      state.timelineError = window.SamsaraUI.authMessage(error, '读取操作时间线失败');
+    }
+    showTimelineDialog();
   }
 
   function renderTimelineError() {
@@ -741,11 +759,12 @@
       const data = await post('/api/world-stack/archive/preview', { id });
       state.archive = data;
       state.archiveConfirmed = false;
-      window.SamsaraUI.scrollToTarget?.('world-stack-archive-panel');
+      openArchiveDialog();
     } catch (error) {
       state.archive = null;
-      fail('world-stack-archive-panel', archiveError,
-        window.SamsaraUI.authMessage(error, '归档预览失败'));
+      state.archiveError = window.SamsaraUI.authMessage(error, '归档预览失败');
+      setMessage(state.archiveError, 'error');
+      openArchiveDialog();
     } finally {
       state.archiveBusy = false;
       renderArchiveState();
@@ -833,19 +852,150 @@
       if (!data.ok) {
         state.archive = data;
         state.archiveConfirmed = false;
-        fail('world-stack-archive-panel', archiveError,
-          (data.errors && data.errors[0]) || data.error || '归档排队失败');
+        state.archiveError = (data.errors && data.errors[0]) || data.error || '归档排队失败';
+        setMessage(state.archiveError, 'error');
+        openArchiveDialog();
         return;
       }
       state.archive = null;
+      closeArchiveDialog();
       await load();
       setMessage('已排队：' + data.jobId + '。重启服务器后归档；备份会保留。', 'ok');
     } catch (error) {
-      fail('world-stack-archive-panel', archiveError,
-        window.SamsaraUI.authMessage(error, '归档排队失败'));
+      state.archiveError = window.SamsaraUI.authMessage(error, '归档排队失败');
+      setMessage(state.archiveError, 'error');
+      openArchiveDialog();
     } finally {
       state.archiveBusy = false;
       renderArchiveState();
+    }
+  }
+
+  // ---- 栈层图标 ----
+
+  function chooseIcon(stack) {
+    const { iconInput } = ensureEls();
+    if (!iconInput || state.iconBusy) return;
+    state.iconTarget = stack.id;
+    iconInput.value = '';
+    iconInput.click();
+  }
+
+  async function deleteIcon(stack) {
+    if (state.iconBusy) return;
+    if (!window.confirm('恢复 ' + stack.id + ' 的默认图标？只会删除手动上传的图标，'
+      + '不会修改存档或世界数据。')) {
+      return;
+    }
+    state.iconBusy = true;
+    setMessage('正在恢复默认图标…');
+    try {
+      const data = await post('/api/world-stack/icon/delete', { id: stack.id });
+      if (!data.ok) {
+        setMessage(data.error || '恢复默认图标失败', 'error');
+        return;
+      }
+      await load();
+      setMessage(data.icon && data.icon.source === 'save'
+        ? '已删除自定义图标；继续使用存档自带 icon.png。'
+        : '已恢复默认图标；没有存档图标时会回退到出生点地图缩略图。', 'ok');
+    } catch (error) {
+      setMessage(window.SamsaraUI.authMessage(error, '恢复默认图标失败'), 'error');
+    } finally {
+      state.iconBusy = false;
+    }
+  }
+
+  function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(new Error('读取图片失败'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function loadImageElement(dataUrl) {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error('无法解析图片'));
+      image.src = dataUrl;
+    });
+  }
+
+  function canvasToBlob(canvas, mime, quality) {
+    return new Promise((resolve, reject) => {
+      canvas.toBlob((blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error('图片压缩失败'));
+      }, mime, quality);
+    });
+  }
+
+  async function compressIcon(file) {
+    const allowed = ['image/png', 'image/jpeg', 'image/webp'];
+    if (!allowed.includes(file.type)) {
+      throw new Error('只支持 PNG / JPEG / WebP 图片');
+    }
+    if (file.size > 12 * 1024 * 1024) {
+      throw new Error('图片超过 12 MiB，请先裁剪');
+    }
+    const dataUrl = await readFileAsDataUrl(file);
+    const image = await loadImageElement(dataUrl);
+    const maxSide = 1024;
+    const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
+    const width = Math.max(1, Math.round(image.width * scale));
+    const height = Math.max(1, Math.round(image.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(image, 0, 0, width, height);
+    const preferred = file.type === 'image/jpeg' ? 'image/jpeg' : 'image/webp';
+    let blob = null;
+    for (let quality = 0.88; quality >= 0.5; quality -= 0.08) {
+      const candidate = await canvasToBlob(canvas, preferred, quality);
+      blob = candidate;
+      if (candidate.size <= 500 * 1024) break;
+    }
+    if (!blob) throw new Error('图片压缩失败');
+    if (blob.size > 700 * 1024) {
+      throw new Error('图片压缩后仍然过大，请换一张更小的图');
+    }
+    const encoded = await readFileAsDataUrl(blob);
+    return {
+      mime: blob.type || preferred,
+      data: encoded.slice(encoded.indexOf(',') + 1),
+    };
+  }
+
+  async function handleIconFile(file) {
+    const { iconInput } = ensureEls();
+    const id = state.iconTarget;
+    if (!file || !id || state.iconBusy) return;
+    state.iconBusy = true;
+    setMessage('正在压缩并上传 ' + id + ' 的图标…');
+    try {
+      const payload = await compressIcon(file);
+      const data = await post('/api/world-stack/icon', {
+        id,
+        mime: payload.mime,
+        data: payload.data,
+      });
+      if (!data.ok) {
+        setMessage(data.error || '上传图标失败', 'error');
+        return;
+      }
+      await load();
+      setMessage('已更新 ' + id + ' 的自定义图标；旧图已原子替换。', 'ok');
+    } catch (error) {
+      setMessage(window.SamsaraUI.authMessage(error, '上传图标失败'), 'error');
+    } finally {
+      state.iconBusy = false;
+      if (iconInput) iconInput.value = '';
     }
   }
 
@@ -1236,13 +1386,13 @@
       const data = await post('/api/world-stack/timeline/preview', { id });
       state.timelinePreview = data;
       state.timelineConfirmed = false;
+      showTimelineDialog();
       renderTimelinePreview();
-      window.SamsaraUI.scrollToTarget?.('world-stack-timeline-panel');
     } catch (error) {
       state.timelinePreview = null;
-      fail('world-stack-timeline-panel', timelineError,
-        window.SamsaraUI.authMessage(error, '撤销预览失败'));
-      renderTimelinePreview();
+      state.timelineError = window.SamsaraUI.authMessage(error, '撤销预览失败');
+      setMessage(state.timelineError, 'error');
+      showTimelineDialog();
     }
   }
 
@@ -1351,6 +1501,8 @@
       state.timelinePreview = null;
       state.timelineConfirmed = false;
       await load();
+      const { timelineDialog } = ensureEls();
+      if (timelineDialog?.open) timelineDialog.close();
       setMessage('已排队：' + data.jobId + '（' + data.operationId
         + '）。请停服并重新启动，撤销会在世界打开前执行。', 'ok');
     } catch (error) {
@@ -1560,8 +1712,6 @@
     add('world-stack-layers', '栈层', e.layers);
     add('world-stack-order-panel', '栈位排序', e.orderPanel);
     add('world-stack-import-panel', '导入', e.importPanel);
-    add('world-stack-archive-panel', '归档', e.archivePanel);
-    add('world-stack-timeline-panel', '操作时间线', e.timelinePanel);
     add('world-stack-jobs-panel', '任务与结果', e.jobsPanel);
     window.SamsaraUI.buildNav('世界栈导航', items, targets);
   }
@@ -1571,6 +1721,19 @@
     if (!e.list) return;
     if (e.refresh) e.refresh.addEventListener('click', load);
     if (e.snapshotRefresh) e.snapshotRefresh.addEventListener('click', loadSnapshots);
+    if (e.timelineOpen) e.timelineOpen.addEventListener('click', openTimeline);
+    if (e.iconInput) {
+      e.iconInput.addEventListener('change', () => {
+        const file = e.iconInput.files && e.iconInput.files[0];
+        handleIconFile(file);
+      });
+    }
+    for (const button of document.querySelectorAll('[data-dialog-close]')) {
+      button.addEventListener('click', () => {
+        const dialog = document.getElementById(button.dataset.dialogClose || '');
+        if (dialog?.open) dialog.close();
+      });
+    }
     if (e.orderSave) e.orderSave.addEventListener('click', saveOrder);
     if (e.importPreviewButton) e.importPreviewButton.addEventListener('click', previewImport);
     if (e.importPosition) {

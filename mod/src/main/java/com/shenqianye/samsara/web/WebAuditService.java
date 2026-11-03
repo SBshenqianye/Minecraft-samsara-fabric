@@ -1,0 +1,395 @@
+package com.shenqianye.samsara.web;
+
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.sun.net.httpserver.HttpExchange;
+import com.shenqianye.samsara.Samsara;
+import com.shenqianye.samsara.config.ConfigManager;
+import com.shenqianye.samsara.storage.StoragePaths;
+import net.fabricmc.loader.api.FabricLoader;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.security.MessageDigest;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Stream;
+
+/**
+ * Web 修改审计：在任何管理端写请求之前快照 Web 可管理的文件，之后可随时回滚。
+ *
+ * <p>覆盖范围刻意限制在“Web 自己会写的小文件”：{@code config/samsara/}、六个服务器
+ * 配置文件、栈层图标、pending 队列。世界数据搬迁（世界栈归档/导入/提升）由
+ * {@code WorldStackTimeline} 负责；本体存档由 {@code ServerBackup} 负责；RCON 命令
+ * 只审计命令本身，不承诺世界回滚。这样不会为一次配置保存复制整个 world。
+ */
+public final class WebAuditService {
+    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    private static final AtomicLong SEQ = new AtomicLong();
+    private static final long MAX_SNAPSHOT_BYTES = 32L * 1024 * 1024;
+    private static final WebAuditService INSTANCE = new WebAuditService();
+
+    private final Path serverRoot;
+    private final Path configRoot;
+    private final Path root;
+
+    private WebAuditService() {
+        Path game;
+        try {
+            game = FabricLoader.getInstance().getGameDir().toAbsolutePath().normalize();
+        } catch (Throwable t) {
+            game = Path.of(".").toAbsolutePath().normalize();
+        }
+        this.serverRoot = game;
+        Path config;
+        try {
+            config = StoragePaths.configRoot();
+        } catch (Throwable t) {
+            config = game.resolve("config").resolve("samsara");
+        }
+        this.configRoot = config;
+        this.root = game.resolve("backups").resolve("samsara").resolve("web-audit");
+    }
+
+    public static WebAuditService get() {
+        return INSTANCE;
+    }
+
+    /** 由 LocalWebServer 的 authorized 钩子调用；GET/预览/只读操作自动跳过。 */
+    public static void capture(HttpExchange exchange) {
+        try {
+            if (exchange == null) return;
+            String method = exchange.getRequestMethod();
+            if (!"POST".equals(method) && !"PUT".equals(method) && !"DELETE".equals(method)) {
+                return;
+            }
+            String path = exchange.getRequestURI().getPath();
+            get().capture(path);
+        } catch (Throwable t) {
+            // 审计失败绝不能阻塞配置保存。
+            Samsara.LOGGER.debug("[web] Web 审计快照失败: {}", t.getMessage());
+        }
+    }
+
+    private synchronized void capture(String path) {
+        if (path == null || path.isBlank() || isReadOnly(path)) return;
+        try {
+            String id = "wa-" + System.currentTimeMillis() + "-" + SEQ.incrementAndGet();
+            Path dir = root.resolve(id);
+            Path filesDir = dir.resolve("files");
+            Files.createDirectories(filesDir);
+            List<FileInfo> files = new ArrayList<>();
+            long[] total = {0};
+            for (Path scope : scopes()) {
+                capturePath(scope, filesDir, files, total);
+            }
+            Entry entry = new Entry();
+            entry.id = id;
+            entry.createdAt = System.currentTimeMillis();
+            entry.action = path;
+            entry.target = path;
+            entry.status = "captured";
+            entry.rollbackable = rollbackable(path);
+            entry.note = entry.rollbackable
+                    ? "回滚会恢复快照中的 Web 配置文件；世界数据另见世界栈时间线/本体备份。"
+                    : "该操作可能改世界数据或执行任意命令；配置文件快照可回滚，世界数据请用世界栈时间线/本体备份。";
+            entry.fileCount = files.size();
+            entry.bytes = total[0];
+            entry.files = files;
+            writeManifest(dir, entry);
+            if (entry.fileCount == 0) {
+                Files.deleteIfExists(dir.resolve("files"));
+                Files.deleteIfExists(dir.resolve("manifest.json"));
+                Files.deleteIfExists(dir);
+            }
+        } catch (Throwable t) {
+            Samsara.LOGGER.debug("[web] Web 审计写入失败 {}: {}", path, t.getMessage());
+        }
+    }
+
+    public List<Map<String, Object>> list(int limit) {
+        int max = Math.max(1, Math.min(limit, 200));
+        List<Entry> entries = new ArrayList<>();
+        if (Files.isDirectory(root)) {
+            try (Stream<Path> stream = Files.list(root)) {
+                for (Path dir : (Iterable<Path>) stream.filter(Files::isDirectory)
+                        .sorted(Comparator.reverseOrder())::iterator) {
+                    Entry entry = readManifest(dir);
+                    if (entry != null) entries.add(entry);
+                }
+            } catch (IOException ignored) {
+            }
+        }
+        entries.sort(Comparator.comparingLong((Entry e) -> e.createdAt).reversed());
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (int i = 0; i < entries.size() && i < max; i++) {
+            out.add(entries.get(i).toMap());
+        }
+        return out;
+    }
+
+    public Map<String, Object> preview(String id) {
+        Entry entry = find(id);
+        if (entry == null) return error("审计记录不存在");
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ok", true);
+        out.put("entry", entry.toMap());
+        out.put("restorable", entry.rollbackable);
+        return out;
+    }
+
+    public Map<String, Object> rollback(String id, boolean confirm) {
+        if (!confirm) return error("回滚需要确认");
+        Entry entry = find(id);
+        if (entry == null) return error("审计记录不存在");
+        if (!entry.rollbackable) {
+            return error("该记录不可自动回滚：请使用世界栈时间线或本体备份恢复世界数据");
+        }
+        Path dir = root.resolve(entry.id);
+        Path filesDir = dir.resolve("files");
+        List<FileInfo> missing = new ArrayList<>();
+        for (FileInfo file : entry.files) {
+            Path source = resolveSnapshot(filesDir, file.path);
+            if (source == null || !Files.isRegularFile(source)) missing.add(file);
+        }
+        if (!missing.isEmpty()) {
+            return error("快照缺少 " + missing.size() + " 个文件，未执行回滚");
+        }
+        String beforeId = null;
+        try {
+            beforeId = captureBeforeRollback();
+            int restored = 0;
+            for (FileInfo file : entry.files) {
+                Path source = resolveSnapshot(filesDir, file.path);
+                Path target = resolveServer(file.path);
+                if (source == null || target == null) throw new IOException("非法审计路径");
+                Files.createDirectories(target.getParent());
+                Path temp = target.resolveSibling(target.getFileName() + ".audit-restore");
+                Files.copy(source, temp, StandardCopyOption.REPLACE_EXISTING);
+                Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
+                restored++;
+            }
+            reloadConfigBestEffort();
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("ok", true);
+            out.put("message", "已回滚 " + restored + " 个文件" + (beforeId == null ? ""
+                    : "；回滚前状态保存在 " + beforeId));
+            out.put("restoredFiles", restored);
+            out.put("beforeAuditId", beforeId);
+            return out;
+        } catch (Exception e) {
+            return error("回滚失败：" + e.getMessage());
+        }
+    }
+
+    private String captureBeforeRollback() {
+        String id = "wa-" + System.currentTimeMillis() + "-" + SEQ.incrementAndGet();
+        try {
+            Path dir = root.resolve(id);
+            Path filesDir = dir.resolve("files");
+            Files.createDirectories(filesDir);
+            List<FileInfo> files = new ArrayList<>();
+            long[] total = {0};
+            for (Path scope : scopes()) capturePath(scope, filesDir, files, total);
+            Entry entry = new Entry();
+            entry.id = id;
+            entry.createdAt = System.currentTimeMillis();
+            entry.action = "/api/audit/rollback";
+            entry.target = "回滚前当前状态";
+            entry.status = "captured";
+            entry.rollbackable = true;
+            entry.note = "回滚动作执行前的当前 Web 配置快照。";
+            entry.fileCount = files.size();
+            entry.bytes = total[0];
+            entry.files = files;
+            writeManifest(dir, entry);
+            return id;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private Entry find(String id) {
+        if (id == null || !id.matches("wa-[0-9]+-[0-9]+")) return null;
+        return readManifest(root.resolve(id));
+    }
+
+    private Entry readManifest(Path dir) {
+        Path file = dir.resolve("manifest.json");
+        if (!Files.isRegularFile(file)) return null;
+        try {
+            Entry entry = GSON.fromJson(Files.readString(file, StandardCharsets.UTF_8), Entry.class);
+            if (entry == null || entry.id == null || entry.id.isBlank()) return null;
+            if (entry.files == null) entry.files = new ArrayList<>();
+            return entry;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private void writeManifest(Path dir, Entry entry) throws IOException {
+        Files.createDirectories(dir);
+        Path temp = dir.resolve("manifest.json.tmp");
+        Files.writeString(temp, GSON.toJson(entry), StandardCharsets.UTF_8);
+        Files.move(temp, dir.resolve("manifest.json"),
+                StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+    }
+
+    private List<Path> scopes() {
+        List<Path> out = new ArrayList<>();
+        out.add(configRoot);
+        for (String name : List.of("server.properties", "eula.txt", "whitelist.json",
+                "ops.json", "banned-players.json", "banned-ips.json")) {
+            out.add(serverRoot.resolve(name));
+        }
+        out.add(serverRoot.resolve("world").resolve("samsara").resolve("stack-icons"));
+        Path samsara = serverRoot.resolve("world").resolve("samsara");
+        if (Files.isDirectory(samsara)) {
+            try (Stream<Path> stream = Files.list(samsara)) {
+                stream.filter(Files::isRegularFile)
+                        .filter(path -> path.getFileName().toString().startsWith("pending-"))
+                        .forEach(out::add);
+            } catch (IOException ignored) {
+            }
+        }
+        return out;
+    }
+
+    private void capturePath(Path path, Path filesDir, List<FileInfo> files, long[] total)
+            throws IOException {
+        if (path == null || !Files.exists(path)) return;
+        if (Files.isRegularFile(path)) {
+            captureFile(path, filesDir, files, total);
+            return;
+        }
+        if (!Files.isDirectory(path)) return;
+        try (Stream<Path> stream = Files.walk(path)) {
+            for (Path file : (Iterable<Path>) stream.filter(Files::isRegularFile)
+                    .sorted()::iterator) {
+                if (file.toAbsolutePath().normalize().startsWith(root)) continue;
+                captureFile(file, filesDir, files, total);
+            }
+        }
+    }
+
+    private void captureFile(Path file, Path filesDir, List<FileInfo> files, long[] total)
+            throws IOException {
+        long size = Files.size(file);
+        if (total[0] + size > MAX_SNAPSHOT_BYTES) return;
+        String relative = serverRoot.relativize(file.toAbsolutePath().normalize())
+                .toString().replace('\\', '/');
+        if (relative.startsWith("../") || relative.contains("/../")) return;
+        Path target = filesDir.resolve(relative);
+        Files.createDirectories(target.getParent());
+        Files.copy(file, target, StandardCopyOption.REPLACE_EXISTING);
+        FileInfo info = new FileInfo();
+        info.path = relative;
+        info.size = size;
+        info.sha256 = sha256(file);
+        files.add(info);
+        total[0] += size;
+    }
+
+    private Path resolveSnapshot(Path filesDir, String relative) {
+        if (relative == null) return null;
+        Path path = filesDir.resolve(relative).normalize();
+        return path.startsWith(filesDir.normalize()) ? path : null;
+    }
+
+    private Path resolveServer(String relative) {
+        if (relative == null) return null;
+        Path path = serverRoot.resolve(relative).normalize();
+        return path.startsWith(serverRoot) ? path : null;
+    }
+
+    private boolean isReadOnly(String path) {
+        return path.contains("/preview") || path.contains("/timeline/export")
+                || path.contains("/timeline/snapshots") || path.endsWith("/jobs")
+                || path.contains("/audit/") || path.equals("/api/audit")
+                || path.equals("/api/reload") || path.endsWith("/reload")
+                || path.endsWith("/identity/audit") || path.endsWith("/identity/resolve")
+                || path.endsWith("/map") || path.endsWith("/map/players")
+                || path.endsWith("/map/live") || path.endsWith("/map/tile");
+    }
+
+    private boolean rollbackable(String path) {
+        if (path.contains("/world-stack") && !path.contains("/world-stack/icon")) return false;
+        if (path.contains("/server/backups")) return false;
+        if (path.contains("/server/console")) return false;
+        if (path.contains("/diff/chunk/restore") || path.contains("/diff/view")) return false;
+        return true;
+    }
+
+    private static String sha256(Path file) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            try (InputStream in = Files.newInputStream(file)) {
+                byte[] buffer = new byte[8192];
+                int read;
+                while ((read = in.read(buffer)) >= 0) {
+                    if (read > 0) digest.update(buffer, 0, read);
+                }
+            }
+            return HexFormat.of().formatHex(digest.digest());
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private void reloadConfigBestEffort() {
+        try {
+            ConfigManager.getInstance().reloadAll();
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static Map<String, Object> error(String message) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ok", false);
+        out.put("error", message);
+        return out;
+    }
+
+    public static final class Entry {
+        public String id = "";
+        public long createdAt;
+        public String action = "";
+        public String target = "";
+        public String status = "captured";
+        public boolean rollbackable = true;
+        public String note = "";
+        public int fileCount;
+        public long bytes;
+        public List<FileInfo> files = new ArrayList<>();
+
+        Map<String, Object> toMap() {
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("id", id);
+            out.put("createdAt", createdAt);
+            out.put("action", action);
+            out.put("target", target);
+            out.put("status", status);
+            out.put("rollbackable", rollbackable);
+            out.put("note", note);
+            out.put("fileCount", fileCount);
+            out.put("bytes", bytes);
+            return out;
+        }
+    }
+
+    public static final class FileInfo {
+        public String path = "";
+        public long size;
+        public String sha256 = "";
+    }
+}

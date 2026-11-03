@@ -36,17 +36,20 @@ public class ServerPlayerGameModeMixin {
 
     @Inject(method = "destroyBlock", at = @At("HEAD"))
     private void samsara$beginDestroyBlock(BlockPos pos, CallbackInfoReturnable<Boolean> cir) {
+        DiffRecorder.beginActor(player.getUUID().toString(), player.getName().getString());
         DiffRecorder.beginEditContext();
     }
 
     @Inject(method = "destroyBlock", at = @At("RETURN"))
     private void samsara$endDestroyBlock(BlockPos pos, CallbackInfoReturnable<Boolean> cir) {
         DiffRecorder.endEditContext();
+        DiffRecorder.endActor();
     }
 
     @Inject(method = "useItem", at = @At("HEAD"))
     private void samsara$beginUseItem(ServerPlayer player, Level level, ItemStack stack,
                                       InteractionHand hand, CallbackInfoReturnable<InteractionResult> cir) {
+        DiffRecorder.beginActor(player.getUUID().toString(), player.getName().getString());
         DiffRecorder.beginEditContext();
     }
 
@@ -54,12 +57,14 @@ public class ServerPlayerGameModeMixin {
     private void samsara$endUseItem(ServerPlayer player, Level level, ItemStack stack,
                                     InteractionHand hand, CallbackInfoReturnable<InteractionResult> cir) {
         DiffRecorder.endEditContext();
+        DiffRecorder.endActor();
     }
 
     @Inject(method = "useItemOn", at = @At("HEAD"))
     private void samsara$beginUseItemOn(ServerPlayer player, Level level, ItemStack stack,
                                         InteractionHand hand, BlockHitResult hit,
                                         CallbackInfoReturnable<InteractionResult> cir) {
+        DiffRecorder.beginActor(player.getUUID().toString(), player.getName().getString());
         DiffRecorder.beginEditContext();
     }
 
@@ -68,5 +73,6 @@ public class ServerPlayerGameModeMixin {
                                       InteractionHand hand, BlockHitResult hit,
                                       CallbackInfoReturnable<InteractionResult> cir) {
         DiffRecorder.endEditContext();
+        DiffRecorder.endActor();
     }
 }

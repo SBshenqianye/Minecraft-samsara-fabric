@@ -6,6 +6,8 @@ import com.shenqianye.samsara.claim.ClaimNode;
 import com.shenqianye.samsara.claim.ClaimRangeConfig;
 import com.shenqianye.samsara.geometry.ChunkCoord;
 import com.shenqianye.samsara.geometry.Geometry;
+import com.shenqianye.samsara.season.SeasonManager;
+import com.shenqianye.samsara.season.SpawnCenterCalculator;
 import com.shenqianye.samsara.season.SpawnHistory;
 import com.shenqianye.samsara.season.StackLayer;
 import com.shenqianye.samsara.season.StackManifest;
@@ -54,6 +56,7 @@ public class WebMapService {
     private final Path worldRoot;
     private final MinecraftServer server;
     private final WebMapTileCache cache;
+    private final MapLiveService liveService;
     private final Map<Path, ClaimsSnapshot> claimsCache = new ConcurrentHashMap<>();
     private volatile StackManifest manifestCache;
     private volatile long manifestCheckedAt;
@@ -75,6 +78,7 @@ public class WebMapService {
         this.worldRoot = worldRoot.toAbsolutePath().normalize();
         this.server = server;
         this.cache = new WebMapTileCache(this.worldRoot.resolve("samsara").resolve("web-map-cache"));
+        this.liveService = new MapLiveService(server);
     }
 
     /** 返回地图页需要的栈层、维度、region 列表、保护区块、旗帜与出生点历史。 */
@@ -107,6 +111,11 @@ public class WebMapService {
         out.put("generatedAt", System.currentTimeMillis());
         out.put("players", playerSnapshot());
         return out;
+    }
+
+    /** 地图实时层：已加载实体/玩家轨迹与最近操作；仅内存，不写世界数据。 */
+    public Map<String, Object> live() {
+        return liveService.snapshot(true);
     }
 
     private List<Map<String, Object>> playerSnapshot() {
@@ -332,6 +341,19 @@ public class WebMapService {
         out.put("exists", Files.isRegularFile(file));
         out.put("currentIndex", currentIndex);
         out.put("cycles", cycles);
+        int base = 15000;
+        try {
+            base = SeasonManager.getInstance().settings().newCenterMinDistance;
+        } catch (RuntimeException ignored) {
+            // 单测/服务器启动前没有 SeasonManager 数据时用默认值。
+        }
+        int effective = SpawnCenterCalculator.effectiveSeparation(base, history.size());
+        Map<String, Object> separation = new LinkedHashMap<>();
+        separation.put("base", base);
+        separation.put("historyCount", history.size());
+        separation.put("effective", effective);
+        separation.put("note", "下一轮出生点需与每个历史出生点保持 effective 格距离");
+        out.put("separation", separation);
         return out;
     }
 

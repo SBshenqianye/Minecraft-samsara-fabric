@@ -36,11 +36,13 @@ public final class WebLifecycle {
             }
         }
         int port = config.integer(ConfigSchema.WEB, "port");
+        WebMapService mapService = new WebMapService(minecraftServer);
         LocalWebServer candidate = new LocalWebServer(new WebConfigService(),
                 new WebIdentityService(), new WebOutputService(),
-                new WebPermissionService(), new WebMapService(minecraftServer),
+                new WebPermissionService(), mapService,
                 new WorldStackWebService(), new ServerWebService(minecraftServer),
-                new ChunkDiffWebService(minecraftServer), token, port);
+                new ChunkDiffWebService(minecraftServer),
+                new WebUserService(mapService, minecraftServer), token, port);
         if (!candidate.start()) {
             return; // 端口占用：WARN 已记录，不阻塞服务器
         }

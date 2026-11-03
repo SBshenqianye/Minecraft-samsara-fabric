@@ -17,11 +17,13 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 public class ServerExplosionMixin {
     @Inject(method = "explode", at = @At("HEAD"))
     private void samsara$beginExplode(CallbackInfoReturnable<Integer> cir) {
+        DiffRecorder.beginActor("", "爆炸/环境");
         DiffRecorder.beginEditContext();
     }
 
     @Inject(method = "explode", at = @At("RETURN"))
     private void samsara$endExplode(CallbackInfoReturnable<Integer> cir) {
         DiffRecorder.endEditContext();
+        DiffRecorder.endActor();
     }
 }

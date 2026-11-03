@@ -371,12 +371,16 @@ async function main() {
       check('回滚预览打开', timeline.previewTitle.startsWith('恢复预览'), timeline.previewTitle);
     }
 
-    // ---- 世界栈操作时间线 ----
+    // ---- 世界栈操作时间线（模态浮窗） ----
     const stackTimeline = await evaluate(`(async () => {
       window.SamsaraUI.setActiveTab('world-stack');
       await new Promise((resolve) => setTimeout(resolve, 300));
       await window.SamsaraWorldStack.load();
       await new Promise((resolve) => setTimeout(resolve, 500));
+      const openButton = document.getElementById('world-stack-timeline-open');
+      openButton?.click();
+      await new Promise((resolve) => setTimeout(resolve, 900));
+      const dialog = document.getElementById('world-stack-timeline-dialog');
       const nodes = [...document.querySelectorAll('#world-stack-timeline .timeline-node')];
       const nav = document.querySelector('#global-nav .nav-title')?.textContent.trim() || '';
       const buttons = [...document.querySelectorAll('#world-stack-timeline button')];
@@ -399,8 +403,9 @@ async function main() {
         if (preview) preview.hidden = true;
       }
       const model = await window.SamsaraUI.api('/api/world-stack');
-      return {
+      const result = {
         nav,
+        dialogOpen: Boolean(dialog?.open),
         nodes: nodes.map((node) => ({
           id: node.dataset.id,
           branchId: node.dataset.branchId,
@@ -419,8 +424,12 @@ async function main() {
         snapshotText: document.getElementById('world-stack-snapshots')?.textContent || '',
         pendingRestore: model.pendingRestore || null,
       };
+      dialog?.close();
+      return result;
     })()`);
     check('世界栈时间线导航', stackTimeline.nav.startsWith('世界栈'), stackTimeline.nav);
+    check('世界栈时间线由按钮打开模态浮窗', stackTimeline.dialogOpen === true,
+        String(stackTimeline.dialogOpen));
     if (stackTimeline.nodes.length === 0) {
       check('世界栈时间线空态', true, '测试服没有世界栈操作备份，跳过节点断言');
     } else {
@@ -468,6 +477,171 @@ async function main() {
           JSON.stringify(stackTimeline.pendingRestore));
     }
 
+    // ---- 栈层图片：卡片 16:9 视觉区、上传鉴权/类型校验、删除后回退 ----
+    const iconLayout = await evaluate(`(async () => {
+      [...document.querySelectorAll('.top-tab')].find((tab) => tab.dataset.section === 'mods')?.click();
+      window.SamsaraUI.setActiveTab('world-stack');
+      await window.SamsaraWorldStack.load();
+      await new Promise((resolve) => setTimeout(resolve, 700));
+      const cards = [...document.querySelectorAll('#world-stack-list .world-stack-card')];
+      const visuals = [...document.querySelectorAll('#world-stack-list .world-stack-card-visual')];
+      const frames = [...document.querySelectorAll('#world-stack-list .world-stack-icon-frame')];
+      const frame = frames[0]?.getBoundingClientRect();
+      const header = document.querySelector('.app-header')?.getBoundingClientRect();
+      const link = document.querySelector('.app-header .user-view-link')?.getBoundingClientRect();
+      return {
+        cards: cards.length,
+        visuals: visuals.length,
+        frames: frames.length,
+        width: frame ? Math.round(frame.width) : 0,
+        height: frame ? Math.round(frame.height) : 0,
+        badge: document.querySelector('#world-stack-list .world-stack-icon-badge')?.textContent || '',
+        source: document.querySelector('#world-stack-list .world-stack-icon-badge')?.dataset.source || '',
+        headerTopGap: header && link ? Math.round(link.top - header.top) : -1,
+        headerBottomGap: header && link ? Math.round(header.bottom - link.bottom) : -1,
+        overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 2,
+      };
+    })()`);
+    check('栈层卡片有 16:9 图标视觉区', iconLayout.cards >= 1
+        && iconLayout.visuals === iconLayout.cards && iconLayout.frames === iconLayout.cards
+        && iconLayout.width >= 120 && iconLayout.height > 0
+        && Math.abs(iconLayout.width / iconLayout.height - 16 / 9) < 0.2,
+        JSON.stringify(iconLayout));
+    check('图标区有回退标识且不撑破布局', !iconLayout.overflow
+        && ['map', 'save', 'upload', 'placeholder'].includes(iconLayout.source)
+        && iconLayout.badge.length > 0, JSON.stringify(iconLayout));
+    check('管理端右上角按钮与 header 有留白', iconLayout.headerTopGap >= 4
+        && iconLayout.headerBottomGap >= 4,
+        JSON.stringify({ top: iconLayout.headerTopGap, bottom: iconLayout.headerBottomGap }));
+
+    const authHeaders = { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' };
+    const iconUploadPath = base + '/api/world-stack/icon';
+    const png1x1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk'
+      + '+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+    const noAuth = await fetch(iconUploadPath, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: 'world', mime: 'image/png', data: png1x1 }),
+    });
+    check('图标上传需要管理端 token', noAuth.status === 401, 'status=' + noAuth.status);
+    const badType = await fetch(iconUploadPath, {
+      method: 'POST', headers: authHeaders,
+      body: JSON.stringify({
+        id: 'world', mime: 'image/svg+xml',
+        data: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>').toString('base64'),
+      }),
+    });
+    const badTypeBody = await badType.json().catch(() => ({}));
+    check('图标上传拒绝 SVG/HTML 伪装', badType.status === 400
+        && String(badTypeBody.error || '').length > 0, JSON.stringify(badTypeBody));
+    const badMagic = await fetch(iconUploadPath, {
+      method: 'POST', headers: authHeaders,
+      body: JSON.stringify({
+        id: 'world', mime: 'image/png',
+        data: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>').toString('base64'),
+      }),
+    });
+    const badMagicBody = await badMagic.json().catch(() => ({}));
+    check('图标上传校验 magic bytes', badMagic.status === 400
+        && String(badMagicBody.error || '').includes('文件头'), JSON.stringify(badMagicBody));
+
+    const modelBefore = await (await fetch(base + '/api/world-stack', { headers: authHeaders })).json();
+    const targetStack = (modelBefore.stacks || []).find((stack) => stack.id === 'world')
+      || (modelBefore.stacks || [])[0];
+    if (!targetStack || (targetStack.icon && targetStack.icon.custom)) {
+      console.log('  SKIP  图标上传/删除回退（测试服已存在自定义图标，避免覆盖用户文件）');
+    } else {
+      const uploaded = await fetch(iconUploadPath, {
+        method: 'POST', headers: authHeaders,
+        body: JSON.stringify({ id: targetStack.id, mime: 'image/png', data: png1x1 }),
+      });
+      const uploadedBody = await uploaded.json().catch(() => ({}));
+      check('图标上传成功并返回自定义来源', uploaded.status === 200
+          && uploadedBody.ok === true && uploadedBody.icon?.source === 'upload'
+          && uploadedBody.icon?.custom === true, JSON.stringify(uploadedBody));
+      let iconBytes = null;
+      if (uploadedBody.icon?.url) {
+        const image = await fetch(base + uploadedBody.icon.url);
+        iconBytes = image.status;
+        check('图标 URL 可公开只读且带版本号', image.status === 200
+            && String(image.headers.get('content-type') || '').includes('image/png')
+            && uploadedBody.icon.url.includes('v='), 'status=' + image.status);
+      } else {
+        check('图标 URL 可公开只读且带版本号', false, '上传响应缺少 icon.url');
+      }
+      const uploadedView = await evaluate(`(async () => {
+        await window.SamsaraWorldStack.load();
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        const badge = document.querySelector('#world-stack-list .world-stack-icon-badge');
+        const image = document.querySelector('#world-stack-list .world-stack-icon-image');
+        return {
+          badge: badge?.textContent || '',
+          source: badge?.dataset.source || '',
+          src: image?.getAttribute('src') || '',
+        };
+      })()`);
+      check('上传后卡片显示自定义图标', uploadedView.source === 'upload'
+          && uploadedView.badge.includes('自定义')
+          && uploadedView.src.includes('/api/user/worlds/icon'), JSON.stringify(uploadedView));
+
+      const deleted = await fetch(base + '/api/world-stack/icon/delete', {
+        method: 'POST', headers: authHeaders,
+        body: JSON.stringify({ id: targetStack.id }),
+      });
+      const deletedBody = await deleted.json().catch(() => ({}));
+      check('删除自定义图标后回到回退图', deleted.status === 200
+          && deletedBody.ok === true && deletedBody.icon?.source !== 'upload',
+          JSON.stringify(deletedBody));
+      const deletedView = await evaluate(`(async () => {
+        await window.SamsaraWorldStack.load();
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        const badge = document.querySelector('#world-stack-list .world-stack-icon-badge');
+        const image = document.querySelector('#world-stack-list .world-stack-icon-image');
+        return {
+          badge: badge?.textContent || '',
+          source: badge?.dataset.source || '',
+          src: image?.getAttribute('src') || '',
+        };
+      })()`);
+      check('删除后卡片恢复回退标识', deletedView.source !== 'upload'
+          && !deletedView.badge.includes('自定义'), JSON.stringify(deletedView));
+      if (iconBytes !== 404) {
+        console.log('  note 自定义图标测试已完成并清理');
+      }
+    }
+
+    // ---- 归档入口：只保留卡片按钮 + 模态预览，不排队 ----
+    const archiveEntry = await evaluate(`(async () => {
+      [...document.querySelectorAll('.top-tab')].find((tab) => tab.dataset.section === 'mods')?.click();
+      window.SamsaraUI.setActiveTab('world-stack');
+      await window.SamsaraWorldStack.load();
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      const card = [...document.querySelectorAll('#world-stack-list .world-stack-card')]
+        .find((node) => !node.classList.contains('top'));
+      const button = [...(card?.querySelectorAll('button') || [])]
+        .find((node) => node.textContent.trim().startsWith('归档'));
+      button?.click();
+      await new Promise((resolve) => setTimeout(resolve, 900));
+      const dialog = document.getElementById('world-stack-archive-dialog');
+      const preview = document.getElementById('world-stack-archive-preview');
+      const model = await window.SamsaraUI.api('/api/world-stack');
+      const result = {
+        cardButton: Boolean(button),
+        dialogOpen: Boolean(dialog?.open),
+        previewTitle: preview?.querySelector('.world-stack-preview-title')?.textContent || '',
+        legacyPanel: Boolean(document.getElementById('world-stack-archive-panel')),
+        legacyList: Boolean(document.getElementById('world-stack-archive-list')),
+        pendingArchive: model.pendingArchive || null,
+      };
+      dialog?.close();
+      return result;
+    })()`);
+    check('归档只保留卡片按钮并打开模态预览', archiveEntry.cardButton === true
+        && archiveEntry.dialogOpen === true
+        && archiveEntry.previewTitle.startsWith('归档预览')
+        && archiveEntry.legacyPanel === false && archiveEntry.legacyList === false,
+        JSON.stringify(archiveEntry));
+    check('归档预览不会排队', archiveEntry.pendingArchive === null,
+        JSON.stringify(archiveEntry.pendingArchive));
 
     const mods = await evaluate(`(async () => {
       [...document.querySelectorAll('.top-tab')].find((tab) => tab.dataset.section === 'mods').click();
@@ -909,6 +1083,12 @@ async function main() {
       }
       const markerName = markerTexts().find((text) => text.includes('E2EPlayer'))
         || markerTexts()[0] || '';
+      const markerNode = [...document.querySelectorAll('#map-stack-overview .map-player-marker')]
+        .find((node) => (node.textContent || '').includes('E2EPlayer'));
+      const markerAvatar = markerNode?.querySelector('.avatar img');
+      const markerAvatarSrc = markerAvatar?.getAttribute('src') || '';
+      const markerTip = Boolean(markerNode?.querySelector('.pin-tip'));
+      const markerTransform = markerNode ? getComputedStyle(markerNode).transform : '';
       window.SamsaraUI.api = originalApi;
       const target = panels.find((panel) => panel.classList.contains('dim-overworld'));
       const targetStack = target?.closest('.map-stack-block')?.dataset.stack || '';
@@ -936,6 +1116,10 @@ async function main() {
         online,
         markers,
         markerName,
+        markerAvatar: Boolean(markerAvatar),
+        markerAvatarSrc,
+        markerTip,
+        markerTransform,
         detailVisible: !document.getElementById('map-stage-anchor')?.hidden,
         overviewHidden: Boolean(overview?.hidden),
         selectedStack: document.getElementById('map-stack')?.value || '',
@@ -963,11 +1147,64 @@ async function main() {
         && mapState.markers > 0 && mapState.markerName.includes('E2EPlayer'),
         'online=' + mapState.online + ' markers=' + mapState.markers
           + ' name=' + mapState.markerName);
+    check('玩家标记为头像 pin 且有本地回退', mapState.markerAvatar === true
+        && mapState.markerTip === true
+        && (mapState.markerAvatarSrc.startsWith('data:image/svg+xml')
+          || mapState.markerAvatarSrc.includes('/api/user/map/avatar')
+          || mapState.markerAvatarSrc.includes('textures.minecraft.net'))
+        && mapState.markerTransform !== 'none',
+        JSON.stringify({ avatar: mapState.markerAvatar, src: mapState.markerAvatarSrc.slice(0, 60),
+          tip: mapState.markerTip, transform: mapState.markerTransform }));
     check('总览状态显示在线人数', mapState.status.includes('在线 1 人'), mapState.status);
     check('点击总览面板进入详细地图', mapState.detailVisible && mapState.overviewHidden
         && mapState.selectedStack === mapState.targetStack,
         JSON.stringify({ detail: mapState.detailVisible, hidden: mapState.overviewHidden,
           selected: mapState.selectedStack, target: mapState.targetStack }));
+
+    // ---- 地图实时层：实体/轨迹/最近操作 ----
+    await fetch(base + '/api/server/console', {
+      method: 'POST', headers: authHeaders,
+      body: JSON.stringify({ command: 'forceload add 0 0' }),
+    });
+    const e2eEntityCommand = 'summon minecraft:pig 0 100 0 '
+      + '{Tags:["samsara_e2e"],NoAI:1b,Silent:1b,Invulnerable:1b}';
+    const e2eEntitySpawn = await fetch(base + '/api/server/console', {
+      method: 'POST', headers: authHeaders,
+      body: JSON.stringify({ command: e2eEntityCommand }),
+    });
+    check('为实时层创建临时实体', e2eEntitySpawn.status === 200,
+        'status=' + e2eEntitySpawn.status);
+    const liveMap = await evaluate(`(async () => {
+      window.SamsaraUI.setActiveTab('map');
+      await new Promise((resolve) => setTimeout(resolve, 1800));
+      const data = await window.SamsaraUI.api('/api/map/live');
+      const player = (data.players || [])[0] || null;
+      const entity = (data.entities || [])[0] || null;
+      const liveCanvas = document.getElementById('map-live');
+      return {
+        ok: data.ok,
+        players: Array.isArray(data.players) ? data.players.length : -1,
+        entities: Array.isArray(data.entities) ? data.entities.length : -1,
+        operations: Array.isArray(data.operations) ? data.operations.length : -1,
+        playerTrailArray: Boolean(player && Array.isArray(player.trail)),
+        entityTrailArray: Boolean(entity && Array.isArray(entity.trail)),
+        sensitiveEntityUuid: Boolean(entity && entity.uuid),
+        liveCanvas: Boolean(liveCanvas && liveCanvas.width > 0),
+        liveStatus: document.getElementById('map-live-status')?.textContent || '',
+        activityRows: document.querySelectorAll('#map-activity .map-activity-row').length,
+        hasEntityToggle: Boolean(document.getElementById('map-show-entities')),
+        hasTrailToggle: Boolean(document.getElementById('map-show-trails')),
+        hasSeparationToggle: Boolean(document.getElementById('map-show-separation')),
+      };
+    })()`);
+    check('地图实时层 API 返回实体/轨迹/操作', liveMap.ok === true
+        && liveMap.players >= 0 && liveMap.entities >= 1 && liveMap.operations >= 0
+        && liveMap.entityTrailArray, JSON.stringify(liveMap));
+    check('地图实时层画布与开关可用', liveMap.liveCanvas && liveMap.liveStatus.includes('在线')
+        && liveMap.hasEntityToggle && liveMap.hasTrailToggle && liveMap.hasSeparationToggle,
+        JSON.stringify(liveMap));
+    check('管理端实时层可返回实体 UUID', liveMap.sensitiveEntityUuid === true,
+        JSON.stringify({ uuid: liveMap.sensitiveEntityUuid }));
 
     // ---- F-164 地图区块网格 ----
     const chunkGrid = await evaluate(`(async () => {
@@ -991,7 +1228,7 @@ async function main() {
       await wait(160);
       const thinned = legend.textContent;
       const unrelated = calls.filter((url) => !url.includes('/api/map/tile')
-        && !url.includes('/api/map/players')).length;
+        && !url.includes('/api/map/players') && !url.includes('/api/map/live')).length;
       window.fetch = originalFetch;
       box.checked = false;
       box.dispatchEvent(new Event('change', { bubbles: true }));
@@ -1045,7 +1282,7 @@ async function main() {
       const preview = [...document.querySelectorAll('.map-chunk-actions button')]
         .find((button) => button.textContent === '预览回溯');
       preview?.click();
-      await wait(1600);
+      await wait(3000);
       const status = document.querySelector('.map-chunk-status')?.textContent || '';
       mode.checked = false;
       mode.dispatchEvent(new Event('change', { bubbles: true }));
@@ -1064,7 +1301,7 @@ async function main() {
     const curve = await evaluate(`(async () => {
       const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
       window.SamsaraUI.setActiveTab('config');
-      await wait(900);
+      await wait(1800);
       const editor = document.querySelector('.curve-editor');
       if (!editor) return { found: false };
       const rows = () => [...editor.querySelectorAll('.curve-row')];
@@ -1134,6 +1371,71 @@ async function main() {
     check('Diff 回看状态 API 可用', diffApi.viewOk && diffApi.sessions === 0,
         JSON.stringify(diffApi));
 
+    // ---- Web RCON 控制台 ----
+    const noAuthConsole = await fetch(base + '/api/server/console', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command: 'list' }),
+    });
+    check('RCON 控制台需要管理端 token', noAuthConsole.status === 401,
+        'status=' + noAuthConsole.status);
+    const consoleState = await evaluate(`(async () => {
+      [...document.querySelectorAll('.top-tab')].find((tab) => tab.dataset.section === 'server')?.click();
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      document.querySelector('.tab[data-server-panel="server-console-panel"]')?.click();
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      const input = document.getElementById('server-console-command');
+      const send = document.getElementById('server-console-send');
+      input.value = 'list';
+      send.click();
+      await new Promise((resolve) => setTimeout(resolve, 1600));
+      return {
+        panelVisible: !document.getElementById('server-console-panel')?.hidden,
+        output: document.getElementById('server-console-output')?.textContent || '',
+        message: document.getElementById('server-console-message')?.textContent || '',
+        hash: location.hash,
+      };
+    })()`);
+    check('RCON 控制台可执行命令并回显', consoleState.panelVisible
+        && consoleState.output.includes('> list') && consoleState.output.length > 8
+        && consoleState.message.includes('完成'), JSON.stringify({
+          output: consoleState.output.slice(0, 120), message: consoleState.message }));
+    check('RCON 控制台入口哈希', consoleState.hash === '#server-console', consoleState.hash);
+
+    // ---- Web 审计：写请求前快照，可预览回滚 ----
+    const noAuthAudit = await fetch(base + '/api/audit');
+    check('Web 审计需要管理端 token', noAuthAudit.status === 401,
+        'status=' + noAuthAudit.status);
+    const auditState = await evaluate(`(async () => {
+      [...document.querySelectorAll('.top-tab')].find((tab) => tab.dataset.section === 'server')?.click();
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      document.querySelector('.tab[data-server-panel="server-audit-panel"]')?.click();
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      const rows = [...document.querySelectorAll('#server-audit-list .server-audit-item')];
+      const first = rows[0];
+      const preview = first?.querySelector('button');
+      let previewMessage = '';
+      if (preview) {
+        preview.click();
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        previewMessage = document.getElementById('server-audit-message')?.textContent || '';
+      }
+      return {
+        panelVisible: !document.getElementById('server-audit-panel')?.hidden,
+        rows: rows.length,
+        text: first?.textContent || '',
+        rowsWithRollback: rows.filter((row) => row.textContent.includes('可回滚')).length,
+        previewMessage,
+        hash: location.hash,
+      };
+    })()`);
+    check('Web 审计有写请求快照记录', auditState.panelVisible && auditState.rows >= 1
+        && auditState.text.includes('文件') && auditState.rowsWithRollback >= 1,
+        JSON.stringify({ rows: auditState.rows, rollback: auditState.rowsWithRollback,
+          text: auditState.text.slice(0, 120) }));
+    check('Web 审计预览可用', auditState.previewMessage.includes('快照')
+        && auditState.hash === '#server-audit', JSON.stringify({
+          message: auditState.previewMessage, hash: auditState.hash }));
+
     // ---- 刷新页面验证区块网格本地持久化 ----
     await navigate(base + '/#map');
     await until("window.SamsaraUI && document.getElementById('map-show-chunks')", 20000,
@@ -1150,6 +1452,96 @@ async function main() {
     check('区块网格勾选刷新页面后保持', persistedGrid.checked
         && persistedGrid.legend.includes('开') && persistedGrid.stored === '1',
         JSON.stringify(persistedGrid));
+
+    // ---- 用户端只读页：无需 token，不加载管理端脚本，不调用管理端 API ----
+    await navigate(base + '/user');
+    await until("window.SamsaraUI && document.querySelectorAll('#user-status .status-chip').length > 0",
+        20000, '用户端状态');
+    await until("document.getElementById('map-stats') && "
+        + "document.getElementById('map-stats').textContent.trim().length > 0", 20000,
+        '用户端地图数据');
+    const userPage = await evaluate(`(async () => {
+      window.__e2eErrors = [];
+      window.addEventListener('error', (event) => window.__e2eErrors.push(String(event.message)));
+      window.addEventListener('unhandledrejection', (event) => window.__e2eErrors.push(
+        String(event.reason)));
+      await new Promise((resolve) => setTimeout(resolve, 900));
+      const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+      const mapCanvas = document.getElementById('map-canvas');
+      const playerCanvas = document.getElementById('map-players');
+      const header = document.querySelector('.app-header')?.getBoundingClientRect();
+      const link = document.querySelector('.user-view-link')?.getBoundingClientRect();
+      const userLive = await window.SamsaraUI.api('/api/user/map/live');
+      const livePlayers = Array.isArray(userLive.players) ? userLive.players : [];
+      const liveEntities = Array.isArray(userLive.entities) ? userLive.entities : [];
+      return {
+        apiBase: window.SamsaraMapApiBase,
+        publicToken: window.SamsaraUI?.getToken?.(),
+        statusChips: document.querySelectorAll('#user-status .status-chip').length,
+        worldCards: document.querySelectorAll('#user-worlds .world-stack-card').length,
+        worldVisuals: document.querySelectorAll('#user-worlds .world-stack-card-visual').length,
+        worldFrames: document.querySelectorAll('#user-worlds .world-stack-icon-frame').length,
+        worldText: document.getElementById('user-worlds')?.textContent || '',
+        headerBottomGap: header && link ? Math.round(header.bottom - link.bottom) : -1,
+        headerTopGap: header && link ? Math.round(link.top - header.top) : -1,
+        horizontalOverflow: document.documentElement.scrollWidth
+          > document.documentElement.clientWidth + 2,
+        mapStats: document.getElementById('map-stats')?.textContent.trim() || '',
+        livePlayers: livePlayers.length,
+        liveEntities: liveEntities.length,
+        liveHasUuid: livePlayers.some((item) => 'uuid' in item)
+          || liveEntities.some((item) => 'uuid' in item),
+        liveHasHealth: livePlayers.some((item) => 'health' in item)
+          || liveEntities.some((item) => 'health' in item),
+        overlaySized: Boolean(playerCanvas && mapCanvas
+          && playerCanvas.width === mapCanvas.width
+          && playerCanvas.height === mapCanvas.height
+          && playerCanvas.width > 0),
+        adminScript: Boolean(document.querySelector('script[src="/app.js"]')),
+        userCalls: resources.filter((url) => url.includes('/api/user/')).length,
+        adminCalls: resources.filter((url) => url.includes('/api/config')
+          || url.includes('/api/server') || url.includes('/api/world-stack')
+          || url.includes('/api/permissions')).length,
+        errors: window.__e2eErrors.slice(),
+      };
+    })()`);
+    check('用户端无需 token 并走用户 API', userPage.apiBase === '/api/user/map'
+        && userPage.publicToken === 'public' && userPage.userCalls >= 2,
+        JSON.stringify({ base: userPage.apiBase, token: userPage.publicToken,
+          calls: userPage.userCalls }));
+    check('用户端显示服务器概况/世界栈/种子', userPage.statusChips >= 3
+        && userPage.worldCards >= 1 && userPage.worldText.includes('种子')
+        && userPage.worldText.includes('在线'), JSON.stringify({ chips: userPage.statusChips,
+          cards: userPage.worldCards, text: userPage.worldText.slice(0, 120) }));
+    check('用户端世界栈卡片复用图标视觉区', userPage.worldVisuals === userPage.worldCards
+        && userPage.worldFrames === userPage.worldCards
+        && !userPage.worldText.includes('stack-icons')
+        && !userPage.worldText.includes('icon.png'),
+        JSON.stringify({ cards: userPage.worldCards, visuals: userPage.worldVisuals }));
+    check('用户端右上角按钮与 header 有留白且不溢出', userPage.headerBottomGap >= 4
+        && userPage.headerTopGap >= 4 && !userPage.horizontalOverflow,
+        JSON.stringify({ top: userPage.headerTopGap, bottom: userPage.headerBottomGap,
+          overflow: userPage.horizontalOverflow }));
+    check('用户端地图复用玩家独立图层', userPage.mapStats.length > 0 && userPage.overlaySized,
+        JSON.stringify({ stats: userPage.mapStats.slice(0, 80), overlay: userPage.overlaySized }));
+    check('用户端实时层保留实体/轨迹但不含 UUID/生命', userPage.liveEntities >= 1
+        && userPage.liveHasUuid === false
+        && userPage.liveHasHealth === false, JSON.stringify({ players: userPage.livePlayers,
+          entities: userPage.liveEntities, uuid: userPage.liveHasUuid,
+          health: userPage.liveHasHealth }));
+    check('用户端不加载管理端脚本/不调用管理 API', userPage.adminScript === false
+        && userPage.adminCalls === 0, JSON.stringify({ script: userPage.adminScript,
+          adminCalls: userPage.adminCalls }));
+    check('用户端没有未捕获脚本错误', userPage.errors.length === 0,
+        userPage.errors.slice(0, 3).join(' | '));
+    await fetch(base + '/api/server/console', {
+      method: 'POST', headers: authHeaders,
+      body: JSON.stringify({ command: 'kill @e[tag=samsara_e2e]' }),
+    });
+    await fetch(base + '/api/server/console', {
+      method: 'POST', headers: authHeaders,
+      body: JSON.stringify({ command: 'forceload remove 0 0' }),
+    });
 
     if (process.env.SAMSARA_E2E_SCREENSHOT) {
       // 供人工快速看布局；默认不写文件。

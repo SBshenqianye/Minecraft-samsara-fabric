@@ -4,6 +4,8 @@
 // 圈地白名单/旗帜来自 claims.json。只读展示，不提供编辑入口。
 (function () {
   const STORE_CHUNKS = 'samsara.map.showChunks';
+  // 管理端默认 /api/map；用户端只读页在加载 map.js 前把 base 设为 /api/user/map。
+  const MAP_API_BASE = (window.SamsaraMapApiBase || '/api/map').replace(/\/+$/, '');
   // 在线玩家：位置每 250ms 取一次快照，独立图层在两次快照之间做线性插值。
   // 插值只重绘玩家，不重绘地形/圈地/旗帜，因此可以按显示器帧率跑。
   const PLAYER_POLL_MS = 250;
@@ -41,7 +43,14 @@
     players: [],
     playersFetchedAt: 0,
     playersLoading: false,
+    live: null,
+    liveFetching: false,
+    liveTimer: 0,
+    showEntities: true,
+    showTrails: true,
+    showSeparation: false,
     playerMotion: new Map(),
+    playerAvatars: new Map(),
     playerRaf: 0,
     playerTimer: 0,
     showPlayers: true,
@@ -87,6 +96,7 @@
       stage: $('map-stage-anchor'),
       canvas: $('map-canvas'),
       playerCanvas: $('map-players'),
+      liveCanvas: $('map-live'),
       tooltip: $('map-tooltip'),
       selection: $('map-selection'),
       stack: $('map-stack'),
@@ -103,6 +113,11 @@
       spawns: $('map-show-spawns'),
       shading: $('map-shading'),
       showPlayers: $('map-show-players'),
+      showEntities: $('map-show-entities'),
+      showTrails: $('map-show-trails'),
+      showSeparation: $('map-show-separation'),
+      liveStatus: $('map-live-status'),
+      activity: $('map-activity'),
       overviewToggle: $('map-overview-toggle'),
       overview: $('map-stack-overview'),
       overviewStacks: $('map-overview-stacks'),
@@ -116,6 +131,10 @@
     if (els.playerCanvas) {
       els.playerCtx = els.playerCanvas.getContext('2d');
       els.playerCtx.imageSmoothingEnabled = false;
+    }
+    if (els.liveCanvas) {
+      els.liveCtx = els.liveCanvas.getContext('2d');
+      els.liveCtx.imageSmoothingEnabled = false;
     }
     return els;
   }
@@ -191,7 +210,7 @@
     state.loading = true;
     setMessage('正在扫描存档中的地图与圈地数据…');
     try {
-      const data = await window.SamsaraUI.api('/api/map');
+      const data = await window.SamsaraUI.api(MAP_API_BASE);
       state.model = data;
       state.stale = false;
       state.overviewKey = '';
@@ -222,6 +241,7 @@
       refreshCount();
       renderNav();
       loadPlayers();
+      loadLive();
     } catch (error) {
       setMessage(window.SamsaraUI.authMessage(error, '地图数据读取失败'), 'error');
     } finally {
@@ -406,6 +426,87 @@
     return player && player.name ? player.name : '玩家';
   }
 
+  function avatarKey(player) {
+    return String((player && (player.uuid || player.name)) || '').trim().toLowerCase();
+  }
+
+  function avatarFallback(player) {
+    const name = playerName(player).trim();
+    const initial = /^[A-Za-z0-9\u4e00-\u9fff]/.test(name)
+      ? name.charAt(0).toUpperCase() : '?';
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) | 0;
+    const hue = Math.abs(hash) % 360;
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">'
+      + '<rect width="48" height="48" rx="9" fill="hsl(' + hue + ' 38% 30%)"/>'
+      + '<rect x="10" y="9" width="28" height="20" rx="5" fill="hsl(' + hue + ' 52% 52%)"/>'
+      + '<circle cx="24" cy="19" r="6" fill="hsl(' + hue + ' 45% 82%)"/>'
+      + '<rect x="9" y="30" width="30" height="11" rx="5" fill="hsl(' + hue + ' 48% 46%)"/>'
+      + '<text x="24" y="39" text-anchor="middle" font-family="system-ui,sans-serif" '
+      + 'font-size="10" font-weight="700" fill="#f8fafc">' + initial + '</text></svg>';
+    return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  }
+
+  function playerAvatarEntry(player) {
+    const key = avatarKey(player) || 'unknown';
+    let entry = state.playerAvatars.get(key);
+    if (entry) return entry;
+    const uuid = String((player && player.uuid) || '').trim();
+    const name = String((player && player.name) || '').trim();
+    let url = '';
+    if (uuid) {
+      url = '/api/user/map/avatar?uuid=' + encodeURIComponent(uuid);
+    } else if (name) {
+      url = '/api/user/map/avatar?name=' + encodeURIComponent(name);
+    }
+    entry = {
+      url,
+      fallback: avatarFallback(player),
+      remoteLoaded: false,
+      loading: false,
+      failed: false,
+      image: null,
+      waiters: new Set(),
+    };
+    state.playerAvatars.set(key, entry);
+    return entry;
+  }
+
+  function ensureAvatarLoaded(entry) {
+    if (!entry || entry.remoteLoaded || entry.loading || entry.failed || !entry.url) return;
+    entry.loading = true;
+    const image = new Image();
+    image.referrerPolicy = 'no-referrer';
+    image.decoding = 'async';
+    image.onload = () => {
+      entry.loading = false;
+      entry.remoteLoaded = true;
+      entry.image = image;
+      for (const waiter of entry.waiters) {
+        if (waiter.isConnected) waiter.src = entry.url;
+      }
+      entry.waiters.clear();
+      schedulePlayerDraw();
+    };
+    image.onerror = () => {
+      entry.loading = false;
+      entry.failed = true;
+      entry.waiters.clear();
+    };
+    image.src = entry.url;
+  }
+
+  /** 先立即显示本地通用头像，再异步换成皮肤头；失败就保持本地图，布局不跳动。 */
+  function applyAvatarImage(img, player) {
+    const entry = playerAvatarEntry(player);
+    img.src = entry.remoteLoaded ? entry.url : entry.fallback;
+    if (!entry.remoteLoaded) {
+      entry.waiters.add(img);
+      ensureAvatarLoaded(entry);
+    }
+    return entry;
+  }
+
   function playersFor(stackId, dimension) {
     return state.players.filter((player) => player.stackId === stackId
       && player.dimension === dimension);
@@ -537,7 +638,7 @@
     if (window.SamsaraUI && window.SamsaraUI.getToken && !window.SamsaraUI.getToken()) return;
     state.playersLoading = true;
     try {
-      const data = await window.SamsaraUI.api('/api/map/players');
+      const data = await window.SamsaraUI.api(MAP_API_BASE + '/players');
       const players = Array.isArray(data.players) ? data.players : [];
       syncPlayerMotion(players, performance.now());
       state.players = players;
@@ -762,8 +863,9 @@
     let z = (player.z - view.viewZ) / view.viewH * 100;
     const outside = x < 0 || x > 100 || z < 0 || z > 100;
     return {
-      x: Math.max(2, Math.min(98, x)),
-      z: Math.max(5, Math.min(95, z)),
+      x: Math.max(3, Math.min(97, x)),
+      // pin 的头部在坐标点上方，顶部多留一点空间避免被缩略图圆角裁掉。
+      z: Math.max(16, Math.min(95, z)),
       outside,
     };
   }
@@ -786,12 +888,21 @@
     const marker = document.createElement('button');
     marker.type = 'button';
     marker.className = 'map-player-marker';
-    const dot = document.createElement('span');
-    dot.className = 'dot';
+    const avatar = document.createElement('span');
+    avatar.className = 'avatar';
+    const image = document.createElement('img');
+    image.alt = '';
+    image.decoding = 'async';
+    image.referrerPolicy = 'no-referrer';
+    applyAvatarImage(image, player);
+    avatar.append(image);
     const name = document.createElement('span');
     name.className = 'name';
     name.textContent = playerName(player);
-    marker.append(dot, name);
+    const tip = document.createElement('span');
+    tip.className = 'pin-tip';
+    tip.setAttribute('aria-hidden', 'true');
+    marker.append(avatar, name, tip);
     marker.addEventListener('click', (event) => {
       event.stopPropagation();
       copyPlayerCommand(marker.__player || player);
@@ -1055,7 +1166,7 @@
   }
 
   function resize() {
-    const { canvas, stage, playerCanvas } = ensureEls();
+    const { canvas, stage, playerCanvas, liveCanvas } = ensureEls();
     if (!canvas || !stage || state.overview) return;
     const width = Math.max(320, Math.round(stage.clientWidth));
     const height = Math.max(380, Math.min(820, Math.round(window.innerHeight * 0.64)));
@@ -1079,6 +1190,15 @@
       const playerCtx = playerCanvas.getContext('2d');
       playerCtx.imageSmoothingEnabled = false;
       els.playerCtx = playerCtx;
+    }
+    if (liveCanvas) {
+      liveCanvas.style.width = width + 'px';
+      liveCanvas.style.height = height + 'px';
+      liveCanvas.width = Math.round(width * dpr);
+      liveCanvas.height = Math.round(height * dpr);
+      const liveCtx = liveCanvas.getContext('2d');
+      liveCtx.imageSmoothingEnabled = false;
+      els.liveCtx = liveCtx;
     }
     draw();
   }
@@ -1107,10 +1227,147 @@
   }
 
   function tileUrl(stackId, dimId, rx, rz, scale, shade) {
-    return '/api/map/tile?stack=' + encodeURIComponent(stackId)
+    return MAP_API_BASE + '/tile?stack=' + encodeURIComponent(stackId)
       + '&dim=' + encodeURIComponent(dimId)
       + '&rx=' + rx + '&rz=' + rz + '&scale=' + scale
       + '&shade=' + (shade ? 1 : 0);
+  }
+
+  // ---- 世界栈卡片图标：自定义上传 > 存档 icon.png > 出生点地图缩略图 ----
+
+  function stackMapRegion(stack) {
+    const spawn = stack && stack.spawn;
+    let rx = spawn && Number.isFinite(Number(spawn.x))
+      ? Math.floor(Number(spawn.x) / 512) : null;
+    let rz = spawn && Number.isFinite(Number(spawn.z))
+      ? Math.floor(Number(spawn.z) / 512) : null;
+    const dimensions = Array.isArray(stack && stack.dimensions) ? stack.dimensions : [];
+    const overworld = dimensions.find((dim) => dim && dim.dim === 'overworld') || dimensions[0];
+    const regions = overworld && Array.isArray(overworld.regions)
+      ? overworld.regions.filter((item) => Array.isArray(item) && item.length >= 2) : [];
+    const contains = (x, z) => regions.some((item) => item[0] === x && item[1] === z);
+    if (rx != null && rz != null && (regions.length === 0 || contains(rx, rz))) {
+      return { rx, rz };
+    }
+    if (regions.length === 0) return null;
+    if (rx == null || rz == null) {
+      return { rx: regions[0][0], rz: regions[0][1] };
+    }
+    // 出生点所在 region 没有生成时，选离出生点最近的一个，避免卡片长期空白。
+    let best = regions[0];
+    let bestDistance = Infinity;
+    for (const item of regions) {
+      const dx = (item[0] + 0.5) * 512 - Number(spawn.x);
+      const dz = (item[1] + 0.5) * 512 - Number(spawn.z);
+      const distance = dx * dx + dz * dz;
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = item;
+      }
+    }
+    return { rx: best[0], rz: best[1] };
+  }
+
+  function stackMapTileUrl(stack) {
+    const region = stackMapRegion(stack);
+    if (!region) return '';
+    return tileUrl(stack.id, 'overworld', region.rx, region.rz, 4, true);
+  }
+
+  function stackIconLabel(source) {
+    return ({
+      upload: '自定义图标',
+      save: '存档图标',
+      map: '出生点地图',
+      placeholder: '暂无图标',
+    })[source] || '暂无图标';
+  }
+
+  function buildStackIcon(stack, options) {
+    const opts = options || {};
+    const visual = document.createElement('div');
+    visual.className = 'world-stack-card-visual';
+    const frame = document.createElement('div');
+    frame.className = 'world-stack-icon-frame';
+    const image = document.createElement('img');
+    image.className = 'world-stack-icon-image';
+    image.alt = (stack.label || stack.id || '世界栈') + ' 图标';
+    image.loading = 'lazy';
+    image.decoding = 'async';
+    image.referrerPolicy = 'no-referrer';
+    image.hidden = true;
+    const placeholder = document.createElement('div');
+    placeholder.className = 'world-stack-icon-placeholder';
+    placeholder.textContent = '暂无图标';
+    const badge = document.createElement('span');
+    badge.className = 'world-stack-icon-badge';
+    badge.textContent = stackIconLabel('placeholder');
+    badge.dataset.source = 'placeholder';
+
+    const candidates = [];
+    if (stack.icon && stack.icon.url) {
+      candidates.push({ url: stack.icon.url, source: stack.icon.source || 'upload' });
+    }
+    const mapUrl = stackMapTileUrl(stack);
+    if (mapUrl) candidates.push({ url: mapUrl, source: 'map' });
+    let next = 0;
+    const showNext = () => {
+      if (next >= candidates.length) {
+        image.hidden = true;
+        image.removeAttribute('src');
+        placeholder.hidden = false;
+        badge.textContent = stackIconLabel('placeholder');
+        badge.dataset.source = 'placeholder';
+        return;
+      }
+      const candidate = candidates[next++];
+      image.dataset.source = candidate.source;
+      badge.textContent = stackIconLabel(candidate.source);
+      badge.dataset.source = candidate.source;
+      image.hidden = false;
+      placeholder.hidden = true;
+      image.src = candidate.url;
+    };
+    image.addEventListener('load', () => {
+      image.hidden = false;
+      placeholder.hidden = true;
+    });
+    image.addEventListener('error', showNext);
+    if (candidates.length) showNext();
+    else {
+      placeholder.hidden = false;
+      image.hidden = true;
+    }
+    frame.append(image, placeholder, badge);
+
+    if (opts.admin) {
+      const tools = document.createElement('div');
+      tools.className = 'world-stack-icon-tools';
+      const upload = document.createElement('button');
+      upload.type = 'button';
+      upload.className = 'ghost';
+      upload.textContent = '上传图片';
+      upload.addEventListener('click', (event) => {
+        event.stopPropagation();
+        opts.onUpload?.();
+      });
+      tools.append(upload);
+      if (stack.icon && stack.icon.custom) {
+        const reset = document.createElement('button');
+        reset.type = 'button';
+        reset.className = 'ghost danger';
+        reset.textContent = '恢复默认';
+        reset.addEventListener('click', (event) => {
+          event.stopPropagation();
+          opts.onDelete?.();
+        });
+        tools.append(reset);
+      }
+      visual.append(frame, tools);
+    } else {
+      visual.append(frame);
+    }
+    return visual;
   }
 
   function blobToImage(blob) {
@@ -1325,6 +1582,7 @@
     if (!ensureEls().spawns || ensureEls().spawns.checked) {
       drawSpawns(ctx, width, height);
     }
+    drawSeparationCircles(ctx, width, height);
     drawScale(ctx, width, height);
     ctx.fillStyle = 'rgba(226,232,240,.65)';
     ctx.font = '11px system-ui, sans-serif';
@@ -1343,7 +1601,169 @@
     // 地形/圈地重绘后同步玩家图层；移动中的玩家继续按帧插值。
     const now = performance.now();
     drawPlayerLayer(now);
+    drawLiveLayer();
     if (playerMotionActive(now) && playerLayerActive()) schedulePlayerDraw();
+  }
+
+  function drawSeparationCircles(ctx, width, height) {
+    if (!state.showSeparation) return;
+    const stack = currentStack();
+    const history = stack && stack.spawnHistory;
+    const separation = history && history.separation;
+    const radius = separation ? Number(separation.effective) : 0;
+    if (!history || !Array.isArray(history.cycles) || !radius) return;
+    ctx.save();
+    ctx.setLineDash([7, 7]);
+    ctx.lineWidth = 1.2;
+    for (const cycle of history.cycles) {
+      const center = worldToScreen(Number(cycle.x) || 0, Number(cycle.z) || 0);
+      const pixels = radius / state.scale;
+      if (center.x + pixels < 0 || center.y + pixels < 0
+          || center.x - pixels > width || center.y - pixels > height) {
+        continue;
+      }
+      ctx.strokeStyle = cycle.current ? 'rgba(251, 191, 36, .42)' : 'rgba(251, 191, 36, .23)';
+      ctx.beginPath();
+      ctx.arc(center.x, center.y, pixels, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function liveColor(item) {
+    if (item.kind === 'player') return 'rgba(96, 165, 250, .42)';
+    const category = String(item.category || '');
+    if (category === 'monster') return 'rgba(248, 113, 113, .36)';
+    if (category === 'creature' || category === 'axolotls') return 'rgba(94, 234, 212, .32)';
+    return 'rgba(148, 163, 184, .32)';
+  }
+
+  function drawTrail(ctx, item) {
+    const trail = Array.isArray(item.trail) ? item.trail : [];
+    if (trail.length < 2) return;
+    ctx.beginPath();
+    for (let i = 0; i < trail.length; i++) {
+      const point = worldToScreen(Number(trail[i].x) || 0, Number(trail[i].z) || 0);
+      if (i === 0) ctx.moveTo(point.x, point.y);
+      else ctx.lineTo(point.x, point.y);
+    }
+    const tail = worldToScreen(Number(item.x) || 0, Number(item.z) || 0);
+    ctx.lineTo(tail.x, tail.y);
+    ctx.strokeStyle = liveColor(item);
+    ctx.lineWidth = item.kind === 'player' ? 1.5 : 1.1;
+    ctx.stroke();
+  }
+
+  function drawLiveLayer() {
+    const { liveCanvas, liveCtx } = ensureEls();
+    if (!liveCanvas || !liveCtx) return;
+    const width = state.cssWidth;
+    const height = state.cssHeight;
+    if (!width || !height || state.overview) return;
+    liveCtx.setTransform(state.dpr, 0, 0, state.dpr, 0, 0);
+    liveCtx.clearRect(0, 0, width, height);
+    const live = state.live;
+    const stack = currentStack();
+    const dim = currentDim();
+    if (!live || !stack || !dim) return;
+    const players = (live.players || []).filter((item) => item.stackId === stack.id
+      && item.dimension === dim.dim);
+    const entities = (live.entities || []).filter((item) => item.stackId === stack.id
+      && item.dimension === dim.dim);
+    if (state.showTrails) {
+      for (const item of players) drawTrail(liveCtx, item);
+      for (const item of entities) drawTrail(liveCtx, item);
+    }
+    if (state.showEntities) {
+      for (const item of entities) {
+        const point = worldToScreen(Number(item.x) || 0, Number(item.z) || 0);
+        if (point.x < -8 || point.y < -8 || point.x > width + 8 || point.y > height + 8) {
+          continue;
+        }
+        const color = liveColor(item);
+        liveCtx.beginPath();
+        liveCtx.arc(point.x, point.y, item.category === 'monster' ? 3 : 2.4, 0, Math.PI * 2);
+        liveCtx.fillStyle = color.replace(/\.\d+\)$/, '.85)');
+        liveCtx.fill();
+        liveCtx.strokeStyle = 'rgba(8, 12, 17, .65)';
+        liveCtx.lineWidth = .8;
+        liveCtx.stroke();
+      }
+    }
+  }
+
+  function operationLabel(operation) {
+    const action = operation.action === 'break' ? '破坏'
+      : operation.action === 'place' ? '放置' : '改变';
+    const block = operation.after && operation.action === 'break'
+      ? operation.before : operation.after;
+    const shortBlock = String(block || 'block').replace('minecraft:', '');
+    return action + ' ' + shortBlock + ' · ' + operation.x + ', ' + operation.y + ', '
+      + operation.z;
+  }
+
+  function renderActivity() {
+    const { activity, liveStatus } = ensureEls();
+    const live = state.live || {};
+    const operations = Array.isArray(live.operations) ? live.operations : [];
+    const online = Array.isArray(live.players) ? live.players.length : 0;
+    const entityCount = Array.isArray(live.entities) ? live.entities.length : 0;
+    if (liveStatus) {
+      liveStatus.textContent = live.generatedAt
+        ? '在线 ' + online + ' 人 · 实体 ' + entityCount + ' · 操作 ' + operations.length
+          + ' · ' + new Date(live.generatedAt).toLocaleTimeString()
+        : '读取中…';
+    }
+    if (!activity) return;
+    activity.replaceChildren();
+    if (operations.length === 0) {
+      const empty = document.createElement('span');
+      empty.className = 'map-activity-empty';
+      empty.textContent = '还没有捕获到方块操作；玩家破坏/放置方块后会出现在这里。';
+      activity.append(empty);
+      return;
+    }
+    for (const operation of operations.slice(0, 40)) {
+      const row = document.createElement('div');
+      row.className = 'map-activity-row';
+      row.title = '点击定位到该操作';
+      const time = document.createElement('span');
+      time.className = 'map-activity-time';
+      time.textContent = formatTime(operation.timeMs);
+      const actor = document.createElement('span');
+      actor.className = 'map-activity-actor';
+      actor.textContent = operation.actor || '环境';
+      const text = document.createElement('span');
+      text.className = 'map-activity-text';
+      text.textContent = operationLabel(operation) + ' · ' + operation.stackId
+        + '/' + operation.dimension;
+      row.append(time, actor, text);
+      row.addEventListener('click', () => {
+        openDetailed(operation.stackId, operation.dimension);
+        state.centerX = Number(operation.x) || 0;
+        state.centerZ = Number(operation.z) || 0;
+        if (state.scale > 2) state.scale = 2;
+        draw();
+      });
+      activity.append(row);
+    }
+  }
+
+  async function loadLive() {
+    if (!state.model || state.liveFetching) return;
+    if (window.SamsaraUI && window.SamsaraUI.getToken && !window.SamsaraUI.getToken()) return;
+    state.liveFetching = true;
+    try {
+      const data = await window.SamsaraUI.api(MAP_API_BASE + '/live');
+      state.live = data;
+      renderActivity();
+      drawLiveLayer();
+      renderStats();
+    } catch (error) {
+      // 实时层失败不阻塞地图；保留上一帧。
+    } finally {
+      state.liveFetching = false;
+    }
   }
 
   function drawSpawns(ctx, width, height) {
@@ -1499,21 +1919,49 @@
     if (point.x < -30 || point.y < -30 || point.x > width + 30 || point.y > height + 30) {
       return;
     }
+    const entry = playerAvatarEntry(player);
+    ensureAvatarLoaded(entry);
+    const avatarSize = 20;
+    const avatarX = point.x - avatarSize / 2;
+    const avatarY = point.y - 38;
     ctx.save();
+    if (entry.remoteLoaded && entry.image) {
+      ctx.drawImage(entry.image, avatarX, avatarY, avatarSize, avatarSize);
+      ctx.strokeStyle = '#eff6ff';
+      ctx.lineWidth = 1.4;
+      ctx.strokeRect(avatarX + .5, avatarY + .5, avatarSize - 1, avatarSize - 1);
+    } else {
+      ctx.beginPath();
+      ctx.arc(point.x, point.y - 28, 9, 0, Math.PI * 2);
+      ctx.fillStyle = '#60a5fa';
+      ctx.fill();
+      ctx.strokeStyle = '#eff6ff';
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+      const initial = /^[A-Za-z0-9\u4e00-\u9fff]/.test(playerName(player))
+        ? playerName(player).charAt(0).toUpperCase() : '?';
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'bold 9px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(initial, point.x, point.y - 28);
+    }
+    // 底部尖端 + 小圆点始终对准玩家真实坐标。
     ctx.beginPath();
-    ctx.arc(point.x, point.y, 8, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(96, 165, 250, .22)';
+    ctx.moveTo(point.x - 4, avatarY + avatarSize);
+    ctx.lineTo(point.x + 4, avatarY + avatarSize);
+    ctx.lineTo(point.x, point.y - 10);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(96, 165, 250, .9)';
     ctx.fill();
     ctx.beginPath();
-    ctx.arc(point.x, point.y, 5, 0, Math.PI * 2);
-    ctx.fillStyle = '#60a5fa';
+    ctx.arc(point.x, point.y, 2.6, 0, Math.PI * 2);
+    ctx.fillStyle = '#eff6ff';
     ctx.fill();
-    ctx.strokeStyle = '#eff6ff';
-    ctx.lineWidth = 1.6;
-    ctx.stroke();
+
     const label = playerName(player);
-    const textX = point.x + 9;
-    const textY = point.y - 7;
+    const textX = point.x + 12;
+    const textY = avatarY + avatarSize / 2 + 4;
     ctx.font = 'bold 11px system-ui, sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
@@ -2129,6 +2577,28 @@
       });
     }
     if (spawns) spawns.addEventListener('change', draw);
+    const { showEntities, showTrails, showSeparation } = ensureEls();
+    if (showEntities) {
+      state.showEntities = showEntities.checked;
+      showEntities.addEventListener('change', () => {
+        state.showEntities = showEntities.checked;
+        drawLiveLayer();
+      });
+    }
+    if (showTrails) {
+      state.showTrails = showTrails.checked;
+      showTrails.addEventListener('change', () => {
+        state.showTrails = showTrails.checked;
+        drawLiveLayer();
+      });
+    }
+    if (showSeparation) {
+      state.showSeparation = showSeparation.checked;
+      showSeparation.addEventListener('change', () => {
+        state.showSeparation = showSeparation.checked;
+        draw();
+      });
+    }
     if (showPlayers) {
       state.showPlayers = showPlayers.checked;
       showPlayers.addEventListener('change', () => {
@@ -2260,6 +2730,11 @@
         if (window.SamsaraUI?.isActiveTab?.('map')) loadPlayers();
       }, PLAYER_POLL_MS);
     }
+    if (!state.liveTimer) {
+      state.liveTimer = window.setInterval(() => {
+        if (window.SamsaraUI?.isActiveTab?.('map')) loadLive();
+      }, 1000);
+    }
     if (window.SamsaraBanners) {
       window.SamsaraBanners.ready(() => scheduleDraw());
     }
@@ -2324,6 +2799,11 @@
     reload: loadModel,
     loadModel,
     markStale: () => { state.stale = true; },
+  };
+
+  window.SamsaraStackIcon = {
+    build: buildStackIcon,
+    mapTileUrl: stackMapTileUrl,
   };
 
   if (document.readyState === 'loading') {

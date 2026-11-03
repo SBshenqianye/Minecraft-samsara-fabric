@@ -1,6 +1,7 @@
 package com.shenqianye.samsara.rewind;
 
 import com.shenqianye.samsara.Samsara;
+import com.shenqianye.samsara.activity.MapActivityRecorder;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
@@ -44,6 +45,8 @@ public class DiffRecorder {
     private static volatile boolean enabled;
     /** 记录上下文深度：>0 表示当前 setBlock 由玩家操作或爆炸触发 */
     private static final ThreadLocal<Integer> EDIT_CONTEXT = ThreadLocal.withInitial(() -> 0);
+    /** 当前编辑者；只用于 Web 地图的最近操作流，不参与 diff 持久化。 */
+    private static final ThreadLocal<Actor> ACTOR = new ThreadLocal<>();
 
     private DiffRecorder() {
     }
@@ -314,6 +317,15 @@ public class DiffRecorder {
         EDIT_CONTEXT.set(EDIT_CONTEXT.get() + 1);
     }
 
+    /** 标记当前编辑者（玩家 UUID/名字）；与 {@link #beginEditContext()} 配对使用。 */
+    public static void beginActor(String uuid, String name) {
+        ACTOR.set(new Actor(uuid == null ? "" : uuid, name == null ? "" : name));
+    }
+
+    public static void endActor() {
+        ACTOR.remove();
+    }
+
     /** 记录上下文出栈（方法 RETURN） */
     public static void endEditContext() {
         int depth = EDIT_CONTEXT.get() - 1;
@@ -414,6 +426,11 @@ public class DiffRecorder {
                 dimensionKey(level.dimension()));
         if (s != null) {
             s.record(pos.getX(), pos.getY(), pos.getZ(), stateId, System.currentTimeMillis());
+            Actor actor = ACTOR.get();
+            MapActivityRecorder.record(level,
+                    actor == null ? null : actor.uuid(),
+                    actor == null ? null : actor.name(),
+                    pos, before, after);
         }
     }
 
@@ -667,5 +684,8 @@ public class DiffRecorder {
         FONT_5X7['`' - ' '] = new int[]{0x02, 0x04, 0x00, 0x00, 0x00};
         // 其他常用
         FONT_5X7['~' - ' '] = new int[]{0x0A, 0x15, 0x00, 0x00, 0x00};
+    }
+
+    private record Actor(String uuid, String name) {
     }
 }

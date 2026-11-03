@@ -21,6 +21,7 @@
 
     <div class="connection">
       <span id="connection-state" class="conn-state">未连接</span>
+      <a class="user-view-link" href="/user" target="_blank" rel="noopener" title="公开只读视图，不需要 token">用户视图</a>
     </div>
 
     <nav class="top-tabs" aria-label="管理范围">
@@ -58,6 +59,12 @@
       </button>
       <button class="tab" type="button" data-server-panel="server-backup-panel">
         存档备份 <span class="tab-count" id="server-backup-count">0</span>
+      </button>
+      <button class="tab" type="button" data-server-panel="server-console-panel">
+        RCON 控制台
+      </button>
+      <button class="tab" type="button" data-server-panel="server-audit-panel">
+        Web 审计
       </button>
     </nav>
 
@@ -199,6 +206,18 @@
                 <input id="map-show-players" type="checkbox" checked>
                 <span>显示玩家</span>
               </label>
+              <label class="check-line">
+                <input id="map-show-entities" type="checkbox" checked>
+                <span>实体</span>
+              </label>
+              <label class="check-line">
+                <input id="map-show-trails" type="checkbox" checked>
+                <span>轨迹</span>
+              </label>
+              <label class="check-line">
+                <input id="map-show-separation" type="checkbox">
+                <span>排斥半径</span>
+              </label>
               <button id="map-fit" class="ghost" type="button">定位全部圈地</button>
               <button id="map-zoom-out" class="ghost map-zoom-button" type="button" title="缩小">−</button>
               <span id="map-zoom-label" class="map-zoom-label">4 格/像素</span>
@@ -212,6 +231,7 @@
           <div id="map-stage-anchor" class="map-stage">
             <canvas id="map-canvas" class="map-canvas" aria-label="地形与圈地地图"></canvas>
             <canvas id="map-players" class="map-players" aria-hidden="true"></canvas>
+            <canvas id="map-live" class="map-live" aria-hidden="true"></canvas>
             <div id="map-tooltip" class="map-tooltip" hidden></div>
             <div id="map-dim-anchors" class="map-dim-anchors" aria-hidden="true"></div>
             <div id="map-selection" class="map-selection map-hud"></div>
@@ -226,12 +246,21 @@
             </div>
             <div id="map-overview-stacks" class="map-overview-stacks"></div>
           </div>
+          <div class="map-activity-wrap">
+            <div class="map-activity-head">
+              <strong>实时动态</strong>
+              <span id="map-live-status" class="muted small">读取中…</span>
+            </div>
+            <div id="map-activity" class="map-activity"></div>
+          </div>
           <div class="map-footer">
             <div class="map-legend">
               <span><i class="map-swatch claim"></i>半透明青色 = 保护区块</span>
               <span><i class="map-swatch banner"></i>圆点 = 旗帜（颜色取图案色）</span>
               <span><i class="map-swatch player"></i>蓝色圆点 = 在线玩家</span>
               <span><i class="map-swatch spawn"></i>菱形 = 出生点历史（独立颜色）</span>
+              <span><i class="map-swatch trail"></i>细线 = 玩家/实体短轨迹</span>
+              <span><i class="map-swatch separation"></i>虚线圆 = 出生点排斥半径</span>
               <span><i class="map-swatch chunk"></i><span id="map-chunk-grid-legend">区块网格 关</span></span>
               <span>拖动平移 · 滚轮缩放 · 点击旗帜/出生点看详情</span>
             </div>
@@ -247,6 +276,7 @@
               <p class="panel-sub">导入服务器本地 world 目录；导入/归档在服务器重启时执行，源目录只读保持不变。排序只改逻辑顺序，不重命名 stack_<span class="muted">n</span> 目录。</p>
             </div>
             <div class="panel-tools">
+              <button id="world-stack-timeline-open" class="ghost" type="button">操作时间线</button>
               <button id="world-stack-refresh" class="ghost" type="button">重新读取</button>
             </div>
           </div>
@@ -307,38 +337,6 @@
           <div id="world-stack-import-error" class="world-stack-error" role="alert" hidden></div>
           <div id="world-stack-import-queue" class="world-stack-queue" hidden></div>
           <div id="world-stack-import-preview" class="world-stack-preview" hidden></div>
-        </section>
-
-        <section class="panel" id="world-stack-archive-panel">
-          <div class="panel-head">
-            <div>
-              <h2>归档 / 删除栈层</h2>
-              <p class="panel-sub">危险操作：下列旧栈层可直接点“归档…”，先预览；确认后排队，重启时把维度和元数据移到 stack-archive 备份，不直接删除。栈顶 world 不能归档。</p>
-            </div>
-          </div>
-          <div id="world-stack-archive-error" class="world-stack-error" role="alert" hidden></div>
-          <div id="world-stack-archive-list" class="world-stack-archive-list"></div>
-          <div id="world-stack-archive-preview" class="world-stack-preview" hidden></div>
-        </section>
-
-        <section class="panel" id="world-stack-timeline-panel">
-          <div class="panel-head">
-            <div>
-              <h2>操作时间线</h2>
-              <p class="panel-sub">待执行任务（导入/归档/提升/撤销）会先列在最上面；重启完成后再生成可撤销的时间线节点。时间线线性、无分支，仅末端节点可撤销。旧备份没有 <code>operation.json</code> 时只读展示并说明缺少的信息。撤销在停服后、下次启动前执行，先保留当前状态，失败回滚；源世界与归档不会自动删除。可导出 <code>operation.json</code> 排障；<code>pre-restore-*</code> 安全快照只能在这里手动清理。</p>
-            </div>
-            <div class="panel-tools">
-              <button id="world-stack-snapshot-refresh" class="ghost" type="button">刷新快照占用</button>
-            </div>
-          </div>
-          <div id="world-stack-timeline-error" class="world-stack-error" role="alert" hidden></div>
-          <div id="world-stack-timeline" class="backup-timeline"></div>
-          <div id="world-stack-timeline-preview" class="world-stack-preview" hidden></div>
-          <div class="world-stack-snapshot-head">
-            <h3>撤销前安全快照</h3>
-            <p class="muted small">执行撤销时保留的当前栈状态。永不自动删除；确认不再需要回滚后可手动释放空间。</p>
-          </div>
-          <div id="world-stack-snapshots" class="world-stack-snapshots"></div>
         </section>
 
         <section class="panel" id="world-stack-jobs-panel">
@@ -585,6 +583,50 @@
             <div id="world-stack-files" class="world-stack-files"></div>
           </section>
         </div>
+
+        <div id="server-console-panel" class="server-panel" hidden>
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>RCON 控制台</h2>
+                <p class="panel-sub">在服务器线程执行原版/模组命令，输出直接回显。权限等同控制台；仍受管理端 Bearer token 保护，不把 RCON 密码带到浏览器。危险命令会二次确认，<code>stop</code> 会关闭服务器。</p>
+              </div>
+              <div class="panel-tools">
+                <button id="server-console-clear" class="ghost" type="button">清空输出</button>
+              </div>
+            </div>
+            <div class="console-quick" id="server-console-quick">
+              <button type="button" class="ghost" data-console-command="list">list</button>
+              <button type="button" class="ghost" data-console-command="save-all">save-all</button>
+              <button type="button" class="ghost" data-console-command="whitelist list">whitelist list</button>
+              <button type="button" class="ghost" data-console-command="samsara world list">world list</button>
+              <button type="button" class="ghost danger" data-console-command="stop">stop</button>
+            </div>
+            <pre id="server-console-output" class="server-console-output" role="log" aria-live="polite"></pre>
+            <div class="server-console-input">
+              <input id="server-console-command" type="text" autocomplete="off"
+                     placeholder="输入命令，不需要前导 /，例如 list">
+              <button id="server-console-send" class="primary" type="button">执行</button>
+            </div>
+            <div id="server-console-message" class="message" role="status"></div>
+          </section>
+        </div>
+
+        <div id="server-audit-panel" class="server-panel" hidden>
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>Web 审计与随时回滚</h2>
+                <p class="panel-sub">每次管理端写请求前自动快照 Web 可管理的小文件：<code>config/samsara/</code>、服务器配置文件、栈层图标与 pending 队列。可直接回滚配置类修改；世界数据请使用世界栈时间线或本体备份。</p>
+              </div>
+              <div class="panel-tools">
+                <button id="server-audit-refresh" class="ghost" type="button">刷新审计</button>
+              </div>
+            </div>
+            <div id="server-audit-message" class="message" role="status"></div>
+            <div id="server-audit-list" class="server-audit-list"></div>
+          </section>
+        </div>
       </div>
     </div>
   </main>
@@ -706,6 +748,45 @@
       </div>
     </form>
   </dialog>
+
+  <dialog id="world-stack-timeline-dialog" class="app-dialog world-stack-dialog">
+    <div class="dialog-body">
+      <div class="dialog-head">
+        <div>
+          <h3>操作时间线</h3>
+          <p class="dialog-sub">待执行任务会先列在最上面；重启完成后再生成可撤销的时间线节点。时间线线性、无分支，仅末端节点可撤销。撤销在停服后、下次启动前执行，先保留当前状态，失败回滚；源世界与归档不会自动删除。</p>
+        </div>
+        <div class="dialog-head-actions">
+          <button id="world-stack-snapshot-refresh" class="ghost" type="button">刷新快照占用</button>
+          <button class="ghost" type="button" data-dialog-close="world-stack-timeline-dialog">关闭</button>
+        </div>
+      </div>
+      <div id="world-stack-timeline-error" class="world-stack-error" role="alert" hidden></div>
+      <div id="world-stack-timeline" class="backup-timeline"></div>
+      <div id="world-stack-timeline-preview" class="world-stack-preview" hidden></div>
+      <div class="world-stack-snapshot-head">
+        <h3>撤销前安全快照</h3>
+        <p class="muted small">执行撤销时保留的当前栈状态。永不自动删除；确认不再需要回滚后可手动释放空间。</p>
+      </div>
+      <div id="world-stack-snapshots" class="world-stack-snapshots"></div>
+    </div>
+  </dialog>
+
+  <dialog id="world-stack-archive-dialog" class="app-dialog world-stack-dialog">
+    <div class="dialog-body">
+      <div class="dialog-head">
+        <div>
+          <h3>归档 / 删除栈层</h3>
+          <p class="dialog-sub">危险操作：先预览，确认后排队；重启时把维度和元数据移到 stack-archive 备份，不直接删除。栈顶 world 不能归档。</p>
+        </div>
+        <button class="ghost" type="button" data-dialog-close="world-stack-archive-dialog">关闭</button>
+      </div>
+      <div id="world-stack-archive-error" class="world-stack-error" role="alert" hidden></div>
+      <div id="world-stack-archive-preview" class="world-stack-preview" hidden></div>
+    </div>
+  </dialog>
+
+  <input id="world-stack-icon-input" type="file" accept="image/png,image/jpeg,image/webp" hidden>
 
   <datalist id="identity-candidates"></datalist>
   <datalist id="identity-data-uuids"></datalist>

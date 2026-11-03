@@ -35,6 +35,173 @@
     el.className = 'message' + (kind ? ' ' + kind : '');
   }
 
+  function consoleMessage(text, kind) {
+    const el = $('server-console-message');
+    if (!el) return;
+    el.textContent = text || '';
+    el.className = 'message' + (kind ? ' ' + kind : '');
+  }
+
+  function appendConsole(text) {
+    const el = $('server-console-output');
+    if (!el) return;
+    const line = String(text == null ? '' : text);
+    el.textContent = el.textContent ? el.textContent + '\n' + line : line;
+    el.scrollTop = el.scrollHeight;
+  }
+
+  const consoleHistory = [];
+  let consoleHistoryIndex = -1;
+
+  function dangerousCommand(command) {
+    const raw = String(command || '').trim().toLowerCase();
+    return raw === 'stop' || raw.startsWith('stop ')
+        || raw === 'restart' || raw.startsWith('restart ')
+        || raw.startsWith('ban ') || raw.startsWith('pardon ')
+        || raw.startsWith('op ') || raw.startsWith('deop ')
+        || raw.startsWith('kick ') || raw.startsWith('whitelist ')
+        || raw.startsWith('clear ') || raw.startsWith('kill ')
+        || raw.startsWith('fill ') || raw.startsWith('setblock ');
+  }
+
+  async function runConsole(command) {
+    const raw = String(command || '').trim();
+    if (!raw) return;
+    if (dangerousCommand(raw)
+        && !window.confirm('执行危险命令？\n' + raw + '\n\n这可能不可逆或直接关闭服务器。')) {
+      return;
+    }
+    const input = $('server-console-command');
+    const send = $('server-console-send');
+    if (send) send.disabled = true;
+    consoleMessage('执行中…');
+    appendConsole('> ' + raw);
+    try {
+      const data = await UI.api('/api/server/console', {
+        method: 'POST',
+        body: JSON.stringify({ command: raw }),
+      });
+      const lines = Array.isArray(data.output) ? data.output : [data.error || '无输出'];
+      for (const line of lines) appendConsole(line);
+      consoleMessage('完成 · ' + (data.timeMs || 0) + ' ms'
+        + (data.stopping ? ' · 服务器正在停止' : ''), data.ok ? 'ok' : 'error');
+      if (consoleHistory[0] !== raw) consoleHistory.unshift(raw);
+      while (consoleHistory.length > 50) consoleHistory.pop();
+      consoleHistoryIndex = -1;
+      if (input) input.value = '';
+    } catch (error) {
+      appendConsole('错误：' + (error.message || '执行失败'));
+      consoleMessage(error.message || '执行失败', 'error');
+    } finally {
+      if (send) send.disabled = false;
+    }
+  }
+
+  let auditEntries = [];
+
+  function auditMessage(text, kind) {
+    const el = $('server-audit-message');
+    if (!el) return;
+    el.textContent = text || '';
+    el.className = 'message' + (kind ? ' ' + kind : '');
+  }
+
+  async function loadAudit() {
+    try {
+      const data = await UI.api('/api/audit');
+      auditEntries = Array.isArray(data.entries) ? data.entries : [];
+      renderAudit();
+      auditMessage('共 ' + auditEntries.length + ' 条审计记录；写请求前自动快照。', 'ok');
+    } catch (error) {
+      auditMessage(error.message || '读取审计失败', 'error');
+    }
+  }
+
+  function renderAudit() {
+    const list = $('server-audit-list');
+    if (!list) return;
+    list.replaceChildren();
+    if (auditEntries.length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'muted small';
+      empty.textContent = '还没有审计记录。保存配置、权限、身份组、输出模板或服务器配置后会出现。';
+      list.append(empty);
+      return;
+    }
+    for (const entry of auditEntries) {
+      const row = document.createElement('div');
+      row.className = 'server-audit-item';
+      const main = document.createElement('div');
+      main.className = 'server-audit-main';
+      const title = document.createElement('strong');
+      title.textContent = String(entry.action || '') + ' · ' + formatTime(entry.createdAt);
+      const meta = document.createElement('span');
+      meta.textContent = (entry.rollbackable ? '可回滚' : '不可自动回滚')
+        + ' · ' + (entry.fileCount || 0) + ' 文件 · ' + formatBytes(entry.bytes)
+        + (entry.note ? ' · ' + entry.note : '');
+      main.append(title, meta);
+      const actions = document.createElement('div');
+      actions.className = 'server-audit-actions';
+      const preview = document.createElement('button');
+      preview.type = 'button';
+      preview.className = 'ghost';
+      preview.textContent = '预览';
+      preview.addEventListener('click', () => previewAudit(entry));
+      actions.append(preview);
+      if (entry.rollbackable) {
+        const rollback = document.createElement('button');
+        rollback.type = 'button';
+        rollback.className = 'ghost danger';
+        rollback.textContent = '回滚';
+        rollback.addEventListener('click', () => rollbackAudit(entry));
+        actions.append(rollback);
+      }
+      row.append(main, actions);
+      list.append(row);
+    }
+  }
+
+  async function previewAudit(entry) {
+    try {
+      const data = await UI.api('/api/audit/preview', {
+        method: 'POST',
+        body: JSON.stringify({ id: entry.id }),
+      });
+      if (!data.ok) {
+        auditMessage(data.error || '预览失败', 'error');
+        return;
+      }
+      const preview = data.entry || entry;
+      auditMessage('快照 ' + preview.id + '：' + (preview.fileCount || 0) + ' 文件 / '
+        + formatBytes(preview.bytes) + '；' + (preview.note || ''), 'ok');
+    } catch (error) {
+      auditMessage(error.message || '预览失败', 'error');
+    }
+  }
+
+  async function rollbackAudit(entry) {
+    if (!window.confirm('回滚到这次 Web 修改之前？\n' + entry.action
+        + '\n时间 ' + formatTime(entry.createdAt)
+        + '\n\n会先保存当前状态，再恢复快照文件。')) {
+      return;
+    }
+    try {
+      const data = await UI.api('/api/audit/rollback', {
+        method: 'POST',
+        body: JSON.stringify({ id: entry.id, confirm: true }),
+      });
+      if (!data.ok) {
+        auditMessage(data.error || '回滚失败', 'error');
+        return;
+      }
+      auditMessage(data.message || '已回滚', 'ok');
+      await loadAudit();
+      await loadAll();
+    } catch (error) {
+      auditMessage(error.message || '回滚失败', 'error');
+    }
+  }
+
   function formatBytes(bytes) {
     const n = Number(bytes || 0);
     if (n < 1024) return n + ' B';
@@ -95,11 +262,21 @@
       title: '存档备份',
       hint: '时间线可回滚到任意节点；恢复后下一次备份从该点分出新分支',
     },
+    'server-console-panel': {
+      title: 'RCON 控制台',
+      hint: '在服务器线程执行命令；stop 会关闭服务器',
+    },
+    'server-audit-panel': {
+      title: 'Web 审计',
+      hint: '每次管理端写请求前快照；配置类可直接回滚',
+    },
   };
 
   const SERVER_HASH = {
     'server-config-panel': '#server',
     'server-backup-panel': '#server-backup',
+    'server-console-panel': '#server-console',
+    'server-audit-panel': '#server-audit',
   };
 
   function setServerPanel(id) {
@@ -111,8 +288,12 @@
     backupMessage('', '');
     const config = $('server-config-panel');
     const backups = $('server-backup-panel');
+    const consolePanel = $('server-console-panel');
+    const auditPanel = $('server-audit-panel');
     if (config) config.hidden = id !== 'server-config-panel';
     if (backups) backups.hidden = id !== 'server-backup-panel';
+    if (consolePanel) consolePanel.hidden = id !== 'server-console-panel';
+    if (auditPanel) auditPanel.hidden = id !== 'server-audit-panel';
     const action = SERVER_ACTIONS[id] || SERVER_ACTIONS['server-config-panel'];
     const title = $('server-action-title');
     const hint = $('server-action-hint');
@@ -129,6 +310,11 @@
     if (id === 'server-backup-panel') {
       loadBackupsOnly();
       window.SamsaraWorldStack?.load();
+    } else if (id === 'server-console-panel') {
+      consoleMessage('', '');
+      $('server-console-command')?.focus();
+    } else if (id === 'server-audit-panel') {
+      loadAudit();
     } else {
       updateDirtyIndicator();
     }
@@ -147,6 +333,24 @@
           .map((item) => ({ id: item.target, el: document.getElementById(item.target) }))
           .filter((item) => item.el);
       UI.buildNav('存档备份', items, targets, { count: (timeline.nodes || []).length });
+      return;
+    }
+    if (state.serverPanel === 'server-console-panel') {
+      UI.buildNav('RCON 控制台', [
+        { label: '命令输入', target: 'server-console-command' },
+        { label: '命令输出', target: 'server-console-output' },
+      ], [
+        { id: 'server-console-command', el: document.getElementById('server-console-command') },
+        { id: 'server-console-output', el: document.getElementById('server-console-output') },
+      ]);
+      return;
+    }
+    if (state.serverPanel === 'server-audit-panel') {
+      UI.buildNav('Web 审计', [
+        { label: '审计记录', target: 'server-audit-list' },
+      ], [
+        { id: 'server-audit-list', el: document.getElementById('server-audit-list') },
+      ]);
       return;
     }
     UI.buildNav('服务器配置', state.navItems || [], state.navTargets || [],
@@ -1433,6 +1637,45 @@
   const backupCreate = $('server-backup-create');
   if (backupCreate) backupCreate.addEventListener('click', createBackup);
 
+  const consoleSend = $('server-console-send');
+  const consoleInput = $('server-console-command');
+  const consoleClear = $('server-console-clear');
+  if (consoleSend) {
+    consoleSend.addEventListener('click', () => runConsole(consoleInput ? consoleInput.value : ''));
+  }
+  if (consoleInput) {
+    consoleInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        runConsole(consoleInput.value);
+      } else if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        if (consoleHistory.length) {
+          consoleHistoryIndex = Math.min(consoleHistory.length - 1, consoleHistoryIndex + 1);
+          consoleInput.value = consoleHistory[consoleHistoryIndex] || '';
+        }
+      } else if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        consoleHistoryIndex = Math.max(-1, consoleHistoryIndex - 1);
+        consoleInput.value = consoleHistoryIndex < 0 ? '' : (consoleHistory[consoleHistoryIndex] || '');
+      }
+    });
+  }
+  if (consoleClear) {
+    consoleClear.addEventListener('click', () => {
+      const output = $('server-console-output');
+      if (output) output.textContent = '';
+      consoleMessage('');
+    });
+  }
+  const auditRefresh = $('server-audit-refresh');
+  if (auditRefresh) auditRefresh.addEventListener('click', loadAudit);
+  for (const button of document.querySelectorAll('[data-console-command]')) {
+    button.addEventListener('click', () => {
+      runConsole(button.dataset.consoleCommand || '');
+    });
+  }
+
   const playerDialog = $('player-dialog');
   const playerCancel = $('player-cancel');
   if (playerCancel && playerDialog) {
@@ -1463,9 +1706,12 @@
   });
 
   const initialHash = location.hash || '';
-  if (initialHash === '#server' || initialHash === '#server-backup') {
+  if (initialHash === '#server' || initialHash === '#server-backup'
+      || initialHash === '#server-console' || initialHash === '#server-audit') {
     setSection('server');
     if (initialHash === '#server-backup') setServerPanel('server-backup-panel');
+    if (initialHash === '#server-console') setServerPanel('server-console-panel');
+    if (initialHash === '#server-audit') setServerPanel('server-audit-panel');
   }
 
   window.SamsaraServer = {
