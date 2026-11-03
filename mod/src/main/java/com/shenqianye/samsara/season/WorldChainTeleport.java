@@ -130,8 +130,8 @@ public final class WorldChainTeleport {
                 if (overworld != null) {
                     int tx = WorldChainRules.toOverworld(player.getX());
                     int tz = WorldChainRules.toOverworld(player.getZ());
-                    teleport(player, overworld, layer, tx, tz, safeY(overworld, tx, tz),
-                            "下界顶部 → 同层主世界");
+                    teleport(player, overworld, layer, tx, tz, lowestSafeY(overworld, tx, tz),
+                            "下界顶部 → 同层主世界底层");
                 } else {
                     notice(player, "top-overworld:" + layer.id, "同层主世界（" + layer.id
                             + "）加载失败：" + StackDimensionLoader.failureReason(layer.id));
@@ -154,8 +154,8 @@ public final class WorldChainTeleport {
                 }
                 int tx = WorldChainRules.toNether(player.getX());
                 int tz = WorldChainRules.toNether(player.getZ());
-                teleport(player, target, upper, tx, tz, netherRoofY(target, tx, tz),
-                        "主世界顶部 → 上层 " + upper.id + " 下界");
+                teleport(player, target, upper, tx, tz, lowestSafeY(target, tx, tz),
+                        "主世界顶部 → 上层 " + upper.id + " 下界底层");
             }
         }
     }
@@ -173,13 +173,10 @@ public final class WorldChainTeleport {
             return;
         }
         lastTeleport.put(player.getUUID(), now);
-        if (voidDrop) {
-            // 下界虚空已经累积了很长的摔落距离；不清掉会在下层主世界落地时直接摔死。
-            // 速度不在这里清零：下面用 Relative.DELTA 把进入虚空时的动量（含水平与下落）
-            // 一并带到落点，避免跨世界传送把玩家“刹停”。
-            player.resetFallDistance();
-        }
-        Set<Relative> relatives = voidDrop ? Relative.DELTA : Set.of();
+        // 跨世界/跨栈传送一律保留进入前的动量（水平 + 下落/上冲），不做“刹停”。
+        // 摔落距离必须清零：跨维度后旧高度差会让玩家落地即死。
+        player.resetFallDistance();
+        Set<Relative> relatives = Relative.DELTA;
         player.teleportTo(target, x + 0.5, y, z + 0.5, relatives,
                 player.getYRot(), player.getXRot(), false);
         applyRespawn(player, target, layer);
@@ -348,6 +345,26 @@ public final class WorldChainTeleport {
             }
         }
         return Integer.MIN_VALUE;
+    }
+
+    /**
+     * 目标维度“最底层安全落点”：从基岩层往上找第一处「实心地面 + 脚/头两格非固体」，
+     * 用于从下方进入新维度（下界顶部 → 主世界、主世界顶部 → 上层下界）。
+     * 下界尤其不能使用屋顶落点，否则会直接站到上层基岩上方。
+     */
+    static int lowestSafeY(ServerLevel level, int x, int z) {
+        try {
+            level.getChunk(x >> 4, z >> 4);
+        } catch (Exception ignored) {
+        }
+        int minY = level.dimensionType().minY();
+        int maxY = minY + level.dimensionType().height();
+        for (int y = minY + 1; y < maxY - 2; y++) {
+            if (isDry(level, x, y, z)) {
+                return y;
+            }
+        }
+        return safeY(level, x, z);
     }
 
     static int netherRoofY(ServerLevel level, int x, int z) {

@@ -19,9 +19,10 @@ class WorldChainRulesTest {
 
     @Test
     void topThresholdMatchesBuildLimits() {
-        // 主世界：minY=-64，height=384 → maxBuild=320，y>320 触发
-        assertTrue(WorldChainRules.isTop(321, -64, 384, WorldChainRules.DimensionKind.OVERWORLD));
-        assertFalse(WorldChainRules.isTop(320, -64, 384, WorldChainRules.DimensionKind.OVERWORLD));
+        // 主世界：minY=-64，height=384 → maxBuild=320，超出建筑限制 5 格（y>325）触发
+        assertTrue(WorldChainRules.isTop(326, -64, 384, WorldChainRules.DimensionKind.OVERWORLD));
+        assertFalse(WorldChainRules.isTop(321, -64, 384, WorldChainRules.DimensionKind.OVERWORLD));
+        assertFalse(WorldChainRules.isTop(325, -64, 384, WorldChainRules.DimensionKind.OVERWORLD));
         // 下界：minY=0，height=256 → y>255 触发
         assertTrue(WorldChainRules.isTop(256, 0, 256, WorldChainRules.DimensionKind.NETHER));
         assertFalse(WorldChainRules.isTop(255, 0, 256, WorldChainRules.DimensionKind.NETHER));
@@ -70,7 +71,7 @@ class WorldChainRulesTest {
         assertFalse(WorldChainRules.isVoidDropGuardActive(6_000L, 6_000L));
         assertFalse(WorldChainRules.isVoidDropGuardActive(7_000L, 6_000L));
         // 过期后“主世界顶部 → 上层下界”恢复
-        int overworldTop = 321;
+        int overworldTop = 326;
         assertFalse(WorldChainRules.isVoidDropGuardActive(6_000L, 6_000L));
         assertTrue(WorldChainRules.isTop(overworldTop, -64, 384,
                 WorldChainRules.DimensionKind.OVERWORLD));

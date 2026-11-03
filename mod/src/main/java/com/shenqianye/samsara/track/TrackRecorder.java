@@ -13,6 +13,7 @@ import net.fabricmc.fabric.api.event.player.AttackBlockCallback;
 import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.fabricmc.fabric.api.event.player.UseItemCallback;
+import net.fabricmc.fabric.api.message.v1.ServerMessageEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.MinecraftServer;
@@ -184,6 +185,13 @@ public final class TrackRecorder {
                 r.recordUseStart(sp, hand, System.currentTimeMillis());
             }
             return InteractionResult.PASS;
+        });
+
+        // 发言记录：写入 .evt 聊天事件，同时进入实时层最近的聊天列表
+        ServerMessageEvents.CHAT_MESSAGE.register((message, sender, params) -> {
+            String text = message.decoratedContent().getString();
+            r.recordChat(sender, text);
+            com.shenqianye.samsara.web.MapLiveService.recordChat(sender, text);
         });
     }
 
@@ -682,8 +690,21 @@ public final class TrackRecorder {
         }
     }
 
-    public void recordSwing(ServerPlayer player, InteractionHand hand, int animationId) {
+    /** 记录玩家聊天发言到当前轨迹段的 .evt（与装备/挥动事件同一条时间轴）。 */
+    public void recordChat(ServerPlayer player, String text) {
         State st = states.get(player.getUUID());
+        if (st == null || st.evtOut == null || text == null || text.isBlank()) {
+            return;
+        }
+        try {
+            writeEvent(st, System.currentTimeMillis(), TrackEvents.TYPE_CHAT,
+                    TrackEvents.chatPayload(text));
+        } catch (IOException e) {
+            Samsara.LOGGER.warn("[周目管理 samsara] 聊天事件写入失败 {}: {}", st.uuid, e.getMessage());
+        }
+    }
+
+    public void recordSwing(ServerPlayer player, InteractionHand hand, int animationId) {        State st = states.get(player.getUUID());
         if (st == null || st.evtOut == null) {
             return;
         }

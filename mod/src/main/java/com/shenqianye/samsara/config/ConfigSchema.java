@@ -46,7 +46,7 @@ public final class ConfigSchema {
     /** 15 种旗帜图案的固定 ID 与中文名；与 {@code Extension.PATTERN_DIR} 对应。 */
     private static final List<String> CLAIM_DIRECTION_NAMES = List.of(
             "north", "northeast", "east", "southeast",
-            "south", "southwest", "west", "northwest");
+            "south", "southwest", "west", "northwest", "center");
 
     private static final String[][] CLAIM_PATTERN_LABELS = {
             { "border", "全边框" },
@@ -93,7 +93,7 @@ public final class ConfigSchema {
                 ConfigEntry.integer("view.freeRoamRadius", 32, 8, 256, "回看",
                         "回看时允许自由活动的半径（格），超出后自动跟随"),
                 ConfigEntry.bool("view.scrub.enabled", true, "回看",
-                        "回看默认开启拖动（Shift 后退 / Ctrl 快进 / 空格暂停；命令 --scrub 可覆盖）"),
+                        "回看默认开启拖动（按住 Ctrl 进入拖动模式，W/S 前后、Shift 加速、空格暂停；命令 --scrub 可覆盖）"),
                 ConfigEntry.bool("view.aim.enabled", false, "回看",
                         "回看默认自动瞄准（命令 --aim 可覆盖）"),
                 ConfigEntry.decimal("view.aim.deadzone", 6.0, 2.0, 45.0, "回看",
@@ -104,6 +104,11 @@ public final class ConfigSchema {
                         "自动瞄准最大角速度（度/秒）"),
                 ConfigEntry.bool("view.aim.pitch", true, "回看",
                         "自动瞄准是否包含俯仰角"),
+                ConfigEntry.choice("view.aim.mode", "snap", List.of("snap", "smooth"), "回看",
+                        "自动瞄准方式：snap = 按 view.aim.hz 快速对准（默认，避免缓慢拖动导致头晕）；"
+                                + "smooth = 按最大角速度平滑转动"),
+                ConfigEntry.integer("view.aim.hz", 5, 2, 20, "回看",
+                        "snap 模式每秒对准次数（2~5 最自然，20 接近每 tick 跟踪）"),
                 ConfigEntry.bool("view.allowEquipmentDrop", true, "回看",
                         "捕捉后变成普通实体的人偶死亡时是否掉落录制装备（F-107；"
                                 + "回看停止/人偶 discard 永不掉落）"),
@@ -295,8 +300,9 @@ public final class ConfigSchema {
             entries.add(ConfigEntry.stringList("patternDirections." + pattern[0],
                     ClaimRangeConfig.DEFAULT_PATTERN_DIRECTIONS.get(pattern[0]), "图案方向",
                     pattern[1] + "（" + pattern[0] + "）：该图案在单位长度上的延伸方向"
-                            + "（north/northeast/east/southeast/south/southwest/west/northwest）；"
-                            + "颜色只负责延长这些方向，图案本身不决定距离"));
+                            + "（north/northeast/east/southeast/south/southwest/west/northwest/center）；"
+                            + "center = 中心/闭合，把同层射线末端连成环并填充，"
+                            + "全边框八向 + center 就是完整正方形；颜色只负责延长这些方向，图案本身不决定距离"));
         }
         return entries;
     }

@@ -666,70 +666,113 @@ function buildCurve(file, entry, value) {
   const key = valueKey(file.id, entry.path);
   const wrap = document.createElement('div');
   wrap.className = 'curve-editor';
-  const rowsEl = document.createElement('div');
-  rowsEl.className = 'curve-rows';
+
+  const chartWrap = document.createElement('div');
+  chartWrap.className = 'curve-chart-wrap';
+  const chart = document.createElement('canvas');
+  chart.className = 'curve-chart';
+  chart.tabIndex = 0;
+  chart.setAttribute('role', 'img');
+  chart.title = '拖动圆点修改曲线：横向 = 年龄上限（天），纵向 = 保留比例；右键删除圆点';
+  const readout = document.createElement('div');
+  readout.className = 'curve-readout';
+  chartWrap.append(chart, readout);
+
   const actions = document.createElement('div');
   actions.className = 'curve-actions';
   const add = document.createElement('button');
   add.type = 'button';
   add.className = 'ghost';
   add.textContent = '+ 增加一档';
+  const remove = document.createElement('button');
+  remove.type = 'button';
+  remove.className = 'ghost';
+  remove.textContent = '删除选中';
   const hint = document.createElement('span');
   hint.className = 'muted small';
-  hint.textContent = 'ageDays 严格递增；最后一档可为 0（表示“更老”）；keepRatio 单调不增';
-  actions.append(add, hint);
+  hint.textContent = '拖动圆点即可修改：横向 = 年龄上限（天），纵向 = 保留比例。最后一档固定在右边缘，表示“更老”。';
+  actions.append(add, remove, hint);
+
   const error = document.createElement('div');
   error.className = 'curve-error';
   error.setAttribute('role', 'alert');
   const estimate = document.createElement('div');
   estimate.className = 'curve-estimate';
-  wrap.append(rowsEl, actions, error, estimate);
+  wrap.append(chartWrap, actions, error, estimate);
 
   const initial = Array.isArray(value) ? value : (entry.default || []);
   let points = initial.map((item) => ({
     ageDays: Number(item && item.ageDays),
     keepRatio: Number(item && item.keepRatio),
-  }));
+  })).filter((point) => Number.isFinite(point.ageDays) && Number.isFinite(point.keepRatio));
   if (points.length === 0) points = [{ ageDays: 7, keepRatio: 1 }];
+  points.sort((a, b) => {
+    // 末尾的 ageDays=0 表示“更老”，始终排在最后；其余按年龄升序
+    if (a.ageDays === 0 && b.ageDays !== 0) return 1;
+    if (b.ageDays === 0 && a.ageDays !== 0) return -1;
+    return a.ageDays - b.ageDays;
+  });
+  let selected = Math.min(1, points.length - 1);
+  let hover = -1;
+  let drag = null;
   let estimateTimer = 0;
+  let maxDays = 30;
 
-  const readRows = () => {
-    const out = [];
-    for (const row of rowsEl.querySelectorAll('.curve-row')) {
-      const age = Number(row.querySelector('.curve-age').value);
-      const ratio = Number(row.querySelector('.curve-ratio').value);
-      out.push({ ageDays: age, keepRatio: ratio });
+  const PAD = { left: 46, right: 18, top: 18, bottom: 30 };
+  const HEIGHT = 260;
+
+  const layout = () => {
+    const width = Math.max(280, chart.clientWidth || chart.parentElement?.clientWidth || 640);
+    const dpr = window.devicePixelRatio || 1;
+    if (chart.width !== Math.round(width * dpr) || chart.height !== Math.round(HEIGHT * dpr)) {
+      chart.width = Math.round(width * dpr);
+      chart.height = Math.round(HEIGHT * dpr);
     }
-    return out;
+    chart.style.height = HEIGHT + 'px';
+    return {
+      width,
+      height: HEIGHT,
+      left: PAD.left,
+      right: width - PAD.right,
+      top: PAD.top,
+      bottom: HEIGHT - PAD.bottom,
+    };
   };
 
-  const markRows = (rows, errors) => {
-    let previousAge = -1;
-    let previousRatio = 1;
-    rows.forEach((point, index) => {
-      const row = rowsEl.querySelectorAll('.curve-row')[index];
-      if (!row) return;
-      const ageInput = row.querySelector('.curve-age');
-      const ratioInput = row.querySelector('.curve-ratio');
-      const last = index === rows.length - 1;
-      const ageBad = !Number.isInteger(point.ageDays) || point.ageDays < 0
-        || (last ? (point.ageDays !== 0 && point.ageDays <= previousAge)
-          : (point.ageDays <= 0 || point.ageDays <= previousAge));
-      const ratioBad = !Number.isFinite(point.keepRatio)
-        || point.keepRatio < 0 || point.keepRatio > 1
-        || point.keepRatio > previousRatio + 1e-9;
-      ageInput.classList.toggle('invalid', ageBad);
-      ratioInput.classList.toggle('invalid', ratioBad);
-      const preview = row.querySelector('.curve-preview');
-      if (preview) {
-        preview.textContent = Number.isFinite(point.keepRatio)
-          ? Math.round(point.keepRatio * 100) + '%' : '—';
-      }
-      previousAge = Math.max(previousAge, point.ageDays);
-      previousRatio = point.keepRatio;
-    });
-    return errors;
+  const plotWidth = (box) => Math.max(10, box.right - box.left);
+  const plotHeight = (box) => Math.max(10, box.bottom - box.top);
+
+  const recomputeMaxDays = () => {
+    let limit = 7;
+    for (const point of points) {
+      if (point.ageDays > 0) limit = Math.max(limit, point.ageDays);
+    }
+    maxDays = Math.max(10, Math.ceil(limit * 1.18));
   };
+
+  const xOf = (index, box, span) => {
+    const point = points[index];
+    if (index === points.length - 1 || point.ageDays === 0) return box.right;
+    return box.left + Math.min(1, Math.max(0, point.ageDays / span)) * plotWidth(box);
+  };
+  const yOf = (ratio, box) => box.top + (1 - Math.min(1, Math.max(0, ratio))) * plotHeight(box);
+
+  const ageAt = (px, box, span) => {
+    const ratio = (px - box.left) / plotWidth(box);
+    return Math.max(1, Math.round(ratio * span));
+  };
+
+  const niceStep = (span) => {
+    const target = span / 6;
+    const candidates = [1, 2, 5, 10, 20, 30, 50, 100, 200, 500, 1000, 2000, 5000];
+    for (const step of candidates) if (step >= target) return step;
+    return 10000;
+  };
+
+  const readRows = () => points.map((point) => ({
+    ageDays: point.ageDays,
+    keepRatio: point.keepRatio,
+  }));
 
   const validate = (rows) => {
     const errors = [];
@@ -764,11 +807,11 @@ function buildCurve(file, entry, value) {
   };
 
   const humanBytes = (bytes) => {
-    const value = Number(bytes) || 0;
-    if (value >= 1073741824) return (value / 1073741824).toFixed(2) + ' GiB';
-    if (value >= 1048576) return (value / 1048576).toFixed(2) + ' MiB';
-    if (value >= 1024) return (value / 1024).toFixed(1) + ' KiB';
-    return value + ' B';
+    const number = Number(bytes) || 0;
+    if (number >= 1073741824) return (number / 1073741824).toFixed(2) + ' GiB';
+    if (number >= 1048576) return (number / 1048576).toFixed(2) + ' MiB';
+    if (number >= 1024) return (number / 1024).toFixed(1) + ' KiB';
+    return number + ' B';
   };
 
   const renderEstimate = (data) => {
@@ -831,9 +874,7 @@ function buildCurve(file, entry, value) {
   };
 
   const apply = () => {
-    points = readRows();
     const errors = validate(points);
-    markRows(points, errors);
     if (errors.length > 0) {
       error.textContent = errors[0];
       state.invalidCurves.add(key);
@@ -848,83 +889,244 @@ function buildCurve(file, entry, value) {
     fetchEstimate(points);
   };
 
-  const renderRows = () => {
-    rowsEl.replaceChildren();
+  const syncReadout = () => {
+    readout.replaceChildren();
     points.forEach((point, index) => {
-      const row = document.createElement('div');
-      row.className = 'curve-row';
-      const ageLabel = document.createElement('label');
-      ageLabel.textContent = '年龄上限';
-      const age = document.createElement('input');
-      age.type = 'number';
-      age.min = '0';
-      age.step = '1';
-      age.className = 'curve-age';
-      age.value = String(point.ageDays);
-      age.title = 'ageDays（天）；最后一档填 0 表示“更老”';
-      const ageUnit = document.createElement('span');
-      ageUnit.className = 'muted small';
-      ageUnit.textContent = '天';
-      const ratioLabel = document.createElement('label');
-      ratioLabel.textContent = '保留比例';
-      const ratio = document.createElement('input');
-      ratio.type = 'number';
-      ratio.min = '0';
-      ratio.max = '1';
-      ratio.step = '0.01';
-      ratio.className = 'curve-ratio';
-      ratio.value = String(point.keepRatio);
-      ratio.title = 'keepRatio（0~1，单调不增）';
-      const preview = document.createElement('span');
-      preview.className = 'curve-preview';
-      const remove = document.createElement('button');
-      remove.type = 'button';
-      remove.className = 'ghost';
-      remove.textContent = '删除';
-      remove.disabled = points.length <= 1;
-      remove.addEventListener('click', () => {
-        points.splice(index, 1);
-        renderRows();
-        apply();
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'curve-chip' + (index === selected ? ' selected' : '');
+      chip.textContent = (point.ageDays === 0 ? '更老' : '≤ ' + point.ageDays + ' 天')
+        + ' · ' + Math.round(point.keepRatio * 100) + '%';
+      chip.addEventListener('click', () => {
+        selected = index;
+        draw();
       });
-      age.addEventListener('input', apply);
-      ratio.addEventListener('input', apply);
-      ageLabel.append(age, ageUnit);
-      ratioLabel.append(ratio, preview);
-      row.append(ageLabel, ratioLabel, remove);
-      rowsEl.append(row);
+      readout.append(chip);
     });
-    markRows(points, validate(points));
+    remove.disabled = points.length <= 1;
+    chart.dataset.points = JSON.stringify(points);
   };
 
-  add.addEventListener('click', () => {
-    const rows = readRows();
-    const last = rows[rows.length - 1];
-    let insertAt = rows.length;
-    let age = 30;
-    if (last && last.ageDays === 0) {
-      insertAt = rows.length - 1;
-      const previous = rows.length >= 2 ? rows[rows.length - 2].ageDays : 0;
-      age = Math.max(1, previous + 30);
-    } else if (last) {
-      age = Math.max(1, last.ageDays + 30);
+  const draw = () => {
+    const box = layout();
+    const span = maxDays;
+    const dpr = window.devicePixelRatio || 1;
+    const ctx = chart.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, box.width, box.height);
+
+    const styles = getComputedStyle(document.documentElement);
+    const ink = styles.getPropertyValue('--text').trim() || '#e2e8f0';
+    const muted = styles.getPropertyValue('--muted').trim() || '#94a3b8';
+    const line = styles.getPropertyValue('--line').trim() || 'rgba(148,163,184,.25)';
+    const accent = styles.getPropertyValue('--accent').trim() || '#5eead4';
+    const amber = '#fbbf24';
+
+    // 网格
+    ctx.font = '11px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.fillStyle = muted;
+    ctx.strokeStyle = line;
+    ctx.lineWidth = 1;
+    const step = niceStep(span);
+    for (let age = 0; age <= span; age += step) {
+      const x = box.left + (age / span) * plotWidth(box);
+      ctx.beginPath();
+      ctx.moveTo(x, box.top);
+      ctx.lineTo(x, box.bottom);
+      ctx.stroke();
+      ctx.textAlign = 'center';
+      ctx.fillText(String(age), x, box.bottom + 16);
     }
-    rows.splice(insertAt, 0, {
-      ageDays: age,
-      keepRatio: last && Number.isFinite(last.keepRatio) ? last.keepRatio : 1,
+    for (const ratio of [0, 0.25, 0.5, 0.75, 1]) {
+      const y = yOf(ratio, box);
+      ctx.beginPath();
+      ctx.moveTo(box.left, y);
+      ctx.lineTo(box.right, y);
+      ctx.stroke();
+      ctx.textAlign = 'right';
+      ctx.fillText(Math.round(ratio * 100) + '%', box.left - 8, y + 4);
+    }
+    ctx.textAlign = 'center';
+    ctx.fillText('年龄（天）', box.left + plotWidth(box) / 2, box.height - 6);
+
+    // 阶梯曲线：每一档的保留比例覆盖到该档年龄上限
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    let previousX = box.left;
+    points.forEach((point, index) => {
+      const isLast = index === points.length - 1;
+      const x = isLast ? box.right : xOf(index, box, span);
+      const y = yOf(point.keepRatio, box);
+      if (index === 0) {
+        ctx.moveTo(previousX, y);
+      } else {
+        const previousY = yOf(points[index - 1].keepRatio, box);
+        ctx.lineTo(previousX, previousY);
+        ctx.lineTo(x, previousY);
+      }
+      ctx.lineTo(x, y);
+      previousX = x;
     });
-    points = rows;
-    renderRows();
+    ctx.lineTo(box.right, yOf(points[points.length - 1].keepRatio, box));
+    ctx.stroke();
+
+    // 圆点
+    points.forEach((point, index) => {
+      const x = xOf(index, box, span);
+      const y = yOf(point.keepRatio, box);
+      const isSelected = index === selected;
+      const isHover = index === hover;
+      ctx.beginPath();
+      ctx.arc(x, y, isSelected ? 7 : isHover ? 6 : 5, 0, Math.PI * 2);
+      ctx.fillStyle = isSelected ? amber : accent;
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(15,23,42,.85)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      const label = point.ageDays === 0 ? '更老' : point.ageDays + '天';
+      ctx.fillStyle = isSelected ? amber : ink;
+      ctx.textAlign = index === points.length - 1 ? 'right' : 'center';
+      ctx.fillText(label, x, Math.max(box.top + 12, y - 12));
+    });
+
+    syncReadout();
+    chart.setAttribute('aria-label', points.map((point) => (point.ageDays === 0
+      ? '更老 ' + Math.round(point.keepRatio * 100) + '%'
+      : '≤' + point.ageDays + ' 天 ' + Math.round(point.keepRatio * 100) + '%')).join('，'));
+  };
+
+  const hitTest = (event) => {
+    const box = layout();
+    const rect = chart.getBoundingClientRect();
+    const px = event.clientX - rect.left;
+    const py = event.clientY - rect.top;
+    let best = -1;
+    let bestDistance = 14;
+    points.forEach((point, index) => {
+      const dx = px - xOf(index, box, maxDays);
+      const dy = py - yOf(point.keepRatio, box);
+      const distance = Math.hypot(dx, dy);
+      if (distance <= bestDistance) {
+        bestDistance = distance;
+        best = index;
+      }
+    });
+    return best;
+  };
+
+  const applyDrag = (event) => {
+    if (!drag) return;
+    const index = drag.index;
+    const box = drag.box;
+    const rect = chart.getBoundingClientRect();
+    const px = event.clientX - rect.left;
+    const py = event.clientY - rect.top;
+    const point = points[index];
+    const last = index === points.length - 1;
+    if (!last) {
+      const minAge = index === 0 ? 1 : points[index - 1].ageDays + 1;
+      const nextAge = index + 1 < points.length ? points[index + 1].ageDays : 0;
+      const maxAge = nextAge > 0 ? Math.max(minAge, nextAge - 1) : drag.span;
+      point.ageDays = Math.min(maxAge, Math.max(minAge, ageAt(px, box, drag.span)));
+    }
+    const maxRatio = index === 0 ? 1 : points[index - 1].keepRatio;
+    const minRatio = index + 1 < points.length ? points[index + 1].keepRatio : 0;
+    const ratio = 1 - (py - box.top) / plotHeight(box);
+    point.keepRatio = Math.round(Math.min(maxRatio, Math.max(minRatio, ratio)) * 100) / 100;
+    draw();
+  };
+
+  chart.addEventListener('pointerdown', (event) => {
+    if (event.button === 2) return;
+    const index = hitTest(event);
+    if (index < 0) return;
+    event.preventDefault();
+    selected = index;
+    drag = { index, span: maxDays, box: layout() };
+    chart.setPointerCapture?.(event.pointerId);
+    draw();
+  });
+  chart.addEventListener('pointermove', (event) => {
+    if (drag) {
+      applyDrag(event);
+      return;
+    }
+    const index = hitTest(event);
+    if (index !== hover) {
+      hover = index;
+      draw();
+    }
+    chart.style.cursor = index >= 0 ? 'grab' : 'default';
+  });
+  const endDrag = (event) => {
+    if (!drag) return;
+    drag = null;
+    chart.releasePointerCapture?.(event.pointerId);
+    recomputeMaxDays();
     apply();
+    draw();
+  };
+  chart.addEventListener('pointerup', endDrag);
+  chart.addEventListener('pointercancel', endDrag);
+  chart.addEventListener('contextmenu', (event) => {
+    const index = hitTest(event);
+    if (index < 0 || points.length <= 1) return;
+    event.preventDefault();
+    points.splice(index, 1);
+    selected = Math.max(0, Math.min(selected, points.length - 1));
+    apply();
+    draw();
+  });
+  chart.addEventListener('mouseleave', () => {
+    if (!drag && hover !== -1) {
+      hover = -1;
+      draw();
+    }
+  });
+  chart.addEventListener('keydown', (event) => {
+    if (event.key !== 'Delete' && event.key !== 'Backspace') return;
+    if (points.length <= 1) return;
+    event.preventDefault();
+    points.splice(selected, 1);
+    selected = Math.max(0, Math.min(selected, points.length - 1));
+    apply();
+    draw();
+  });
+  window.addEventListener('resize', draw);
+
+  add.addEventListener('click', () => {
+    const last = points[points.length - 1];
+    const insertAt = last && last.ageDays === 0 ? points.length - 1 : points.length;
+    const previous = insertAt > 0 ? points[insertAt - 1].ageDays : 0;
+    const next = insertAt < points.length ? points[insertAt].ageDays : 0;
+    let age = Math.max(1, previous + 30);
+    if (next > 0) age = Math.max(previous + 1, Math.min(next - 1, age));
+    points.splice(insertAt, 0, {
+      ageDays: age,
+      keepRatio: insertAt > 0 ? points[insertAt - 1].keepRatio : 1,
+    });
+    selected = insertAt;
+    recomputeMaxDays();
+    apply();
+    draw();
+  });
+
+  remove.addEventListener('click', () => {
+    if (points.length <= 1) return;
+    points.splice(selected, 1);
+    selected = Math.max(0, Math.min(selected, points.length - 1));
+    apply();
+    draw();
   });
 
   curveEstimators.set(key, () => fetchEstimate(readRows()));
 
-  renderRows();
+  recomputeMaxDays();
+  draw();
   apply();
   return wrap;
 }
-
 
 
 const DYE_PALETTE = [
@@ -978,14 +1180,14 @@ const CLAIM_PATTERNS = {
 
 const CLAIM_DIRECTION_NAMES = [
   'north', 'northeast', 'east', 'southeast',
-  'south', 'southwest', 'west', 'northwest',
+  'south', 'southwest', 'west', 'northwest', 'center',
 ];
-const CLAIM_DIRECTION_LABELS = ['北', '东北', '东', '东南', '南', '西南', '西', '西北'];
-const CLAIM_DIRECTION_GLYPHS = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖'];
-// 3×3 罗盘位置：列、行（1-based）
+const CLAIM_DIRECTION_LABELS = ['北', '东北', '东', '东南', '南', '西南', '西', '西北', '中心/闭合'];
+const CLAIM_DIRECTION_GLYPHS = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖', '■'];
+// 3×3 罗盘位置：列、行（1-based）；center 占正中间
 const CLAIM_DIRECTION_CELLS = [
   [2, 1], [3, 1], [3, 2], [3, 3],
-  [2, 3], [1, 3], [1, 2], [1, 1],
+  [2, 3], [1, 3], [1, 2], [1, 1], [2, 2],
 ];
 const DEFAULT_CLAIM_PATTERN_DIRECTIONS = {
   stripe_top: ['north'],
@@ -1002,7 +1204,7 @@ const DEFAULT_CLAIM_PATTERN_DIRECTIONS = {
   stripe_middle: ['east', 'west'],
   cross: ['northeast', 'southeast', 'southwest', 'northwest'],
   straight_cross: ['north', 'east', 'south', 'west'],
-  border: ['north', 'northeast', 'east', 'southeast', 'south', 'southwest', 'west', 'northwest'],
+  border: ['north', 'northeast', 'east', 'southeast', 'south', 'southwest', 'west', 'northwest', 'center'],
 };
 
 const CLAIM_FACINGS = [
@@ -1253,7 +1455,7 @@ function openPatternGrid(anchor, options) {
 
   const foot = document.createElement('div');
   foot.className = 'claim-popover-foot';
-  foot.textContent = '图案只决定射线方向；图案颜色决定射线长度（区块）。单面旗帜永远只有线。';
+  foot.textContent = '图案决定单位方向；“中心/闭合”会把射线末端连成环。图案颜色决定射线长度（区块）。';
 
   pop.append(head, grid, foot);
   mountClaimPopover(pop, anchor, buttons.find((button) => button.dataset.pattern === selected) || buttons[0]);
@@ -1592,8 +1794,9 @@ function patternDirectionsEditor(file, entries, onTrial) {
   const note = document.createElement('div');
   note.className = 'pattern-directions-note';
   note.textContent = '统一采用“看旗人正面视角”：图标上方 = 北，下方 = 南，左侧 = 西，右侧 = 东。'
-      + '点 3×3 罗盘上的方向即可开关。例如“全边框”默认八向全开，用白色图案颜色就向八方各延伸 1 格，'
-      + '用黑色则各延伸 16 格；图案本身不配置距离。点“试用”可把该图案放到下方调试画布。';
+      + '点 3×3 罗盘上的方向即可开关；正中间的“■ 中心/闭合”会把同层射线末端连成环并填充内部。'
+      + '例如“全边框”默认八向 + 中心，白色图案颜色就是 3×3，黑色则 33×33；'
+      + '交叉 / 正向十字 / 条纹 / 角默认不选中心，保持原来的线形。点“试用”可把该图案放到下方调试画布。';
 
   const grid = document.createElement('div');
   grid.className = 'pattern-direction-grid';
@@ -1621,10 +1824,11 @@ function patternDirectionsEditor(file, entries, onTrial) {
     const picker = document.createElement('div');
     picker.className = 'pattern-direction-picker';
     const buttons = [];
-    for (let direction = 0; direction < 8; direction += 1) {
+    for (let direction = 0; direction < CLAIM_DIRECTION_NAMES.length; direction += 1) {
       const button = document.createElement('button');
       button.type = 'button';
-      button.className = 'pattern-direction-cell';
+      button.className = 'pattern-direction-cell'
+        + (CLAIM_DIRECTION_NAMES[direction] === 'center' ? ' center' : '');
       button.textContent = CLAIM_DIRECTION_GLYPHS[direction];
       button.title = CLAIM_DIRECTION_LABELS[direction];
       button.style.gridColumn = String(CLAIM_DIRECTION_CELLS[direction][0]);
@@ -1641,13 +1845,6 @@ function patternDirectionsEditor(file, entries, onTrial) {
       picker.append(button);
       buttons.push(button);
     }
-    const center = document.createElement('span');
-    center.className = 'pattern-direction-center';
-    center.textContent = '·';
-    center.style.gridColumn = '2';
-    center.style.gridRow = '2';
-    center.setAttribute('aria-hidden', 'true');
-    picker.append(center);
 
     const setNames = (names) => {
       const normalized = normalizeDirectionNames(names);
@@ -1776,7 +1973,7 @@ function claimRangePreview(file) {
   title.textContent = '保护范围调试画布';
   const sub = document.createElement('span');
   sub.className = 'muted small';
-  sub.textContent = '单面旗帜只画射线；多面旗帜的射线在全局闭合后才填充内部。滚轮缩放、空白处拖动平移、点击放置、拖动移动、右键或 R 旋转。';
+  sub.textContent = '射线 + “中心/闭合”会围成面并填充；多面旗帜的射线在全局闭合后也会填充内部。滚轮缩放、空白处拖动平移、点击放置、拖动移动、右键或 R 旋转。';
   titles.append(title, sub);
 
   const readValue = (path, fallback) => {
@@ -1796,6 +1993,10 @@ function claimRangePreview(file) {
       // 与服务端 ClaimRangeConfig.normalizeDirections 一致：配置为空时回退默认方向。
       const configured = normalizeDirectionNames(readValue('patternDirections.' + id,
           DEFAULT_CLAIM_PATTERN_DIRECTIONS[id] || []));
+      // 旧配置迁移：border 八向全开但没有 center 时按升级后语义补上中心。
+      if (id === 'border' && configured.length === 8 && !configured.includes('center')) {
+        configured.push('center');
+      }
       return [id, configured.length ? configured : (DEFAULT_CLAIM_PATTERN_DIRECTIONS[id] || [])];
     })),
   });
@@ -1953,7 +2154,7 @@ function claimRangePreview(file) {
   summary.className = 'claim-preview-summary';
   const legend = document.createElement('div');
   legend.className = 'claim-preview-legend';
-  legend.textContent = '绿色粒子 = 全局保护边界；青色射线 = 选中旗帜的单旗射线；琥珀色 = 选中旗帜范围。单旗只有线，多旗闭合才填充。';
+  legend.textContent = '绿色粒子 = 全局保护边界；青色射线 = 选中旗帜的单旗线段；琥珀色 = 选中旗帜范围。八向 + 中心会闭合成正方形。';
 
   section.append(head, toolbar, canvas, summary, legend);
 
@@ -1996,28 +2197,55 @@ function claimRangePreview(file) {
     return layers.reduce((max, layer) => Math.max(max, distanceOfColor(layer.color, cfg)), 1);
   };
 
-  const rotatedDirs = (patternId, facing, cfg) => {
+  const rotatedShape = (patternId, facing, cfg) => {
     const names = (cfg.patternDirections && cfg.patternDirections[patternId])
       || DEFAULT_CLAIM_PATTERN_DIRECTIONS[patternId] || [];
     const offset = CLAIM_FACINGS.find((item) => item.id === facing)?.offset || 0;
-    return normalizeDirectionNames(names)
-        .map((name) => CLAIM_DIRECTION_NAMES.indexOf(name))
-        .filter((index) => index >= 0)
-        .map((index) => (index + offset) % 8);
+    const rays = [];
+    let center = false;
+    for (const name of normalizeDirectionNames(names)) {
+      const index = CLAIM_DIRECTION_NAMES.indexOf(name);
+      if (name === 'center') {
+        center = true;
+      } else if (index >= 0) {
+        const rotated = (index + offset) % 8;
+        if (!rays.includes(rotated)) rays.push(rotated);
+      }
+    }
+    rays.sort((a, b) => a - b);
+    return { rays, center };
   };
 
-  /** 单面旗帜：只返回射线格（含中心），绝不填充。 */
+  /** 单面旗帜的线段：基础射线 + 可选的中心闭合环（与服务端 ClaimShape 同源）。 */
+  const shapeSegments = (banner, cfg) => {
+    const out = [];
+    for (const layer of banner.patterns || []) {
+      const distance = distanceOfColor(layer.color, cfg);
+      const shape = rotatedShape(layer.id, banner.facing, cfg);
+      for (const index of shape.rays) {
+        const dir = CLAIM_DIRECTIONS[index];
+        out.push([banner.x, banner.z,
+          banner.x + dir.dx * distance, banner.z + dir.dz * distance]);
+      }
+      if (shape.center && shape.rays.length >= 3) {
+        for (let i = 0; i < shape.rays.length; i += 1) {
+          const from = CLAIM_DIRECTIONS[shape.rays[i]];
+          const to = CLAIM_DIRECTIONS[shape.rays[(i + 1) % shape.rays.length]];
+          out.push([banner.x + from.dx * distance, banner.z + from.dz * distance,
+            banner.x + to.dx * distance, banner.z + to.dz * distance]);
+        }
+      }
+    }
+    return out;
+  };
+
+  /** 单面旗帜：射线 + 中心闭合环（含中心），绝不单独填充。 */
   const cellsFor = (banner, cfg) => {
     const cells = new Set();
     cells.add(banner.x + ',' + banner.z);
-    for (const layer of banner.patterns || []) {
-      const distance = distanceOfColor(layer.color, cfg);
-      for (const index of rotatedDirs(layer.id, banner.facing, cfg)) {
-        const dir = CLAIM_DIRECTIONS[index];
-        addLineCells(banner.x, banner.z,
-            banner.x + dir.dx * distance, banner.z + dir.dz * distance,
-            (x, z) => cells.add(x + ',' + z));
-      }
+    for (const segment of shapeSegments(banner, cfg)) {
+      addLineCells(segment[0], segment[1], segment[2], segment[3],
+          (x, z) => cells.add(x + ',' + z));
     }
     return cells;
   };
@@ -2181,14 +2409,8 @@ function claimRangePreview(file) {
     const adj = new Map();
     for (const banner of banners) {
       addGraphPoint(points, banner.x, banner.z);
-      for (const layer of banner.patterns || []) {
-        const distance = distanceOfColor(layer.color, cfg);
-        for (const index of rotatedDirs(layer.id, banner.facing, cfg)) {
-          const direction = CLAIM_DIRECTIONS[index];
-          rasterLine(points, adj, banner.x, banner.z,
-              banner.x + direction.dx * distance,
-              banner.z + direction.dz * distance);
-        }
+      for (const segment of shapeSegments(banner, cfg)) {
+        rasterLine(points, adj, segment[0], segment[1], segment[2], segment[3]);
       }
     }
     const cells = new Set(points);
@@ -2321,8 +2543,11 @@ function claimRangePreview(file) {
         const dye = DYE_PALETTE[layer.color] || { name: '颜色 ' + layer.color };
         return (CLAIM_PATTERNS[layer.id]?.label || layer.id) + '/' + dye.name;
       }).join(' + ');
-      const dirs = [...new Set(layers.flatMap((layer) => rotatedDirs(layer.id, banner.facing, cfg)))]
-          .map((index) => CLAIM_DIRECTION_LABELS[index]).join('+') || '无方向';
+      const shapes = layers.map((layer) => rotatedShape(layer.id, banner.facing, cfg));
+      const dirs = [...new Set(shapes.flatMap((shape) => shape.rays))]
+          .map((index) => CLAIM_DIRECTION_LABELS[index])
+          .concat(shapes.some((shape) => shape.center) ? ['中心/闭合'] : [])
+          .join('+') || '无方向';
       const facingLabel = CLAIM_FACINGS.find((item) => item.id === banner.facing)?.label || '北';
       text += ' · 选中：' + (layerText || '无图案')
           + ' · 旗面' + baseDye.name

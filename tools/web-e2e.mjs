@@ -812,10 +812,23 @@ async function main() {
         ? composer.querySelector('[data-role="layer-pattern-trigger"] .claim-trigger-label')?.textContent || ''
         : '';
 
-      // 单旗 border + 白色（距离 1）= 中心 + 8 条射线 = 9，不应是 3×3 填充
+      // 单旗 border + 白色（距离 1）= 3×3 闭合正方形 = 9，而不是八向星形
       const summary = () => document.querySelector('.claim-preview-summary')?.textContent || '';
       const borderSummary = summary();
       const borderCells = Number(canvas.dataset.protectedCells);
+
+      // 单旗 border + 橙色（距离 2）= 5×5 闭合正方形 = 25
+      const borderColorTrigger = preview.querySelector('[data-role="canvas-pattern-color-trigger"]');
+      borderColorTrigger.click();
+      await wait(140);
+      document.querySelector('.claim-color-popover .claim-color-cell[data-index="1"]')?.click();
+      await wait(180);
+      const border5Summary = summary();
+      const border5Cells = Number(canvas.dataset.protectedCells);
+      borderColorTrigger.click();
+      await wait(140);
+      document.querySelector('.claim-color-popover .claim-color-cell[data-index="0"]')?.click();
+      await wait(180);
 
       // 单旗 cross + 白色 = 中心 + 4 条斜向射线 = 5
       patternTrigger.click();
@@ -949,7 +962,7 @@ async function main() {
         patternGridColumns,
         patternClosed,
         composerSelects, composerTriggers, composerCanvases, composerPatternText,
-        borderSummary, borderCells,
+        borderSummary, borderCells, border5Summary, border5Cells,
         crossSummary, crossCells,
         facingEast, rotated,
         beforeRadius, afterZoomRadius, beforeCenter, afterCenter,
@@ -988,8 +1001,10 @@ async function main() {
     check('合成器图案触发器带预览图标与图案名',
         claim.composerCanvases >= 1 && claim.composerPatternText.length > 0,
         'canvas=' + claim.composerCanvases + ' label=' + claim.composerPatternText);
-    check('单面 border 只出射线（9 格，不填充）', claim.borderCells === 9
+    check('单面 border 白色距离 1 = 3×3 正方形（9 格）', claim.borderCells === 9
         && claim.borderSummary.includes('保护 9 区块'), 'cells=' + claim.borderCells);
+    check('单面 border 橙色距离 2 = 5×5 正方形（25 格）', claim.border5Cells === 25
+        && claim.border5Summary.includes('保护 25 区块'), 'cells=' + claim.border5Cells);
     check('单面 cross 只出射线（5 格，不填充）', claim.crossCells === 5
         && claim.crossSummary.includes('保护 5 区块'), 'cells=' + claim.crossCells);
     check('朝向控件与画布同步（东）',
@@ -1150,6 +1165,7 @@ async function main() {
     check('玩家标记为头像 pin 且有本地回退', mapState.markerAvatar === true
         && mapState.markerTip === true
         && (mapState.markerAvatarSrc.startsWith('data:image/svg+xml')
+          || mapState.markerAvatarSrc.startsWith('data:image/png')
           || mapState.markerAvatarSrc.includes('/api/user/map/avatar')
           || mapState.markerAvatarSrc.includes('textures.minecraft.net'))
         && mapState.markerTransform !== 'none',
@@ -1186,6 +1202,7 @@ async function main() {
         players: Array.isArray(data.players) ? data.players.length : -1,
         entities: Array.isArray(data.entities) ? data.entities.length : -1,
         operations: Array.isArray(data.operations) ? data.operations.length : -1,
+        chatArray: Array.isArray(data.chat),
         playerTrailArray: Boolean(player && Array.isArray(player.trail)),
         entityTrailArray: Boolean(entity && Array.isArray(entity.trail)),
         sensitiveEntityUuid: Boolean(entity && entity.uuid),
@@ -1197,9 +1214,9 @@ async function main() {
         hasSeparationToggle: Boolean(document.getElementById('map-show-separation')),
       };
     })()`);
-    check('地图实时层 API 返回实体/轨迹/操作', liveMap.ok === true
+    check('地图实时层 API 返回实体/轨迹/操作/发言', liveMap.ok === true
         && liveMap.players >= 0 && liveMap.entities >= 1 && liveMap.operations >= 0
-        && liveMap.entityTrailArray, JSON.stringify(liveMap));
+        && liveMap.entityTrailArray && liveMap.chatArray, JSON.stringify(liveMap));
     check('地图实时层画布与开关可用', liveMap.liveCanvas && liveMap.liveStatus.includes('在线')
         && liveMap.hasEntityToggle && liveMap.hasTrailToggle && liveMap.hasSeparationToggle,
         JSON.stringify(liveMap));
@@ -1304,47 +1321,35 @@ async function main() {
       await wait(1800);
       const editor = document.querySelector('.curve-editor');
       if (!editor) return { found: false };
-      const rows = () => [...editor.querySelectorAll('.curve-row')];
-      const initialRows = rows().length;
+      const chart = editor.querySelector('.curve-chart');
+      const points = () => {
+        try { return JSON.parse(chart?.dataset.points || '[]'); } catch (e) { return []; }
+      };
+      const initialRows = points().length;
       const estimateText = editor.querySelector('.curve-estimate')?.textContent || '';
-      const firstRatio = editor.querySelector('.curve-ratio');
-      const original = firstRatio.value;
-      firstRatio.value = '1.5';
-      firstRatio.dispatchEvent(new Event('input', { bubbles: true }));
-      await wait(350);
-      const invalidError = editor.querySelector('.curve-error')?.textContent || '';
-      document.getElementById('save').click();
-      await wait(250);
-      const blocked = (document.getElementById('message')?.textContent || '').includes('阻止保存');
-      firstRatio.value = original;
-      firstRatio.dispatchEvent(new Event('input', { bubbles: true }));
-      await wait(350);
-      const fixedError = editor.querySelector('.curve-error')?.textContent || '';
-      const add = editor.querySelector('.curve-actions button');
+      const add = editor.querySelectorAll('.curve-actions button')[0];
       add.click();
-      await wait(200);
-      const addedRows = rows().length;
-      const lastRemove = rows()[rows().length - 1].querySelector('button');
-      lastRemove.click();
-      await wait(200);
-      const removedRows = rows().length;
+      await wait(300);
+      const addedRows = points().length;
+      const remove = editor.querySelectorAll('.curve-actions button')[1];
+      remove.click();
+      await wait(300);
+      const removedRows = points().length;
       const estimateAfter = editor.querySelector('.curve-estimate')?.textContent || '';
       return {
-        found: true, initialRows, estimateText, invalidError, blocked, fixedError,
-        addedRows, removedRows, estimateAfter,
+        found: true, hasCanvas: !!chart, initialRows, addedRows, removedRows,
+        estimateText, estimateAfter, aria: chart?.getAttribute('aria-label') || '',
       };
     })()`);
-    check('保留曲线使用逐行编辑器', curve.found === true && curve.initialRows >= 2,
-        JSON.stringify({ found: curve.found, rows: curve.initialRows }));
+    check('保留曲线使用坐标系拖拽编辑器', curve.found === true && curve.hasCanvas === true
+        && curve.initialRows >= 2, JSON.stringify({ found: curve.found, rows: curve.initialRows }));
     check('保留曲线初始容量预估可见',
         curve.estimateText.includes('容量预估') && curve.estimateText.includes('有限档稳态合计'),
         curve.estimateText.slice(0, 120));
-    check('非法保留曲线标红并阻止保存', curve.blocked === true
-        && curve.invalidError.includes('keepRatio'), curve.invalidError);
-    check('修正后校验恢复且可增删档位', curve.fixedError === ''
-        && curve.addedRows === curve.initialRows + 1
+    check('曲线编辑器提供可读的点位标签', curve.aria.includes('%'), curve.aria.slice(0, 120));
+    check('曲线编辑器可增删档位', curve.addedRows === curve.initialRows + 1
         && curve.removedRows === curve.initialRows,
-        JSON.stringify({ fixed: curve.fixedError, added: curve.addedRows, removed: curve.removedRows }));
+        JSON.stringify({ added: curve.addedRows, removed: curve.removedRows }));
     check('增删档位后容量预估刷新', curve.estimateAfter.includes('有限档稳态合计'),
         curve.estimateAfter.slice(0, 120));
 
@@ -1472,6 +1477,8 @@ async function main() {
       const header = document.querySelector('.app-header')?.getBoundingClientRect();
       const link = document.querySelector('.user-view-link')?.getBoundingClientRect();
       const userLive = await window.SamsaraUI.api('/api/user/map/live');
+      const userWorlds = await window.SamsaraUI.api('/api/user/worlds');
+      const worldStacks = Array.isArray(userWorlds.stacks) ? userWorlds.stacks : [];
       const livePlayers = Array.isArray(userLive.players) ? userLive.players : [];
       const liveEntities = Array.isArray(userLive.entities) ? userLive.entities : [];
       return {
@@ -1482,6 +1489,7 @@ async function main() {
         worldVisuals: document.querySelectorAll('#user-worlds .world-stack-card-visual').length,
         worldFrames: document.querySelectorAll('#user-worlds .world-stack-icon-frame').length,
         worldText: document.getElementById('user-worlds')?.textContent || '',
+        worldStacks,
         headerBottomGap: header && link ? Math.round(header.bottom - link.bottom) : -1,
         headerTopGap: header && link ? Math.round(link.top - header.top) : -1,
         horizontalOverflow: document.documentElement.scrollWidth
@@ -1489,6 +1497,9 @@ async function main() {
         mapStats: document.getElementById('map-stats')?.textContent.trim() || '',
         livePlayers: livePlayers.length,
         liveEntities: liveEntities.length,
+        liveChat: Array.isArray(userLive.chat) ? userLive.chat.length : -1,
+        liveChatHasUuid: Array.isArray(userLive.chat)
+          && userLive.chat.some((item) => 'uuid' in item || 'actorUuid' in item),
         liveHasUuid: livePlayers.some((item) => 'uuid' in item)
           || liveEntities.some((item) => 'uuid' in item),
         liveHasHealth: livePlayers.some((item) => 'health' in item)
@@ -1524,11 +1535,20 @@ async function main() {
           overflow: userPage.horizontalOverflow }));
     check('用户端地图复用玩家独立图层', userPage.mapStats.length > 0 && userPage.overlaySized,
         JSON.stringify({ stats: userPage.mapStats.slice(0, 80), overlay: userPage.overlaySized }));
-    check('用户端实时层保留实体/轨迹但不含 UUID/生命', userPage.liveEntities >= 1
+    check('用户端实时层保留实体/轨迹/发言但不含 UUID/生命', userPage.liveEntities >= 1
         && userPage.liveHasUuid === false
-        && userPage.liveHasHealth === false, JSON.stringify({ players: userPage.livePlayers,
+        && userPage.liveHasHealth === false
+        && userPage.liveChat >= 0 && userPage.liveChatHasUuid === false,
+        JSON.stringify({ players: userPage.livePlayers,
           entities: userPage.liveEntities, uuid: userPage.liveHasUuid,
-          health: userPage.liveHasHealth }));
+          health: userPage.liveHasHealth, chat: userPage.liveChat,
+          chatUuid: userPage.liveChatHasUuid }));
+    check('用户端世界栈栈顶在前、stack_0 在最后', userPage.worldStacks.length >= 1
+        && userPage.worldStacks[0].top === true
+        && userPage.worldStacks.every((stack, index) => index === 0
+          || Number(stack.index) < Number(userPage.worldStacks[index - 1].index))
+        && userPage.worldStacks.every((stack) => String(stack.label || '').length > 0),
+        JSON.stringify(userPage.worldStacks));
     check('用户端不加载管理端脚本/不调用管理 API', userPage.adminScript === false
         && userPage.adminCalls === 0, JSON.stringify({ script: userPage.adminScript,
           adminCalls: userPage.adminCalls }));

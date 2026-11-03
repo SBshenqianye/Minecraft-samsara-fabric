@@ -61,27 +61,41 @@ class ClaimShapeTest {
     // ========================================================================
 
     @Test
-    void border_singleBanner_isRaysOnly() {
+    void border_singleBanner_fillsSquare() {
         int d = 3;
-        Set<ChunkCoord> r = cells("border", d, "north");
+        Set<ChunkCoord> r = globalCells(List.of(new Banner(0, 0, "border", d)));
 
-        // 8 条射线 × 3 格 + 中心 = 25；不是 (2d+1)² = 49 的实心方形
-        assertEquals(25, r.size(), "单面 border 只应有 8 条射线 + 中心，共 25 格");
-        assertTrue(has(r, 0, 0), "中心必须存在");
-        for (int i = 1; i <= d; i++) {
-            assertTrue(has(r, 0, -i), "北向射线缺少 (0," + (-i) + ")");
-            assertTrue(has(r, i, -i), "东北向射线缺少 (" + i + "," + (-i) + ")");
-            assertTrue(has(r, i, 0), "东向射线缺少 (" + i + ",0)");
-            assertTrue(has(r, i, i), "东南向射线缺少 (" + i + "," + i + ")");
-            assertTrue(has(r, 0, i), "南向射线缺少 (0," + i + ")");
-            assertTrue(has(r, -i, i), "西南向射线缺少 (" + (-i) + "," + i + ")");
-            assertTrue(has(r, -i, 0), "西向射线缺少 (" + (-i) + ",0)");
-            assertTrue(has(r, -i, -i), "西北向射线缺少 (" + (-i) + "," + (-i) + ")");
+        // 八向 + center：末端连成环，单面 border 自己就是 (2d+1)² = 49 的实心正方形。
+        assertEquals(49, r.size(), "单面 border 应形成 (2d+1)² 的正方形保护范围");
+        for (int x = -d; x <= d; x++) {
+            for (int z = -d; z <= d; z++) {
+                assertTrue(has(r, x, z), "正方形范围缺少 (" + x + "," + z + ")");
+            }
         }
-        // 射线之间的空白不能被填充
-        assertFalse(has(r, 2, 1), "border 单旗不应填充射线之间的区域");
-        assertFalse(has(r, 1, 2), "border 单旗不应填充射线之间的区域");
-        assertFalse(has(r, 4, 4), "射线终点之外不应有格");
+        assertFalse(has(r, d + 1, 0), "不应超出距离");
+    }
+
+    @Test
+    void border_distanceTwo_isFiveByFive() {
+        Set<ChunkCoord> r = globalCells(List.of(new Banner(0, 0, "border", 2)));
+        assertEquals(25, r.size(), "全边框距离 2 应是 5×5 = 25 格");
+        for (int x = -2; x <= 2; x++) {
+            for (int z = -2; z <= 2; z++) {
+                assertTrue(has(r, x, z), "5×5 缺少 (" + x + "," + z + ")");
+            }
+        }
+        assertFalse(has(r, 3, 0));
+        assertFalse(has(r, 2, 3));
+    }
+
+    @Test
+    void border_withoutCenter_stillRaysOnly() {
+        int d = 3;
+        Set<ChunkCoord> r = ClaimShape.cells("border", d, "north", List.of(
+                "north", "northeast", "east", "southeast",
+                "south", "southwest", "west", "northwest"));
+        assertEquals(25, r.size(), "去掉 center 后退回八向射线 + 中心，共 25 格");
+        assertFalse(has(r, 2, 1), "没有 center 时不能自己闭合");
     }
 
     @Test
@@ -228,25 +242,23 @@ class ClaimShapeTest {
     }
 
     @Test
-    void singleBanner_neverFillsEvenWithBorder() {
+    void singleBanner_borderClosesItself() {
         List<Banner> one = List.of(new Banner(0, 0, "border", 4));
         Set<ChunkCoord> r = globalCells(one);
         assertTrue(r.contains(new ChunkCoord(0, -4)));
-        assertFalse(r.contains(new ChunkCoord(2, 1)), "单面 border 不能自己形成面");
-        assertFalse(r.contains(new ChunkCoord(1, 2)), "单面 border 不能自己形成面");
+        assertTrue(r.contains(new ChunkCoord(2, 1)), "带 center 的 border 单旗应自己闭合");
+        assertTrue(r.contains(new ChunkCoord(1, 2)), "带 center 的 border 单旗应自己闭合");
     }
 
     @Test
     void multipleBanners_doNotFillWhenRaysDoNotClose() {
-        // 两面 border 相距很远，各自的射线都不闭合，合起来也不应填充。
+        // 两面 border 相距很远：每面各自闭合，但中间不应被连起来。
         List<Banner> banners = List.of(
                 new Banner(0, 0, "border", 3),
                 new Banner(20, 0, "border", 3));
         Set<ChunkCoord> r = globalCells(banners);
         assertTrue(r.contains(new ChunkCoord(3, 3)));
         assertTrue(r.contains(new ChunkCoord(23, 3)));
-        assertFalse(r.contains(new ChunkCoord(2, 1)), "没有闭合面时不应填充");
-        assertFalse(r.contains(new ChunkCoord(22, 1)), "没有闭合面时不应填充");
         assertFalse(r.contains(new ChunkCoord(10, 0)), "两面旗帜之间不应被填充");
     }
 
@@ -263,7 +275,7 @@ class ClaimShapeTest {
 
     @Test
     void differentColorDistances_unionOfRays() {
-        // 同一面旗帜上两个图案层使用不同颜色距离：只做射线并集。
+        // 同一面旗帜上两个图案层使用不同颜色距离：只做射线/闭合环并集。
         List<Banner> banners = List.of(new Banner(0, 0, "border", 2));
         Set<ChunkCoord> shortRays = globalCells(banners);
         assertTrue(shortRays.contains(new ChunkCoord(2, 2)));
@@ -272,6 +284,6 @@ class ClaimShapeTest {
         Set<ChunkCoord> longRays = globalCells(List.of(new Banner(0, 0, "border", 4)));
         assertTrue(longRays.contains(new ChunkCoord(4, 4)));
         assertFalse(longRays.contains(new ChunkCoord(5, 5)));
-        assertFalse(longRays.contains(new ChunkCoord(2, 1)), "距离变长也不应填充");
+        assertTrue(longRays.contains(new ChunkCoord(3, 1)), "更长距离的 border 仍应填满正方形");
     }
 }

@@ -8,6 +8,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -77,13 +78,17 @@ public final class WebUserService {
             return out;
         }
         StackManifest manifest = WorldStackManager.getInstance().manifest(server);
+        List<StackLayer> ordered = new ArrayList<>(manifest.layers);
+        // 用户视图：栈顶永远在最上面，stack_0 在最下面（index 越大 = 越靠上）。
+        ordered.sort(Comparator.comparingInt((StackLayer layer) -> layer.index).reversed());
         List<Map<String, Object>> stacks = new ArrayList<>();
-        for (StackLayer layer : manifest.layers) {
+        for (StackLayer layer : ordered) {
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("id", layer.id);
             item.put("index", layer.index);
             item.put("top", layer.top);
-            item.put("label", layer.top ? "world（栈顶）" : layer.id);
+            item.put("label", layer.top ? "当前世界（栈顶）"
+                    : "第 " + (layer.index + 1) + " 层世界（" + layer.id + "）");
             item.put("seed", layer.seed);
             item.put("online", onlineIn(layer));
             item.put("spawn", Map.of("x", layer.spawnX, "y", layer.spawnY, "z", layer.spawnZ));
@@ -224,6 +229,24 @@ public final class WebUserService {
             }
         }
         out.put("operations", operations);
+        List<Map<String, Object>> chat = new ArrayList<>();
+        Object rawChat = raw.get("chat");
+        if (rawChat instanceof List<?> list) {
+            for (Object value : list) {
+                if (!(value instanceof Map<?, ?> source)) continue;
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("timeMs", source.get("timeMs"));
+                item.put("name", source.get("name"));
+                item.put("text", source.get("text"));
+                item.put("stackId", source.get("stackId"));
+                item.put("dimension", source.get("dimension"));
+                item.put("x", source.get("x"));
+                item.put("y", source.get("y"));
+                item.put("z", source.get("z"));
+                chat.add(item);
+            }
+        }
+        out.put("chat", chat);
         return out;
     }
 

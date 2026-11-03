@@ -34,7 +34,7 @@ public final class ClaimRangeConfig {
     /** 图案在单位长度上的方向（世界方向，facing=north）；颜色只负责延长。 */
     public static final List<String> DIRECTION_NAMES = List.of(
             "north", "northeast", "east", "southeast",
-            "south", "southwest", "west", "northwest");
+            "south", "southwest", "west", "northwest", "center");
     public static final Map<String, List<String>> DEFAULT_PATTERN_DIRECTIONS = defaults();
     /** 圈地支持的 15 种旗帜图案；顺序与 Web 图案方向表一致。 */
     public static final List<String> PATTERN_IDS = List.of(
@@ -197,6 +197,9 @@ public final class ClaimRangeConfig {
                         config.stringList(id, "patternDirections." + pattern),
                         DEFAULT_PATTERN_DIRECTIONS.get(pattern)));
             }
+            // 旧配置迁移：border 八向全开但没有 center 时补上中心，升级后即为 5×5/7×7 正方形。
+            // 想保留八向星形可以显式保存一份不含 center 的方向列表。
+            migrateLegacyBorder(nextDirections);
             boolean changed = mode != nextMode
                     || fixedDistance != nextFixed
                     || maxDistance != nextMax
@@ -233,11 +236,34 @@ public final class ClaimRangeConfig {
         return List.copyOf(out);
     }
 
-    private static List<String> normalizeDirections(List<String> raw, List<String> fallback) {
-        if (raw == null || raw.isEmpty()) {
+    /**
+     * 旧 `claim-range.yml` 的 border 只有八向；升级后补 center，使单面全边框成为正方形。
+     * 只在「恰好八向、无 center」时触发，避免影响自定义方向。
+     */
+    private static void migrateLegacyBorder(Map<String, List<String>> directions) {
+        List<String> border = directions.get("border");
+        if (border == null || border.size() != DIRECTION_ORDER.size()
+                || border.contains("center")) {
+            return;
+        }
+        for (String direction : DIRECTION_ORDER) {
+            if (!border.contains(direction)) {
+                return;
+            }
+        }
+        List<String> upgraded = new ArrayList<>(border);
+        upgraded.add("center");
+        directions.put("border", List.copyOf(upgraded));
+    }
+
+    private static final List<String> DIRECTION_ORDER = List.of(
+            "north", "northeast", "east", "southeast",
+            "south", "southwest", "west", "northwest");
+
+    private static List<String> normalizeDirections(List<String> raw, List<String> fallback) {        if (raw == null || raw.isEmpty()) {
             return fallback == null ? List.of() : List.copyOf(fallback);
         }
-        List<String> out = new ArrayList<>(8);
+        List<String> out = new ArrayList<>(9);
         for (String name : DIRECTION_NAMES) {
             if (raw.stream().anyMatch(item -> item != null
                     && item.trim().equalsIgnoreCase(name)) && !out.contains(name)) {

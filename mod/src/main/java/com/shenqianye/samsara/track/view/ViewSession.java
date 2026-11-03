@@ -53,6 +53,9 @@ public final class ViewSession {
     double aimEdge = ViewOptions.DEFAULT_AIM_EDGE;
     double aimSpeed = ViewOptions.DEFAULT_AIM_SPEED;
     boolean aimPitch = true;
+    boolean aimSnap = true;
+    int aimHz = 5;
+    double aimSnapAccumSec = 1.0;
     long lastAimAtMs;
     ViewAim.Tracker aimTracker;
 

@@ -37,6 +37,19 @@ public final class ClaimShape {
             "north", "northeast", "east", "southeast",
             "south", "southwest", "west", "northwest");
 
+    /**
+     * 「中心 / 闭合」方向：不产生射线，而是把同一图案层的射线末端按角度顺序连成环。
+     * <p>
+     * 8 向 + 中心 = 正方形（border 用 d=2 就是 5×5）；4 正向 + 中心 = 菱形；
+     * 4 斜向 + 中心 = 旋转 45° 的正方形。中心方向至少要配合 3 个射线方向才生效。
+     */
+    public static final String CENTER = "center";
+
+    /** 3×3 单位方向全集（8 向 + 中心），用于配置校验与 Web 罗盘。 */
+    public static final List<String> ALL_DIRECTIONS = List.of(
+            "north", "northeast", "east", "southeast",
+            "south", "southwest", "west", "northwest", CENTER);
+
     /** 方向名 → 单位向量（x 向东，z 向南）。 */
     private static final Map<String, int[]> VECTORS;
 
@@ -62,7 +75,8 @@ public final class ClaimShape {
 
     static {
         Map<String, List<String>> defaults = new LinkedHashMap<>();
-        defaults.put("border", DIRECTION_ORDER);
+        // border = 八向 + 中心：末端连成环，单面旗帜即可围出 (2d+1)² 的正方形保护范围。
+        defaults.put("border", ALL_DIRECTIONS);
         defaults.put("cross", List.of("northeast", "southeast", "southwest", "northwest"));
         defaults.put("straight_cross", List.of("north", "east", "south", "west"));
         defaults.put("stripe_top", List.of("north"));
@@ -124,13 +138,33 @@ public final class ClaimShape {
         List<int[]> out = new ArrayList<>();
         int d = Math.max(0, distance);
         if (d == 0) return out;
-        for (String direction : effectiveDirections(patternId, directions)) {
+        List<String> normalized = effectiveDirections(patternId, directions);
+        List<String> rotatedRays = new ArrayList<>(8);
+        for (String direction : normalized) {
+            if (CENTER.equalsIgnoreCase(direction)) continue;
             String rotated = rotateDirection(direction, facing);
             int[] vector = VECTORS.get(rotated);
             if (vector == null) continue;
+            if (!rotatedRays.contains(rotated)) rotatedRays.add(rotated);
             out.add(new int[]{0, 0, vector[0] * d, vector[1] * d});
         }
+        if (containsCenter(normalized) && rotatedRays.size() >= 3) {
+            // 按固定方向顺序排列末端，连接成环；8 向在 d 距离上恰好是 (2d+1)² 正方形的边。
+            rotatedRays.sort((a, b) -> Integer.compare(DIRECTION_ORDER.indexOf(a), DIRECTION_ORDER.indexOf(b)));
+            for (int i = 0; i < rotatedRays.size(); i++) {
+                int[] from = VECTORS.get(rotatedRays.get(i));
+                int[] to = VECTORS.get(rotatedRays.get((i + 1) % rotatedRays.size()));
+                out.add(new int[]{from[0] * d, from[1] * d, to[0] * d, to[1] * d});
+            }
+        }
         return out;
+    }
+
+    /** 方向列表是否包含「中心 / 闭合」。 */
+    public static boolean containsCenter(List<String> directions) {
+        if (directions == null) return false;
+        return directions.stream().anyMatch(item -> item != null
+                && item.trim().equalsIgnoreCase(CENTER));
     }
 
     /**
@@ -183,11 +217,11 @@ public final class ClaimShape {
         return defaultDirections(patternId);
     }
 
-    /** 按 8 方向固定顺序去重、过滤未知名称。 */
+    /** 按 8 方向固定顺序 + 中心去重、过滤未知名称。 */
     public static List<String> normalize(List<String> directions) {
         if (directions == null || directions.isEmpty()) return List.of();
-        List<String> out = new ArrayList<>(8);
-        for (String name : DIRECTION_ORDER) {
+        List<String> out = new ArrayList<>(9);
+        for (String name : ALL_DIRECTIONS) {
             for (String raw : directions) {
                 if (raw != null && raw.trim().equalsIgnoreCase(name) && !out.contains(name)) {
                     out.add(name);

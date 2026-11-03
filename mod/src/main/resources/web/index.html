@@ -25,32 +25,41 @@
     </div>
 
     <nav class="top-tabs" aria-label="管理范围">
-      <button class="top-tab active" type="button" data-section="mods">模组 / 插件</button>
+      <button class="top-tab active" type="button" data-section="mods">samsara</button>
       <button class="top-tab" type="button" data-section="server">本体</button>
     </nav>
 
-    <nav id="mods-tabs" class="tabs" aria-label="页面">
-      <button class="tab" data-panel="panel-identity">
-        身份组 <span class="tab-count" id="identity-count">0</span>
-      </button>
-      <button class="tab active" data-panel="panel-config">
-        配置 <span class="tab-count" id="config-count">0</span>
-      </button>
-      <button class="tab" data-panel="panel-claim-range">
-        圈地范围 <span class="tab-count" id="claim-range-count">0</span>
-      </button>
-      <button class="tab" data-panel="panel-map">
-        地图 <span class="tab-count" id="map-count">0</span>
-      </button>
-      <button class="tab" data-panel="panel-world-stack">
-        世界栈 <span class="tab-count" id="world-stack-count">0</span>
-      </button>
-      <button class="tab" data-panel="panel-output">
-        输出格式 <span class="tab-count" id="output-count">0</span>
-      </button>
-      <button class="tab" data-panel="panel-permissions">
-        权限 <span class="tab-count" id="perm-count">0</span>
-      </button>
+    <nav id="mods-tabs" class="tabs tabs-grouped" aria-label="页面">
+      <div class="tab-group" role="group" aria-label="配置">
+        <span class="tab-group-label">配置</span>
+        <button class="tab active" data-panel="panel-config">
+          配置 <span class="tab-count" id="config-count">0</span>
+        </button>
+        <button class="tab" data-panel="panel-claim-range">
+          圈地范围 <span class="tab-count" id="claim-range-count">0</span>
+        </button>
+        <button class="tab" data-panel="panel-output">
+          输出格式 <span class="tab-count" id="output-count">0</span>
+        </button>
+        <button class="tab" data-panel="panel-permissions">
+          权限 <span class="tab-count" id="perm-count">0</span>
+        </button>
+      </div>
+      <div class="tab-group" role="group" aria-label="信息展示">
+        <span class="tab-group-label">信息展示</span>
+        <button class="tab" data-panel="panel-map">
+          地图 <span class="tab-count" id="map-count">0</span>
+        </button>
+      </div>
+      <div class="tab-group" role="group" aria-label="业务信息">
+        <span class="tab-group-label">业务信息</span>
+        <button class="tab" data-panel="panel-identity">
+          身份组 <span class="tab-count" id="identity-count">0</span>
+        </button>
+        <button class="tab" data-panel="panel-world-stack">
+          世界栈 <span class="tab-count" id="world-stack-count">0</span>
+        </button>
+      </div>
     </nav>
 
     <nav id="server-tabs" class="tabs" aria-label="本体页面" hidden>
@@ -248,9 +257,10 @@
           </div>
           <div class="map-activity-wrap">
             <div class="map-activity-head">
-              <strong>实时动态</strong>
+              <strong>在线玩家与最近方块操作</strong>
               <span id="map-live-status" class="muted small">读取中…</span>
             </div>
+            <p class="muted small" style="margin:0 0 8px">只显示当前已加载区块内的在线玩家、实体位置和最近方块操作，不是全服聊天/命令日志。</p>
             <div id="map-activity" class="map-activity"></div>
           </div>
           <div class="map-footer">
@@ -596,11 +606,37 @@
               </div>
             </div>
             <div class="console-quick" id="server-console-quick">
-              <button type="button" class="ghost" data-console-command="list">list</button>
-              <button type="button" class="ghost" data-console-command="save-all">save-all</button>
-              <button type="button" class="ghost" data-console-command="whitelist list">whitelist list</button>
-              <button type="button" class="ghost" data-console-command="samsara world list">world list</button>
-              <button type="button" class="ghost danger" data-console-command="stop">stop</button>
+              <div class="console-quick-group">
+                <span class="console-quick-label">服务器</span>
+                <button type="button" class="ghost" data-console-command="list" title="在线玩家列表">list</button>
+                <button type="button" class="ghost" data-console-command="save-all" title="立即保存世界与玩家">save-all</button>
+                <button type="button" class="ghost" data-console-command="tps" title="查看 tick 性能">tps</button>
+                <button type="button" class="ghost" data-console-command="mspt" title="查看每 tick 耗时">mspt</button>
+              </div>
+              <div class="console-quick-group">
+                <span class="console-quick-label">世界</span>
+                <button type="button" class="ghost" data-console-command="samsara world list">world list</button>
+                <button type="button" class="ghost" data-console-command="time query daytime">time</button>
+                <button type="button" class="ghost" data-console-command="weather query">weather</button>
+                <button type="button" class="ghost" data-console-command="difficulty">difficulty</button>
+              </div>
+              <div class="console-quick-group">
+                <span class="console-quick-label">玩家</span>
+                <button type="button" class="ghost" data-console-command="whitelist list">whitelist</button>
+                <button type="button" class="ghost" data-console-command="samsara season status">赛季</button>
+                <button type="button" class="ghost" data-console-command="samsara claim info">圈地</button>
+                <button type="button" class="ghost" data-console-command="samsara where">坐标</button>
+              </div>
+              <div class="console-quick-group">
+                <span class="console-quick-label">诊断</span>
+                <button type="button" class="ghost" data-console-command="samsara version">version</button>
+                <button type="button" class="ghost" data-console-command="samsara debug reload">reload</button>
+                <button type="button" class="ghost" data-console-command="samsara help">help</button>
+              </div>
+              <div class="console-quick-group danger-zone">
+                <span class="console-quick-label">危险</span>
+                <button type="button" class="ghost danger" data-console-command="stop" title="优雅停服；需要二次确认">stop</button>
+              </div>
             </div>
             <pre id="server-console-output" class="server-console-output" role="log" aria-live="polite"></pre>
             <div class="server-console-input">

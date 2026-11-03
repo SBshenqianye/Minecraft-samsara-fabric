@@ -160,6 +160,31 @@ public final class ViewAim {
     }
 
     /** 把角度归一化到 [-180, 180)。 */
+    /**
+     * 快速对准（snap）：直接返回当前角误差，由上层按 {@code view.aim.hz} 节流调用。
+     * <p>
+     * 与 {@link #step} 的区别是不做速度积分、不经过死区滞回，观感是“瞬间看过去”，
+     * 避免缓慢拖拽造成的头晕；俯仰仍按 {@link #PITCH_SCALE} 缩放。
+     */
+    public static Delta snap(float currentYaw, float currentPitch,
+                             double eyeX, double eyeY, double eyeZ,
+                             double targetX, double targetY, double targetZ,
+                             boolean includePitch) {
+        double dx = targetX - eyeX;
+        double dy = targetY - eyeY;
+        double dz = targetZ - eyeZ;
+        double horizontal = Math.hypot(dx, dz);
+        if (horizontal < 1.0E-6 && Math.abs(dy) < 1.0E-6) {
+            return new Delta(0f, 0f);
+        }
+        float desiredYaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
+        float desiredPitch = (float) -Math.toDegrees(Math.atan2(dy, horizontal));
+        double errorYaw = wrapDegrees(desiredYaw - currentYaw);
+        double errorPitch = includePitch
+                ? wrapDegrees(desiredPitch - currentPitch) * PITCH_SCALE : 0.0;
+        return new Delta((float) errorYaw, (float) errorPitch);
+    }
+
     public static double wrapDegrees(double degrees) {
         double v = degrees % 360.0;
         if (v >= 180.0) {

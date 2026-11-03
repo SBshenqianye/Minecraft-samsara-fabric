@@ -1,6 +1,6 @@
 # samsara · Web API 接口文档
 
-> 状态：v0.41.0（2026-11-03）
+> 状态：v0.42.0（2026-11-04）
 > 适用：本地管理端 `/`、用户端只读页 `/user`、以及未来接入的脚本/面板。
 > 代码入口：`mod/src/main/java/com/shenqianye/samsara/web/LocalWebServer.java`
 > 安全边界：`WebSecurity.java`、`WebUserService.java`
@@ -30,7 +30,7 @@
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/api/user/status` | 服务器公开概况：在线人数、最大人数、版本、MOTD、tick 数 |
-| GET | `/api/user/worlds` | 世界栈公开列表：栈层 id/顺序/是否栈顶/种子/在线人数/出生点/图标白名单 |
+| GET | `/api/user/worlds` | 世界栈公开列表：栈层 id/顺序/是否栈顶/种子/在线人数/出生点/图标白名单；栈顶在前、`stack_0` 在最后 |
 | GET | `/api/user/worlds/icon?stack=` | 栈层图标 PNG/JPEG/WebP 字节；无图返回 404，前端回退地图 |
 | GET | `/api/user/map` | 白名单地图模型：栈层、维度、region、保护区块、旗帜、出生点；不含路径/缓存 |
 | GET | `/api/user/map/players` | 在线玩家公开快照：名字、栈层、维度、坐标；不含 UUID/生命/朝向 |
@@ -116,7 +116,9 @@
 
 ### 2.6 `GET /api/user/map/avatar?uuid=` / `?name=`
 
-本机代理 Mojang 官方皮肤。`uuid` 优先；没有 UUID 时用玩家名查询 `api.mojang.com`，再读 `sessionserver.mojang.com` 的 textures 属性，只允许 `textures.minecraft.net` 的 PNG。成功返回 `image/png`；无正版档案/网络失败返回 `404`，前端使用本地 SVG 首字母头。成功缓存 6 小时、失败缓存 2 分钟，不返回 UUID 解析结果或文件路径。
+本机代理 Mojang 官方皮肤（完整 64×64 PNG）。`uuid` 优先；没有 UUID 时用玩家名查询 `api.mojang.com`，再读 `sessionserver.mojang.com` 的 textures 属性，只允许 `textures.minecraft.net` 的 PNG。成功返回 `image/png`；无正版档案/网络失败返回 `404`，前端使用本地 SVG 首字母头。成功缓存 6 小时、失败缓存 2 分钟，不返回 UUID 解析结果或文件路径。
+
+> 前端不再把整张皮肤缩成头像：`map.js` 统一从 `(8,8)` 取 8×8 头部正面并叠加 `(40,8)` 帽子层，只在 UI 上显示头部；接口本身仍返回完整皮肤，方便以后做披风/全身预览。
 
 ### 2.7 `GET /api/user/map/live`
 
@@ -138,11 +140,15 @@
       "x": 1, "y": 64, "z": 2, "action": "place",
       "before": "minecraft:air", "after": "minecraft:stone" }
   ],
+  "chat": [
+    { "timeMs": 1760000000000, "name": "Steve", "text": "有人吗",
+      "stackId": "world", "dimension": "overworld", "x": 1, "y": 64, "z": 2 }
+  ],
   "truncated": false
 }
 ```
 
-只枚举当前已加载区块中的实体；轨迹为进程内短轨迹，不写存档。用户端不返回 `uuid`、`health`、`yaw` 和操作者 UUID。
+只枚举当前已加载区块中的实体；轨迹为进程内短轨迹，不写存档。`chat` 是最近 120 条玩家发言，只保留内存；完整发言同时写入轨迹 `.evt`（`TYPE_CHAT = 0x09`）。用户端不返回 `uuid`、`health`、`yaw` 和操作者 UUID。
 
 ### 2.8 `GET /api/user/map/tile`
 

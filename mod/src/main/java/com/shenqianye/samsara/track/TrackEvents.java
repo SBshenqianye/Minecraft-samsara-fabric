@@ -34,6 +34,8 @@ public final class TrackEvents {
     public static final int TYPE_BLOCK_BREAK = 0x06;
     public static final int TYPE_FLIGHT_MODE = 0x07;
     public static final int TYPE_VEHICLE = 0x08;
+    /** 聊天发言：varint 字节长度 + UTF-8 文本。 */
+    public static final int TYPE_CHAT = 0x09;
 
     public static final int FLIGHT_NONE = 0;
     public static final int FLIGHT_ELYTRA = 1;
@@ -170,6 +172,10 @@ public final class TrackEvents {
             }
             case TYPE_FLIGHT_MODE -> skip(bytes, pos, 1);
             case TYPE_VEHICLE -> {
+                int len = readVarInt(bytes, pos);
+                skip(bytes, pos, len);
+            }
+            case TYPE_CHAT -> {
                 int len = readVarInt(bytes, pos);
                 skip(bytes, pos, len);
             }
@@ -321,6 +327,34 @@ public final class TrackEvents {
 
     public static int flightMode(byte[] payload) {
         return payload.length > 0 ? payload[0] & 0xFF : FLIGHT_NONE;
+    }
+
+    /** 聊天事件 payload：varint 字节长度 + UTF-8 文本（最多 1024 字节）。 */
+    public static byte[] chatPayload(String text) {
+        byte[] body = (text == null ? "" : text).getBytes(StandardCharsets.UTF_8);
+        if (body.length > 1024) {
+            body = java.util.Arrays.copyOf(body, 1024);
+        }
+        ByteArrayOutputStream out = new ByteArrayOutputStream(body.length + 4);
+        writeVarInt(out, body.length);
+        out.write(body, 0, body.length);
+        return out.toByteArray();
+    }
+
+    public static String chatText(byte[] payload) {
+        if (payload == null || payload.length == 0) {
+            return "";
+        }
+        try {
+            int[] pos = {0};
+            int len = readVarInt(payload, pos);
+            if (len <= 0 || pos[0] + len > payload.length) {
+                return "";
+            }
+            return new String(payload, pos[0], len, StandardCharsets.UTF_8);
+        } catch (EOFException e) {
+            return "";
+        }
     }
 
     /**

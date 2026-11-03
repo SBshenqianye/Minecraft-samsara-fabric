@@ -15,6 +15,8 @@ package com.shenqianye.samsara.season;
  */
 public final class WorldChainRules {
     public static final int VOID_MARGIN = 32;
+    /** 主世界上行触发：超过建筑限制的格数。 */
+    public static final int TOP_MARGIN = 5;
     /** 高空落点距离主世界建筑上限的格数；必须大于 2，避免落进顶部触发阈值。 */
     public static final int VOID_DROP_MARGIN = 16;
 
@@ -34,7 +36,9 @@ public final class WorldChainRules {
             return false;
         }
         int maxBuild = minY + height;
-        return kind == DimensionKind.NETHER ? y > maxBuild - 1 : y > maxBuild;
+        // 主世界：超出建筑限制 5 格才触发上行，避免贴顶走动被误传；
+        // 下界建筑上限之外不可站人，保持原阈值（> maxBuild - 1）。
+        return kind == DimensionKind.NETHER ? y > maxBuild - 1 : y > maxBuild + TOP_MARGIN;
     }
 
     /**

@@ -39,6 +39,39 @@ public final class MapLiveService {
     private final Map<String, Trail> trails = new HashMap<>();
     private long lastSampleAt;
 
+    private static final int MAX_CHAT = 120;
+    private static final Deque<Map<String, Object>> CHAT = new ArrayDeque<>();
+
+    /** 记录一条玩家发言，供实时层展示（不写盘；完整记录在轨迹 .evt）。 */
+    public static void recordChat(ServerPlayer player, String text) {
+        if (player == null || text == null || text.isBlank()) return;
+        String stackId = StackPaths.layerIdOf(player.level().dimension());
+        String dim = StackPaths.dimensionOf(player.level().dimension());
+        if (stackId == null || dim == null) return;
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("timeMs", System.currentTimeMillis());
+        item.put("name", player.getName().getString());
+        item.put("text", text.length() > 300 ? text.substring(0, 300) : text);
+        item.put("stackId", stackId);
+        item.put("dimension", dim);
+        item.put("dimensionId", player.level().dimension().identifier().toString());
+        item.put("x", round(player.getX()));
+        item.put("y", round(player.getY()));
+        item.put("z", round(player.getZ()));
+        synchronized (CHAT) {
+            CHAT.addLast(item);
+            while (CHAT.size() > MAX_CHAT) CHAT.removeFirst();
+        }
+    }
+
+    private static List<Map<String, Object>> recentChat() {
+        synchronized (CHAT) {
+            List<Map<String, Object>> out = new ArrayList<>(CHAT.size());
+            for (Map<String, Object> item : CHAT) out.add(new LinkedHashMap<>(item));
+            return out;
+        }
+    }
+
     public MapLiveService(MinecraftServer server) {
         this.server = server;
     }
@@ -73,6 +106,7 @@ public final class MapLiveService {
         out.put("players", List.of());
         out.put("entities", List.of());
         out.put("operations", List.of());
+        out.put("chat", List.of());
         out.put("truncated", false);
         return out;
     }
@@ -166,6 +200,7 @@ public final class MapLiveService {
         out.put("players", players);
         out.put("entities", entities);
         out.put("operations", operations);
+        out.put("chat", recentChat());
         out.put("truncated", truncated);
         return out;
     }

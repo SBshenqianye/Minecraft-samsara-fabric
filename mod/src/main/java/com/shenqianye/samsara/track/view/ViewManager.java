@@ -417,6 +417,9 @@ public final class ViewManager {
             s.aimEdge = s.options.aimEdge();
             s.aimSpeed = s.options.aimSpeed();
             s.aimPitch = s.options.aimPitch();
+            s.aimSnap = cfg.viewAimSnap();
+            s.aimHz = cfg.viewAimHz();
+            s.aimSnapAccumSec = 1.0;
             s.aimTracker = new ViewAim.Tracker(
                     new ViewAim.Params(s.aimDeadzone, s.aimEdge, s.aimSpeed, s.aimPitch));
             s.lastAimAtMs = System.currentTimeMillis();
@@ -664,13 +667,26 @@ public final class ViewManager {
         }
         ViewAim.Delta delta;
         try {
-            if (s.aimTracker == null) {
-                s.aimTracker = new ViewAim.Tracker(
-                        new ViewAim.Params(s.aimDeadzone, s.aimEdge, s.aimSpeed, s.aimPitch));
+            if (s.aimSnap) {
+                // 2~5Hz 快速对准：只在节流窗口到点时一次性转到位，避免缓慢拖拽头晕。
+                s.aimSnapAccumSec += dt;
+                double interval = 1.0 / Math.max(2, s.aimHz);
+                if (s.aimSnapAccumSec < interval) {
+                    return;
+                }
+                s.aimSnapAccumSec = 0.0;
+                delta = ViewAim.snap(player.getYRot(), player.getXRot(),
+                        player.getX(), player.getEyeY(), player.getZ(),
+                        targetX, targetY, targetZ, s.aimPitch);
+            } else {
+                if (s.aimTracker == null) {
+                    s.aimTracker = new ViewAim.Tracker(
+                            new ViewAim.Params(s.aimDeadzone, s.aimEdge, s.aimSpeed, s.aimPitch));
+                }
+                delta = s.aimTracker.step(player.getYRot(), player.getXRot(),
+                        player.getX(), player.getEyeY(), player.getZ(),
+                        targetX, targetY, targetZ, dt);
             }
-            delta = s.aimTracker.step(player.getYRot(), player.getXRot(),
-                    player.getX(), player.getEyeY(), player.getZ(),
-                    targetX, targetY, targetZ, dt);
         } catch (IllegalArgumentException e) {
             s.aimEnabled = false;
             return;
@@ -696,11 +712,11 @@ public final class ViewManager {
     public static final long SCRUB_FAST_AFTER_MS = 600L;
 
     /**
-     * 拖动模式（仅服务端）：读取客户端本来就会发送的输入。
-     * Shift 后退、Ctrl（疾跑键）快进、空格暂停/继续；按住方向键 0.6 秒后自动 4×。
-     * A/D 只留给位移，不再触发拖动；滚轮在 vanilla 旁观下不发包，无法读取。
+     * 拖动模式（仅服务端）：按住 Ctrl（疾跑键，旁观模式不参与移动）进入，松开即退出。
+     * 拖动中 W 前进 / S 后退 / Shift 加速 / 空格暂停或继续；A/D 不参与拖动。
+     * 分针只在拖动模式下生效，平时空格/Shift 仍是飞行上下与潜行。
      * <p>
-     * 只有按键时才锚定观看者；松开后恢复自由飞行/自动跟随，不长期锁死镜头。
+     * 只有按住 Ctrl 时才锚定观看者；松开后恢复自由飞行/自动跟随，不长期锁死镜头。
      */
     private void handleScrub(MinecraftServer server, ViewSession s, ServerPlayer player, long now) {
         s.scrubbingThisTick = false;
@@ -713,19 +729,19 @@ public final class ViewManager {
             s.scrubAnchorDim = null;
             return;
         }
-        boolean back = input.shift();
-        boolean forward = input.sprint();
+        boolean modeHeld = input.sprint();
         boolean jump = input.jump();
-        boolean pauseEdge = jump && !s.lastScrubJump;
-        s.lastScrubJump = jump;
-
-        boolean active = back || forward || pauseEdge || jump;
-        if (!active) {
-            // 松开按键：下一次按键在当前位置重新锚定，期间可自由活动/跟随
+        if (!modeHeld) {
+            s.lastScrubJump = jump;
             s.scrubAnchorDim = null;
             s.scrubHoldSinceMs = 0L;
             return;
         }
+        boolean back = input.backward();
+        boolean forward = input.forward();
+        boolean pauseEdge = jump && !s.lastScrubJump;
+        s.lastScrubJump = jump;
+
         s.scrubbingThisTick = true;
         if (s.scrubAnchorDim == null) {
             anchorScrub(s, player);
@@ -762,7 +778,7 @@ public final class ViewManager {
             s.scrubHoldSinceMs = now;
             s.lastScrubAtMs = now;
         }
-        boolean fast = now - s.scrubHoldSinceMs >= SCRUB_FAST_AFTER_MS;
+        boolean fast = input.shift() || now - s.scrubHoldSinceMs >= SCRUB_FAST_AFTER_MS;
         double dt = Math.min(0.25, (now - s.lastScrubAtMs) / 1000.0);
         s.lastScrubAtMs = now;
         long current = s.trackTime(now);
@@ -837,7 +853,7 @@ public final class ViewManager {
                 ChatUi.run("倒放/正放", "/samsara track view reverse", "切换正放与倒放"),
                 ChatUi.run("对齐", "/samsara track view align", "一键回到人偶观察点"),
                 ChatUi.run("自瞄", "/samsara track view aim", "即时开关自动瞄准"),
-                ChatUi.run("拖动", "/samsara track view scrub", "Shift 后退 / Ctrl 快进 / 空格暂停；右键人偶查看背包"),
+                ChatUi.text("按住 Ctrl + W/S 拖动", ChatFormatting.DARK_GRAY),
                 ChatUi.run("停止", "/samsara track view stop", "停止回看并恢复状态"));
         MutableComponent line3 = ChatUi.line(
                 ChatUi.text("[进度]", ChatFormatting.GRAY),
@@ -1254,6 +1270,7 @@ public final class ViewManager {
         }
         s.aimEnabled = on == null ? !s.aimEnabled : on;
         s.lastAimAtMs = System.currentTimeMillis();
+        s.aimSnapAccumSec = 1.0;
         if (s.aimTracker != null) {
             s.aimTracker.reset();
         }
@@ -1405,8 +1422,8 @@ public final class ViewManager {
             s.scrubMode = true;
             s.scrubAnchorDim = null;
             viewer.sendOverlayMessage(Component.literal(
-                    "[拖动] Shift 后退 · Ctrl 快进 · 空格暂停 · 长按方向键加速"));
-            return "拖动模式已开启：Shift 后退 / Ctrl 快进 / 空格暂停 / 长按加速；A/D 不再触发拖动";
+                    "[拖动] 按住 Ctrl 进入 · W/S 前后 · Shift 加速 · 空格暂停"));
+            return "拖动模式已开启：按住 Ctrl + W/S 前后拖动 / Shift 加速 / 空格暂停；松开 Ctrl 即退出";
         }
         if (!enable && s.scrubMode) {
             s.scrubMode = false;

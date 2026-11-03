@@ -35,6 +35,8 @@ public final class CommandConfig {
     private double viewAimEdge;
     private double viewAimMaxDegPerSec;
     private boolean viewAimPitch;
+    private boolean viewAimSnap;
+    private int viewAimHz;
     private boolean viewAllowEquipmentDrop;
 
     private boolean trackRecordInventory;
@@ -137,6 +139,16 @@ public final class CommandConfig {
         return viewAimPitch;
     }
 
+    /** 自动瞄准是否使用快速对准（snap）；false = 平滑转动。 */
+    public boolean viewAimSnap() {
+        return viewAimSnap;
+    }
+
+    /** snap 模式每秒对准次数。 */
+    public int viewAimHz() {
+        return viewAimHz;
+    }
+
     /** F-107：捕捉后普通实体死亡时默认允许掉落录制装备。 */
     public boolean viewAllowEquipmentDrop() {
         return viewAllowEquipmentDrop;
@@ -215,6 +227,8 @@ public final class CommandConfig {
         viewAimEdge = Math.max(viewAimDeadzone + 1.0, config.decimal(id, "view.aim.edge"));
         viewAimMaxDegPerSec = config.decimal(id, "view.aim.maxDegPerSec");
         viewAimPitch = config.bool(id, "view.aim.pitch");
+        viewAimSnap = !"smooth".equalsIgnoreCase(config.string(id, "view.aim.mode"));
+        viewAimHz = Math.max(2, Math.min(20, config.integer(id, "view.aim.hz")));
         viewAllowEquipmentDrop = config.bool(id, "view.allowEquipmentDrop");
 
         trackRecordInventory = config.bool(id, "track.recordInventory");
@@ -241,6 +255,8 @@ public final class CommandConfig {
                 + " · 回看保护 " + (viewProtectViewer ? "开" : "关")
                 + " · 回看拖动 " + (viewScrubEnabled ? "默认开" : "默认关")
                 + " · 回看自瞄 " + (viewAimEnabled ? "默认开" : "默认关")
+                + (viewAimEnabled ? "（" + (viewAimSnap ? "snap " + viewAimHz + "Hz" : "smooth")
+                        + "）" : "")
                 + " · 装备掉落 " + (viewAllowEquipmentDrop ? "允许" : "禁止")
                 + " · 背包快照 " + (trackRecordInventory ? "开" : "关")
                 + " · 保留策略 " + trackRetention.effectiveMode().id()

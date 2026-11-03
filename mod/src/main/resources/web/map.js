@@ -54,6 +54,8 @@
     playerRaf: 0,
     playerTimer: 0,
     showPlayers: true,
+    selectedLive: null,
+    hoverLive: null,
     showChunks: storedFlag(STORE_CHUNKS, false),
   };
 
@@ -472,6 +474,25 @@
     return entry;
   }
 
+  /** 只取皮肤头部正面 8×8 像素（帽子层叠加），避免整张皮肤缩成小图。 */
+  function headDataUrl(entry) {
+    if (!entry || !entry.image) return entry ? entry.fallback : '';
+    if (entry.headUrl) return entry.headUrl;
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = 64;
+      canvas.height = 64;
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(entry.image, 8, 8, 8, 8, 0, 0, 64, 64);
+      try { ctx.drawImage(entry.image, 40, 8, 8, 8, 0, 0, 64, 64); } catch (e) { /* 旧版 64×32 无帽子层 */ }
+      entry.headUrl = canvas.toDataURL('image/png');
+    } catch (e) {
+      entry.headUrl = entry.fallback;
+    }
+    return entry.headUrl;
+  }
+
   function ensureAvatarLoaded(entry) {
     if (!entry || entry.remoteLoaded || entry.loading || entry.failed || !entry.url) return;
     entry.loading = true;
@@ -482,8 +503,9 @@
       entry.loading = false;
       entry.remoteLoaded = true;
       entry.image = image;
+      const head = headDataUrl(entry);
       for (const waiter of entry.waiters) {
-        if (waiter.isConnected) waiter.src = entry.url;
+        if (waiter.isConnected) waiter.src = head;
       }
       entry.waiters.clear();
       schedulePlayerDraw();
@@ -496,10 +518,10 @@
     image.src = entry.url;
   }
 
-  /** 先立即显示本地通用头像，再异步换成皮肤头；失败就保持本地图，布局不跳动。 */
+  /** 先立即显示本地通用头像，再异步换成皮肤头部；失败就保持本地图，布局不跳动。 */
   function applyAvatarImage(img, player) {
     const entry = playerAvatarEntry(player);
-    img.src = entry.remoteLoaded ? entry.url : entry.fallback;
+    img.src = entry.remoteLoaded ? headDataUrl(entry) : entry.fallback;
     if (!entry.remoteLoaded) {
       entry.waiters.add(img);
       ensureAvatarLoaded(entry);
@@ -1638,7 +1660,31 @@
     return 'rgba(148, 163, 184, .32)';
   }
 
-  function drawTrail(ctx, item) {
+  function liveKey(item) {
+    return String(item.kind || '') + '|' + String(item.name || '') + '|'
+      + String(item.type || '') + '|' + String(item.x) + ',' + String(item.z);
+  }
+
+  function liveEmphasis(item) {
+    const key = liveKey(item);
+    if (state.selectedLive && liveKey(state.selectedLive) === key) return 1;
+    if (state.hoverLive && liveKey(state.hoverLive) === key) return 0.55;
+    return 0;
+  }
+
+  function currentLiveItems() {
+    const live = state.live;
+    const stack = currentStack();
+    const dim = currentDim();
+    if (!live || !stack || !dim) return [];
+    const match = (item) => item.stackId === stack.id && item.dimension === dim.dim;
+    return [
+      ...(Array.isArray(live.players) ? live.players.filter(match) : []),
+      ...(Array.isArray(live.entities) ? live.entities.filter(match) : []),
+    ];
+  }
+
+  function drawTrail(ctx, item, emphasis) {
     const trail = Array.isArray(item.trail) ? item.trail : [];
     if (trail.length < 2) return;
     ctx.beginPath();
@@ -1649,8 +1695,16 @@
     }
     const tail = worldToScreen(Number(item.x) || 0, Number(item.z) || 0);
     ctx.lineTo(tail.x, tail.y);
-    ctx.strokeStyle = liveColor(item);
-    ctx.lineWidth = item.kind === 'player' ? 1.5 : 1.1;
+    if (emphasis >= 1) {
+      ctx.strokeStyle = 'rgba(251, 191, 36, .9)';
+      ctx.lineWidth = item.kind === 'player' ? 2.6 : 2.1;
+    } else if (emphasis > 0) {
+      ctx.strokeStyle = 'rgba(226, 232, 240, .55)';
+      ctx.lineWidth = item.kind === 'player' ? 2.0 : 1.6;
+    } else {
+      ctx.strokeStyle = liveColor(item);
+      ctx.lineWidth = item.kind === 'player' ? 1.5 : 1.1;
+    }
     ctx.stroke();
   }
 
@@ -1671,8 +1725,8 @@
     const entities = (live.entities || []).filter((item) => item.stackId === stack.id
       && item.dimension === dim.dim);
     if (state.showTrails) {
-      for (const item of players) drawTrail(liveCtx, item);
-      for (const item of entities) drawTrail(liveCtx, item);
+      for (const item of players) drawTrail(liveCtx, item, liveEmphasis(item));
+      for (const item of entities) drawTrail(liveCtx, item, liveEmphasis(item));
     }
     if (state.showEntities) {
       for (const item of entities) {
@@ -1680,16 +1734,48 @@
         if (point.x < -8 || point.y < -8 || point.x > width + 8 || point.y > height + 8) {
           continue;
         }
+        const emphasis = liveEmphasis(item);
         const color = liveColor(item);
         liveCtx.beginPath();
         liveCtx.arc(point.x, point.y, item.category === 'monster' ? 3 : 2.4, 0, Math.PI * 2);
-        liveCtx.fillStyle = color.replace(/\.\d+\)$/, '.85)');
+        liveCtx.fillStyle = emphasis >= 1 ? 'rgba(251, 191, 36, .95)'
+          : emphasis > 0 ? 'rgba(226, 232, 240, .8)' : color.replace(/\.\d+\)$/, '.85)');
         liveCtx.fill();
         liveCtx.strokeStyle = 'rgba(8, 12, 17, .65)';
         liveCtx.lineWidth = .8;
         liveCtx.stroke();
+        if (emphasis > 0) {
+          liveCtx.beginPath();
+          liveCtx.arc(point.x, point.y, emphasis >= 1 ? 7 : 5, 0, Math.PI * 2);
+          liveCtx.strokeStyle = emphasis >= 1 ? 'rgba(251, 191, 36, .95)'
+            : 'rgba(226, 232, 240, .5)';
+          liveCtx.lineWidth = emphasis >= 1 ? 1.8 : 1.1;
+          liveCtx.stroke();
+        }
       }
     }
+  }
+
+  /** 当前详细地图上离屏幕坐标最近的实时玩家/实体（12px 内）。 */
+  function liveAt(x, y) {
+    let best = null;
+    let bestDistance = 12;
+    for (const item of currentLiveItems()) {
+      const point = worldToScreen(Number(item.x) || 0, Number(item.z) || 0);
+      const distance = Math.hypot(point.x - x, point.y - y);
+      if (distance <= bestDistance) {
+        bestDistance = distance;
+        best = item;
+      }
+    }
+    return best;
+  }
+
+  function selectLive(item) {
+    state.selectedLive = item ? { ...item } : null;
+    drawLiveLayer();
+    schedulePlayerDraw();
+    renderActivity();
   }
 
   function operationLabel(operation) {
@@ -1716,6 +1802,78 @@
     }
     if (!activity) return;
     activity.replaceChildren();
+    if (state.selectedLive) {
+      const item = state.selectedLive;
+      const card = document.createElement('div');
+      card.className = 'map-live-detail';
+      const title = document.createElement('div');
+      title.className = 'map-live-detail-title';
+      const name = document.createElement('strong');
+      name.textContent = item.name || (item.kind === 'player' ? '玩家' : '实体');
+      const meta = document.createElement('span');
+      meta.className = 'muted small';
+      meta.textContent = (item.kind === 'player' ? '玩家' : (item.type || '实体'))
+        + ' · ' + item.stackId + '/' + item.dimension
+        + ' · ' + item.x + ', ' + item.y + ', ' + item.z
+        + (item.health == null ? '' : ' · 生命 ' + item.health);
+      title.append(name, meta);
+      const actions = document.createElement('div');
+      actions.className = 'map-live-detail-actions';
+      const locate = document.createElement('button');
+      locate.type = 'button';
+      locate.className = 'ghost';
+      locate.textContent = '定位';
+      locate.addEventListener('click', () => {
+        state.centerX = Number(item.x) || 0;
+        state.centerZ = Number(item.z) || 0;
+        if (state.scale > 2) state.scale = 2;
+        draw();
+        drawLiveLayer();
+      });
+      actions.append(locate);
+      if (item.kind === 'player') {
+        const copy = document.createElement('button');
+        copy.type = 'button';
+        copy.className = 'ghost';
+        copy.textContent = '复制 TP 命令';
+        copy.addEventListener('click', () => copyPlayerCommand(item));
+        actions.append(copy);
+      }
+      const clear = document.createElement('button');
+      clear.type = 'button';
+      clear.className = 'ghost';
+      clear.textContent = '取消选中';
+      clear.addEventListener('click', () => selectLive(null));
+      actions.append(clear);
+      card.append(title, actions);
+      activity.append(card);
+    }
+    const chats = Array.isArray(live.chat) ? live.chat : [];
+    if (chats.length > 0) {
+      const chatHead = document.createElement('div');
+      chatHead.className = 'map-live-section';
+      chatHead.textContent = '最近发言（' + chats.length + '）';
+      activity.append(chatHead);
+      for (const chat of chats.slice(-12).reverse()) {
+        const row = document.createElement('div');
+        row.className = 'map-activity-row';
+        const time = document.createElement('span');
+        time.className = 'map-activity-time';
+        time.textContent = formatTime(chat.timeMs);
+        const actor = document.createElement('span');
+        actor.className = 'map-activity-actor';
+        actor.textContent = chat.name || '玩家';
+        const text = document.createElement('span');
+        text.className = 'map-activity-text';
+        text.textContent = chat.text || '';
+        row.append(time, actor, text);
+        activity.append(row);
+      }
+      const opHead = document.createElement('div');
+      opHead.className = 'map-live-section';
+      opHead.textContent = '最近方块操作（' + operations.length + '）';
+      activity.append(opHead);
+    }
     if (operations.length === 0) {
       const empty = document.createElement('span');
       empty.className = 'map-activity-empty';
@@ -1926,7 +2084,12 @@
     const avatarY = point.y - 38;
     ctx.save();
     if (entry.remoteLoaded && entry.image) {
-      ctx.drawImage(entry.image, avatarX, avatarY, avatarSize, avatarSize);
+      try {
+        ctx.drawImage(entry.image, 8, 8, 8, 8, avatarX, avatarY, avatarSize, avatarSize);
+        try { ctx.drawImage(entry.image, 40, 8, 8, 8, avatarX, avatarY, avatarSize, avatarSize); } catch (e) { /* 旧版皮肤 */ }
+      } catch (e) {
+        ctx.drawImage(entry.image, avatarX, avatarY, avatarSize, avatarSize);
+      }
       ctx.strokeStyle = '#eff6ff';
       ctx.lineWidth = 1.4;
       ctx.strokeRect(avatarX + .5, avatarY + .5, avatarSize - 1, avatarSize - 1);
@@ -1988,6 +2151,14 @@
     if (!stack || !dim) return;
     for (const player of playersFor(stack.id, dim.dim)) {
       drawPlayerMarker(playerCtx, player, playerDisplayPosition(player, now), width, height);
+      if (state.selectedLive && liveKey(state.selectedLive) === liveKey(player)) {
+        const point = worldToScreen(Number(player.x) || 0, Number(player.z) || 0);
+        playerCtx.beginPath();
+        playerCtx.arc(point.x, point.y - 28, 15, 0, Math.PI * 2);
+        playerCtx.strokeStyle = 'rgba(251, 191, 36, .95)';
+        playerCtx.lineWidth = 2;
+        playerCtx.stroke();
+      }
     }
   }
 
@@ -2629,6 +2800,11 @@
       const y = event.clientY - rect.top;
       // 玩家标记由 click 复制命令；pointerdown 不开始拖拽，避免误移动地图。
       if (playerAt(x, y)) return;
+      const live = liveAt(x, y);
+      if (live) {
+        selectLive(live);
+        return;
+      }
       const spawn = ensureEls().spawns && ensureEls().spawns.checked ? spawnAt(x, y) : null;
       if (spawn) {
         selectSpawn(spawn);
@@ -2657,12 +2833,22 @@
       }
       const x = event.clientX - rect.left;
       const y = event.clientY - rect.top;
+      const live = liveAt(x, y);
+      const liveKeyNow = live ? liveKey(live) : '';
+      if (liveKeyNow !== (state.hoverLive ? liveKey(state.hoverLive) : '')) {
+        state.hoverLive = live ? { ...live } : null;
+        drawLiveLayer();
+      }
       const spawn = ensureEls().spawns && ensureEls().spawns.checked ? spawnAt(x, y) : null;
-      canvas.style.cursor = (playerAt(x, y) || spawn || bannerAt(x, y)) ? 'pointer' : 'grab';
+      canvas.style.cursor = (live || playerAt(x, y) || spawn || bannerAt(x, y)) ? 'pointer' : 'grab';
       updateTooltip(event);
     });
     canvas.addEventListener('pointerleave', () => {
       if (ensureEls().tooltip) ensureEls().tooltip.hidden = true;
+      if (state.hoverLive) {
+        state.hoverLive = null;
+        drawLiveLayer();
+      }
     });
     canvas.addEventListener('pointerup', (event) => {
       state.drag = null;
@@ -2679,7 +2865,13 @@
       const y = event.clientY - rect.top;
       const player = playerAt(x, y);
       if (player) {
+        selectLive({ ...player, kind: 'player' });
         copyPlayerCommand(player);
+        return;
+      }
+      const live = liveAt(x, y);
+      if (live) {
+        selectLive(live);
         return;
       }
       const spawn = ensureEls().spawns && ensureEls().spawns.checked ? spawnAt(x, y) : null;
