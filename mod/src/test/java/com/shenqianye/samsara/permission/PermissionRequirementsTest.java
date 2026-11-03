@@ -70,6 +70,32 @@ class PermissionRequirementsTest {
     }
 
     @Test
+    void denyBlocksEveryLevelIncludingConfig() {
+        PermissionConfig config = PermissionConfig.forTests(
+                Map.of("debug", PermissionLevel.DENY), Set.of());
+        assertFalse(PermissionRequirements.allows(PermissionLevel.USER, "debug", config));
+        assertFalse(PermissionRequirements.allows(PermissionLevel.OP, "debug", config));
+        assertFalse(PermissionRequirements.allows(PermissionLevel.OWNER, "debug", config));
+        assertFalse(PermissionRequirements.allows(PermissionLevel.CONFIG, "debug", config),
+                "DENY 高于 config/控制台");
+        assertFalse(PermissionRequirements.allows(PermissionLevel.CONFIG, "debug rewind", config),
+                "DENY 沿路径向下级联");
+    }
+
+    @Test
+    void denyParsingAndRecoveryPaths() {
+        assertEquals(PermissionLevel.DENY, PermissionLevel.fromString("deny"));
+        assertEquals(PermissionLevel.DENY, PermissionLevel.fromString("off"));
+        assertEquals(PermissionLevel.DENY, PermissionLevel.fromString("disabled"));
+        assertFalse(PermissionLevel.CONFIG.meets(PermissionLevel.DENY));
+        assertTrue(PermissionConfig.isRecoveryPath("perm"));
+        assertTrue(PermissionConfig.isRecoveryPath("perm set"));
+        assertTrue(PermissionConfig.isRecoveryPath("debug config"));
+        assertTrue(PermissionConfig.isRecoveryPath("debug reload"));
+        assertFalse(PermissionConfig.isRecoveryPath("season advance"));
+    }
+
+    @Test
     void aliasUsesMainCommandPermissionKey() {
         assertEquals("tpaccept", PermissionCommandPaths.canonicalPath("tpyes"));
         assertEquals("tpdeny", PermissionCommandPaths.canonicalPath("tpno"));

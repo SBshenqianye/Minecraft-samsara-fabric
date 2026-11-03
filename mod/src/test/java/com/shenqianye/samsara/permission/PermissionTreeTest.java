@@ -52,6 +52,20 @@ class PermissionTreeTest {
     }
 
     @Test
+    void denyIsHighestAndCascadesToLeaves() {
+        Map<String, PermissionLevel> defaults = defaults();
+        Map<String, PermissionLevel> entries = new LinkedHashMap<>(defaults);
+        entries.put("season", PermissionLevel.DENY);
+        assertEquals(PermissionLevel.DENY,
+                PermissionTree.effectiveLevel("season status", entries, defaults));
+        assertEquals(PermissionLevel.DENY,
+                PermissionTree.effectiveLevel("season create", entries, defaults));
+        assertEquals(PermissionLevel.USER,
+                PermissionTree.effectiveLevel("claim info", entries, defaults),
+                "DENY 不应影响兄弟子树");
+    }
+
+    @Test
     void ancestorDisabledCascadesToDescendants() {
         Set<String> disabled = Set.of("debug claim");
         assertEquals("debug claim", PermissionTree.disabledBy("debug claim give", disabled));

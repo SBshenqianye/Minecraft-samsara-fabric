@@ -116,6 +116,7 @@ public final class WebPermissionService implements PermissionWebService {
         out.put("disabled", node.disabled());
         out.put("disabledBy", node.disabledBy());
         out.put("source", node.source());
+        out.put("recovery", PermissionConfig.isRecoveryPath(node.path()));
         List<Map<String, Object>> children = new ArrayList<>();
         for (PermissionTree.Node child : node.children()) {
             children.add(node(child));

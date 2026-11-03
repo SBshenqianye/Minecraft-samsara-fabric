@@ -19,7 +19,17 @@ public class PermissionChecker {
      * @return true = 允许
      */
     public static boolean check(CommandSourceStack src, String commandPath) {
-        return check(getPlayerLevel(src), commandPath);
+        PermissionConfig config = PermissionConfig.getInstance();
+        if (config.isDisabled(commandPath)) {
+            return false;
+        }
+        PermissionLevel required = config.getRequired(commandPath);
+        if (required == PermissionLevel.DENY) {
+            // DENY 连控制台也拒绝；只有恢复类路径保留控制台入口，避免把自己锁死
+            return PermissionConfig.isRecoveryPath(commandPath)
+                    && src != null && src.getEntity() == null;
+        }
+        return getPlayerLevel(src).meets(required);
     }
 
     /**

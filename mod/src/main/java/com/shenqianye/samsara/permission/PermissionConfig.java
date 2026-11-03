@@ -29,6 +29,14 @@ public class PermissionConfig {
     /** owner 玩家名列表（小写） */
     private final Set<String> ownerNames = ConcurrentHashMap.newKeySet();
 
+    /**
+     * 关闭权限（DENY）对这些路径仍保留控制台恢复入口：
+     * 它们负责重新打开权限/配置/Web，若连控制台也拒绝就只能改文件。
+     * Web 权限树会显示感叹号提示。
+     */
+    private static final List<String> RECOVERY_PREFIXES = List.of(
+            "perm", "config", "web", "debug perm", "debug config", "debug reload");
+
     /** v0.19 认证层已退役；旧 permissions.yml 里残留的命令路径启动时清理。 */
     private static final Set<String> RETIRED_PATHS = Set.of(
             "login", "register", "password", "bind-premium",
@@ -112,6 +120,20 @@ public class PermissionConfig {
 
     public boolean isOwner(String playerName) {
         return ownerNames.contains(playerName.toLowerCase());
+    }
+
+    /** 关闭该路径后是否仍保留控制台恢复入口（Web 权限树显示感叹号）。 */
+    public static boolean isRecoveryPath(String commandPath) {
+        String path = commandPath == null ? "" : commandPath.trim();
+        if (path.isEmpty()) {
+            return false;
+        }
+        for (String prefix : RECOVERY_PREFIXES) {
+            if (path.equals(prefix) || path.startsWith(prefix + " ")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // ---- 修改 ----
@@ -213,7 +235,7 @@ public class PermissionConfig {
                         PermissionLevel parsed = parseLevel(level);
                         if (parsed == null) {
                             errors.put(field + ".level",
-                                    "等级可选值：inherit / user / op / owner / config");
+                                    "等级可选值：deny / inherit / user / op / owner / config");
                         } else {
                             nextEntries.put(path, parsed);
                         }
@@ -241,6 +263,7 @@ public class PermissionConfig {
 
     private static PermissionLevel parseLevel(String value) {
         return switch (value) {
+            case "deny", "off", "disabled" -> PermissionLevel.DENY;
             case "user" -> PermissionLevel.USER;
             case "op" -> PermissionLevel.OP;
             case "owner" -> PermissionLevel.OWNER;

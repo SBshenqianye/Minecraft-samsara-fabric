@@ -47,10 +47,11 @@ function refreshCount() {
 }
 
 function collectStats(nodes) {
-  const stats = { total: 0, disabled: 0, custom: 0, leaves: 0 };
+  const stats = { total: 0, disabled: 0, deny: 0, custom: 0, leaves: 0 };
   const walk = (node) => {
     stats.total++;
     if (node.disabled || node.disabledBy) stats.disabled++;
+    if (node.level === 'deny') stats.deny++;
     if (node.source === 'custom') stats.custom++;
     if (!node.children || node.children.length === 0) stats.leaves++;
     for (const child of node.children || []) walk(child);
@@ -65,7 +66,8 @@ function renderStats(stats) {
   container.replaceChildren();
   const rows = [
     ['命令路径', stats.total],
-    ['已关闭', stats.disabled],
+    ['关闭权限', stats.deny],
+    ['停用节点', stats.disabled],
     ['自定义规则', stats.custom],
     ['叶子', stats.leaves],
   ];
@@ -212,48 +214,66 @@ function renderNode(node, depth, query) {
   }
 
   const KIT = window.SamsaraUIKit;
-  let toggle;
-  const toggleTitle = blocked
-      ? '被祖先 ' + node.disabledBy + ' 关闭；先开启祖先'
-      : (node.disabled ? '已关闭' : '已启用');
-  if (KIT) {
-    toggle = KIT.toggle(!node.disabled && !blocked, (enabled) => {
+  // 分段控件：关闭(DENY) | 继承 | config | owner | op | user
+  const levelChoices = [
+    { value: 'deny', label: '关闭' },
+    { value: 'inherit', label: '继承' },
+    { value: 'config', label: 'config' },
+    { value: 'owner', label: 'owner' },
+    { value: 'op', label: 'op' },
+    { value: 'user', label: 'user' },
+  ];
+  const levelTitle = blocked
+      ? '被祖先 ' + node.disabledBy + ' 停用；先恢复祖先'
+      : '本节点声明的等级；关闭 = DENY（高于 config/owner/控制台）';
+  let levelControl;
+  if (KIT && KIT.buttonGroup) {
+    levelControl = KIT.buttonGroup(levelChoices, node.level || 'inherit', (value) => {
       if (blocked || P.busy) return;
-      savePermissionNode(node.path, { disabled: !enabled });
-    }, { onLabel: '启用', offLabel: '关闭', title: toggleTitle });
-    toggle.classList.add('compact');
-    for (const button of toggle.querySelectorAll('button')) {
+      savePermissionNode(node.path, { level: value });
+    }, { className: 'perm-levels compact', title: levelTitle });
+    for (const button of levelControl.querySelectorAll('button')) {
       button.disabled = blocked || P.busy;
     }
   } else {
-    toggle = document.createElement('label');
-    toggle.className = 'perm-toggle';
-    const checkbox = document.createElement('input');
-    checkbox.type = 'checkbox';
-    checkbox.checked = !node.disabled && !blocked;
-    checkbox.disabled = blocked || P.busy;
-    checkbox.title = toggleTitle;
-    checkbox.addEventListener('change', () => {
-      savePermissionNode(node.path, { disabled: !checkbox.checked });
+    levelControl = document.createElement('select');
+    for (const choice of levelChoices) {
+      const option = document.createElement('option');
+      option.value = choice.value;
+      option.textContent = choice.label;
+      levelControl.append(option);
+    }
+    levelControl.value = node.level || 'inherit';
+    levelControl.disabled = blocked || P.busy;
+    levelControl.title = levelTitle;
+    levelControl.addEventListener('change', () => {
+      savePermissionNode(node.path, { level: levelControl.value });
     });
-    toggle.append(checkbox, document.createTextNode('启用'));
   }
-  row.append(toggle);
+  row.append(levelControl);
 
-  const select = document.createElement('select');
-  for (const level of ['inherit', 'user', 'op', 'owner', 'config']) {
-    const option = document.createElement('option');
-    option.value = level;
-    option.textContent = level === 'inherit' ? '继承' : level;
-    select.append(option);
-  }
-  select.value = node.level || 'inherit';
-  select.disabled = blocked || P.busy;
-  select.title = '本节点声明的等级；inherit 表示不覆盖';
-  select.addEventListener('change', () => {
-    savePermissionNode(node.path, { level: select.value });
+  // 旧的 boolean disabled 保留，但视觉上降级为次级按钮“停用节点”
+  const secondary = document.createElement('button');
+  secondary.type = 'button';
+  secondary.className = 'perm-secondary' + (node.disabled ? ' active' : '');
+  secondary.textContent = node.disabled ? '已停用' : '停用节点';
+  secondary.disabled = blocked || P.busy;
+  secondary.title = blocked
+      ? '被祖先 ' + node.disabledBy + ' 停用；先恢复祖先'
+      : '整节点停用并级联到后代；与“关闭权限”不同，停用不改变等级';
+  secondary.addEventListener('click', () => {
+    if (blocked || P.busy) return;
+    savePermissionNode(node.path, { disabled: !node.disabled });
   });
-  row.append(select);
+  row.append(secondary);
+
+  if (node.recovery) {
+    const warn = document.createElement('span');
+    warn.className = 'perm-badge warning';
+    warn.textContent = '!';
+    warn.title = '关闭后仍保留控制台恢复入口（避免 Web/配置被锁死）';
+    row.append(warn);
+  }
 
   const effective = document.createElement('span');
   effective.className = 'perm-badge';
@@ -269,7 +289,7 @@ function renderNode(node, depth, query) {
   if (node.disabledBy) {
     const disabled = document.createElement('span');
     disabled.className = 'perm-badge danger-text';
-    disabled.textContent = '被 ' + node.disabledBy + ' 关闭';
+    disabled.textContent = '被 ' + node.disabledBy + ' 停用';
     row.append(disabled);
   }
   wrap.append(row);

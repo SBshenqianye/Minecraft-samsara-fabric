@@ -18,27 +18,25 @@ public final class PermissionRequirements {
     private PermissionRequirements() {
     }
 
-    /** 仅检查命令路径（控制台按 CONFIG 等级，由 {@link PermissionChecker} 处理）。 */
+    /** 仅检查命令路径（控制台按 CONFIG 等级；DENY 连控制台也拒绝）。 */
     public static Predicate<CommandSourceStack> path(String commandPath) {
-        return source -> allows(PermissionChecker.getPlayerLevel(source), commandPath);
+        return source -> PermissionChecker.check(source, commandPath);
     }
 
     /** 原版管理员检查 + 完整命令路径。 */
     public static Predicate<CommandSourceStack> adminAnd(String commandPath) {
-        return source -> adminAnd(isAdmin(source),
-                PermissionChecker.getPlayerLevel(source), commandPath);
+        return source -> isAdmin(source) && PermissionChecker.check(source, commandPath);
     }
 
     /** 原版服主检查 + 完整命令路径。 */
     public static Predicate<CommandSourceStack> ownerAnd(String commandPath) {
-        return source -> ownerAnd(isOwner(source),
-                PermissionChecker.getPlayerLevel(source), commandPath);
+        return source -> isOwner(source) && PermissionChecker.check(source, commandPath);
     }
 
     /** 原版管理员或服主 + 完整命令路径（保存型回溯等“owner/admin”命令）。 */
     public static Predicate<CommandSourceStack> adminOrOwnerAnd(String commandPath) {
         return source -> (isAdmin(source) || isOwner(source))
-                && allows(PermissionChecker.getPlayerLevel(source), commandPath);
+                && PermissionChecker.check(source, commandPath);
     }
 
     // ---- 纯逻辑入口：与上面的谓词共用同一套判定，便于单测 ----
