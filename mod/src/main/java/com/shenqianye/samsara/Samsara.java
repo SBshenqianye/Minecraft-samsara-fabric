@@ -11,6 +11,7 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerChunkEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
+import net.minecraft.server.MinecraftServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -156,6 +157,7 @@ public class Samsara implements DedicatedServerModInitializer {
             RewindEngine.getInstance().onServerStopped(server);
             com.shenqianye.samsara.season.StackDimensionLoader.unload();
             com.shenqianye.samsara.season.WorldChainTeleport.unload();
+            scheduleExitAfterStop(server);
         });
 
         // 身份：账号切换同步先应用玩家数据，再让分组/待传送把玩家放到本周目位置
@@ -187,5 +189,30 @@ public class Samsara implements DedicatedServerModInitializer {
             // 最后断开玩家：connection.disconnect 会把玩家从在线列表移除并保存其数据
             com.shenqianye.samsara.shutdown.ShutdownAnnouncer.onStopping(server);
         });
+    }
+
+    /**
+     * 停服兜底：Web 地图 tile 用 Java2D/AWT 渲染后，JVM 会留下非守护
+     * {@code AWT-Shutdown} 线程，导致 {@code SERVER_STOPPED} 后进程不退出、
+     * 启动脚本的自动重启循环不触发。清理完成后延迟几秒再退出，给其他模组的
+     * {@code SERVER_STOPPED} 处理器留出时间；JVM 若已自然退出，这个守护线程
+     * 会随进程结束，不会重复执行。
+     */
+    private static void scheduleExitAfterStop(MinecraftServer server) {
+        if (!(server instanceof net.minecraft.server.dedicated.DedicatedServer)) {
+            return;
+        }
+        Thread thread = new Thread(() -> {
+            try {
+                Thread.sleep(3000L);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+            LOGGER.info("[周目管理 samsara] 停服清理完成但 JVM 仍未退出，执行 System.exit(0)");
+            System.exit(0);
+        }, "samsara-shutdown-exit");
+        thread.setDaemon(true);
+        thread.start();
     }
 }
