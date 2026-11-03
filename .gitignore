@@ -52,3 +52,8 @@ META-INF/
 net/
 
 docs/待办项.md
+
+# 证书与私钥（绝不入库）
+frp-dog.com.crt
+frp-dog.com.key
+*.pfx
