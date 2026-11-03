@@ -59,7 +59,7 @@ openjdk version "25.0.1" 2025-10-21 LTS
 | `TEST_SERVER` | `E:\workspace\deepseek harness\mc-mod-samsara\test-server` | 测试服（**2026-10-27 起已是 MC 26.3**，端口 **25566**） |
 | `RCON_CLIENT_SRC` | `tools\RconClient.java` | 单文件无依赖 RCON 客户端（退出码 0/1/2/3），**随仓库提交**，与 `tools/README.md` 一并维护 |
 | `RCON_CP` | `.tmp\rcon` | `javac -d` 输出目录（`.class` 已被 `.gitignore` 忽略） |
-| `RCON_HOST` / `RCON_PORT` / `RCON_PASS` | `127.0.0.1` / `25575` / `samsara-m1-test` | 只对 test-server 有效（生产服 RCON 关闭） |
+| `RCON_HOST` / `RCON_PORT` / `RCON_PASS` | 测试服 `127.0.0.1` / `25575` / `samsara-m1-test`；生产服 `25585` / 见生产 `server.properties` | 2026-11-04 起生产服已开启 RCON；密码只从目标服 `server.properties` 读取，不写进 skill |
 | `JAR_PATTERN` | `mod\build\libs\samsara-*.jar` | 构建产物（排除 `*-sources.jar`） |
 | `DEPLOY_MODS_DIR` | 见 Step 2 的两个目标 | 部署目录 |
 
@@ -95,7 +95,7 @@ jdk-21/24 会直接失败（`release 25` 不被支持）。JDK 26 + `options.rel
 | 目标 | 路径 | 版本现状 | 备注 |
 |---|---|---|---|
 | 测试服 | `E:\workspace\deepseek harness\mc-mod-samsara\test-server\mods\` | MC **26.3** · loader 0.20.1 · fabric-api 0.165.0+26.3 · 现存 samsara 0.11.0 | 2026-10-27 已升级；**端口 25566**（生产服占用 25565）；RCON 开在 25575，可直接验证 |
-| 生产服 Vanilia 26.3 | `C:\Games\0-minecraft\server\servers\Vanilia 26.3\mods\` | MC **26.3** · loader 0.20.1 · fabric-api 0.165.0+26.3 | RCON 关闭（`enable-rcon=false`），只能看日志；换 jar 后需重启；**它可能在运行**，动它之前先确认 |
+| 生产服 Vanilia 26.3 | `C:\Games\0-minecraft\server\servers\Vanilia 26.3\mods\` | MC **26.3** · loader 0.20.1 · fabric-api 0.165.0+26.3 | **2026-11-04 起 RCON 已开启（25585）**；`Launch Server.bat` 会在 stop 后 5 秒自动重启。部署前先备份旧 jar、发倒计时，再 stop + 换 jar；**它可能在运行** |
 
 ### 2b. 复制 + 校验
 
@@ -318,6 +318,65 @@ $rc = "E:\workspace\deepseek harness\mc-mod-samsara\.tmp\rcon"
 8. **部署前核对 `fabric.mod.json` 的 minecraft 约束** — 测试服与生产服现在都是 26.3，jar 必须是 `~26.3`。
 9. **生产服 RCON 关闭** — 部署后只能靠 `logs\latest.log` 验证，且必须由用户重启服务端。
 10. **测试服端口是 25566，生产服 25565** — 两者可并存；`FAILED TO BIND` 先查占用者，别停生产服。
+
+---
+
+## 生产服优雅重启（2026-11-04 实践）
+
+> 适用：`C:\Games\0-minecraft\server\servers\Vanilia 26.3`，由 `Launch Server.bat` 托管，`stop` 后约 5 秒自动重启。
+> 目标：在线玩家收到原因和倒计时；旧 jar 可回退；换 jar 与自动重启之间不留“双 jar / 旧 jar”窗口。
+
+### 判据
+
+- 生产服正在运行且 RCON 可连（25585，密码读 `server.properties`）。
+- 新 jar 已在 `mod/build/libs`，测试服同 jar 已通过 E2E/启动验证。
+- `mods/` 里只能有一个 `samsara-*.jar`；多 jar 会重复 mod id 导致启动失败。
+
+### 步骤
+
+1. **预拷贝，不碰运行中的旧 jar**：
+   ```powershell
+   $prod='C:\Games\0-minecraft\server\servers\Vanilia 26.3'
+   $new='E:\workspace\deepseek harness\mc-mod-samsara\mod\build\libs\samsara-0.39.0.jar'
+   New-Item -ItemType Directory -Force "$prod\backups\samsara\mod-jars" | Out-Null
+   Copy-Item "$prod\mods\samsara-0.38.1.jar" "$prod\backups\samsara\mod-jars\samsara-0.38.1.jar" -Force
+   Copy-Item $new "$prod\mods\samsara-0.39.0.jar.new" -Force
+   ```
+2. **RCON 倒计时**：`say` 在 60/30/10/5/3/2/1 秒发送原因；不要用 PowerShell 函数名 `R`（内置别名是 `Invoke-History`，会静默失败）。
+   ```powershell
+   function SendRcon($cmd) {
+     & java tools\RconClient.java 127.0.0.1 25585 <password> $cmd
+   }
+   SendRcon 'say [samsara] 服务器将在 60 秒后重启：<原因>。'
+   Start-Sleep 30; SendRcon 'say [samsara] 重启倒计时：30 秒。'
+   Start-Sleep 20; SendRcon 'say [samsara] 重启倒计时：10 秒。'
+   Start-Sleep 5;  SendRcon 'say [samsara] 重启倒计时：5 秒。'
+   Start-Sleep 2;  SendRcon 'say [samsara] 重启倒计时：3 秒。'
+   Start-Sleep 1;  SendRcon 'say [samsara] 重启倒计时：2 秒。'
+   Start-Sleep 1;  SendRcon 'say [samsara] 重启倒计时：1 秒。'
+   SendRcon 'stop'
+   ```
+3. **stop 后 5 秒窗口内完成换 jar**：
+   ```powershell
+   while (Get-Process -Id <旧javaPID> -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 300 }
+   Remove-Item "$prod\mods\samsara-0.38.1.jar" -Force
+   Move-Item "$prod\mods\samsara-0.39.0.jar.new" "$prod\mods\samsara-0.39.0.jar" -Force
+   ```
+4. **等自动重启并验证**：
+   ```powershell
+   # Web 8720 起来后，RCON：
+   SendRcon 'samsara version'   # 期望新版本
+   SendRcon 'list'
+   Invoke-WebRequest http://127.0.0.1:8720/ -UseBasicParsing
+   ```
+   再查 `/api/status`、`/user`、`/api/user/map/avatar?name=Notch`（期望 200/image/png）。
+
+### 反例 / 坑
+
+- 未预拷贝 `.new`，stop 后再从构建目录拉 1.7MB，可能撞上 5 秒自动重启窗口。
+- 旧 jar 未删除时直接放新 jar：启动时两个 `samsara` jar 会重复加载。
+- 倒计时函数命名为 `R`：PowerShell 会解析成 `Invoke-History`，命令全部没发出去；用 `SendRcon` 这类明确名称。
+- `stop` 后只等端口关闭不够：`Launch Server.bat` 的父 `cmd` 仍在，5 秒后会重启；换 jar 要在这 5 秒内完成。
 
 ---
 
