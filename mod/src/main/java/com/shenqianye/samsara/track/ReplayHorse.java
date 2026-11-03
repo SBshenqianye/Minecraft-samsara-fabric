@@ -143,12 +143,13 @@ public class ReplayHorse extends ZombieHorse {
 
     @Override
     public boolean isPushable() {
-        return captured;
+        // 与原版马一致：没被骑时可推动，被骑时不可推动；回放期间始终不可推动
+        return captured && !isVehicle();
     }
 
     @Override
     public PushReaction getPistonPushReaction() {
-        return captured ? PushReaction.PUSH_PULL : PushReaction.IGNORE_ENTITY;
+        return captured && !isVehicle() ? PushReaction.PUSH_PULL : PushReaction.IGNORE_ENTITY;
     }
 
     @Override
