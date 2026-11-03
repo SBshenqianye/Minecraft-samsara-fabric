@@ -4,6 +4,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.EOFException;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -37,6 +38,10 @@ public final class TrackEvents {
     public static final int FLIGHT_NONE = 0;
     public static final int FLIGHT_ELYTRA = 1;
     public static final int FLIGHT_CREATIVE = 2;
+
+    /** VEHICLE v2 payload 标记（旧格式首字节是字符串长度，永远不会是 0xFF）。 */
+    public static final int VEHICLE_FORMAT_V2 = 0xFF;
+    public static final int VEHICLE_VERSION = 2;
 
     /** 六个可见槽的顺序：主手、副手、头、胸、腿、脚。 */
     public static final int SLOT_COUNT = 6;
@@ -318,6 +323,37 @@ public final class TrackEvents {
         return payload.length > 0 ? payload[0] & 0xFF : FLIGHT_NONE;
     }
 
+    /**
+     * VEHICLE 事件的内容：实体类型 + 可选的马属性。
+     * <p>
+     * v1 只存类型 id；v2 在类型之后追加马的最大生命/移速/跳跃/花色/鞍/箱/幼崽。
+     * 非马载具仍写 v1 类型 payload，读取端对两种格式都兼容。
+     */
+    public record VehicleInfo(
+            String typeId,
+            boolean horse,
+            float maxHealth,
+            double movementSpeed,
+            double jumpStrength,
+            int variant,
+            int markings,
+            boolean saddle,
+            boolean chested,
+            boolean baby) {
+
+        public VehicleInfo {
+            typeId = typeId == null ? "" : typeId;
+        }
+
+        public static VehicleInfo typeOnly(String entityTypeId) {
+            return new VehicleInfo(entityTypeId, false, 0f, 0d, 0d, 0, 0, false, false, false);
+        }
+
+        public boolean isEmpty() {
+            return typeId.isBlank();
+        }
+    }
+
     public static byte[] vehiclePayload(String entityTypeId) {
         String value = entityTypeId == null ? "" : entityTypeId;
         byte[] utf8 = value.getBytes(StandardCharsets.UTF_8);
@@ -327,16 +363,171 @@ public final class TrackEvents {
         return out.toByteArray();
     }
 
+    /**
+     * v2：只有马写扩展字段；其他载具保持 v1 以节省空间并兼容旧读取端。
+     * <p>
+     * 外层仍是 `varint 内容长度 + 内容`，让 {@link #skipPayload} 能像旧格式一样整条跳过；
+     * v2 内容以 {@code 0xFF + version} 开头，与旧格式的“类型字符串”区分。
+     */
+    public static byte[] vehiclePayload(VehicleInfo info) {
+        if (info == null || info.isEmpty()) {
+            return vehiclePayload("");
+        }
+        if (!info.horse()) {
+            return vehiclePayload(info.typeId());
+        }
+        String value = info.typeId();
+        byte[] utf8 = value.getBytes(StandardCharsets.UTF_8);
+        ByteArrayOutputStream content = new ByteArrayOutputStream();
+        content.write(VEHICLE_FORMAT_V2);
+        content.write(VEHICLE_VERSION);
+        writeVarInt(content, utf8.length);
+        content.write(utf8, 0, utf8.length);
+        int flags = 1; // bit0 = horse
+        if (info.saddle()) {
+            flags |= 1 << 1;
+        }
+        if (info.chested()) {
+            flags |= 1 << 2;
+        }
+        if (info.baby()) {
+            flags |= 1 << 3;
+        }
+        content.write(flags);
+        writeFloat(content, info.maxHealth());
+        writeDouble(content, info.movementSpeed());
+        writeDouble(content, info.jumpStrength());
+        writeVarInt(content, Math.max(0, info.variant()));
+        writeVarInt(content, Math.max(0, info.markings()));
+
+        byte[] body = content.toByteArray();
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        writeVarInt(out, body.length);
+        out.write(body, 0, body.length);
+        return out.toByteArray();
+    }
+
     public static String vehicle(byte[] payload) {
+        if (payload == null || payload.length == 0) {
+            return "";
+        }
         int[] pos = {0};
         try {
             int len = readVarInt(payload, pos);
             if (len < 0 || pos[0] + len > payload.length) {
                 return "";
             }
+            if (len > 1 && (payload[pos[0]] & 0xFF) == VEHICLE_FORMAT_V2) {
+                int[] cpos = {pos[0] + 1};
+                int version = readByte(payload, cpos);
+                if (version != VEHICLE_VERSION) {
+                    return "";
+                }
+                int typeLen = readVarInt(payload, cpos);
+                if (typeLen < 0 || cpos[0] + typeLen > payload.length) {
+                    return "";
+                }
+                return new String(payload, cpos[0], typeLen, StandardCharsets.UTF_8);
+            }
             return new String(payload, pos[0], len, StandardCharsets.UTF_8);
         } catch (EOFException e) {
             return "";
         }
+    }
+
+    /** 解码 VEHICLE payload；未知/损坏时按类型-only 回退。 */
+    public static VehicleInfo vehicleInfo(byte[] payload) {
+        if (payload == null || payload.length == 0) {
+            return VehicleInfo.typeOnly("");
+        }
+        int[] pos = {0};
+        try {
+            int len = readVarInt(payload, pos);
+            if (len < 0 || pos[0] + len > payload.length) {
+                return VehicleInfo.typeOnly("");
+            }
+            int bodyStart = pos[0];
+            if (len <= 1 || (payload[bodyStart] & 0xFF) != VEHICLE_FORMAT_V2) {
+                String type = new String(payload, bodyStart, len, StandardCharsets.UTF_8);
+                // 旧轨迹只有类型：马类按默认属性回退，仍可生成可捕捉的真实马
+                return horseLikeType(type) ? new VehicleInfo(type, true, 0f, 0d, 0d,
+                        0, 0, false, false, false) : VehicleInfo.typeOnly(type);
+            }
+            int[] cpos = {bodyStart + 1};
+            int version = readByte(payload, cpos);
+            if (version != VEHICLE_VERSION) {
+                return VehicleInfo.typeOnly(vehicle(payload));
+            }
+            int typeLen = readVarInt(payload, cpos);
+            if (typeLen < 0 || cpos[0] + typeLen > payload.length) {
+                return VehicleInfo.typeOnly("");
+            }
+            String type = new String(payload, cpos[0], typeLen, StandardCharsets.UTF_8);
+            cpos[0] += typeLen;
+            int flags = readByte(payload, cpos);
+            boolean horse = (flags & 1) != 0;
+            if (!horse) {
+                return VehicleInfo.typeOnly(type);
+            }
+            float maxHealth = readFloat(payload, cpos);
+            double movementSpeed = readDouble(payload, cpos);
+            double jumpStrength = readDouble(payload, cpos);
+            int variant = readVarInt(payload, cpos);
+            int markings = readVarInt(payload, cpos);
+            return new VehicleInfo(type, true, maxHealth, movementSpeed, jumpStrength,
+                    variant, markings, (flags & (1 << 1)) != 0,
+                    (flags & (1 << 2)) != 0, (flags & (1 << 3)) != 0);
+        } catch (EOFException e) {
+            return VehicleInfo.typeOnly(vehicle(payload));
+        }
+    }
+
+    /**
+     * 回放时转为真实僵尸马的类型：只认真正的马（horse/skeleton_horse/zombie_horse）。
+     * 驴/骡/羊驼继续用客户端假载具，保留它们的外观。
+     */
+    public static boolean replayHorseType(String typeId) {
+        if (typeId == null || typeId.isBlank()) {
+            return false;
+        }
+        String path = typeId;
+        int colon = path.indexOf(':');
+        if (colon >= 0) {
+            path = path.substring(colon + 1);
+        }
+        path = path.toLowerCase(java.util.Locale.ROOT);
+        return path.equals("horse") || path.equals("skeleton_horse")
+                || path.equals("zombie_horse");
+    }
+
+    /** 旧类型-only payload 的马类识别（用于按默认属性回退）。 */
+    static boolean horseLikeType(String typeId) {
+        return replayHorseType(typeId);
+    }
+
+    private static void writeFloat(ByteArrayOutputStream out, float value) {
+        out.writeBytes(ByteBuffer.allocate(4).putFloat(value).array());
+    }
+
+    private static void writeDouble(ByteArrayOutputStream out, double value) {
+        out.writeBytes(ByteBuffer.allocate(8).putDouble(value).array());
+    }
+
+    private static float readFloat(byte[] bytes, int[] pos) throws EOFException {
+        if (pos[0] + 4 > bytes.length) {
+            throw new EOFException("payload 截断");
+        }
+        float value = ByteBuffer.wrap(bytes, pos[0], 4).getFloat();
+        pos[0] += 4;
+        return value;
+    }
+
+    private static double readDouble(byte[] bytes, int[] pos) throws EOFException {
+        if (pos[0] + 8 > bytes.length) {
+            throw new EOFException("payload 截断");
+        }
+        double value = ByteBuffer.wrap(bytes, pos[0], 8).getDouble();
+        pos[0] += 8;
+        return value;
     }
 }

@@ -30,9 +30,9 @@ public final class TrackEventApplier {
         if (flight >= 0) {
             mannequin.applyFlightMode(flight);
         }
-        String vehicle = cursor.vehicleAt(timeMs);
+        TrackEvents.VehicleInfo vehicle = cursor.vehicleInfoAt(timeMs);
         if (vehicle != null) {
-            mannequin.applyVehicleType(vehicle);
+            mannequin.applyVehicle(vehicle);
         }
     }
 
@@ -51,7 +51,7 @@ public final class TrackEventApplier {
                 case TrackEvents.TYPE_FLIGHT_MODE ->
                         mannequin.applyFlightMode(TrackEvents.flightMode(event.payload()));
                 case TrackEvents.TYPE_VEHICLE ->
-                        mannequin.applyVehicleType(TrackEvents.vehicle(event.payload()));
+                        mannequin.applyVehicle(TrackEvents.vehicleInfo(event.payload()));
                 case TrackEvents.TYPE_SWING -> mannequin.applySwing(
                         TrackEvents.hand(event.payload()), TrackEvents.animation(event.payload()));
                 case TrackEvents.TYPE_USE_START ->

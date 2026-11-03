@@ -72,10 +72,16 @@ public final class TrackEventCursor {
         return index < 0 ? -1 : TrackEvents.flightMode(events.get(index).payload());
     }
 
+    /** 时间 ≤ t 的最近 VEHICLE；无事件返回 null；空串表示无载具。 */
+    public TrackEvents.VehicleInfo vehicleInfoAt(long timeMs) {
+        int index = lastIndex(TrackEvents.TYPE_VEHICLE, timeMs);
+        return index < 0 ? null : TrackEvents.vehicleInfo(events.get(index).payload());
+    }
+
     /** 时间 ≤ t 的最近 VEHICLE 实体类型 id；无事件返回 null；空串表示无载具。 */
     public String vehicleAt(long timeMs) {
-        int index = lastIndex(TrackEvents.TYPE_VEHICLE, timeMs);
-        return index < 0 ? null : TrackEvents.vehicle(events.get(index).payload());
+        TrackEvents.VehicleInfo info = vehicleInfoAt(timeMs);
+        return info == null ? null : info.typeId();
     }
 
     /** 时间 ≤ t 的最近完整背包；无事件返回 null（表示该段没有记录背包）。 */

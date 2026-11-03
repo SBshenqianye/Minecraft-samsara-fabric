@@ -11,6 +11,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.Vec3;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -64,6 +65,9 @@ public final class TrackReplay {
         long lastEventMs;
         boolean legacyEquipment;
         FakeVehicle vehicle;
+        /** 回放马：真实服务端实体，捕捉后保留；非马载具仍用 FakeVehicle。 */
+        ReplayHorse horse;
+        TrackEvents.VehicleInfo horseInfo;
 
         /** 当前轨迹时间（按墙钟 × 倍速推进，钳到区间内） */
         long cursorMs(long nowWallMs) {
@@ -302,7 +306,13 @@ public final class TrackReplay {
             if (!r.entity.level().isLoaded(pos)) {
                 r.entity.level().getChunk(pos.getX() >> 4, pos.getZ() >> 4);
             }
-            r.entity.snapTo(x, y, z, yaw, pitch);
+            // 骑在真实马上的乘客由载具定位；直接 snapTo 会和人偶的 rideTick 打架
+            if (r.horse == null || !r.entity.isPassenger()) {
+                r.entity.snapTo(x, y, z, yaw, pitch);
+            } else {
+                r.entity.setYRot(yaw);
+                r.entity.setXRot(pitch);
+            }
             r.entity.setYHeadRot(yaw);
             r.entity.setYBodyRot(yaw);
             r.entity.yHeadRotO = yaw;
@@ -319,32 +329,99 @@ public final class TrackReplay {
             }
             // flags 取当前所在样本（不插值）：姿态是离散状态，越过样本时刻才切换
             r.entity.applyTrackFlags(a.flags());
-            updateVehicle(r);
+            updateVehicle(r, x, y, z, yaw, pitch);
         }
     }
 
-    /** 客户端假载具：与回看共用同一实现，不创建服务端实体。 */
-    private static void updateVehicle(Replay r) {
+    /**
+     * 载具推进：马类生成真实僵尸马（可捕捉、捕捉后保留），其他载具继续用客户端假实体。
+     */
+    private static void updateVehicle(Replay r, double x, double y, double z, float yaw, float pitch) {
         if (r.entity == null || r.entity.isRemoved()) {
+            clearVehicles(r);
+            return;
+        }
+        TrackEvents.VehicleInfo info = r.entity.vehicleInfo();
+        if (info == null || info.isEmpty()) {
+            clearVehicles(r);
+            return;
+        }
+        if (info.horse() && TrackEvents.replayHorseType(info.typeId())) {
             if (r.vehicle != null) {
                 r.vehicle.remove();
                 r.vehicle = null;
             }
-            return;
-        }
-        if (r.entity.vehicleType().isBlank()) {
-            if (r.vehicle != null) {
-                r.vehicle.setType("");
-                r.vehicle = null;
+            if (r.horse != null && (!r.horseInfo.equals(info) || r.horse.isRemoved())) {
+                discardHorse(r);
+            }
+            if (r.horse == null && r.entity.level() instanceof ServerLevel level) {
+                spawnHorse(r, info, level, x, y, z, yaw);
+            }
+            if (r.horse != null) {
+                positionHorse(r, x, y, z, yaw);
+                if (!r.entity.isPassenger() && !r.entity.startRiding(r.horse, true, true)) {
+                    Samsara.LOGGER.debug("[回放] 人偶无法骑上回放马，回退蹲姿");
+                }
             }
             return;
+        }
+        // 非马载具：移除可能残留的真实马，回到客户端假实体
+        if (r.horse != null) {
+            discardHorse(r);
         }
         if (r.vehicle == null) {
             r.vehicle = new FakeVehicle();
         }
-        r.vehicle.setType(r.entity.vehicleType());
+        r.vehicle.setType(info.typeId());
         if (r.entity.level() instanceof ServerLevel level) {
             r.vehicle.tick(level, r.entity);
+        }
+    }
+
+    private static void clearVehicles(Replay r) {
+        if (r.vehicle != null) {
+            r.vehicle.setType("");
+            r.vehicle.remove();
+            r.vehicle = null;
+        }
+        if (r.horse != null) {
+            discardHorse(r);
+        }
+    }
+
+    private static void spawnHorse(Replay r, TrackEvents.VehicleInfo info,
+                                   ServerLevel level, double x, double y, double z, float yaw) {
+        String name = AncientName.generate();
+        ReplayHorse horse = new ReplayHorse(level, r.uuid, r.cycleId, TrackReplay::onHorseCaptured);
+        horse.configure(info, name);
+        horse.snapTo(x, y, z, yaw, 0f);
+        if (!level.addFreshEntity(horse)) {
+            horse.discard();
+            return;
+        }
+        r.horse = horse;
+        r.horseInfo = info;
+        Samsara.LOGGER.info("[回放] 生成回放马 {}（{} · 生命 {} · 移速 {} · 跳跃 {}）",
+                name, info.typeId(), info.maxHealth(), info.movementSpeed(), info.jumpStrength());
+    }
+
+    private static void positionHorse(Replay r, double x, double y, double z, float yaw) {
+        ReplayHorse horse = r.horse;
+        horse.snapTo(x, y, z, yaw, 0f);
+        // 把人偶的座位点对齐到录制时的玩家位置，避免马整体下沉半格
+        Vec3 offset = horse.getPassengerRidingPosition(r.entity).subtract(horse.position());
+        horse.setPos(x - offset.x, y - offset.y, z - offset.z);
+        horse.setYRot(yaw);
+        horse.setYHeadRot(yaw);
+        horse.setYBodyRot(yaw);
+        horse.setDeltaMovement(Vec3.ZERO);
+    }
+
+    private static void discardHorse(Replay r) {
+        if (r.horse != null) {
+            r.horse.discard();
+            r.horse = null;
+            r.horseInfo = null;
         }
     }
 
@@ -359,11 +436,28 @@ public final class TrackReplay {
     /**
      * 捕捉回调：停止该回放、取消伤害（由实体返回 false）、原地变普通实体、
      * 记录 capture cutoff、广播。只影响该玩家该周目，不碰方块逆熵。
+     * <p>
+     * 攻击/右键人偶与攻击/右键回放马走同一条流程；马在捕捉当时就转为持久实体。
      */
     private static synchronized void onCaptured(ReplayMannequin entity, ServerPlayer player) {
         Replay r = ACTIVE.get(entity.sourceUuid());
         if (r == null || r.entity != entity || r.captured) {
             return; // 已在捕捉流程中/不是当前回放实体
+        }
+        capture(r, player, "人偶");
+    }
+
+    private static synchronized void onHorseCaptured(ReplayHorse horse, ServerPlayer player) {
+        Replay r = ACTIVE.get(horse.sourceUuid());
+        if (r == null || r.horse != horse || r.captured) {
+            return;
+        }
+        capture(r, player, "回放马");
+    }
+
+    private static void capture(Replay r, ServerPlayer player, String via) {
+        if (r == null || r.captured) {
+            return;
         }
         long now = System.currentTimeMillis();
         // 捕捉发生在“轨迹时间轴”上的哪个点（不是墙钟）：之后的轨迹作废
@@ -374,15 +468,33 @@ public final class TrackReplay {
             r.vehicle.remove();
             r.vehicle = null;
         }
-        entity.markCaptured();
+        ReplayHorse horse = r.horse;
+        r.horse = null;
+        r.horseInfo = null;
+        if (r.entity != null && r.entity.isPassenger()) {
+            r.entity.stopRiding();
+        }
+        if (horse != null) {
+            horse.markCaptured();
+        }
+        if (r.entity != null && !r.entity.isRemoved()) {
+            r.entity.markCaptured();
+            if (horse != null && !horse.isRemoved()) {
+                r.entity.snapTo(horse.getX() + 1.0, horse.getY(), horse.getZ(),
+                        r.entity.getYRot(), 0f);
+            }
+        }
 
         TrackRecorder recorder = TrackRecorder.getInstance();
         Path trackRoot = recorder.trackRootOf(r.file);
         recorder.cutsForTrackRoot(trackRoot).capture(
                 recorder.worldKeyOfTrackRoot(trackRoot), r.cycleId, r.uuid, captureTrackMs);
 
-        String msg = "玩家 " + player.getScoreboardName() + " 捕捉了 " + r.name + " 的人偶（周目 "
-                + r.cycleId + "）· 回放已停止，该玩家该周目从轨迹时间 "
+        String horseText = horse == null ? ""
+                : "；僵尸马 " + horse.ancientName() + " 已保留为持久实体";
+        String msg = "玩家 " + player.getScoreboardName() + " 捕捉了 " + r.name + " 的" + via
+                + "（周目 " + r.cycleId + "）· 回放已停止" + horseText
+                + " · 该玩家该周目从轨迹时间 "
                 + Instant.ofEpochMilli(captureTrackMs).atZone(ZoneId.systemDefault()).toLocalDateTime()
                 + " 起的轨迹不再回放（磁盘记录保留）· 方块逆熵照常";
         Samsara.LOGGER.info("[周目管理 samsara] {}", msg);
@@ -402,11 +514,15 @@ public final class TrackReplay {
     }
 
     private static void discardEntity(Replay r) {
-        if (r != null && r.vehicle != null) {
+        if (r == null) {
+            return;
+        }
+        if (r.vehicle != null) {
             r.vehicle.remove();
             r.vehicle = null;
         }
-        if (r != null && r.entity != null && !r.entity.isRemoved()) {
+        discardHorse(r);
+        if (r.entity != null && !r.entity.isRemoved()) {
             r.entity.discard();
         }
     }

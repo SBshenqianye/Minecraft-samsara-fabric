@@ -105,6 +105,70 @@ class TrackEventsTest {
     }
 
     @Test
+    void horseVehicleV2RoundTrip() {
+        TrackEvents.VehicleInfo info = new TrackEvents.VehicleInfo(
+                "minecraft:horse", true, 31.5f, 0.2875d, 0.85d, 4, 2, true, false, false);
+        byte[] payload = TrackEvents.vehiclePayload(info);
+        assertEquals("minecraft:horse", TrackEvents.vehicle(payload));
+        assertEquals(info, TrackEvents.vehicleInfo(payload));
+    }
+
+    @Test
+    void v2VehicleEventDoesNotSwallowFollowingEvents() throws Exception {
+        TrackEvents.VehicleInfo info = new TrackEvents.VehicleInfo(
+                "minecraft:horse", true, 30f, 0.3d, 1.0d, 2, 1, true, false, false);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        out.write(TrackEvents.header());
+        TrackEvents.write(out, 0, new TrackEvents.Event(1000, TrackEvents.TYPE_VEHICLE,
+                TrackEvents.vehiclePayload(info)));
+        TrackEvents.write(out, 1000, new TrackEvents.Event(1100, TrackEvents.TYPE_SWING,
+                TrackEvents.swingPayload(0, 1)));
+        TrackEvents.ReadResult result = TrackEvents.read(out.toByteArray());
+        assertFalse(result.truncated(), result.warning());
+        assertEquals(2, result.events().size(), "v2 payload 必须能被 skipPayload 正确跳过");
+        assertEquals(TrackEvents.TYPE_VEHICLE, result.events().get(0).type());
+        assertEquals(TrackEvents.TYPE_SWING, result.events().get(1).type());
+        assertEquals(info, TrackEvents.vehicleInfo(result.events().get(0).payload()));
+    }
+
+    @Test
+    void oldTypeOnlyVehiclePayloadStillDecodes() {
+        byte[] payload = TrackEvents.vehiclePayload("minecraft:oak_boat");
+        TrackEvents.VehicleInfo info = TrackEvents.vehicleInfo(payload);
+        assertFalse(info.horse());
+        assertEquals("minecraft:oak_boat", info.typeId());
+        assertEquals("minecraft:oak_boat", TrackEvents.vehicle(payload));
+    }
+
+    @Test
+    void oldTypeOnlyHorsePayloadInfersHorseWithDefaults() {
+        TrackEvents.VehicleInfo horse = TrackEvents.vehicleInfo(
+                TrackEvents.vehiclePayload("minecraft:horse"));
+        assertTrue(horse.horse(), "旧马类轨迹应按默认属性回退为可捕捉马");
+        assertEquals(0f, horse.maxHealth());
+        assertFalse(TrackEvents.vehicleInfo(
+                TrackEvents.vehiclePayload("minecraft:oak_boat")).horse());
+        assertTrue(TrackEvents.horseLikeType("minecraft:skeleton_horse"));
+        assertTrue(TrackEvents.replayHorseType("minecraft:zombie_horse"));
+        assertFalse(TrackEvents.horseLikeType("minecraft:donkey"),
+                "驴/骡/羊驼保留假载具外观，不转成僵尸马");
+        assertFalse(TrackEvents.horseLikeType("minecraft:pig"));
+    }
+
+    @Test
+    void truncatedV2PayloadFallsBackWithoutThrowing() {
+        TrackEvents.VehicleInfo info = new TrackEvents.VehicleInfo(
+                "minecraft:horse", true, 30f, 0.2d, 0.7d, 1, 1, true, false, false);
+        byte[] payload = TrackEvents.vehiclePayload(info);
+        byte[] truncated = new byte[payload.length - 3];
+        System.arraycopy(payload, 0, truncated, 0, truncated.length);
+        TrackEvents.VehicleInfo decoded = TrackEvents.vehicleInfo(truncated);
+        // 损坏时最多退化为类型-only（甚至空类型），绝不能抛异常
+        assertTrue(decoded != null);
+        assertTrue(decoded.typeId().isEmpty() || decoded.typeId().equals("minecraft:horse"));
+    }
+
+    @Test
     void betweenIsForwardExclusiveInclusive() {
         List<TrackEvents.Event> events = List.of(
                 new TrackEvents.Event(100, TrackEvents.TYPE_SWING, TrackEvents.swingPayload(0, 0)),

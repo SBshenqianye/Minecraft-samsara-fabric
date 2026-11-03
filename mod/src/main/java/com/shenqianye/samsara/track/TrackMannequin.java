@@ -46,8 +46,8 @@ public abstract class TrackMannequin extends Mannequin {
 
     /** -1 = 未知（旧轨迹，沿用 flags）；0 none；1 elytra；2 creative。 */
     private int flightMode = -1;
-    /** 真实载具实体类型 id；空串 = 无载具。 */
-    private String vehicleType = "";
+    /** 真实载具类型 + 可选马属性；空类型 = 无载具。 */
+    private TrackEvents.VehicleInfo vehicleInfo = TrackEvents.VehicleInfo.typeOnly("");
     /** 当前载具类型是否已成功映射为客户端假实体；true 时骑乘用站立姿态（由载具承托）。 */
     private boolean vehicleRendered;
     /** 记录的选中快捷栏 0~8（只用于状态/检查，客户端人偶没有快捷栏）。 */
@@ -97,25 +97,39 @@ public abstract class TrackMannequin extends Mannequin {
         return flightMode;
     }
 
-    /** 统一入口：记录真实载具实体类型；完整渲染可后置，但状态可区分。 */
-    public final void applyVehicleType(String entityTypeId) {
-        String value = entityTypeId == null ? "" : entityTypeId;
-        if (!value.equals(vehicleType)) {
-            vehicleType = value;
-            vehicleRendered = FakeVehicle.supported(value);
-            if (!value.isEmpty() && LOGGED_VEHICLES.add(value)) {
-                Samsara.LOGGER.info("[回放] 载具类型: {}（{}）", value,
-                        vehicleRendered ? "客户端假实体渲染" : "未知类型，回退蹲姿");
+    /** 统一入口：记录真实载具类型与马属性；完整渲染由回放管线决定。 */
+    public final void applyVehicle(TrackEvents.VehicleInfo info) {
+        TrackEvents.VehicleInfo value = info == null
+                ? TrackEvents.VehicleInfo.typeOnly("") : info;
+        if (!value.equals(vehicleInfo)) {
+            vehicleInfo = value;
+            boolean realHorse = value.horse() && TrackEvents.replayHorseType(value.typeId());
+            vehicleRendered = realHorse || FakeVehicle.supported(value.typeId());
+            if (!value.isEmpty() && LOGGED_VEHICLES.add(value.typeId())) {
+                Samsara.LOGGER.info("[回放] 载具类型: {}（{}{}）", value.typeId(),
+                        realHorse ? "真实马实体（捕捉后可保留）" :
+                                (vehicleRendered ? "客户端假实体渲染" : "未知类型，回退蹲姿"),
+                        realHorse ? String.format(" · 生命 %.1f · 移速 %.2f · 跳跃 %.2f",
+                                value.maxHealth(), value.movementSpeed(), value.jumpStrength()) : "");
             }
         }
+    }
+
+    /** 兼容旧调用：只给类型、无属性。 */
+    public final void applyVehicleType(String entityTypeId) {
+        applyVehicle(TrackEvents.VehicleInfo.typeOnly(entityTypeId));
     }
 
     public final boolean vehicleRendered() {
         return vehicleRendered;
     }
 
+    public final TrackEvents.VehicleInfo vehicleInfo() {
+        return vehicleInfo;
+    }
+
     public final String vehicleType() {
-        return vehicleType;
+        return vehicleInfo.typeId();
     }
 
     /** 前向跨越 SWING：还原挥动动作。 */
