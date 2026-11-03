@@ -13,7 +13,8 @@
     "CompletionPageMixin",
     "TamableAnimalMixin",
     "ServerboundPunchMixin",
-    "LivingEntitySwingMixin"
+    "LivingEntitySwingMixin",
+    "ViewInteractMixin"
   ],
   "injectors": {
     "defaultRequire": 1

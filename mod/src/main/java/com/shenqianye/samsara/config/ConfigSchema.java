@@ -92,6 +92,8 @@ public final class ConfigSchema {
                         "回看时保护观看者（临时无敌 + 安全跟随点）"),
                 ConfigEntry.integer("view.freeRoamRadius", 32, 8, 256, "回看",
                         "回看时允许自由活动的半径（格），超出后自动跟随"),
+                ConfigEntry.bool("view.scrub.enabled", true, "回看",
+                        "回看默认开启拖动（Shift 后退 / Ctrl 快进 / 空格暂停；命令 --scrub 可覆盖）"),
                 ConfigEntry.bool("view.aim.enabled", false, "回看",
                         "回看默认自动瞄准（命令 --aim 可覆盖）"),
                 ConfigEntry.decimal("view.aim.deadzone", 6.0, 2.0, 45.0, "回看",

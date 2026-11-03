@@ -54,15 +54,20 @@ public final class ViewSession {
     double aimSpeed = ViewOptions.DEFAULT_AIM_SPEED;
     boolean aimPitch = true;
     long lastAimAtMs;
+    ViewAim.Tracker aimTracker;
 
-    /** 拖动模式：A/D 倒退/快进，空格暂停，Shift 加速；不读取滚轮 */
-    boolean scrubMode;
+    /** 拖动模式：Shift 后退 / Ctrl 快进 / 空格暂停；长按自动加速；不读取滚轮 */
+    boolean scrubMode = true;
     String scrubAnchorDim;
     double scrubAnchorX;
     double scrubAnchorY;
     double scrubAnchorZ;
     boolean lastScrubJump;
     long lastScrubAtMs;
+    /** 本 tick 是否正在拖动（用于暂停自动跟随，避免抢镜头） */
+    boolean scrubbingThisTick;
+    /** 方向键按住的起点：长按 0.6 秒后自动加速到 4× */
+    long scrubHoldSinceMs;
     boolean truncated;
     boolean cutoffApplied;
     /** track v2 事件侧车（旧轨迹为空） */
@@ -73,6 +78,9 @@ public final class ViewSession {
     boolean legacyEquipment;
     /** F-107：本次回看是否允许捕捉后人偶掉落录制装备（回看本身永不掉落） */
     boolean equipmentDrop;
+    /** 右键人偶查看背包的分页状态：1.5 秒内连续右键翻页 */
+    long lastInspectAtMs;
+    int inspectPage = 1;
     boolean restored;
     /** 自由活动/跟随状态 */
     boolean followInitialized;

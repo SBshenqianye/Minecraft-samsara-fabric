@@ -257,7 +257,7 @@ public final class ViewManager {
                     restore(s, "人偶所在维度不可用");
                     continue;
                 }
-                if (s.options.follow() && !s.scrubMode) {
+                if (s.options.follow() && !s.scrubbingThisTick) {
                     follow(s, player, trackTime);
                 }
                 if (s.aimEnabled) {
@@ -397,6 +397,8 @@ public final class ViewManager {
             s.display = new ViewDisplay(viewer, s.targetName, s.cycleId);
             // 回看期间始终旁观：无碰撞、无伤害，可自由飞行
             viewer.setGameMode(GameType.SPECTATOR);
+            // 观察者本身不是被录制对象：关闭当前段，结束回看后再重新开段
+            TrackRecorder.getInstance().pausePlayer(viewer.getUUID());
             // 回看保护：安全跟随 + ALLOW_DAMAGE 取消伤害（见 Samsara 事件注册）
             s.lastWriteDim = viewer.level().dimension().identifier().toString();
             s.lastWriteX = viewer.getX();
@@ -407,11 +409,16 @@ public final class ViewManager {
             s.endTrackMs = s.cursor.endMs();
             s.state = ViewSession.State.PLAYING;
             CommandConfig cfg = CommandConfig.getInstance();
+            s.scrubMode = s.options.scrub() != null ? s.options.scrub() : cfg.viewScrubEnabled();
+            s.scrubAnchorDim = null;
+            s.scrubbingThisTick = false;
             s.aimEnabled = s.options.aim() != null ? s.options.aim() : cfg.viewAimEnabled();
             s.aimDeadzone = s.options.aimDeadzone();
             s.aimEdge = s.options.aimEdge();
             s.aimSpeed = s.options.aimSpeed();
             s.aimPitch = s.options.aimPitch();
+            s.aimTracker = new ViewAim.Tracker(
+                    new ViewAim.Params(s.aimDeadzone, s.aimEdge, s.aimSpeed, s.aimPitch));
             s.lastAimAtMs = System.currentTimeMillis();
             sessions.put(s.viewer, s);
             if (s.options.follow()) {
@@ -626,6 +633,9 @@ public final class ViewManager {
         s.lastWriteZ = vz;
         s.lastWriteAtMs = System.currentTimeMillis();
         s.lastAimAtMs = System.currentTimeMillis();
+        if (s.aimTracker != null) {
+            s.aimTracker.reset();
+        }
     }
 
     /**
@@ -654,11 +664,13 @@ public final class ViewManager {
         }
         ViewAim.Delta delta;
         try {
-            delta = ViewAim.step(player.getYRot(), player.getXRot(),
+            if (s.aimTracker == null) {
+                s.aimTracker = new ViewAim.Tracker(
+                        new ViewAim.Params(s.aimDeadzone, s.aimEdge, s.aimSpeed, s.aimPitch));
+            }
+            delta = s.aimTracker.step(player.getYRot(), player.getXRot(),
                     player.getX(), player.getEyeY(), player.getZ(),
-                    targetX, targetY, targetZ,
-                    new ViewAim.Params(s.aimDeadzone, s.aimEdge, s.aimSpeed, s.aimPitch),
-                    dt);
+                    targetX, targetY, targetZ, dt);
         } catch (IllegalArgumentException e) {
             s.aimEnabled = false;
             return;
@@ -680,18 +692,45 @@ public final class ViewManager {
                 Relative.Y_ROT, Relative.X_ROT));
     }
 
+    /** 长按方向键多久后自动加速到 4×。 */
+    public static final long SCRUB_FAST_AFTER_MS = 600L;
+
     /**
-     * 拖动模式（仅服务端）：读取客户端本来就会发送的移动输入。
-     * A/D 倒退/快进，空格暂停/继续，Shift 加速；滚轮在 vanilla 旁观下不发包，无法读取。
+     * 拖动模式（仅服务端）：读取客户端本来就会发送的输入。
+     * Shift 后退、Ctrl（疾跑键）快进、空格暂停/继续；按住方向键 0.6 秒后自动 4×。
+     * A/D 只留给位移，不再触发拖动；滚轮在 vanilla 旁观下不发包，无法读取。
+     * <p>
+     * 只有按键时才锚定观看者；松开后恢复自由飞行/自动跟随，不长期锁死镜头。
      */
     private void handleScrub(MinecraftServer server, ViewSession s, ServerPlayer player, long now) {
+        s.scrubbingThisTick = false;
         if (s.cursor == null) {
+            s.scrubAnchorDim = null;
             return;
         }
+        var input = player.getLastClientInput();
+        if (input == null) {
+            s.scrubAnchorDim = null;
+            return;
+        }
+        boolean back = input.shift();
+        boolean forward = input.sprint();
+        boolean jump = input.jump();
+        boolean pauseEdge = jump && !s.lastScrubJump;
+        s.lastScrubJump = jump;
+
+        boolean active = back || forward || pauseEdge || jump;
+        if (!active) {
+            // 松开按键：下一次按键在当前位置重新锚定，期间可自由活动/跟随
+            s.scrubAnchorDim = null;
+            s.scrubHoldSinceMs = 0L;
+            return;
+        }
+        s.scrubbingThisTick = true;
         if (s.scrubAnchorDim == null) {
             anchorScrub(s, player);
         }
-        // 拖动期间锚定位置，只保留视角旋转；避免 A/D/空格/Shift 同时把镜头飞走
+        // 拖动期间锚定位置，只保留视角旋转；避免输入同时把镜头飞走
         if (player.distanceToSqr(s.scrubAnchorX, s.scrubAnchorY, s.scrubAnchorZ) > 1.0E-6) {
             player.teleportTo(player.level(), s.scrubAnchorX, s.scrubAnchorY, s.scrubAnchorZ,
                     Set.of(), player.getYRot(), player.getXRot(), false);
@@ -703,11 +742,7 @@ public final class ViewManager {
             s.lastWriteZ = s.scrubAnchorZ;
             s.lastWriteAtMs = now;
         }
-        var input = player.getLastClientInput();
-        if (input == null) {
-            return;
-        }
-        if (input.jump() && !s.lastScrubJump) {
+        if (pauseEdge) {
             if (s.state == ViewSession.State.PLAYING) {
                 s.pause();
                 player.sendOverlayMessage(Component.literal("[回看] 已暂停"));
@@ -716,13 +751,23 @@ public final class ViewManager {
                 player.sendOverlayMessage(Component.literal("[回看] 已继续"));
             }
         }
-        s.lastScrubJump = input.jump();
 
+        boolean moving = back != forward;
+        if (!moving) {
+            s.scrubHoldSinceMs = 0L;
+            s.lastScrubAtMs = now;
+            return;
+        }
+        if (s.scrubHoldSinceMs == 0L) {
+            s.scrubHoldSinceMs = now;
+            s.lastScrubAtMs = now;
+        }
+        boolean fast = now - s.scrubHoldSinceMs >= SCRUB_FAST_AFTER_MS;
         double dt = Math.min(0.25, (now - s.lastScrubAtMs) / 1000.0);
         s.lastScrubAtMs = now;
         long current = s.trackTime(now);
         long target = ViewScrub.target(current, s.cursor.startMs(), s.endTrackMs,
-                input.left(), input.right(), input.shift(), dt);
+                back, forward, fast, dt);
         if (target != current) {
             s.seekTo(target);
             s.eventsJumpPending = true;
@@ -734,6 +779,7 @@ public final class ViewManager {
                 float progress = s.progress(now);
                 s.display.update("[回看] " + s.targetName + " · "
                                 + Math.round(progress * 100) + "% · 拖动"
+                                + (fast ? " 4×" : "")
                                 + (s.state == ViewSession.State.PAUSED ? "（暂停）" : ""),
                         progress);
             }
@@ -746,6 +792,7 @@ public final class ViewManager {
         s.scrubAnchorY = player.getY();
         s.scrubAnchorZ = player.getZ();
         s.lastScrubAtMs = System.currentTimeMillis();
+        s.scrubHoldSinceMs = 0L;
         var input = player.getLastClientInput();
         s.lastScrubJump = input != null && input.jump();
     }
@@ -790,9 +837,7 @@ public final class ViewManager {
                 ChatUi.run("倒放/正放", "/samsara track view reverse", "切换正放与倒放"),
                 ChatUi.run("对齐", "/samsara track view align", "一键回到人偶观察点"),
                 ChatUi.run("自瞄", "/samsara track view aim", "即时开关自动瞄准"),
-                ChatUi.run("拖动", "/samsara track view scrub", "A/D 后退/快进，空格暂停，Shift 加速"),
-                ChatUi.run("背包", "/samsara track view inspect", "只读查看录制的完整背包（分页）"),
-                ChatUi.run("掉落", "/samsara track view drop", "切换本次回看的装备掉落开关"),
+                ChatUi.run("拖动", "/samsara track view scrub", "Shift 后退 / Ctrl 快进 / 空格暂停；右键人偶查看背包"),
                 ChatUi.run("停止", "/samsara track view stop", "停止回看并恢复状态"));
         MutableComponent line3 = ChatUi.line(
                 ChatUi.text("[进度]", ChatFormatting.GRAY),
@@ -1051,6 +1096,10 @@ public final class ViewManager {
 
         sessions.remove(s.viewer, s);
         s.state = ViewSession.State.IDLE;
+        // 恢复录制：只有回到非旁观且不再观看任何会话时才重新开段
+        if (viewer != null && !viewer.isSpectator() && !sessions.containsKey(viewer.getUUID())) {
+            TrackRecorder.getInstance().resumePlayer(viewer);
+        }
         Samsara.LOGGER.info("[回看] 结束: viewer={} target={} cycle={} reason={} skippedPosition={} skippedMode={}",
                 s.viewerName, s.targetName, s.cycleId, reason, skippedPosition, skippedMode);
         if (server != null && !s.targetUuid.equals(s.viewer)) {
@@ -1166,6 +1215,9 @@ public final class ViewManager {
         }
         s.seekTo(targetMs);
         s.eventsJumpPending = true;
+        if (s.aimTracker != null) {
+            s.aimTracker.reset();
+        }
         if (!updateMannequin(server, s, targetMs)) {
             return "跳转后的人偶维度不可用: " + s.targetName;
         }
@@ -1202,6 +1254,9 @@ public final class ViewManager {
         }
         s.aimEnabled = on == null ? !s.aimEnabled : on;
         s.lastAimAtMs = System.currentTimeMillis();
+        if (s.aimTracker != null) {
+            s.aimTracker.reset();
+        }
         return "自动瞄准已" + (s.aimEnabled ? "开启" : "关闭");
     }
 
@@ -1216,13 +1271,9 @@ public final class ViewManager {
         if (actor != null && !actor.getUUID().equals(s.viewer) && !allowOthers) {
             return "控制他人回看需要管理员权限";
         }
-        boolean value = on == null ? !s.equipmentDrop : on;
-        s.equipmentDrop = value;
-        if (s.mannequin != null) {
-            s.mannequin.setEquipmentDropAllowed(value);
-        }
-        return "本次回看的装备掉落已" + (value ? "开启" : "关闭")
-                + "（只影响捕捉后普通实体死亡；回看停止/人偶 discard 永不掉落）";
+        // 回看人偶没有死亡掉落路径；保留命令仅为兼容旧脚本，不再改变任何状态
+        return "回看人偶永不掉落；view drop 仅为旧命令兼容，不产生掉落效果"
+                + "（捕捉式回放的装备掉落由 view.allowEquipmentDrop 在回放前决定）";
     }
 
     /**
@@ -1239,57 +1290,99 @@ public final class ViewManager {
         if (actor != null && !actor.getUUID().equals(s.viewer) && !allowOthers) {
             return "查看他人回看背包需要管理员权限";
         }
+        return inspectSession(s, page).text();
+    }
+
+    /**
+     * 右键回看人偶：打开背包第 1 页；1.5 秒内再次右键翻下一页，末页后回到第 1 页。
+     * 仍复用只读快照，不生成任何可拾取物品。
+     */
+    public synchronized void inspectByRightClick(ServerPlayer viewer, ViewMannequin mannequin) {
+        if (viewer == null || mannequin == null) {
+            return;
+        }
+        ViewSession s = sessions.get(viewer.getUUID());
+        if (s == null || s.closed() || s.mannequin != mannequin) {
+            return;
+        }
+        if (viewer.distanceToSqr(mannequin) > 64.0 * 64.0) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        // 一次右键可能同时发主手/副手两个交互包：200ms 内只认一次
+        if (now - s.lastInspectAtMs < 200L) {
+            return;
+        }
+        int next = now - s.lastInspectAtMs <= 1_500L ? s.inspectPage + 1 : 1;
+        InspectResult result = inspectSession(s, next);
+        if (result.page() > 0) {
+            s.inspectPage = result.page();
+            s.lastInspectAtMs = now;
+        }
+        String text = result.text();
+        if (result.pages() > 1) {
+            text += "\n右键人偶：翻到下一页";
+        }
+        Samsara.LOGGER.info("[回看] 右键查看背包: viewer={} target={} page={}/{}",
+                s.viewerName, s.targetName, result.page(), result.pages());
+        viewer.sendSystemMessage(Component.literal(text));
+    }
+
+    private InspectResult inspectSession(ViewSession s, int page) {
         if (s.cursor == null || s.events == null) {
-            return "回看仍在加载或该段没有事件数据";
+            return new InspectResult("回看仍在加载或该段没有事件数据", 0, 0);
         }
         try {
-        long time = s.trackTime(System.currentTimeMillis());
-        TrackEventStore.InventorySnapshot snapshot;
-        try {
-            snapshot = s.events.inventoryAt(time);
-        } catch (RuntimeException e) {
-            Samsara.LOGGER.warn("[回看] 背包快照读取失败 viewer={} target={}: {}",
-                    s.viewerName, s.targetName, e.getMessage());
-            return "背包快照读取失败（事件可能仍在写入）：" + e.getMessage();
-        }
-        if (snapshot == null) {
-            return "该时刻没有完整背包快照（track.recordInventory=false，或该段录制于开启之前）；"
-                    + "已记录的可见装备仍显示在人偶身上";
-        }
-        List<TrackEventStore.InventoryItem> items = new ArrayList<>(snapshot.items());
-        items.sort(java.util.Comparator.comparingInt(TrackEventStore.InventoryItem::slot));
-        int pageSize = 10;
-        int pages = Math.max(1, (items.size() + pageSize - 1) / pageSize);
-        int current = Math.max(1, Math.min(pages, page));
-        StringBuilder sb = new StringBuilder("[回看] ").append(s.targetName)
-                .append(" 的只读背包快照（").append(ViewTime.format(time)).append("）")
-                .append(" · 第 ").append(current).append("/").append(pages).append(" 页")
-                .append(" · 共 ").append(items.size()).append(" 件（只读，不会生成物品）");
-        int from = (current - 1) * pageSize;
-        int to = Math.min(items.size(), from + pageSize);
-        for (int i = from; i < to; i++) {
-            TrackEventStore.InventoryItem item = items.get(i);
-            sb.append("\n  槽 ").append(item.slot()).append(": ")
-                    .append(item.stack().getItemName().getString())
-                    .append(" ×").append(item.stack().getCount());
-        }
-        if (items.isEmpty()) {
-            sb.append("\n  （空背包）");
-        }
-        if (current < pages) {
-            sb.append("\n下一页：/samsara track view inspect ")
-                    .append(s.viewerName).append(" ").append(current + 1);
-        }
-        return sb.toString();
+            long time = s.trackTime(System.currentTimeMillis());
+            TrackEventStore.InventorySnapshot snapshot;
+            try {
+                snapshot = s.events.inventoryAt(time);
+            } catch (RuntimeException e) {
+                Samsara.LOGGER.warn("[回看] 背包快照读取失败 viewer={} target={}: {}",
+                        s.viewerName, s.targetName, e.getMessage());
+                return new InspectResult("背包快照读取失败（事件可能仍在写入）：" + e.getMessage(), 0, 0);
+            }
+            if (snapshot == null) {
+                return new InspectResult("该时刻没有完整背包快照（track.recordInventory=false，或该段录制于开启之前）；"
+                        + "已记录的可见装备仍显示在人偶身上", 0, 0);
+            }
+            List<TrackEventStore.InventoryItem> items = new ArrayList<>(snapshot.items());
+            items.sort(java.util.Comparator.comparingInt(TrackEventStore.InventoryItem::slot));
+            int pageSize = 10;
+            int pages = Math.max(1, (items.size() + pageSize - 1) / pageSize);
+            int current = Math.max(1, Math.min(pages, page));
+            StringBuilder sb = new StringBuilder("[回看] ").append(s.targetName)
+                    .append(" 的只读背包快照（").append(ViewTime.format(time)).append("）")
+                    .append(" · 第 ").append(current).append("/").append(pages).append(" 页")
+                    .append(" · 共 ").append(items.size()).append(" 件（只读，不会生成物品）");
+            int from = (current - 1) * pageSize;
+            int to = Math.min(items.size(), from + pageSize);
+            for (int i = from; i < to; i++) {
+                TrackEventStore.InventoryItem item = items.get(i);
+                sb.append("\n  槽 ").append(item.slot()).append(": ")
+                        .append(item.stack().getItemName().getString())
+                        .append(" ×").append(item.stack().getCount());
+            }
+            if (items.isEmpty()) {
+                sb.append("\n  （空背包）");
+            }
+            if (current < pages) {
+                sb.append("\n下一页：/samsara track view inspect ")
+                        .append(s.viewerName).append(" ").append(current + 1);
+            }
+            return new InspectResult(sb.toString(), current, pages);
         } catch (RuntimeException e) {
             Samsara.LOGGER.warn("[回看] 背包快照读取失败 viewer={} target={}: {}",
                     s.viewerName, s.targetName, e.toString(), e);
-            return "背包快照读取失败（事件可能仍在写入）：" + e.getClass().getSimpleName()
-                    + (e.getMessage() == null ? "" : " " + e.getMessage());
+            return new InspectResult("背包快照读取失败（事件可能仍在写入）：" + e.getClass().getSimpleName()
+                    + (e.getMessage() == null ? "" : " " + e.getMessage()), 0, 0);
         }
     }
 
-    /** 拖动模式开关（F-102）：A/D/空格/Shift；滚轮不可用。 */
+    public record InspectResult(String text, int page, int pages) {
+    }
+
+    /** 拖动模式开关（F-102）：Shift/Ctrl/空格；滚轮不可用。 */
     public synchronized String setScrub(MinecraftServer server, ServerPlayer actor, String target,
                                         Boolean on, boolean allowOthers) {
         ViewSession s = findSession(server, actor, target);
@@ -1310,14 +1403,16 @@ public final class ViewManager {
                 return "观看者不在线";
             }
             s.scrubMode = true;
-            anchorScrub(s, viewer);
+            s.scrubAnchorDim = null;
             viewer.sendOverlayMessage(Component.literal(
-                    "[拖动] A 后退 · D 快进 · 空格暂停 · Shift 加速（滚轮不可用）"));
-            return "拖动模式已开启：A 后退 / D 快进 / 空格暂停 / Shift 加速；滚轮不可用";
+                    "[拖动] Shift 后退 · Ctrl 快进 · 空格暂停 · 长按方向键加速"));
+            return "拖动模式已开启：Shift 后退 / Ctrl 快进 / 空格暂停 / 长按加速；A/D 不再触发拖动";
         }
         if (!enable && s.scrubMode) {
             s.scrubMode = false;
             s.scrubAnchorDim = null;
+            s.scrubbingThisTick = false;
+            s.scrubHoldSinceMs = 0L;
             ServerPlayer viewer = server.getPlayerList().getPlayer(s.viewer);
             if (viewer != null) {
                 viewer.sendOverlayMessage(Component.literal("[拖动] 已关闭"));
@@ -1330,6 +1425,11 @@ public final class ViewManager {
     /** 命令层判断某名字是否是正在观看的回看者（用于 seek 的“玩家 + 参数”拆词）。 */
     public synchronized boolean hasViewerSession(MinecraftServer server, String name) {
         return name != null && !name.isBlank() && findSession(server, null, name) != null;
+    }
+
+    /** 录制端用：该 UUID 是否正在回看（不解析名字，避免每 tick 查玩家表）。 */
+    public synchronized boolean isViewing(UUID viewer) {
+        return viewer != null && sessions.containsKey(viewer);
     }
 
     /** 点击控制面板：切换正放/倒放 */
@@ -1425,7 +1525,7 @@ public final class ViewManager {
         } else if (s.events != null) {
             sb.append("\n").append(s.events.describeAt(s.trackTime(now)));
         }
-        sb.append("\n装备掉落: ").append(s.equipmentDrop ? "on" : "off");
+        sb.append("\n掉落: 回看人偶永不掉落（无掉落开关）");
         if (s.eventsTruncated) {
             sb.append("\n⚠ 事件文件尾部不完整，已读到最后一个完整事件");
         }

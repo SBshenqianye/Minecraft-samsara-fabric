@@ -58,6 +58,14 @@ class ViewOptionsTest {
     }
 
     @Test
+    void scrubDefaultsToConfigAndCanBeOverridden() {
+        assertNull(ViewOptions.parse("", START, END).scrub());
+        assertEquals(Boolean.TRUE, ViewOptions.parse("--scrub", START, END).scrub());
+        assertEquals(Boolean.FALSE, ViewOptions.parse("--scrub off", START, END).scrub());
+        assertEquals(Boolean.FALSE, ViewOptions.parse("--scrub=off", START, END).scrub());
+    }
+
+    @Test
     void followStillAcceptsOnOffWithoutSwallowingNextOption() {
         ViewOptions o = ViewOptions.parse("--follow off --aim on", START, END);
         assertFalse(o.follow());

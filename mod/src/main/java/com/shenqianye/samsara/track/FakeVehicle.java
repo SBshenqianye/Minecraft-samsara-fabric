@@ -36,7 +36,9 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public final class FakeVehicle {
     private static final AtomicInteger IDS = new AtomicInteger(1_800_000_000);
-    private static final double VIEW_RANGE = 128.0;
+    static final double VIEW_RANGE = 128.0;
+    /** 载具固定水平姿态：永远不跟随人偶俯仰，避免船/矿车/马被“掀斜”。 */
+    static final float VEHICLE_PITCH = 0.0f;
 
     private final int id = IDS.getAndIncrement();
     private final UUID uuid = new UUID(0x5A4D53415241L, id);
@@ -134,11 +136,12 @@ public final class FakeVehicle {
         try {
             shell.setPos(mannequin.getX(), mannequin.getY(), mannequin.getZ());
             shell.setYRot(mannequin.getYRot());
-            shell.setXRot(mannequin.getXRot());
+            // 载具只跟随水平朝向：人偶的俯仰不能把船/矿车/马一起掀斜
+            shell.setXRot(VEHICLE_PITCH);
             shell.setYHeadRot(mannequin.getYHeadRot());
             player.connection.send(new ClientboundAddEntityPacket(
                     id, uuid, mannequin.getX(), mannequin.getY(), mannequin.getZ(),
-                    mannequin.getXRot(), mannequin.getYRot(), type, 0, Vec3.ZERO,
+                    VEHICLE_PITCH, mannequin.getYRot(), type, 0, Vec3.ZERO,
                     mannequin.getYHeadRot()));
             var data = shell.getEntityData().getNonDefaultValues();
             if (!data.isEmpty()) {
@@ -172,7 +175,7 @@ public final class FakeVehicle {
             player.connection.send(new ClientboundTeleportEntityPacket(id,
                     new PositionMoveRotation(
                             new Vec3(mannequin.getX(), mannequin.getY(), mannequin.getZ()),
-                            Vec3.ZERO, mannequin.getYRot(), mannequin.getXRot()),
+                            Vec3.ZERO, mannequin.getYRot(), VEHICLE_PITCH),
                     Set.of(), mannequin.onGround()));
         } catch (RuntimeException ignored) {
             // 玩家已离线/连接关闭：下一次 tick 会从 sentTo 中清掉
@@ -209,9 +212,18 @@ public final class FakeVehicle {
 
     /** 只允许载具类实体；未知/玩家/生物坐骑以外的类型回退蹲姿。 */
     private static boolean vehicleLike(String path) {
+        return vehicleLikePath(path);
+    }
+
+    /** 纯类型判定（单测用）；输入是 registry path（如 {@code oak_boat}）。 */
+    static boolean vehicleLikePath(String path) {
+        if (path == null) {
+            return false;
+        }
         String p = path.toLowerCase(java.util.Locale.ROOT);
         return p.contains("boat") || p.contains("raft") || p.contains("minecart")
                 || p.contains("horse") || p.contains("llama") || p.contains("camel")
+                || p.equals("donkey") || p.equals("mule")
                 || p.equals("pig") || p.equals("strider");
     }
 

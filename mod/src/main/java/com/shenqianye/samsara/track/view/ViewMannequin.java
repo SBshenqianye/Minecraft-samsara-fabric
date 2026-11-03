@@ -105,9 +105,17 @@ public class ViewMannequin extends TrackMannequin {
         return false;
     }
 
-    /** 右键不接管：不捕捉、不拴绳、不产生持久后果。 */
+    /**
+     * 右键：只给“正在回看本人的观看者”打开只读背包；其他玩家仍然 PASS，
+     * 不捕捉、不拴绳、不产生持久后果。
+     */
     @Override
     public InteractionResult interact(Player player, InteractionHand hand, net.minecraft.world.phys.Vec3 location) {
+        if (player instanceof net.minecraft.server.level.ServerPlayer sp
+                && ViewManager.getInstance().isViewing(sp.getUUID())) {
+            ViewManager.getInstance().inspectByRightClick(sp, this);
+            return InteractionResult.SUCCESS;
+        }
         return InteractionResult.PASS;
     }
 

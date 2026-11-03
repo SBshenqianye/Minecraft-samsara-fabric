@@ -28,6 +28,7 @@ public final class CommandConfig {
 
     private boolean viewProtectViewer;
     private int viewFreeRoamRadius;
+    private boolean viewScrubEnabled;
 
     private boolean viewAimEnabled;
     private double viewAimDeadzone;
@@ -110,6 +111,10 @@ public final class CommandConfig {
 
     public int viewFreeRoamRadius() {
         return viewFreeRoamRadius;
+    }
+
+    public boolean viewScrubEnabled() {
+        return viewScrubEnabled;
     }
 
     public boolean viewAimEnabled() {
@@ -204,6 +209,7 @@ public final class CommandConfig {
 
         viewProtectViewer = config.bool(id, "view.protectViewer");
         viewFreeRoamRadius = config.integer(id, "view.freeRoamRadius");
+        viewScrubEnabled = config.bool(id, "view.scrub.enabled");
         viewAimEnabled = config.bool(id, "view.aim.enabled");
         viewAimDeadzone = config.decimal(id, "view.aim.deadzone");
         viewAimEdge = Math.max(viewAimDeadzone + 1.0, config.decimal(id, "view.aim.edge"));
@@ -233,6 +239,7 @@ public final class CommandConfig {
                 + " · tpa " + (tpaEnabled ? "启用" : "禁用")
                 + "（超时 " + tpaRequestTimeoutSeconds + "s）"
                 + " · 回看保护 " + (viewProtectViewer ? "开" : "关")
+                + " · 回看拖动 " + (viewScrubEnabled ? "默认开" : "默认关")
                 + " · 回看自瞄 " + (viewAimEnabled ? "默认开" : "默认关")
                 + " · 装备掉落 " + (viewAllowEquipmentDrop ? "允许" : "禁止")
                 + " · 背包快照 " + (trackRecordInventory ? "开" : "关")

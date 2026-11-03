@@ -20,6 +20,10 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.animal.equine.AbstractChestedHorse;
+import net.minecraft.world.entity.animal.equine.AbstractHorse;
+import net.minecraft.world.entity.animal.equine.Horse;
 import net.minecraft.world.item.ItemStack;
 
 import java.io.BufferedOutputStream;
@@ -75,6 +79,9 @@ public final class TrackRecorder {
     private final java.util.Set<UUID> archiveRefused = ConcurrentHashMap.newKeySet();
     private volatile boolean sweeping;
     private long lastSweepMs;
+    /** Web 容量预估用的实际 .bin 用量缓存（5 分钟）。 */
+    private volatile Usage cachedUsage;
+    private volatile long cachedUsageAtMs;
 
     private static final class State {
         OutputStream out;
@@ -99,7 +106,7 @@ public final class TrackRecorder {
         TrackEventStore.Equipment lastEquipment;
         int lastSelectedSlot = -1;
         int lastFlightMode = -2;
-        String lastVehicle = null;
+        TrackEvents.VehicleInfo lastVehicle;
         boolean lastUsing;
         int lastUseHand = -1;
         long lastUseStartedMs;
@@ -267,6 +274,14 @@ public final class TrackRecorder {
         long now = System.currentTimeMillis();
         SeasonData.Settings cfg = SeasonManager.getInstance().settings();
         for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+            // 回看期间观看者被强制旁观：不录制观察者本身（否则会生成观察者影像）。
+            // 同时在这里兜底关闭状态，避免外部把玩家切成旁观后继续写 .bin/.evt。
+            if (!shouldRecord(p.isSpectator(),
+                    com.shenqianye.samsara.track.view.ViewManager.getInstance().isViewing(p.getUUID()))) {
+                State skipped = states.remove(p.getUUID());
+                close(skipped);
+                continue;
+            }
             State st = states.computeIfAbsent(p.getUUID(), k -> {
                 State s = new State();
                 s.uuid = k;
@@ -296,6 +311,37 @@ public final class TrackRecorder {
         close(st);
     }
 
+    /**
+     * 回看/回放临时接管观看者前关闭其录制：关闭 .bin/.evt 并移除状态。
+     * 结束后由 {@link #resumePlayer(ServerPlayer)} 重新开段，旧文件不会被改写。
+     */
+    public void pausePlayer(UUID uuid) {
+        if (uuid == null) {
+            return;
+        }
+        State st = states.remove(uuid);
+        close(st);
+    }
+
+    /** 回看结束、观看者恢复原游戏模式后重新开始录制（新段）。 */
+    public void resumePlayer(ServerPlayer player) {
+        if (player == null || player.isSpectator()) {
+            return;
+        }
+        if (com.shenqianye.samsara.track.view.ViewManager.getInstance().isViewing(player.getUUID())) {
+            return;
+        }
+        if (states.containsKey(player.getUUID())) {
+            return;
+        }
+        startPlayer(player);
+    }
+
+    /** 观察者/旁观者不写轨迹；抽成纯函数便于单测。 */
+    public static boolean shouldRecord(boolean spectator, boolean viewing) {
+        return !spectator && !viewing;
+    }
+
     private void stopAll() {
         for (State st : states.values()) {
             close(st);
@@ -313,6 +359,10 @@ public final class TrackRecorder {
 
     private void sample(ServerPlayer player, State st, long now, SeasonData.Settings cfg) {
         if (worldRoot == null) {
+            return;
+        }
+        if (!shouldRecord(player.isSpectator(),
+                com.shenqianye.samsara.track.view.ViewManager.getInstance().isViewing(player.getUUID()))) {
             return;
         }
         if (st.settings == null) {
@@ -502,7 +552,7 @@ public final class TrackRecorder {
         int flight = flightMode(player);
         writeEvent(st, now, TrackEvents.TYPE_FLIGHT_MODE, TrackEvents.flightPayload(flight));
         st.lastFlightMode = flight;
-        String vehicle = vehicleType(player);
+        TrackEvents.VehicleInfo vehicle = vehicleInfo(player);
         writeEvent(st, now, TrackEvents.TYPE_VEHICLE, TrackEvents.vehiclePayload(vehicle));
         st.lastVehicle = vehicle;
         // 正在使用中开新段：先记 START，保证回放有起止
@@ -617,7 +667,7 @@ public final class TrackRecorder {
                 writeEvent(st, now, TrackEvents.TYPE_FLIGHT_MODE, TrackEvents.flightPayload(flight));
                 st.lastFlightMode = flight;
             }
-            String vehicle = vehicleType(player);
+            TrackEvents.VehicleInfo vehicle = vehicleInfo(player);
             if (st.lastVehicle == null || !st.lastVehicle.equals(vehicle)) {
                 writeEvent(st, now, TrackEvents.TYPE_VEHICLE, TrackEvents.vehiclePayload(vehicle));
                 st.lastVehicle = vehicle;
@@ -701,12 +751,30 @@ public final class TrackRecorder {
         return TrackEvents.FLIGHT_NONE;
     }
 
-    private static String vehicleType(ServerPlayer player) {
+    private static TrackEvents.VehicleInfo vehicleInfo(ServerPlayer player) {
         if (player.getVehicle() == null) {
-            return "";
+            return TrackEvents.VehicleInfo.typeOnly("");
         }
-        var key = BuiltInRegistries.ENTITY_TYPE.getKey(player.getVehicle().getType());
-        return key == null ? "" : key.toString();
+        var vehicle = player.getVehicle();
+        var key = BuiltInRegistries.ENTITY_TYPE.getKey(vehicle.getType());
+        String type = key == null ? "" : key.toString();
+        if (type.isEmpty() || !(vehicle instanceof AbstractHorse horse)) {
+            return TrackEvents.VehicleInfo.typeOnly(type);
+        }
+        int variant = horse instanceof Horse h ? h.getVariant().getId() : 0;
+        int markings = horse instanceof Horse h ? h.getMarkings().getId() : 0;
+        boolean chested = horse instanceof AbstractChestedHorse ch && ch.hasChest();
+        return new TrackEvents.VehicleInfo(
+                type,
+                true,
+                horse.getMaxHealth(),
+                horse.getAttributeValue(Attributes.MOVEMENT_SPEED),
+                horse.getAttributeValue(Attributes.JUMP_STRENGTH),
+                variant,
+                markings,
+                horse.isSaddled(),
+                chested,
+                horse.isBaby());
     }
 
     private static int flags(ServerPlayer p) {
@@ -851,6 +919,63 @@ public final class TrackRecorder {
         } finally {
             sweeping = false;
         }
+    }
+
+    /** 实际 .bin 用量（容量预估校准）：总字节、总样本、文件数、玩家数。 */
+    public record Usage(long totalBytes, long totalSamples, long fileCount, long playerCount) {
+        public double bytesPerSample() {
+            return totalSamples <= 0 ? 0.0 : (double) totalBytes / totalSamples;
+        }
+
+        public double bytesPerPlayer() {
+            return playerCount <= 0 ? 0.0 : (double) totalBytes / playerCount;
+        }
+    }
+
+    /**
+     * 扫描所有栈层的 .bin，统计实际字节/样本/玩家用量。
+     * 结果缓存 5 分钟；Web 预估页反复调整曲线时不会重复遍历。
+     */
+    public Usage usage() {
+        long now = System.currentTimeMillis();
+        Usage cached = cachedUsage;
+        if (cached != null && now - cachedUsageAtMs < 5L * 60_000L) {
+            return cached;
+        }
+        long bytes = 0;
+        long samples = 0;
+        long files = 0;
+        java.util.Set<UUID> players = new java.util.HashSet<>();
+        for (Path root : trackRoots()) {
+            if (!Files.isDirectory(root)) {
+                continue;
+            }
+            try (var stream = Files.walk(root)) {
+                for (Path file : stream.filter(Files::isRegularFile)
+                        .filter(p -> p.getFileName().toString().endsWith(".bin")).toList()) {
+                    UUID owner = uuidOfTrackFile(file);
+                    if (owner != null) {
+                        players.add(owner);
+                    }
+                    files++;
+                    try {
+                        TrackStore.FileUsage usage = TrackStore.fileUsage(file);
+                        bytes += usage.bytes();
+                        samples += usage.samples();
+                    } catch (IOException e) {
+                        try {
+                            bytes += Files.size(file);
+                        } catch (IOException ignored) {
+                        }
+                    }
+                }
+            } catch (IOException ignored) {
+            }
+        }
+        Usage usage = new Usage(bytes, samples, files, players.size());
+        cachedUsage = usage;
+        cachedUsageAtMs = now;
+        return usage;
     }
 
     /** 统计每个玩家所有栈层/周目/日期的 .bin 字节数（不扫描 .evt）。 */
