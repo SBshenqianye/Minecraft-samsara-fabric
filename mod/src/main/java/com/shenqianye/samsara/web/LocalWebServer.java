@@ -5,6 +5,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.reflect.TypeToken;
+import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.slf4j.Logger;
@@ -1259,10 +1260,28 @@ public final class LocalWebServer {
         exchange.getResponseHeaders().set("Content-Type", type);
         exchange.getResponseHeaders().set("Cache-Control", "no-store");
         exchange.getResponseHeaders().set("X-Content-Type-Options", "nosniff");
+        securityHeaders(exchange);
         exchange.sendResponseHeaders(status, body.length);
         try (OutputStream out = exchange.getResponseBody()) {
             out.write(body);
         }
+    }
+
+    /**
+     * 公网只读/管理面板都可能被扫描：统一补浏览器侧防护头。
+     * 脚本全部是同源外部文件，页面没有内联 script / innerHTML，所以 CSP 不需要放开脚本。
+     */
+    private static void securityHeaders(HttpExchange exchange) {
+        Headers headers = exchange.getResponseHeaders();
+        headers.set("X-Frame-Options", "DENY");
+        headers.set("Referrer-Policy", "no-referrer");
+        headers.set("Permissions-Policy", "geolocation=(), microphone=(), camera=()");
+        headers.set("Content-Security-Policy",
+                "default-src 'self'; script-src 'self'; "
+                        + "style-src 'self' 'unsafe-inline'; "
+                        + "img-src 'self' data: blob:; connect-src 'self'; "
+                        + "font-src 'self' data:; object-src 'none'; base-uri 'none'; "
+                        + "form-action 'self'; frame-ancestors 'none'");
     }
 
     private static void sendFile(HttpExchange exchange, int status, String type, String name,
@@ -1273,6 +1292,7 @@ public final class LocalWebServer {
                 "attachment; filename=\"" + name.replace("\"", "") + "\"");
         exchange.getResponseHeaders().set("Cache-Control", "no-store");
         exchange.getResponseHeaders().set("X-Content-Type-Options", "nosniff");
+        securityHeaders(exchange);
         exchange.sendResponseHeaders(status, size);
         try (OutputStream out = exchange.getResponseBody();
              InputStream in = Files.newInputStream(file)) {

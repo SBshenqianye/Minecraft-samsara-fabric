@@ -52,7 +52,9 @@ public final class WebLifecycle {
         String url = "http://" + LocalWebServer.BIND_ADDRESS + ":" + candidate.port() + "/";
         Samsara.LOGGER.info("[web] ============================================================");
         Samsara.LOGGER.info("[web] 本地配置面板已就绪：{}", url);
-        Samsara.LOGGER.info("[web] 访问 token：{}", token);
+        // 不打印完整 token：日志会被审计快照/面板/托管商读取。完整值只在 web.yml。
+        Samsara.LOGGER.info("[web] token 已就绪（前缀 {}…），完整值见 config/samsara/web.yml",
+                token.substring(0, Math.min(8, token.length())));
         Samsara.LOGGER.info("[web] 在服务器本机浏览器打开上面的链接，粘贴 token 即可；仅回环访问");
         Samsara.LOGGER.info("[web] ============================================================");
     }

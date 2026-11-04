@@ -141,7 +141,7 @@ public final class WebUserService {
                     continue;
                 }
                 Map<String, Object> item = new LinkedHashMap<>();
-                item.put("name", source.get("name"));
+                item.put("name", maskName(text(source.get("name"))));
                 item.put("stackId", source.get("stackId"));
                 item.put("dimension", source.get("dimension"));
                 item.put("dimensionId", source.get("dimensionId"));
@@ -175,7 +175,7 @@ public final class WebUserService {
                 if (!(value instanceof Map<?, ?> source)) continue;
                 Map<String, Object> item = new LinkedHashMap<>();
                 item.put("kind", "player");
-                item.put("name", source.get("name"));
+                item.put("name", maskName(text(source.get("name"))));
                 item.put("type", "minecraft:player");
                 item.put("stackId", source.get("stackId"));
                 item.put("dimension", source.get("dimension"));
@@ -218,7 +218,7 @@ public final class WebUserService {
                 if (!(value instanceof Map<?, ?> source)) continue;
                 Map<String, Object> item = new LinkedHashMap<>();
                 item.put("timeMs", source.get("timeMs"));
-                item.put("actor", source.get("actor"));
+                item.put("actor", maskName(text(source.get("actor"))));
                 item.put("stackId", source.get("stackId"));
                 item.put("dimension", source.get("dimension"));
                 item.put("x", source.get("x"));
@@ -238,7 +238,7 @@ public final class WebUserService {
                 if (!(value instanceof Map<?, ?> source)) continue;
                 Map<String, Object> item = new LinkedHashMap<>();
                 item.put("timeMs", source.get("timeMs"));
-                item.put("name", source.get("name"));
+                item.put("name", maskName(text(source.get("name"))));
                 item.put("text", source.get("text"));
                 item.put("stackId", source.get("stackId"));
                 item.put("dimension", source.get("dimension"));
@@ -272,6 +272,29 @@ public final class WebUserService {
     /** 公开头像代理：Mojang 官方皮肤，失败时返回 null 让前端用本地 SVG。 */
     public MojangSkinService.Skin avatar(String uuid, String name) {
         return skins().skin(uuid, name);
+    }
+
+    /**
+     * 公网用户端只显示部分玩家名：保留首 2 位和末 1 位，中间固定替换为 ***。
+     * 这样朋友还能大致认出是谁，但陌生人无法直接从 Web 枚举白名单里的完整名字。
+     * 管理端 /api/map/* 仍返回完整名字。
+     */
+    static String maskName(String name) {
+        if (name == null || name.isBlank()) {
+            return name;
+        }
+        int length = name.length();
+        if (length <= 2) {
+            return name.charAt(0) + "***";
+        }
+        if (length <= 4) {
+            return name.charAt(0) + "***" + name.charAt(length - 1);
+        }
+        return name.substring(0, 2) + "***" + name.charAt(length - 1);
+    }
+
+    private static String text(Object value) {
+        return value == null ? null : String.valueOf(value);
     }
 
     private int onlineIn(StackLayer layer) {

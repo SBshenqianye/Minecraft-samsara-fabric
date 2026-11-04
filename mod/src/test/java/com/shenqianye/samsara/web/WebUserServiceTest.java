@@ -87,6 +87,15 @@ class WebUserServiceTest {
         assertFalse(status.containsKey("worldRoot"));
     }
 
+    @Test
+    void publicNamesArePartiallyMasked() {
+        assertEquals("xh***e", WebUserService.maskName("xh_unpkire"));
+        assertEquals("Al***e", WebUserService.maskName("Alice"));
+        assertEquals("B***t", WebUserService.maskName("Bot"));
+        assertEquals("A***", WebUserService.maskName("A"));
+        assertEquals(null, WebUserService.maskName(null));
+    }
+
     private static void write(Path file, String text) throws Exception {
         Files.createDirectories(file.getParent());
         Files.writeString(file, text, StandardCharsets.UTF_8);
