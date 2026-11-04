@@ -148,6 +148,7 @@ public class DebugCommand {
                 .then(ChunkCommand.chunkNode())
                 .then(DiffViewCommand.diffNode())
                 .then(WhereCommand.whereNode())
+                .then(LotteryCommand.lotteryNode())
                 .then(TpaCommand.tpaNode())
                 .then(TpaCommand.tpaHereNode())
                 .then(TpaCommand.acceptNode())
@@ -252,6 +253,10 @@ public class DebugCommand {
                                     // track v2 的 view.drop / recordInventory / retention 也走同一条磁盘重读
                                     com.shenqianye.samsara.config.ConfigManager.getInstance()
                                             .reload(com.shenqianye.samsara.config.ConfigSchema.COMMANDS);
+                                    com.shenqianye.samsara.config.ConfigManager.getInstance()
+                                            .reload(com.shenqianye.samsara.config.ConfigSchema.LOTTERY);
+                                    com.shenqianye.samsara.config.ConfigManager.getInstance()
+                                            .reload(com.shenqianye.samsara.config.ConfigSchema.INSURANCE);
                                     com.shenqianye.samsara.permission.PermissionConfig.getInstance().reload();
                                     return reply(ctx.getSource(), manager().reload()
                                             + "\n" + com.shenqianye.samsara.config.CommandConfig
@@ -560,6 +565,7 @@ public class DebugCommand {
                 com.shenqianye.samsara.opauth.OpAuthCommand::loginAliasNode);
         CommandAliases.register(dispatcher, "claim", ClaimCommand::claimNode);
         CommandAliases.register(dispatcher, "where", WhereCommand::whereNode);
+        CommandAliases.register(dispatcher, "lottery", LotteryCommand::lotteryNode);
         CommandAliases.register(dispatcher, "version", () -> Commands.literal("version")
                 .executes(ctx -> replyVersion(ctx.getSource())));
         CommandAliases.register(dispatcher, "tpa", TpaCommand::tpaNode);

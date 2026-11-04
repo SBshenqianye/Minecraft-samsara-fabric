@@ -674,10 +674,23 @@ async function main() {
       window.SamsaraUI.setActiveTab('permissions');
       await new Promise((resolve) => setTimeout(resolve, 900));
       const permissions = document.querySelectorAll('.perm-row .segmented').length;
+      window.SamsaraUI.setActiveTab('lottery');
+      await new Promise((resolve) => setTimeout(resolve, 900));
+      const lotteryPanel = document.querySelector('#panel-lottery');
+      const lotteryTab = [...document.querySelectorAll('.tab[data-panel]')]
+        .find((tab) => tab.dataset.panel === 'panel-lottery');
+      const lottery = {
+        hidden: lotteryPanel ? lotteryPanel.hidden : null,
+        iframe: Boolean(document.querySelector('#panel-lottery iframe')),
+        stats: document.querySelectorAll('#lottery-stats .stat').length,
+        values: document.querySelectorAll('#lottery-values .lottery-value-row').length,
+        history: document.querySelectorAll('#lottery-history .lottery-row').length,
+        tab: lotteryTab ? lotteryTab.textContent.replace(/\\s+/g, ' ').trim() : '',
+      };
       window.SamsaraUI.setActiveTab('config');
       await new Promise((resolve) => setTimeout(resolve, 600));
       const configBool = document.querySelectorAll('#files .entry-control .segmented').length;
-      return { identity, identityTerms, output, permissions, configBool };
+      return { identity, identityTerms, output, permissions, configBool, lottery };
     })()`);
     check('身份组布尔改为按钮', mods.identity === 2, 'buttons=' + mods.identity);
     check('身份组术语区分账号类型与在线状态',
@@ -688,6 +701,10 @@ async function main() {
     check('输出格式布尔改为按钮', mods.output === 2, 'buttons=' + mods.output);
     check('权限树布尔改为按钮', mods.permissions > 0, 'segmented=' + mods.permissions);
     check('配置页布尔改为按钮', mods.configBool > 0, 'segmented=' + mods.configBool);
+    check('经济业务标签为原生面板', mods.lottery && mods.lottery.hidden === false
+        && mods.lottery.iframe === false && mods.lottery.stats >= 8
+        && mods.lottery.values >= 1
+        && mods.lottery.tab.includes('经济业务'), JSON.stringify(mods.lottery || {}));
 
     // ---- 权限分段控件：保存 deny → 回显 → 恢复原等级 ----
     const permLevels = await evaluate(`(async () => {
@@ -1468,6 +1485,21 @@ async function main() {
         && consoleState.message.includes('完成'), JSON.stringify({
           output: consoleState.output.slice(0, 120), message: consoleState.message }));
     check('RCON 控制台入口哈希', consoleState.hash === '#server-console', consoleState.hash);
+
+    // ---- 一级分栏：切到“本体”后经济业务标签不能残留 ----
+    const sectionSwitch = await evaluate(`(async () => {
+      const lottery = document.getElementById('panel-lottery');
+      document.querySelector('.top-tab[data-section="mods"]')?.click();
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      window.SamsaraUI.setActiveTab('lottery');
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      document.querySelector('.top-tab[data-section="server"]')?.click();
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      const visible = lottery ? getComputedStyle(lottery).display !== 'none' : false;
+      return { visible };
+    })()`);
+    check('切到本体后经济业务面板隐藏', sectionSwitch.visible === false,
+        JSON.stringify(sectionSwitch));
 
     // ---- Web 审计：写请求前快照，可预览回滚 ----
     const noAuthAudit = await fetch(base + '/api/audit');

@@ -28,6 +28,7 @@ public final class WebUserService {
     private final MinecraftServer server;
     private WorldStackIconService icons;
     private MojangSkinService skins;
+    private LotteryWebService lotteryService;
 
     private WorldStackIconService icons() {
         if (icons == null) icons = new WorldStackIconService();
@@ -37,6 +38,11 @@ public final class WebUserService {
     private MojangSkinService skins() {
         if (skins == null) skins = new MojangSkinService();
         return skins;
+    }
+
+    private LotteryWebService lotteryService() {
+        if (lotteryService == null) lotteryService = new LotteryWebService(server);
+        return lotteryService;
     }
 
     public WebUserService(WebMapService mapService, MinecraftServer server) {
@@ -152,6 +158,29 @@ public final class WebUserService {
             }
         }
         out.put("players", players);
+        return out;
+    }
+
+    /** 公网只读乐透：奖池/票数/开奖时间/上期脱敏结果，不含实时死亡数。 */
+    public Map<String, Object> lottery() {
+        Map<String, Object> model = new LinkedHashMap<>(lotteryService().publicModel());
+        model.put("insurance", com.shenqianye.samsara.insurance.InsuranceService
+                .getInstance().summary());
+        return model;
+    }
+
+    /** 公网价值表：价格公开，不含玩家/保单/路径信息。 */
+    public Map<String, Object> lotteryValues() {
+        List<Map<String, Object>> rows = com.shenqianye.samsara.lottery.ItemValueService
+                .getInstance().valueTable();
+        for (Map<String, Object> row : rows) {
+            Object icon = row.get("icon");
+            row.put("icon", icon == null ? "" : WebIcons.orEmpty(String.valueOf(icon)));
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ok", true);
+        out.put("scope", "user");
+        out.put("values", rows);
         return out;
     }
 

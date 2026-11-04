@@ -42,7 +42,8 @@ public final class WebLifecycle {
                 new WebPermissionService(), mapService,
                 new WorldStackWebService(), new ServerWebService(minecraftServer),
                 new ChunkDiffWebService(minecraftServer),
-                new WebUserService(mapService, minecraftServer), token, port);
+                new WebUserService(mapService, minecraftServer),
+                new LotteryWebService(minecraftServer), token, port);
         if (!candidate.start()) {
             return; // 端口占用：WARN 已记录，不阻塞服务器
         }

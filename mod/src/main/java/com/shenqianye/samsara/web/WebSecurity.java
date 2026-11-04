@@ -52,6 +52,8 @@ public final class WebSecurity {
             case "/", "/index.html" -> "/web/index.html";
             case "/user", "/user.html" -> "/web/user.html";
             case "/user.js" -> "/web/user.js";
+            case "/lottery", "/lottery.html" -> "/web/lottery.html";
+            case "/lottery.js" -> "/web/lottery.js";
             case "/app.js" -> "/web/app.js";
             case "/identity", "/identity.html" -> "/web/identity.html";
             case "/identity.js" -> "/web/identity.js";
@@ -65,7 +67,7 @@ public final class WebSecurity {
             case "/world-stack.js" -> "/web/world-stack.js";
             case "/server.js" -> "/web/server.js";
             case "/style.css" -> "/web/style.css";
-            default -> null;
+            default -> path.matches("^/items/[a-z0-9_]+\\.png$") ? "/web" + path : null;
         };
     }
 
@@ -73,6 +75,8 @@ public final class WebSecurity {
     public static boolean safeApiPath(String path) {
         return "/api/user/status".equals(path)
                 || "/api/user/worlds".equals(path)
+                || "/api/user/lottery".equals(path)
+                || "/api/user/lottery/values".equals(path)
                 || "/api/user/map".equals(path)
                 || "/api/user/map/players".equals(path)
                 || "/api/user/map/live".equals(path)
@@ -117,6 +121,9 @@ public final class WebSecurity {
                 || path.startsWith("/api/world-stack/jobs")
                 || "/api/server".equals(path)
                 || path.startsWith("/api/server/")
+                || "/api/lottery".equals(path)
+                || "/api/lottery/draw".equals(path)
+                || "/api/lottery/cancel".equals(path)
                 || "/api/audit".equals(path)
                 || "/api/audit/preview".equals(path)
                 || "/api/audit/rollback".equals(path);

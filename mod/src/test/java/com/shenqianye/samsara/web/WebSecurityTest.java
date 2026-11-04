@@ -27,6 +27,8 @@ class WebSecurityTest {
         assertEquals("/web/app.js", WebSecurity.staticResource("/app.js"));
         assertEquals("/web/user.html", WebSecurity.staticResource("/user"));
         assertEquals("/web/user.js", WebSecurity.staticResource("/user.js"));
+        assertEquals("/web/lottery.html", WebSecurity.staticResource("/lottery"));
+        assertEquals("/web/lottery.js", WebSecurity.staticResource("/lottery.js"));
         assertEquals("/web/banners.js", WebSecurity.staticResource("/banners.js"));
         assertEquals("/web/map.js", WebSecurity.staticResource("/map.js"));
         assertEquals("/web/world-stack.js", WebSecurity.staticResource("/world-stack.js"));
@@ -41,6 +43,10 @@ class WebSecurityTest {
         assertTrue(WebSecurity.safeApiPath("/api/user/map/players"));
         assertTrue(WebSecurity.safeApiPath("/api/user/map/tile"));
         assertTrue(WebSecurity.safeApiPath("/api/user/worlds/icon"));
+        assertTrue(WebSecurity.safeApiPath("/api/user/lottery"));
+        assertTrue(WebSecurity.safeApiPath("/api/lottery"));
+        assertTrue(WebSecurity.safeApiPath("/api/lottery/draw"));
+        assertTrue(WebSecurity.safeApiPath("/api/lottery/cancel"));
         assertTrue(WebSecurity.safeApiPath("/api/world-stack/icon"));
         assertTrue(WebSecurity.safeApiPath("/api/world-stack/icon/delete"));
         assertTrue(WebSecurity.safeApiPath("/api/diff/chunk"));

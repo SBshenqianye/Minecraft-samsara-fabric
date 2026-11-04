@@ -67,6 +67,28 @@ public final class PermissionDefaults {
         // where
         map.put("where", "user");
 
+        // 死人乐透（Body Lotto）
+        map.put("lottery", "user");
+        map.put("lottery status", "user");
+        map.put("lottery bet", "user");
+        map.put("lottery collect", "user");
+        map.put("lottery list", "user");
+        map.put("lottery value", "user");
+        map.put("lottery insure", "user");
+        map.put("lottery selftest", "owner");
+        map.put("lottery insurance", "user");
+        map.put("lottery insurance list", "user");
+        map.put("lottery insurance claim", "user");
+        map.put("lottery insurance pending", "owner");
+        map.put("lottery insurance approve", "owner");
+        map.put("lottery draw", "owner");
+        map.put("lottery cancel", "owner");
+        map.put("lottery reload", "owner");
+        map.put("lottery fund", "owner");
+        map.put("lottery fund list", "owner");
+        map.put("lottery fund withdraw", "owner");
+        map.put("debug lottery", "owner");
+
         // tpa
         map.put("tpa", "user");
         map.put("tpahere", "user");

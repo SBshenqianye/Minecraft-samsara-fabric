@@ -49,9 +49,13 @@ public class Samsara implements DedicatedServerModInitializer {
                 com.shenqianye.samsara.config.ConfigManager.getInstance();
         com.shenqianye.samsara.permission.PermissionConfig.getInstance();
         com.shenqianye.samsara.config.CommandConfig.getInstance();
+        com.shenqianye.samsara.lottery.LotteryConfig.getInstance();
+        com.shenqianye.samsara.insurance.InsuranceConfig.getInstance();
         configManager.setReloadHook(() -> {
             com.shenqianye.samsara.config.CommandConfig.getInstance().reload();
             com.shenqianye.samsara.permission.PermissionConfig.getInstance().reload();
+            com.shenqianye.samsara.lottery.LotteryConfig.getInstance().reload();
+            com.shenqianye.samsara.insurance.InsuranceConfig.getInstance().reload();
             com.shenqianye.samsara.claim.ClaimParticleConfig.getInstance().load();
             // 保护范围变化才重算白名单，避免保存其他配置时做无谓的全量几何重建
             if (com.shenqianye.samsara.claim.ClaimRangeConfig.getInstance().load()) {
@@ -92,6 +96,18 @@ public class Samsara implements DedicatedServerModInitializer {
                         && com.shenqianye.samsara.track.view.ViewManager.getInstance()
                         .protectsViewer(player.getUUID())));
 
+        // 死人乐透：只统计死亡，不在这里开奖
+        net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents.AFTER_DEATH.register(
+                (entity, source) -> com.shenqianye.samsara.lottery.LotteryService.getInstance()
+                        .onDeath(entity, source));
+        net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents.AFTER_DEATH.register(
+                (entity, source) -> {
+                    if (entity instanceof net.minecraft.server.level.ServerPlayer player) {
+                        com.shenqianye.samsara.insurance.InsuranceService.getInstance().onDeath(player);
+                    }
+                    com.shenqianye.samsara.insurance.InsuranceService.getInstance().onDeath(entity);
+                });
+
         // 差异记录：常开（数据根在 SERVER_STARTING 解析后传入）
         // 时间倒流：调度器（恢复轮 2s；标记/传送/删除/归档 5s 节流）
         // 卸载缓冲区：每 20 tick（1秒）批量处理卸载的待删区块
@@ -112,6 +128,8 @@ public class Samsara implements DedicatedServerModInitializer {
             com.shenqianye.samsara.season.SeasonManager.getInstance().tick(server);
             com.shenqianye.samsara.season.SeasonAdvanceVoteManager.getInstance().tick(server);
             com.shenqianye.samsara.season.WorldChainTeleport.tick(server);
+            com.shenqianye.samsara.lottery.LotteryService.getInstance().tick(server);
+            com.shenqianye.samsara.insurance.InsuranceService.getInstance().tick(server);
             com.shenqianye.samsara.command.DebugCommand.onTick();
             if (++unloadFlushCounter[0] >= 20) {
                 unloadFlushCounter[0] = 0;
@@ -128,6 +146,8 @@ public class Samsara implements DedicatedServerModInitializer {
         // 必须在任何世界模块读取路径之前；ConfigManager 已在 mod init 完成 YAML 初始化。
         ServerLifecycleEvents.SERVER_STARTING.register(server -> {
             com.shenqianye.samsara.storage.StoragePaths.init(server);
+            com.shenqianye.samsara.lottery.LotteryService.getInstance().init(server);
+            com.shenqianye.samsara.insurance.InsuranceService.getInstance().init(server);
             com.shenqianye.samsara.identity.IdentityService.getInstance().init(server);
             SeasonManager.getInstance();
             DiffRecorder.init(com.shenqianye.samsara.storage.StoragePaths.get().worldDataRoot());
@@ -178,6 +198,13 @@ public class Samsara implements DedicatedServerModInitializer {
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
                 com.shenqianye.samsara.season.SeasonAdvanceVoteManager.getInstance()
                         .onPlayerJoin(server, handler.getPlayer()));
+        // 死人乐透：上线提示待领取
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
+                com.shenqianye.samsara.lottery.LotteryService.getInstance()
+                        .onJoin(handler.getPlayer()));
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
+                com.shenqianye.samsara.insurance.InsuranceService.getInstance()
+                        .onJoin(handler.getPlayer()));
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) ->
                 com.shenqianye.samsara.identity.IdentityService.getInstance()
                         .onDisconnect(handler.getPlayer()));
@@ -195,6 +222,8 @@ public class Samsara implements DedicatedServerModInitializer {
             com.shenqianye.samsara.track.TrackReplay.shutdown(); // 先移除回放人偶，避免写进存档
             DiffRecorder.flush(); // 停服前把常开窗口的缓冲落盘（不依赖后续 SERVER_STOPPED 的时序）
             DiffRecorder.clearEditContext();
+            com.shenqianye.samsara.lottery.LotteryService.getInstance().onServerStopping(server);
+            com.shenqianye.samsara.insurance.InsuranceService.getInstance().onServerStopping();
             com.shenqianye.samsara.claim.ClaimParticles.shutdown();
             // 最后断开玩家：connection.disconnect 会把玩家从在线列表移除并保存其数据
             com.shenqianye.samsara.shutdown.ShutdownAnnouncer.onStopping(server);

@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** 默认模板快照：必须逐字复现迁移前的输出。 */
 class OutputDefaultsTest {
@@ -86,6 +87,17 @@ class OutputDefaultsTest {
                         + "\n时间倒流进行中（50%）"
                         + "\n[刷新]",
                 plain("season.status.header", OutputCatalog.sampleValues("season.status.header")));
+    }
+
+    @Test
+    void lotteryTemplatesRender() {
+        String result = plain("lottery.result", OutputCatalog.sampleValues("lottery.result"));
+        assertTrue(result.contains("早上好，夜之城！"));
+        assertTrue(result.contains("死人乐透结果是满打满算的 7 个"));
+        assertTrue(plain("lottery.status", OutputCatalog.sampleValues("lottery.status"))
+                .contains("奖池"));
+        assertTrue(plain("lottery.bet", OutputCatalog.sampleValues("lottery.bet"))
+                .contains("号票已登记"));
     }
 
     private static String plain(String key, Map<String, Object> values) {

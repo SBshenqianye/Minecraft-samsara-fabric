@@ -47,6 +47,16 @@ public final class OutputCatalog {
         register(tpaRequestSender());
         register(tpaRequestTarget());
         register(tpaRequestHint());
+        register(lotteryStatus());
+        register(lotteryBet());
+        register(lotteryResult());
+        register(lotteryWin());
+        register(lotteryCollect());
+        register(lotteryRefund());
+        register(lotteryCancel());
+        register(lotteryError());
+        register(lotteryHelp());
+        register(lotteryReply());
     }
 
     private OutputCatalog() {
@@ -435,6 +445,210 @@ public final class OutputCatalog {
                         "请求在 60 秒内有效；也可直接输入 /tpaccept 或 /tpdeny", true)),
                 List.of(),
                 List.of(new PrefixPart("  ▸ "), new VariablePart("message")));
+    }
+
+    // ---- 死人乐透 ----
+
+    private static final String PREFIX_LOTTERY = "[死人乐透] ▸ ";
+    private static final String PREFIX_LOTTERY_NEWS = "[死人乐透·早报] ▸ ";
+
+    private static OutputTemplate lotteryStatus() {
+        List<OutputVariable> variables = new ArrayList<>(List.of(
+                text("dayLabel", "结算日", "2026-11-05", true),
+                text("drawTime", "开奖时间", "07:00", true),
+                text("cutoffTime", "截止时间", "00:00", true),
+                text("potLine", "奖池", "64 钻石", true),
+                number("ticketCount", "总票数", "18"),
+                number("playerCount", "参与人数", "6"),
+                text("myTickets", "我的票", "5 号 × 2 张；7 号 × 1 张", true),
+                optional("lastResultLine", "上期摘要", "上期：7 个，2 人中奖，奖池 64 钻石")
+        ));
+        variables.add(prefix());
+        return new OutputTemplate("lottery.status", "乐透", "死人乐透状态（/samsara lottery status）",
+                variables,
+                List.of(
+                        new OutputButton("bet", "下注", "/samsara lottery bet ", "猜下一轮死亡人数",
+                                "suggest", "lottery bet", false),
+                        new OutputButton("history", "历史", "/samsara lottery list", "查看历史开奖",
+                                "run", "lottery list", false),
+                        new OutputButton("collect", "领奖", "/samsara lottery collect", "领取待领取奖金",
+                                "run", "lottery collect", false)),
+                List.of(
+                        new PrefixPart(PREFIX_LOTTERY),
+                        new TextPart("早上好，夜之城！\n"),
+                        new TextPart("结算日 "), new VariablePart("dayLabel"),
+                        new TextPart(" · 开奖 "), new VariablePart("drawTime"),
+                        new TextPart(" · 截止 "), new VariablePart("cutoffTime"),
+                        new TextPart("\n奖池 "), new VariablePart("potLine"),
+                        new TextPart(" · 已售 "), new VariablePart("ticketCount"),
+                        new TextPart(" 张 / "), new VariablePart("playerCount"), new TextPart(" 人"),
+                        new TextPart("\n我的票："), new VariablePart("myTickets"),
+                        new VariablePart("lastResultLine")
+                ));
+    }
+
+    private static OutputTemplate lotteryBet() {
+        List<OutputVariable> variables = new ArrayList<>(List.of(
+                text("dayLabel", "结算日", "2026-11-05", true),
+                number("guess", "猜测数字", "7"),
+                number("tickets", "张数", "2"),
+                text("costLine", "花费", "16 铁锭", true),
+                text("potLine", "奖池", "32 钻石", true),
+                text("drawTime", "开奖时间", "07:00", true),
+                text("cutoffTime", "截止时间", "00:00", true)
+        ));
+        variables.add(prefix());
+        return new OutputTemplate("lottery.bet", "乐透", "买票回执（/samsara lottery bet）",
+                variables,
+                List.of(
+                        new OutputButton("again", "再加一张", "/samsara lottery bet ", "继续下注",
+                                "suggest", "lottery bet", false),
+                        new OutputButton("status", "看奖池", "/samsara lottery status", "查看当前奖池",
+                                "run", "lottery status", false)),
+                List.of(
+                        new PrefixPart(PREFIX_LOTTERY),
+                        new VariablePart("dayLabel"), new TextPart(" 的 "),
+                        new VariablePart("guess"), new TextPart(" 号票已登记："),
+                        new VariablePart("tickets"), new TextPart(" 张，花费 "),
+                        new VariablePart("costLine"), new TextPart("。\n当前奖池 "),
+                        new VariablePart("potLine"), new TextPart("。开奖 "),
+                        new VariablePart("drawTime"), new TextPart("，截止 "),
+                        new VariablePart("cutoffTime"), new TextPart("。\n"),
+                        new TextPart("夜之城不缺尸体，也不缺赌徒。")
+                ));
+    }
+
+    private static OutputTemplate lotteryResult() {
+        List<OutputVariable> variables = new ArrayList<>(List.of(
+                text("periodLabel", "周期", "昨天", true),
+                number("deathCount", "死亡数", "7"),
+                number("winnerCount", "中奖人数", "2"),
+                text("potLine", "奖池", "64 钻石", true),
+                text("nextDraw", "下一轮", "2026-11-06 07:00", true),
+                optional("causeLine", "死因摘要", "多亏了没完没了的 PvP，光主世界就贡献了 5 个。"),
+                optional("flavorLine", "吐槽", "满打满算 7 个，停尸房的冷柜勉强够用。"),
+                optional("winnerLine", "中奖行", "中奖：Alice、Bob。"),
+                optional("coverageLine", "统计警告", "⚠ 本轮统计不完整。")
+        ));
+        variables.add(prefix());
+        return new OutputTemplate("lottery.result", "乐透", "每日开奖早报（广播）",
+                variables,
+                List.of(
+                        new OutputButton("bet", "下注下一轮", "/samsara lottery bet ", "猜下一轮死亡人数",
+                                "suggest", "lottery bet", false),
+                        new OutputButton("history", "看历史", "/samsara lottery list", "查看历史开奖",
+                                "run", "lottery list", false)),
+                List.of(
+                        new PrefixPart(PREFIX_LOTTERY_NEWS),
+                        new TextPart("早上好，夜之城！\n"),
+                        new VariablePart("periodLabel"),
+                        new TextPart("的死人乐透结果是满打满算的 "),
+                        new VariablePart("deathCount"), new TextPart(" 个！\n"),
+                        new VariablePart("causeLine"),
+                        new VariablePart("flavorLine"), new TextPart("\n"),
+                        new TextPart("中奖 "), new VariablePart("winnerCount"),
+                        new TextPart(" 人，奖池 "), new VariablePart("potLine"), new TextPart("。\n"),
+                        new VariablePart("winnerLine"), new TextPart("\n"),
+                        new TextPart("下一轮结算日 "), new VariablePart("nextDraw"), new TextPart("。"),
+                        new VariablePart("coverageLine")
+                ));
+    }
+
+    private static OutputTemplate lotteryWin() {
+        List<OutputVariable> variables = new ArrayList<>(List.of(
+                number("deathCount", "死亡数", "7"),
+                number("guess", "猜测数字", "7"),
+                text("shareLine", "分得", "32 钻石", true),
+                optional("claimLine", "领取提示", "奖金已放入背包。")
+        ));
+        variables.add(prefix());
+        return new OutputTemplate("lottery.win", "乐透", "中奖私聊",
+                variables, List.of(),
+                List.of(
+                        new PrefixPart(PREFIX_LOTTERY),
+                        new TextPart("你猜中了："), new VariablePart("deathCount"),
+                        new TextPart(" 个。"), new VariablePart("guess"),
+                        new TextPart(" 号票中奖，分得 "), new VariablePart("shareLine"),
+                        new TextPart("。\n"), new VariablePart("claimLine"),
+                        new TextPart("\n夜之城会记住你的名字——至少到下一轮开奖之前。")
+                ));
+    }
+
+    private static OutputTemplate lotteryCollect() {
+        List<OutputVariable> variables = new ArrayList<>(List.of(
+                text("itemsLine", "物品清单", "32 钻石、8 铁锭", true),
+                optional("remainingLine", "剩余提示", "还有 1 张中奖票待领取。")
+        ));
+        variables.add(prefix());
+        return new OutputTemplate("lottery.collect", "乐透", "领取奖金",
+                variables, List.of(),
+                List.of(
+                        new PrefixPart(PREFIX_LOTTERY),
+                        new TextPart("奖金已到账："), new VariablePart("itemsLine"),
+                        new TextPart("。\n"), new VariablePart("remainingLine")
+                ));
+    }
+
+    private static OutputTemplate lotteryRefund() {
+        List<OutputVariable> variables = new ArrayList<>(List.of(
+                text("reason", "原因", "统计不完整", true),
+                text("itemsLine", "退还物品", "16 铁锭", true)
+        ));
+        variables.add(prefix());
+        return new OutputTemplate("lottery.refund", "乐透", "退款/流局",
+                variables, List.of(),
+                List.of(
+                        new PrefixPart(PREFIX_LOTTERY),
+                        new TextPart("本轮退款："), new VariablePart("reason"),
+                        new TextPart("。已退还 "), new VariablePart("itemsLine"),
+                        new TextPart("。\n至少你还能活着花掉它。")
+                ));
+    }
+
+    private static OutputTemplate lotteryCancel() {
+        List<OutputVariable> variables = new ArrayList<>(List.of(
+                text("actor", "操作者", "管理员", true),
+                text("refunded", "退款摘要", "18 张票", true)
+        ));
+        variables.add(prefix());
+        return new OutputTemplate("lottery.cancel", "乐透", "管理员取消",
+                variables, List.of(),
+                List.of(
+                        new PrefixPart(PREFIX_LOTTERY),
+                        new VariablePart("actor"), new TextPart(" 叫停了本轮开奖，已退款 "),
+                        new VariablePart("refunded"),
+                        new TextPart("。\n夜之城的庄家偶尔也会讲道理。")
+                ));
+    }
+
+    private static OutputTemplate lotteryError() {
+        List<OutputVariable> variables = new ArrayList<>(List.of(
+                text("message", "错误文案", "本轮已截止，等下一轮吧。", true)
+        ));
+        variables.add(prefix());
+        return new OutputTemplate("lottery.error", "乐透", "统一错误",
+                variables, List.of(),
+                List.of(new PrefixPart(PREFIX_LOTTERY), new VariablePart("message")));
+    }
+
+    private static OutputTemplate lotteryHelp() {
+        return new OutputTemplate("lottery.help", "乐透", "死人乐透帮助",
+                List.of(prefix()), List.of(),
+                List.of(
+                        new PrefixPart(PREFIX_LOTTERY),
+                        new TextPart("早死早超生，晚死有奖池。\n"),
+                        new TextPart("/samsara lottery status — 奖池与开奖时间\n"),
+                        new TextPart("/samsara lottery bet <人数> [张数] — 猜下一轮死亡人数\n"),
+                        new TextPart("/samsara lottery collect — 领取奖金\n"),
+                        new TextPart("/samsara lottery list [页] — 历史开奖\n"),
+                        new TextPart("/samsara lottery value <物品> — 查询物品价值")
+                ));
+    }
+
+    private static OutputTemplate lotteryReply() {
+        return new OutputTemplate("lottery.reply", "乐透", "乐透通用回执",
+                List.of(text("message", "回执", "已登记。", true), prefix()), List.of(),
+                List.of(new PrefixPart(PREFIX_LOTTERY), new VariablePart("message")));
     }
 
     // ---- 变量工厂 ----

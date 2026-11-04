@@ -52,6 +52,7 @@ public final class LocalWebServer {
     private final ServerWebService serverService;
     private final ChunkDiffWebService diffService;
     private final WebUserService userService;
+    private final LotteryWebService lotteryService;
     private final String token;
     private final int port;
     private HttpServer server;
@@ -124,6 +125,20 @@ public final class LocalWebServer {
                           ChunkDiffWebService diffService,
                           WebUserService userService,
                           String token, int port) {
+        this(service, identityService, outputService, permissionService, mapService,
+                worldStackService, serverService, diffService, userService, null, token, port);
+    }
+
+    public LocalWebServer(ConfigService service, IdentityWebService identityService,
+                          OutputWebService outputService,
+                          PermissionWebService permissionService,
+                          WebMapService mapService,
+                          WorldStackWebService worldStackService,
+                          ServerWebService serverService,
+                          ChunkDiffWebService diffService,
+                          WebUserService userService,
+                          LotteryWebService lotteryService,
+                          String token, int port) {
         this.service = service;
         this.identityService = identityService;
         this.outputService = outputService;
@@ -133,6 +148,7 @@ public final class LocalWebServer {
         this.serverService = serverService;
         this.diffService = diffService;
         this.userService = userService;
+        this.lotteryService = lotteryService;
         this.token = token == null ? "" : token;
         this.port = port;
     }
@@ -181,6 +197,9 @@ public final class LocalWebServer {
         }
         if (serverService != null) {
             server.createContext("/api/server", this::handleServer);
+        }
+        if (lotteryService != null) {
+            server.createContext("/api/lottery", this::handleLottery);
         }
         server.createContext("/api/audit", this::handleAudit);
         executor = Executors.newFixedThreadPool(4, runnable -> {
@@ -239,6 +258,7 @@ public final class LocalWebServer {
             }
             String type = resource.endsWith(".js") ? "application/javascript; charset=utf-8"
                     : resource.endsWith(".css") ? "text/css; charset=utf-8"
+                    : resource.endsWith(".png") ? "image/png"
                     : "text/html; charset=utf-8";
             status = 200;
             sendBytes(exchange, status, type, body);
@@ -654,6 +674,14 @@ public final class LocalWebServer {
             }
             if ("/api/user/worlds".equals(path)) {
                 json(exchange, 200, userService.worlds());
+                return;
+            }
+            if ("/api/user/lottery".equals(path)) {
+                json(exchange, 200, userService.lottery());
+                return;
+            }
+            if ("/api/user/lottery/values".equals(path)) {
+                json(exchange, 200, userService.lotteryValues());
                 return;
             }
             if ("/api/user/worlds/icon".equals(path)) {
@@ -1149,8 +1177,41 @@ public final class LocalWebServer {
         return map == null ? Map.of() : map;
     }
 
-    private void handleStatus(HttpExchange exchange) throws IOException {
+    private void handleLottery(HttpExchange exchange) throws IOException {
         long start = System.currentTimeMillis();
+        int status = 200;
+        try {
+            if (!authorized(exchange)) {
+                status = 401;
+                json(exchange, status, Map.of("error", "未授权：缺少或错误的 Bearer token"));
+                return;
+            }
+            String path = exchange.getRequestURI().getPath();
+            String method = exchange.getRequestMethod();
+            if ("GET".equals(method) && "/api/lottery".equals(path)) {
+                json(exchange, 200, lotteryService.adminModel());
+                return;
+            }
+            if ("GET".equals(method) && "/api/lottery/values".equals(path)) {
+                json(exchange, 200, lotteryService.values());
+                return;
+            }
+            if ("POST".equals(method) && "/api/lottery/draw".equals(path)) {
+                json(exchange, 200, lotteryService.draw());
+                return;
+            }
+            if ("POST".equals(method) && "/api/lottery/cancel".equals(path)) {
+                json(exchange, 200, lotteryService.cancel());
+                return;
+            }
+            status = 404;
+            json(exchange, status, Map.of("error", "未知的乐透接口"));
+        } finally {
+            log(exchange, status, start);
+        }
+    }
+
+    private void handleStatus(HttpExchange exchange) throws IOException {        long start = System.currentTimeMillis();
         int status = 200;
         try {
             if (!authorized(exchange)) {

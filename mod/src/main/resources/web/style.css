@@ -233,6 +233,7 @@ code, .mono { font-family: var(--mono); }
 }
 .content { min-width: 0; }
 .app-shell.user-shell { grid-template-columns: minmax(0, 1fr); }
+.app-shell.no-nav { grid-template-columns: minmax(0, 1fr); }
 .user-shell .content { display: flex; flex-direction: column; gap: 18px; }
 .app-header.user-header { padding-bottom: 12px; }
 .app-header.user-header .connection { padding-bottom: 0; }
@@ -1172,7 +1173,8 @@ body.server-section #panel-map,
 body.server-section #panel-world-stack,
 body.server-section #panel-identity,
 body.server-section #panel-output,
-body.server-section #panel-permissions {
+body.server-section #panel-permissions,
+body.server-section #panel-lottery {
   display: none !important;
 }
 #panel-server { display: flex; flex-direction: column; gap: 18px; }
@@ -1383,3 +1385,95 @@ body.server-section #panel-permissions {
   .struct-row { flex-direction: column; align-items: stretch; }
   .server-field-control { width: 100%; }
 }
+/* ---- 经济业务（乐透 / 基金 / 保险） ---- */
+.lottery-list {
+  display: flex; flex-direction: column; overflow: hidden;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+}
+.lottery-row {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 9px 12px; border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+}
+.lottery-row:first-child { border-top: 0; }
+.lottery-row:hover { background: var(--panel-soft); }
+.lottery-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.lottery-row-title { font-size: 13px; font-weight: 600; }
+.lottery-row-meta { color: var(--muted); font-size: 11px; line-height: 1.5; word-break: break-word; }
+.lottery-empty { padding: 14px 12px; color: var(--muted); font-size: 12px; }
+.lottery-items { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+.lottery-item-card {
+  display: flex; align-items: center; gap: 9px; padding: 8px 10px;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--panel-soft);
+}
+.lottery-item-card img { width: 26px; height: 26px; image-rendering: pixelated; flex: 0 0 auto; }
+.lottery-item-fallback {
+  width: 26px; height: 26px; flex: 0 0 auto; display: inline-flex;
+  align-items: center; justify-content: center; border: 1px solid var(--line);
+  border-radius: 6px; background: var(--panel); color: var(--muted);
+  font-size: 12px; font-weight: 700;
+}
+img.glint { filter: drop-shadow(0 0 3px #b26cff) saturate(1.2); }
+.lottery-item-body { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.lottery-item-name { font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lottery-item-meta { color: var(--muted); font-family: var(--mono); font-size: 10px; }
+.lottery-pill {
+  display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--panel-soft); color: var(--muted);
+  font-size: 10px; font-weight: 600; white-space: nowrap;
+}
+.lottery-pill.ok {
+  color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, var(--line));
+  background: var(--accent-soft);
+}
+.lottery-pill.warn {
+  color: var(--amber); border-color: color-mix(in srgb, var(--amber) 40%, var(--line));
+  background: var(--amber-soft);
+}
+.lottery-pill.danger {
+  color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--line));
+  background: var(--danger-soft);
+}
+.lottery-values-toolbar {
+  display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px;
+}
+.lottery-values-toolbar .search-box { flex: 1 1 240px; max-width: none; }
+.lottery-values-toolbar .inline-field { flex: 0 0 auto; }
+.lottery-value-scroll {
+  max-height: 460px; overflow: auto;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+}
+.lottery-value-head, .lottery-value-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) 64px 96px;
+  gap: 10px; align-items: center; padding: 8px 12px;
+}
+.lottery-value-head {
+  position: sticky; top: 0; z-index: 1;
+  background: var(--panel-soft); border-bottom: 1px solid var(--line);
+  color: var(--muted); font-size: 11px; font-weight: 600;
+}
+.lottery-value-row {
+  border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+  font-size: 12px;
+}
+.lottery-value-row:first-child { border-top: 0; }
+.lottery-value-row:hover { background: var(--panel-soft); }
+.lottery-value-item { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.lottery-value-icon {
+  width: 22px; height: 22px; flex: 0 0 auto; display: inline-flex;
+  align-items: center; justify-content: center; overflow: hidden;
+  border: 1px solid var(--line); border-radius: 5px; background: var(--panel-soft);
+}
+.lottery-value-icon img { width: 20px; height: 20px; image-rendering: pixelated; }
+.lottery-value-icon.text { color: var(--muted); font-size: 11px; font-weight: 700; }
+.lottery-value-name {
+  font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.lottery-value-id {
+  color: var(--muted); font-family: var(--mono); font-size: 10px;
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.lottery-value-cat { color: var(--muted); font-size: 10px; }
+.lottery-value-row .num {
+  text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; font-weight: 600;
+}
+.lottery-more { margin: 10px auto; display: block; }

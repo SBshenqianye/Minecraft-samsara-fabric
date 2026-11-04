@@ -1,6 +1,6 @@
 # samsara · Web API 接口文档
 
-> 状态：v0.43.0（2026-11-04）
+> 状态：v0.45.0（2026-11-04）
 > 适用：本地管理端 `/`、用户端只读页 `/user`、以及未来接入的脚本/面板。
 > 代码入口：`mod/src/main/java/com/shenqianye/samsara/web/LocalWebServer.java`
 > 安全边界：`WebSecurity.java`、`WebUserService.java`
@@ -302,7 +302,7 @@
 - **管理端静态页壳可能公开，但不含数据**：`/`、`/app.js` 等静态资源本身不需要 token；没有 token 时所有管理 API（`/api/config`、`/api/status`、`/api/server`、`/api/world-stack`、`/api/permissions`、`/api/map` 等）返回 `401`。如果连页面壳都不希望公开，需要在反向代理层做路径过滤、加独立端口或额外登录页。
 - **默认只公开用户端**：推荐反向代理只转发 `/user`、`/user.js`、`/style.css`、`/map.js`、`/banners.js`、`/api/user/*`。要公开管理端时，至少强制 HTTPS，并在代理层加限流/IP 白名单；当前 Mod 自身没有登录锁定、速率限制或二次验证。
 - **公网名字混淆**：`WebUserService` 对玩家名、操作者、发言者做混淆显示（保留首字符、分隔符和末 3 位，其余 `*`，如 `xh_unpkire` → `x*_****ire`）；系统提示/聊天/自定义名中的已知玩家名也替换。完整名字只走管理端。不要把完整名字重新加回 `/api/user/*`。
-- **浏览器安全头**：所有响应带 `Content-Security-Policy`（仅同源脚本）、`X-Frame-Options: DENY`、`X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、`Cache-Control: no-store`；前端不使用 `innerHTML`/内联脚本，CSP 不需要放开脚本。
+- **浏览器安全头**：所有响应带 `Content-Security-Policy`（仅同源脚本）、`X-Frame-Options: DENY`、`X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、`Cache-Control: no-store`；前端不使用 `innerHTML`/内联脚本，CSP 不需要放开脚本，也不允许任何页面被 iframe 嵌入。
 - **token 不落日志**：启动日志只打印 token 前缀，完整值只在 `config/samsara/web.yml`；不要恢复完整 token 日志。
 - **用户端无 token**：只注册 `/api/user/*`，不注册任何管理端 handler。用户端服务类 `WebUserService` 只依赖地图只读服务，不持有配置/身份/权限/备份服务。
 - **不要直接把管理端 Map 透传**：新增用户端字段时必须显式白名单重建；尤其是 `worldRoot`、`metaPath`、`cache`、`ownerUUID`、`uuid`、`health`、`yaw`、备份路径、token。
@@ -323,3 +323,63 @@
 - 《设计文档》〈Web 管理·地图标签页〉〈世界栈总览与在线玩家〉〈Web 本体管理〉
 - 《设计规范》〈Web 地图只读〉〈Web 权限与 token〉
 - 《实现状态》F-123~F-126、F-144~F-146、F-170、F-172~F-180
+
+## 9. 死人乐透（v0.45.0）
+
+### 9.1 管理端
+
+需要 `Authorization: Bearer <token>`。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/lottery` | 当前可下注日、正在统计日、实时死亡数、票、奖池、基金、历史、配置路径 |
+| GET | `/api/lottery/values` | 物品价值表：只返回可收物品（价值 > 0），按价值降序；`icon` 为空表示没有已打包的原版材质 |
+| POST | `/api/lottery/draw` | 手动开奖（服务器线程执行，5 秒超时） |
+| POST | `/api/lottery/cancel` | 取消当前统计日并退款 |
+
+响应示例（节选）：
+
+```json
+{
+  "enabled": true,
+  "mode": "game",
+  "bettingDay": { "day": "game-67", "state": "BETTING", "tickets": 1, "pot": 32.0, "bets": [{ "name": "Bot", "guess": 3, "value": 32.0 }] },
+  "countingDay": { "day": "game-66", "covered": true, "deathCount": 0 },
+  "fund": { "value": 0.0, "items": [] },
+  "history": [],
+  "insurance": { "enabled": true, "policies": [] }
+}
+```
+
+价值表响应示例：
+
+```json
+{
+  "ok": true,
+  "values": [
+    { "id": "minecraft:dragon_egg", "name": "Dragon Egg", "zh": "龙蛋", "py": "longdan", "initials": "ld", "syllables": ["long", "dan"], "icon": "", "value": 65536.0, "category": "其他" },
+    { "id": "minecraft:diamond", "name": "Diamond", "zh": "钻石", "py": "zuanshi", "initials": "zs", "syllables": ["zuan", "shi"], "icon": "diamond", "value": 32.0, "category": "材料" }
+  ]
+}
+```
+
+价值表只包含 `unitValue > 0` 的物品；`zh` / `py` / `initials` / `syllables` 用于中文与拼音搜索（全拼、首字母、逐字前缀）。前端负责搜索、分类、排序和增量渲染（默认先渲染 200 行）。
+
+### 9.2 用户端（无需 token）
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/user/lottery` | 奖池、票数、开奖/截止时间、上期死亡数与脱敏中奖名、基金实物列表、保险聚合计数；**不含实时死亡数、UUID、坐标、路径、保单主人** |
+| GET | `/api/user/lottery/values` | 公开物品价值表（结构同管理端，含中文名与拼音字段）；无玩家/保单信息 |
+
+```json
+{
+  "ok": true,
+  "scope": "user",
+  "enabled": true,
+  "round": { "day": "game-67", "drawTime": "第 67 游戏日 07:00", "cutoff": "第 67 游戏日 00:00", "pot": 32.0, "tickets": 1, "players": 1 },
+  "last": null,
+  "fund": { "value": 0.0, "count": 0, "items": [] },
+  "insurance": { "enabled": true, "total": 0, "active": 0, "pending": 0, "claimed": 0 }
+}
+```

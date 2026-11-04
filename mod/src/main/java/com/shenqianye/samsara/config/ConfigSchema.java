@@ -30,6 +30,8 @@ public final class ConfigSchema {
     public static final String STORAGE = "storage";
     public static final String WEB = "web";
     public static final String OUTPUT = "output";
+    public static final String LOTTERY = "lottery";
+    public static final String INSURANCE = "insurance";
 
     /** 文件 id → 文件名（不含扩展名）。 */
     private static final Map<String, String> FILE_NAMES = new LinkedHashMap<>();
@@ -217,6 +219,76 @@ public final class ConfigSchema {
                         "本体存档备份保留份数：只清理 backups/samsara/server-backups 下由本功能创建的"
                                 + " zip 备份，按时间保留最新 N 份；0 表示不自动清理；"
                                 + "源 world 与 pre-restore 回滚目录永不自动删除")
+        ));
+
+        file(LOTTERY, "死人乐透", List.of(
+                ConfigEntry.bool("enabled", false, "开关",
+                        "是否启用死人乐透。关闭后不统计死亡、不接受下注、不自动开奖"),
+                ConfigEntry.choice("day.mode", "game", List.of("game", "real"), "时间",
+                        "game = 每游戏日一轮（20 分钟）；real = 每现实日一轮"),
+                ConfigEntry.string("day.drawTime", "07:00", "时间",
+                        "开奖时间。game 模式按游戏内时钟；real 模式按服务器本地时间"),
+                ConfigEntry.string("day.cutoffTime", "00:00", "时间",
+                        "下注截止时间。默认结算日 00:00，即结算日开始前截止（盲押）"),
+                ConfigEntry.bool("count.players", true, "统计",
+                        "是否统计玩家死亡"),
+                ConfigEntry.bool("count.villagers", true, "统计",
+                        "是否统计村民死亡"),
+                ConfigEntry.bool("count.wanderingTraders", true, "统计",
+                        "是否统计流浪商人死亡"),
+                ConfigEntry.bool("count.namedMobs", true, "统计",
+                        "是否统计命名怪死亡（任何带自定义名的生物）"),
+                ConfigEntry.bool("count.repeatDeaths", true, "统计",
+                        "同一玩家/生物重复死亡是否重复计数"),
+                ConfigEntry.stringList("count.excludeNames", List.of(), "统计",
+                        "不计入死亡数的名字前缀（支持 * 通配，如 Bot*；测试服可用来排除假人）"),
+                ConfigEntry.bool("count.revealLiveCount", false, "统计",
+                        "是否向公开 API/计分板暴露实时死亡数。默认 false（防开卷）"),
+                ConfigEntry.decimal("bet.price", 8.0, 0.0, 1_000_000.0, "下注",
+                        "每张票的价值（VP）。1 VP = 1 铁锭；超额默认进奖池"),
+                ConfigEntry.integer("bet.maxTicketsPerPlayer", 3, 1, 100, "下注",
+                        "每人每轮最多买几张票"),
+                ConfigEntry.integer("bet.maxTicketsPerRound", 128, 1, 10_000, "下注",
+                        "单轮最多多少张票"),
+                ConfigEntry.choice("bet.overpay", "pot", List.of("pot", "reject"), "下注",
+                        "模型 B 超额处理：pot = 超额进奖池；reject = 超额拒绝"),
+                ConfigEntry.decimal("rake.percent", 5.0, 0.0, 100.0, "抽成",
+                        "中奖时抽取的百分比，默认 5%"),
+                ConfigEntry.choice("rake.destination", "fund", List.of("fund", "burn", "rollover"), "抽成",
+                        "抽成去向：fund = 服务器基金；burn = 销毁；rollover = 并入下期奖池"),
+                ConfigEntry.bool("rake.onlyOnPayout", true, "抽成",
+                        "是否只在中奖时抽成；滚存不抽"),
+                ConfigEntry.choice("settlement.split", "ticket", List.of("ticket", "player"), "开奖",
+                        "多人中奖：ticket = 按中奖票数平分；player = 按中奖人平分"),
+                ConfigEntry.choice("settlement.noWinner", "rollover", List.of("rollover", "refund"), "开奖",
+                        "无人中奖：rollover = 全额滚存；refund = 退款"),
+                ConfigEntry.integer("settlement.maxPotValue", 4096, 1, 1_000_000, "开奖",
+                        "单轮奖池价值上限（VP），达到后停止售票"),
+                ConfigEntry.bool("audit.enabled", true, "审计",
+                        "是否记录乐透审计日志"),
+                ConfigEntry.bool("web.publicVisible", true, "Web",
+                        "公开用户端是否显示奖池/上期结果（不显示实时死亡数）")
+        ));
+
+        file(INSURANCE, "保险", List.of(
+                ConfigEntry.bool("enabled", false, "开关",
+                        "是否启用物品保险；关闭后不能投保/理赔"),
+                ConfigEntry.decimal("premiumMultiplier", 2.0, 0.0, 100.0, "保费",
+                        "保费 = 物品价值 × 该倍数；保费从副手物品扣除"),
+                ConfigEntry.integer("policyDays", 30, 1, 3650, "保单",
+                        "保单有效期（天）"),
+                ConfigEntry.integer("claimCooldownMinutes", 60, 0, 100000, "理赔",
+                        "两次理赔之间的冷却（分钟）"),
+                ConfigEntry.integer("maxClaimsPerDay", 3, 1, 1000, "理赔",
+                        "每个玩家每日最多理赔次数"),
+                ConfigEntry.decimal("largeClaimValue", 512.0, 0.0, 1000000.0, "理赔",
+                        "超过该价值（VP）的理赔进入管理员审核"),
+                ConfigEntry.bool("allowStackable", false, "物品",
+                        "是否允许堆叠物品投保（默认只保单件，防部分理赔复制）"),
+                ConfigEntry.integer("scanRadius", 128, 16, 512, "理赔",
+                        "理赔前扫描周围已加载容器/掉落物的半径（格）"),
+                ConfigEntry.bool("entities.enabled", false, "生物",
+                        "是否启用生物/宠物保险（本版暂未实现，保留开关）")
         ));
 
         List<ConfigEntry> outputEntries = new ArrayList<>();

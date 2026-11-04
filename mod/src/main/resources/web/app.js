@@ -12,8 +12,8 @@ const state = {
   tab: 'config',
   navTargets: [],
   navScrollHandler: null,
-  scrollPositions: { config: 0, identity: 0, 'claim-range': 0, output: 0, permissions: 0, map: 0, 'world-stack': 0 },
-  navScrollPositions: { config: 0, identity: 0, 'claim-range': 0, output: 0, permissions: 0, map: 0, 'world-stack': 0 },
+  scrollPositions: { config: 0, identity: 0, 'claim-range': 0, output: 0, permissions: 0, map: 0, 'world-stack': 0, lottery: 0 },
+  navScrollPositions: { config: 0, identity: 0, 'claim-range': 0, output: 0, permissions: 0, map: 0, 'world-stack': 0, lottery: 0 },
   claimPreview: null,
 };
 
@@ -23,8 +23,8 @@ const connectedHooks = [];
 // 不能只依赖原生 input/change 或 DOM 冒泡（分段按钮不在表单事件链里）。
 const fileBlockFiles = new WeakMap();
 const curveEstimators = new Map();
-const panelIds = ['panel-identity', 'panel-config', 'panel-claim-range', 'panel-output', 'panel-permissions', 'panel-map', 'panel-world-stack'];
-const tabNames = { 'panel-identity': 'identity', 'panel-config': 'config', 'panel-claim-range': 'claim-range', 'panel-output': 'output', 'panel-permissions': 'permissions', 'panel-map': 'map', 'panel-world-stack': 'world-stack' };
+const panelIds = ['panel-identity', 'panel-config', 'panel-claim-range', 'panel-output', 'panel-permissions', 'panel-map', 'panel-world-stack', 'panel-lottery'];
+const tabNames = { 'panel-identity': 'identity', 'panel-config': 'config', 'panel-claim-range': 'claim-range', 'panel-output': 'output', 'panel-permissions': 'permissions', 'panel-map': 'map', 'panel-world-stack': 'world-stack', 'panel-lottery': 'lottery' };
 
 const $ = (id) => document.getElementById(id);
 
@@ -3390,6 +3390,10 @@ function setActiveTab(name) {
   for (const tab of document.querySelectorAll('.tab[data-panel]')) {
     tab.classList.toggle('active', tab.dataset.panel === 'panel-' + name);
   }
+  const shell = document.querySelector('.app-shell');
+  if (shell) shell.classList.toggle('no-nav', name === 'lottery');
+  const aside = $('global-nav');
+  if (aside) aside.hidden = name === 'lottery';
   try { history.replaceState(null, '', '#' + name); } catch (e) { /* file:// 等场景忽略 */ }
   updateTabActions(name);
   if (name === 'config') {
@@ -3406,6 +3410,8 @@ function setActiveTab(name) {
     window.SamsaraOutput?.activate();
   } else if (name === 'permissions') {
     window.SamsaraPermissions?.activate();
+  } else if (name === 'lottery') {
+    window.samsaraLottery?.activate();
   }
   const restore = () => {
     window.scrollTo(0, state.scrollPositions[name] || 0);
@@ -3607,7 +3613,7 @@ window.SamsaraUI = {
 };
 
 const initialTab = (location.hash || '').replace('#', '');
-if (['config', 'claim-range', 'identity', 'output', 'permissions', 'map', 'world-stack'].includes(initialTab)) {
+if (['config', 'claim-range', 'identity', 'output', 'permissions', 'map', 'world-stack', 'lottery'].includes(initialTab)) {
   setActiveTab(initialTab);
 } else {
   updateTabActions('config');
