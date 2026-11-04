@@ -369,7 +369,7 @@
           <div class="panel-head">
             <div>
               <h2>身份组</h2>
-              <p class="panel-sub">把多个账号入口映射到同一份玩家数据。卡片之间可以拖拽组合。</p>
+              <p class="panel-sub">把多个账号入口映射到同一份玩家数据。卡片之间可以拖拽组合。账号类型只有两种：<strong>正版账号</strong>（Mojang）和<strong>离线账号</strong>（非正版）；「当前在线」是连接状态，和账号类型无关。</p>
             </div>
             <div class="panel-tools">
               <button id="identity-add-group" class="ghost">新增组</button>
@@ -405,9 +405,9 @@
           <details class="help-card">
             <summary>data UUID 是什么？为什么它和账号 UUID 不一样？</summary>
             <div class="help-body">
-              <p><strong>账号 UUID</strong> 是玩家登录时使用的身份：正版 UUID 由 Mojang 分配，离线 UUID 由“OfflinePlayer:名称”计算。一个组最多各放一个正版/离线入口。身份组按 UUID 匹配，不按名字；同一个名字的正版 UUID 和离线 UUID 是两个不同的值，所以离线 UUID 不能拖进正版区域，正版 UUID 也不能拖进离线区域。</p>
+              <p><strong>账号 UUID</strong> 是玩家登录时使用的身份：正版账号的 UUID 由 Mojang 分配，离线账号的 UUID 由“OfflinePlayer:名称”计算。一个组最多各放一个正版账号/离线账号入口。身份组按 UUID 匹配，不按名字；同一个名字的正版账号 UUID 和离线账号 UUID 是两个不同的值，所以离线账号 UUID 不能拖进正版账号区域，正版账号 UUID 也不能拖进离线账号区域。</p>
               <p><strong>data UUID</strong> 是玩家数据的存储钥匙，对应 <code>identity/playerdata/&lt;data&gt;.dat</code>。它不是登录账号，所以同一把 data UUID 可以被多个组复用；复用后这些组会共享同一份背包/位置/进度。</p>
-              <p>“生成 data UUID”得到的是<strong>空白钥匙</strong>：还没有绑定任何账号，所以池子里显示为“空白 data”。把正版/离线账号映射进组、玩家上线并同步后，数据才会写进这把钥匙。池子里的“正版数据 / 离线数据”候选是用账号 UUID 当数据键，名字直接来自账号，避免出现不知道是谁的 data。</p>
+              <p>“生成 data UUID”得到的是<strong>空白钥匙</strong>：还没有绑定任何账号，所以池子里显示为“空白 data”。把正版账号/离线账号映射进组、玩家上线并同步后，数据才会写进这把钥匙。池子里的“正版账号数据 / 离线账号数据”候选是用账号 UUID 当数据键，名字直接来自账号，避免出现不知道是谁的 data。</p>
               <p>已有组修改 data UUID 时，会自动弹出重绑确认：程序先备份旧数据与目标数据，再按你选择的策略复制或保留，避免玩家进度丢失。新组没有旧数据，直接设置即可。</p>
             </div>
           </details>
@@ -418,7 +418,7 @@
             <div class="panel-head compact">
               <div>
                 <h3>未进组 / 数据 UUID 库</h3>
-                <p class="panel-sub">账号和 data 分开显示：正版、离线、data 各自独立。把账号拖进卡片的“正版/离线”区域，把 data UUID 拖进“数据”区域。正版/离线只能在一个组；data 可以复制到多个组。</p>
+                <p class="panel-sub">账号和 data 分开显示：正版账号、离线账号、data 各自独立。把账号拖进卡片的“正版账号/离线账号”区域，把 data UUID 拖进“数据”区域。正版账号/离线账号只能在一个组；data 可以复制到多个组。</p>
               </div>
               <div class="panel-tools">
                 <label class="inline-field">
@@ -447,11 +447,11 @@
             </div>
             <div id="identity-suggestions" class="identity-suggestions" hidden></div>
             <details class="pool-section" id="identity-premium-section" open>
-              <summary>正版 UUID（未进组） <span id="identity-premium-count" class="muted small"></span></summary>
+              <summary>正版账号 UUID（未进组） <span id="identity-premium-count" class="muted small"></span></summary>
               <div id="identity-premium-pool" class="chip-pool"></div>
             </details>
             <details class="pool-section" id="identity-offline-section" open>
-              <summary>离线 UUID（未进组） <span id="identity-offline-count" class="muted small"></span></summary>
+              <summary>离线账号 UUID（未进组） <span id="identity-offline-count" class="muted small"></span></summary>
               <div id="identity-offline-pool" class="chip-pool"></div>
             </details>
             <details class="pool-section" id="identity-data-section">
@@ -696,8 +696,8 @@
       <label class="field-card">
         <span>名称 / UUID</span>
         <input id="uuid-input" type="text" list="identity-candidates" autocomplete="off"
-               placeholder="输入玩家名、正版 UUID 或离线 UUID">
-        <small>输入名称后会自动计算离线 UUID，并尝试从 Mojang 获取正版 UUID。</small>
+               placeholder="输入玩家名、正版账号 UUID 或离线账号 UUID">
+        <small>输入名称后会自动计算离线账号 UUID，并尝试从 Mojang 获取正版账号 UUID。</small>
       </label>
       <div id="uuid-resolved" class="resolve-result" hidden></div>
       <div class="dialog-actions">
@@ -722,8 +722,8 @@
         <span>放到哪个区域</span>
         <select id="assign-role">
           <option value="data">数据 UUID（可共享）</option>
-          <option value="premium">正版 UUID（仅一个组）</option>
-          <option value="offline">离线 UUID（仅一个组）</option>
+          <option value="premium">正版账号 UUID（仅一个组）</option>
+          <option value="offline">离线账号 UUID（仅一个组）</option>
         </select>
       </label>
       <div id="assign-error" class="message error"></div>

@@ -649,6 +649,25 @@ async function main() {
       window.SamsaraUI.setActiveTab('identity');
       await new Promise((resolve) => setTimeout(resolve, 600));
       const identity = document.querySelectorAll('#identity-enabled .segmented-btn').length;
+      const panel = document.querySelector('#panel-identity');
+      const panelText = panel ? panel.textContent : '';
+      const zoneLabels = [...document.querySelectorAll('#panel-identity .zone-label > span:first-child')]
+        .map((el) => el.textContent.trim());
+      const poolSummaries = [...document.querySelectorAll('#panel-identity .pool-section > summary')]
+        .map((el) => el.textContent.replace(/\\s+/g, ' ').trim());
+      const assignRoles = [...document.querySelectorAll('#assign-role option')]
+        .map((el) => el.textContent.trim());
+      const identityTerms = {
+        hasTypes: panelText.includes('正版账号') && panelText.includes('离线账号'),
+        hasOnline: panelText.includes('当前在线'),
+        zonesOk: zoneLabels.includes('正版账号 UUID') && zoneLabels.includes('离线账号 UUID'),
+        poolsOk: poolSummaries.some((text) => text.startsWith('正版账号 UUID'))
+          && poolSummaries.some((text) => text.startsWith('离线账号 UUID')),
+        assignOk: assignRoles.some((text) => text.startsWith('正版账号 UUID'))
+          && assignRoles.some((text) => text.startsWith('离线账号 UUID')),
+        bareOld: panelText.includes('正版 UUID') || panelText.includes('离线 UUID'),
+        zones: zoneLabels,
+      };
       window.SamsaraUI.setActiveTab('output');
       await new Promise((resolve) => setTimeout(resolve, 600));
       const output = document.querySelectorAll('#output-auto-continue .segmented-btn').length;
@@ -658,9 +677,14 @@ async function main() {
       window.SamsaraUI.setActiveTab('config');
       await new Promise((resolve) => setTimeout(resolve, 600));
       const configBool = document.querySelectorAll('#files .entry-control .segmented').length;
-      return { identity, output, permissions, configBool };
+      return { identity, identityTerms, output, permissions, configBool };
     })()`);
     check('身份组布尔改为按钮', mods.identity === 2, 'buttons=' + mods.identity);
+    check('身份组术语区分账号类型与在线状态',
+        mods.identityTerms.hasTypes && mods.identityTerms.hasOnline
+          && mods.identityTerms.zonesOk && mods.identityTerms.poolsOk
+          && mods.identityTerms.assignOk && !mods.identityTerms.bareOld,
+        JSON.stringify(mods.identityTerms));
     check('输出格式布尔改为按钮', mods.output === 2, 'buttons=' + mods.output);
     check('权限树布尔改为按钮', mods.permissions > 0, 'segmented=' + mods.permissions);
     check('配置页布尔改为按钮', mods.configBool > 0, 'segmented=' + mods.configBool);

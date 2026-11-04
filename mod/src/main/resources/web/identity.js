@@ -1,7 +1,7 @@
 'use strict';
 
 // 身份组卡片：账号 UUID 与 data UUID 分角色拖拽。
-// 正版/离线入口全局唯一；data UUID 允许复制到多个组（共享同一份玩家数据）。
+// 正版账号/离线账号入口全局唯一；data UUID 允许复制到多个组（共享同一份玩家数据）。
 
 const I = {
   model: null,
@@ -109,7 +109,7 @@ function renderDatalists() {
       const option = document.createElement('option');
       option.value = item.uuid;
       option.label = (item.name || shortUuid(item.uuid))
-          + (item.online ? ' · 在线' : '') + ' · ' + shortUuid(item.uuid);
+          + (item.online ? ' · 当前在线' : '') + ' · ' + shortUuid(item.uuid);
       candidates.append(option);
     }
   }
@@ -225,7 +225,7 @@ function groupCard(group, index) {
     badges.append(badge('同步阻断', 'danger-text'));
   }
   if (groupOnline(group)) {
-    badges.append(badge('在线', 'default'));
+    badges.append(badge('当前在线', 'default'));
   }
   head.append(titleRow, badges);
 
@@ -237,7 +237,7 @@ function groupCard(group, index) {
   noteInput.type = 'text';
   noteInput.value = group.note || '';
   noteInput.maxLength = 512;
-  noteInput.placeholder = '例如：正版 + 小号';
+  noteInput.placeholder = '例如：正版账号 + 小号';
   noteInput.addEventListener('input', () => {
     group.note = noteInput.value;
     I.dirty = true;
@@ -247,8 +247,8 @@ function groupCard(group, index) {
   const zones = document.createElement('div');
   zones.className = 'uuid-zones';
   zones.append(renderZone(group, 'data', '数据 UUID', '可共享'));
-  zones.append(renderZone(group, 'premium', '正版 UUID', '仅一个组'));
-  zones.append(renderZone(group, 'offline', '离线 UUID', '仅一个组'));
+  zones.append(renderZone(group, 'premium', '正版账号 UUID', 'Mojang 账号 · 仅一个组'));
+  zones.append(renderZone(group, 'offline', '离线账号 UUID', '非正版 · 仅一个组'));
 
   const actions = document.createElement('div');
   actions.className = 'card-actions';
@@ -409,7 +409,7 @@ function uuidChip(uuid, role, groupId) {
 }
 
 function roleLabel(role) {
-  return role === 'data' ? 'data' : role === 'premium' ? '正版' : '离线';
+  return role === 'data' ? '数据 UUID' : role === 'premium' ? '正版账号' : '离线账号';
 }
 
 function displayName(uuid) {
@@ -438,7 +438,7 @@ function candidateType(uuid) {
 }
 
 function typeLabel(type) {
-  return type === 'offline' ? '离线' : type === 'premium' ? '正版' : '';
+  return type === 'offline' ? '离线账号' : type === 'premium' ? '正版账号' : '';
 }
 
 function dataLabel(uuid, groupId) {
@@ -571,7 +571,7 @@ function renderSuggestions(candidates) {
   host.hidden = false;
   const head = document.createElement('p');
   head.className = 'muted small';
-  head.textContent = 'ID 相似度推荐（只是建议，不会自动保存）：同一名字的正版/离线入口可以合成一个组；同类型多个账号只能选一个入口。';
+  head.textContent = 'ID 相似度推荐（只是建议，不会自动保存）：同一名字的正版账号/离线账号入口可以合成一个组；同类型多个账号只能选一个入口。';
   host.append(head);
   for (const cluster of groups) {
     const row = document.createElement('div');
@@ -582,7 +582,7 @@ function renderSuggestions(candidates) {
     const premium = cluster.find((item) => item.type === 'premium');
     const offline = cluster.find((item) => item.type === 'offline');
     const titleName = premium?.name || offline?.name || cluster[0].name;
-    title.textContent = titleName + (premium && offline ? ' · 正版 + 离线' : ' · 相似 ID');
+    title.textContent = titleName + (premium && offline ? ' · 正版账号 + 离线账号' : ' · 相似 ID');
     const detail = document.createElement('div');
     detail.className = 'muted small';
     detail.textContent = cluster.map((item) =>
@@ -592,7 +592,7 @@ function renderSuggestions(candidates) {
     const create = document.createElement('button');
     create.type = 'button';
     create.className = 'ghost';
-    create.textContent = premium && offline ? '建组（正版+离线）' : '建组（取第一个）';
+    create.textContent = premium && offline ? '建组（正版账号 + 离线账号）' : '建组（取第一个）';
     create.addEventListener('click', () => createDraftGroup(cluster));
     row.append(label, create);
     host.append(row);
@@ -654,7 +654,7 @@ function renderPool() {
     if (assigned.has(item.uuid)) continue;
     const offline = item.type === 'offline';
     (offline ? offlinePool : premiumPool).append(poolChip(
-      item.uuid, item.name, item.online, offline ? '离线' : '正版', {
+      item.uuid, item.name, item.online, offline ? '离线账号' : '正版账号', {
         assignRole: offline ? 'offline' : 'premium',
         type: item.type,
         badge: probeBadge(item),
@@ -662,13 +662,13 @@ function renderPool() {
     if (offline) offlineCount++;
     else premiumCount++;
   }
-  if (!premiumCount) premiumPool.append(poolEmpty('没有未进组的正版 UUID。'));
-  if (!offlineCount) offlinePool.append(poolEmpty('没有未进组的离线 UUID。'));
+  if (!premiumCount) premiumPool.append(poolEmpty('没有未进组的正版账号 UUID。'));
+  if (!offlineCount) offlinePool.append(poolEmpty('没有未进组的离线账号 UUID。'));
 
   const usedData = new Set(I.groups.map((group) => group.data).filter(Boolean));
   const dataSeen = new Set();
   let dataCount = 0;
-  // 账号派生的 data 候选：名称 + 正版/离线，可直接用这个账号当数据键。
+  // 账号派生的 data 候选：名称 + 正版账号/离线账号，可直接用这个账号当数据键。
   for (const item of candidates) {
     if (usedData.has(item.uuid) || dataSeen.has(item.uuid)) continue;
     const accountGroup = I.groups.find((group) =>
@@ -726,7 +726,7 @@ function poolChip(uuid, name, online, tag, options) {
   const chip = document.createElement('span');
   chip.className = 'uuid-chip';
   chip.draggable = true;
-  chip.title = '拖到卡片的 数据 / 正版 / 离线 区域 · ' + uuid;
+  chip.title = '拖到卡片的 数据 UUID / 正版账号 / 离线账号 区域 · ' + uuid;
   const label = document.createElement('span');
   label.className = 'uuid-name';
   label.dataset.nameFor = uuid;
@@ -751,7 +751,7 @@ function poolChip(uuid, name, online, tag, options) {
   if (online) {
     const live = document.createElement('span');
     live.className = 'uuid-role';
-    live.textContent = '在线';
+    live.textContent = '当前在线';
     chip.append(live);
   }
   if (opts.assignRole) {
@@ -857,11 +857,11 @@ function assignRole(groupId, role, uuid, name) {
   }
   const accountType = candidateType(uuid) || (I.drag && I.drag.type) || '';
   if (role === 'premium' && accountType === 'offline') {
-    identityMessage('这是离线 UUID，只能放进“离线 UUID”区域；正版和离线 UUID 是两套不同的值。', 'error');
+    identityMessage('这是离线账号 UUID，只能放进“离线账号 UUID”区域；正版账号和离线账号的 UUID 是两套不同的值。', 'error');
     return;
   }
   if (role === 'offline' && accountType === 'premium') {
-    identityMessage('这是正版 UUID，只能放进“正版 UUID”区域；正版和离线 UUID 是两套不同的值。', 'error');
+    identityMessage('这是正版账号 UUID，只能放进“正版账号 UUID”区域；正版账号和离线账号的 UUID 是两套不同的值。', 'error');
     return;
   }
   const existing = findExisting(group);
@@ -874,7 +874,7 @@ function assignRole(groupId, role, uuid, name) {
   } else {
     const dataOwner = I.groups.find((item) => item._id !== groupId && item.data === uuid);
     if (dataOwner) {
-      identityMessage('这个 UUID 已经是「' + (dataOwner.name || '未命名') + '」的数据 UUID，不能作为正版/离线入口。', 'error');
+      identityMessage('这个 UUID 已经是「' + (dataOwner.name || '未命名') + '」的数据 UUID，不能作为正版账号/离线账号入口。', 'error');
       return;
     }
     for (const other of I.groups) {
@@ -962,7 +962,7 @@ function openUuidDialog(group, role) {
   $i('uuid-title').textContent = '设置「' + (group.name || '未命名') + '」的 ' + roleLabel(role) + ' UUID';
   $i('uuid-desc').textContent = role === 'data'
     ? 'data UUID 是玩家数据的钥匙；同一个值可以被多个组复用。已有组改 data 会自动弹出重绑确认。'
-    : '正版/离线入口全局只能属于一个组；拖入别组已有的入口会把它移动过来。';
+    : '正版账号/离线账号入口全局只能属于一个组；拖入别组已有的入口会把它移动过来。';
   input.value = group[role] || '';
   resolved.hidden = true;
   resolved.replaceChildren();
@@ -1033,12 +1033,12 @@ function renderResolved(result, query) {
     }
     if ((role === 'premium' && type === 'offline') || (role === 'offline' && type === 'premium')) {
       chip.classList.add('mismatch');
-      chip.title = '类型不匹配：' + typeLabel(type) + ' UUID 不能放进 ' + roleLabel(role) + ' 区域';
+      chip.title = '类型不匹配：' + typeLabel(type) + ' UUID 不能放进“' + roleLabel(role) + ' UUID”区域';
     }
     chip.addEventListener('click', () => {
       if ((role === 'premium' && type === 'offline') || (role === 'offline' && type === 'premium')) {
-        identityMessage('类型不匹配：' + typeLabel(type) + ' UUID 不能放进 '
-            + roleLabel(role) + ' 区域。正版和离线 UUID 是两套不同的值。', 'error');
+        identityMessage('类型不匹配：' + typeLabel(type) + ' UUID 不能放进“'
+            + roleLabel(role) + ' UUID”区域。正版账号和离线账号的 UUID 是两套不同的值。', 'error');
         return;
       }
       I.selectedUuid = uuid;
@@ -1052,8 +1052,8 @@ function renderResolved(result, query) {
     });
     resolved.append(chip);
   };
-  if (result.premium) add('正版', result.premium, result.name || query);
-  if (result.offline) add('离线', result.offline, result.name || query);
+  if (result.premium) add('正版账号', result.premium, result.name || query);
+  if (result.offline) add('离线账号', result.offline, result.name || query);
   for (const [uuid, name] of Object.entries(result.names || {})) {
     const known = uuid === result.premium || uuid === result.offline;
     if (!known) add(isUuid(query) ? '解析' : '账号', uuid, name);
@@ -1080,14 +1080,14 @@ function applyUuidDialog() {
   let uuid = I.selectedUuid;
   if (!uuid && isUuid(value)) uuid = value;
   if (!uuid) {
-    identityMessage('请选择解析出的正版/离线 UUID，或直接输入完整 UUID。', 'error');
+    identityMessage('请选择解析出的正版账号/离线账号 UUID，或直接输入完整 UUID。', 'error');
     return;
   }
   const type = candidateType(uuid);
   if ((context.role === 'premium' && type === 'offline')
       || (context.role === 'offline' && type === 'premium')) {
-    identityMessage('类型不匹配：' + typeLabel(type) + ' UUID 不能放进 '
-        + roleLabel(context.role) + ' 区域。', 'error');
+    identityMessage('类型不匹配：' + typeLabel(type) + ' UUID 不能放进“'
+        + roleLabel(context.role) + ' UUID”区域。', 'error');
     return;
   }
   $i('uuid-dialog').close();
@@ -1275,9 +1275,8 @@ async function resolveToolbar() {
     });
     resultBox.hidden = false;
     resultBox.replaceChildren();
-    const addResult = (label, uuid, name) => {
+    const addResult = (type, label, uuid, name) => {
       if (!uuid) return;
-      const type = label === '正版' ? 'premium' : label === '离线' ? 'offline' : '';
       if (!I.extraCandidates.some((item) => item.uuid === uuid)) {
         I.extraCandidates.push({ uuid, name: name || '', online: !!result.online?.[uuid], tag: label, type });
       }
@@ -1287,10 +1286,10 @@ async function resolveToolbar() {
           textSpan(shortUuid(uuid), 'uuid-code'));
       resultBox.append(chip);
     };
-    if (result.premium) addResult('正版', result.premium, result.name || value);
-    if (result.offline) addResult('离线', result.offline, result.name || value);
+    if (result.premium) addResult('premium', '正版账号', result.premium, result.name || value);
+    if (result.offline) addResult('offline', '离线账号', result.offline, result.name || value);
     for (const [uuid, name] of Object.entries(result.names || {})) {
-      if (uuid !== result.premium && uuid !== result.offline) addResult('账号', uuid, name);
+      if (uuid !== result.premium && uuid !== result.offline) addResult('', '账号', uuid, name);
     }
     if (result.premiumNote) {
       const note = document.createElement('span');
@@ -1342,9 +1341,9 @@ function renderNav() {
     count: [group.data, group.premium, group.offline].filter(Boolean).length,
     target: 'identity-group-' + group._id,
     children: [
-      { label: '数据 · ' + navDataLabel(group.data), target: 'identity-group-' + group._id },
-      { label: '正版 · ' + navAccountLabel(group.premium), target: 'identity-group-' + group._id },
-      { label: '离线 · ' + navAccountLabel(group.offline), target: 'identity-group-' + group._id },
+      { label: '数据 UUID · ' + navDataLabel(group.data), target: 'identity-group-' + group._id },
+      { label: '正版账号 · ' + navAccountLabel(group.premium), target: 'identity-group-' + group._id },
+      { label: '离线账号 · ' + navAccountLabel(group.offline), target: 'identity-group-' + group._id },
     ],
   }));
   items.push({ label: '未进组账号 / data UUID 库', target: 'identity-pool-panel' });

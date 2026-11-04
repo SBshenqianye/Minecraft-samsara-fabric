@@ -504,7 +504,7 @@ public final class IdentityService {
 
     public String status(ServerPlayer player) {
         if (!enabled()) {
-            return "身份验证已关闭（identity.enabled=false）。身份组只做账号映射，不提供注册/登录。";
+            return "身份组已关闭（identity.enabled=false）。现在只做账号映射，不做登录验证。";
         }
         if (configStore != null && !configStore.valid()) {
             return "身份组配置非法，身份解析已停用：\n" + issueLines();
@@ -517,9 +517,9 @@ public final class IdentityService {
                 : stateStore.get(group.dataUuid());
         StringBuilder out = new StringBuilder("身份组「").append(group.name).append("」\n")
                 .append("data UUID: ").append(group.data).append("\n")
-                .append("premium: ").append(group.premium == null ? "（未设置）" : group.premium)
+                .append("正版账号 UUID: ").append(group.premium == null ? "（未设置）" : group.premium)
                 .append("\n")
-                .append("offline: ").append(group.offline == null ? "（未设置）" : group.offline);
+                .append("离线账号 UUID: ").append(group.offline == null ? "（未设置）" : group.offline);
         if (group.note != null && !group.note.isBlank()) {
             out.append("\n备注: ").append(group.note);
         }
@@ -535,9 +535,9 @@ public final class IdentityService {
 
     public String map() {
         if (config == null || config.groups.isEmpty()) {
-            return enabled() ? "身份组列表为空" : "身份验证已关闭，身份组列表为空";
+            return enabled() ? "身份组列表为空" : "身份组已关闭，身份组列表为空";
         }
-        StringBuilder out = new StringBuilder(enabled() ? "身份组：" : "身份验证已关闭；当前配置：");
+        StringBuilder out = new StringBuilder(enabled() ? "身份组：" : "身份组已关闭；当前配置：");
         int index = 1;
         for (IdentityConfig.Group group : config.groups) {
             if (group == null) {
@@ -545,8 +545,8 @@ public final class IdentityService {
             }
             out.append("\n").append(index++).append(". ").append(group.name)
                     .append(" · data=").append(group.data)
-                    .append(" · premium=").append(group.premium == null ? "-" : group.premium)
-                    .append(" · offline=").append(group.offline == null ? "-" : group.offline);
+                    .append(" · 正版账号=").append(group.premium == null ? "-" : group.premium)
+                    .append(" · 离线账号=").append(group.offline == null ? "-" : group.offline);
             if (stateStore != null) {
                 IdentityStateStore.GroupState state = stateStore.get(group.dataUuid());
                 if (state != null) {
@@ -584,7 +584,7 @@ public final class IdentityService {
     }
 
     public String auditReport() {
-        StringBuilder out = new StringBuilder(enabled() ? "身份组审计：" : "身份验证已关闭；审计配置：");
+        StringBuilder out = new StringBuilder(enabled() ? "身份组审计：" : "身份组已关闭；审计配置：");
         if (configStore != null && !configStore.valid()) {
             out.append("\n配置非法：");
             for (IdentityValidator.Issue issue : configStore.issues()) {

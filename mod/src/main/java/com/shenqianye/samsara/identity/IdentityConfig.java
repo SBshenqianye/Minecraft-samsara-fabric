@@ -36,7 +36,7 @@ public final class IdentityConfig {
     public int maxOwners = DEFAULT_MAX_OWNERS;
     public List<Group> groups = new ArrayList<>();
 
-    /** 一个身份组：显示名 + 数据 UUID + 最多一个正版/离线账号入口。 */
+    /** 一个身份组：显示名 + 数据 UUID + 最多一个正版账号/离线账号入口。 */
     public static final class Group {
         public String name = "";
         public String data = "";

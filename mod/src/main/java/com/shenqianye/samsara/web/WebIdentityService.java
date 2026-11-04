@@ -307,8 +307,8 @@ public final class WebIdentityService implements IdentityWebService {
             if (premium != null) {
                 localNames.putIfAbsent(premium, queryName);
             } else {
-                premiumNote = "未能从 Mojang 获取正版 UUID（可能离线或名称不存在）；"
-                        + "离线 UUID 仍可正常计算";
+                premiumNote = "未能从 Mojang 获取正版账号 UUID（可能离线或名称不存在）；"
+                        + "离线账号 UUID 仍可正常计算";
             }
         }
 

@@ -145,8 +145,8 @@ public final class OutputCatalog {
         List<OutputVariable> variables = new ArrayList<>(List.of(
                 text("groupName", "身份组名", "Bot", true),
                 uuid("dataUuid", "data UUID", "00000000-0000-0000-0000-000000000000"),
-                text("premium", "正版 UUID", "（未设置）", true),
-                text("offline", "离线 UUID", "（未设置）", true),
+                text("premium", "正版账号 UUID", "（未设置）", true),
+                text("offline", "离线账号 UUID", "（未设置）", true),
                 optional("noteLine", "备注行", "\n备注: 测试账号"),
                 optional("lastWriterLine", "最后写入账号行", "\n最后写入账号: 00000000-0000-0000-0000-000000000000"),
                 optional("blockedLine", "同步阻断行", "\n⚠ 同步已阻断（sync-blocked），请联系管理员")
@@ -158,8 +158,8 @@ public final class OutputCatalog {
                         new PrefixPart(PREFIX_SAMPLE),
                         new TextPart("身份组「"), new VariablePart("groupName"),
                         new TextPart("」\ndata UUID: "), new VariablePart("dataUuid"),
-                        new TextPart("\npremium: "), new VariablePart("premium"),
-                        new TextPart("\noffline: "), new VariablePart("offline"),
+                        new TextPart("\n正版账号 UUID: "), new VariablePart("premium"),
+                        new TextPart("\n离线账号 UUID: "), new VariablePart("offline"),
                         new VariablePart("noteLine"),
                         new VariablePart("lastWriterLine"),
                         new VariablePart("blockedLine")
@@ -170,7 +170,7 @@ public final class OutputCatalog {
         return new OutputTemplate("identity.status.disabled", "身份", "身份服务关闭时的提示",
                 List.of(prefix()), List.of(),
                 List.of(new PrefixPart(PREFIX_SAMPLE), new TextPart(
-                        "身份验证已关闭（identity.enabled=false）。身份组只做账号映射，不提供注册/登录。")));
+                        "身份组已关闭（identity.enabled=false）。现在只做账号映射，不做登录验证。")));
     }
 
     private static OutputTemplate identityStatusInvalid() {

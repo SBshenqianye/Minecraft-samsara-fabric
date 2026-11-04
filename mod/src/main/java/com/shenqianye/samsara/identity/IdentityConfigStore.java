@@ -223,6 +223,8 @@ public final class IdentityConfigStore {
         StringBuilder out = new StringBuilder();
         out.append("# identity.yml · samsara 身份组（v0.20）\n");
         out.append("# 身份组只做“多个账号入口 → 同一个 data UUID”的映射，不提供注册/登录/密码。\n");
+        out.append("# 账号类型：premium = 正版账号 UUID（Mojang），offline = 离线账号 UUID（非正版）。\n");
+        out.append("# 两者都是账号类型，不是“当前在线/当前不在线”；在线状态由服务器单独判断。\n");
         out.append("# 身份安全请交给其他认证模组。修改后可在 Web 身份组页面保存，或 /samsara debug identity reload。\n\n");
         out.append("identity:\n");
         out.append("  enabled: ").append(config.enabled)
@@ -244,9 +246,9 @@ public final class IdentityConfigStore {
             out.append("  - name: ").append(scalar(group.name)).append("\n");
             out.append("    data: ").append(scalar(group.data)).append("\n");
             out.append("    premium: ").append(group.premium == null ? "null" : scalar(group.premium))
-                    .append("\n");
+                    .append("   # 正版账号 UUID（Mojang），不是在线状态\n");
             out.append("    offline: ").append(group.offline == null ? "null" : scalar(group.offline))
-                    .append("\n");
+                    .append("   # 离线账号 UUID（非正版），不是不在线\n");
             if (group.note != null && !group.note.isBlank()) {
                 out.append("    note: ").append(scalar(group.note)).append("\n");
             }

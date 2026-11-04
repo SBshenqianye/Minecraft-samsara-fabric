@@ -44,7 +44,7 @@ public final class IdentityPreview {
         out.append("\n");
         out.append("轨迹: ").append(trackCount(aliases)).append(" 个文件\n");
         out.append("活动: ").append(activityCount(aliases)).append(" 条（近 30 天）\n");
-        out.append("在线: ").append(online(server, data) ? "是" : "否");
+        out.append("当前在线: ").append(online(server, data) ? "是" : "否");
         return out.toString();
     }
 

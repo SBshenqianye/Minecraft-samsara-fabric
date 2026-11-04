@@ -191,7 +191,9 @@
 | POST | `/api/identity/reload` | 重载身份配置 |
 | GET | `/api/identity/audit` | 身份审计记录 |
 | POST | `/api/identity/generate` | 生成 data UUID |
-| POST | `/api/identity/resolve` | 解析玩家名/UUID |
+| POST | `/api/identity/resolve` | 解析玩家名/UUID，返回正版账号（premium）与离线账号（offline）UUID 及类型 |
+
+> 字段语义：`premium` = **正版账号 UUID**（Mojang），`offline` = **离线账号 UUID**（非正版）。两者都是账号类型，不是“当前在线/当前不在线”；只有 `online`/`states` 才表示连接状态。前端不得把账号类型简写成裸“正版/离线”。
 
 ### 3.3 输出格式
 

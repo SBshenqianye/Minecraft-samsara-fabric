@@ -50,14 +50,14 @@ class OutputDefaultsTest {
         values.put("blockedLine", "");
         assertEquals("[周目管理] ▸ 身份组「Bot」\n"
                         + "data UUID: 00000000-0000-0000-0000-000000000000\n"
-                        + "premium: （未设置）\n"
-                        + "offline: （未设置）",
+                        + "正版账号 UUID: （未设置）\n"
+                        + "离线账号 UUID: （未设置）",
                 plain("identity.status", values));
     }
 
     @Test
     void identityEdgeBranchesMatchLegacyOutput() {
-        assertEquals("[周目管理] ▸ 身份验证已关闭（identity.enabled=false）。身份组只做账号映射，不提供注册/登录。",
+        assertEquals("[周目管理] ▸ 身份组已关闭（identity.enabled=false）。现在只做账号映射，不做登录验证。",
                 plain("identity.status.disabled", Map.of()));
         assertEquals("[周目管理] ▸ 身份组配置非法，身份解析已停用：\n  · groups[0].data：UUID 格式不正确",
                 plain("identity.status.invalid",
