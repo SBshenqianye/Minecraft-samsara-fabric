@@ -42,11 +42,17 @@ class TrackRetentionTest {
         List<TrackRetention.CurvePoint> curve = TrackRetention.defaultCurve();
         assertEquals(1.0, TrackRetention.keepRatioAt(0, curve), 1e-9);
         assertEquals(1.0, TrackRetention.keepRatioAt(7, curve), 1e-9);
-        assertEquals(0.5, TrackRetention.keepRatioAt(8, curve), 1e-9);
+        // 7→30 线性插值：8 天 = 1 - 1/23 * 0.5
+        assertEquals(1.0 - (1.0 / 23.0) * 0.5, TrackRetention.keepRatioAt(8, curve), 1e-9);
         assertEquals(0.5, TrackRetention.keepRatioAt(30, curve), 1e-9);
-        assertEquals(0.25, TrackRetention.keepRatioAt(31, curve), 1e-9);
-        assertEquals(0.1, TrackRetention.keepRatioAt(91, curve), 1e-9);
-        assertEquals(2.5, TrackRetention.curveTargetHz(8, curve), 1e-9);
+        // 30→90 线性插值：31 天 = 0.5 - 1/60 * 0.25
+        assertEquals(0.5 - (1.0 / 60.0) * 0.25, TrackRetention.keepRatioAt(31, curve), 1e-9);
+        // 末档 0/0.1 的平滑尾部：90→180 天线性降到 0.1
+        assertEquals(0.25 - (1.0 / 90.0) * 0.15, TrackRetention.keepRatioAt(91, curve), 1e-9);
+        assertEquals(0.1, TrackRetention.keepRatioAt(180, curve), 1e-9);
+        assertEquals(0.1, TrackRetention.keepRatioAt(999, curve), 1e-9);
+        assertEquals(5.0 * (1.0 - (1.0 / 23.0) * 0.5),
+                TrackRetention.curveTargetHz(8, curve), 1e-9);
         assertEquals(0.5, TrackRetention.curveTargetHz(999, curve), 1e-9);
     }
 

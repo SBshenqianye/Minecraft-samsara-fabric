@@ -148,10 +148,12 @@ public final class WebAuditService {
         try {
             DiffResult diff = diff(entry);
             out.put("changes", diff.changes);
+            out.put("diffs", diff.diffs);
             out.put("diff", diff.text);
             out.put("changedCount", diff.changed);
         } catch (Exception e) {
             out.put("changes", List.of());
+            out.put("diffs", List.of());
             out.put("diff", "");
             out.put("changedCount", 0);
             out.put("diffError", e.getMessage());
@@ -171,6 +173,7 @@ public final class WebAuditService {
         }
         paths.sort(String::compareTo);
         List<Map<String, Object>> changes = new ArrayList<>();
+        List<Map<String, Object>> diffs = new ArrayList<>();
         StringBuilder text = new StringBuilder();
         int changed = 0;
         for (String path : paths) {
@@ -190,18 +193,24 @@ public final class WebAuditService {
             if (text.length() > 240_000) continue;
             String beforeText = before == null ? "" : readText(filesDir, path);
             String afterText = after == null ? "" : readText(after.path);
+            String fileDiff;
             if (beforeText == null && afterText == null) {
-                text.append("--- ").append(path).append("\n");
-                text.append("（二进制文件，仅比较 SHA-256）\n\n");
-                continue;
+                fileDiff = "（二进制文件，仅比较 SHA-256）\n";
+            } else {
+                fileDiff = lineDiff(beforeText == null ? "" : beforeText,
+                        afterText == null ? "" : afterText);
             }
+            Map<String, Object> diffItem = new LinkedHashMap<>();
+            diffItem.put("path", path);
+            diffItem.put("status", status);
+            diffItem.put("diff", fileDiff);
+            diffs.add(diffItem);
             text.append("--- ").append(path).append('\n');
             text.append("+++ ").append(path).append('\n');
-            text.append(lineDiff(beforeText == null ? "" : beforeText,
-                    afterText == null ? "" : afterText));
+            text.append(fileDiff);
             text.append('\n');
         }
-        return new DiffResult(changes, text.toString(), changed);
+        return new DiffResult(changes, diffs, text.toString(), changed);
     }
 
     private Map<String, CurrentFile> currentFiles() throws IOException {
@@ -287,7 +296,9 @@ public final class WebAuditService {
     private record CurrentFile(Path path, long size, String sha256) {
     }
 
-    private record DiffResult(List<Map<String, Object>> changes, String text, int changed) {
+    private record DiffResult(List<Map<String, Object>> changes,
+                              List<Map<String, Object>> diffs,
+                              String text, int changed) {
     }
 
     public Map<String, Object> rollback(String id, boolean confirm) {

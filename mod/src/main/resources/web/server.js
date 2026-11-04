@@ -181,16 +181,27 @@
       const title = $('server-audit-diff-title');
       const changeBox = $('server-audit-changes');
       const diffBox = $('server-audit-diff');
+      const diffsBox = $('server-audit-diffs');
       if (title) title.textContent = '差异 · ' + preview.id + ' · ' + changed + ' 个文件';
+      const diffs = Array.isArray(data.diffs) ? data.diffs : [];
       if (changeBox) {
         changeBox.replaceChildren();
-        for (const change of changes.filter((item) => item.status !== 'unchanged')) {
-          const chip = document.createElement('span');
+        const changedChanges = changes.filter((item) => item.status !== 'unchanged');
+        changedChanges.forEach((change, index) => {
+          const chip = document.createElement('button');
+          chip.type = 'button';
           chip.className = 'server-audit-change ' + change.status;
           chip.textContent = ({ added: '+ ', removed: '- ', modified: '~ ' }[change.status] || '')
             + change.path;
+          chip.title = '跳到该文件差异';
+          chip.addEventListener('click', () => {
+            const target = document.getElementById('audit-diff-' + index);
+            if (!target) return;
+            target.open = true;
+            target.scrollIntoView({ block: 'start', behavior: 'smooth' });
+          });
           changeBox.append(chip);
-        }
+        });
         if (changeBox.children.length === 0) {
           const same = document.createElement('span');
           same.className = 'muted small';
@@ -198,7 +209,47 @@
           changeBox.append(same);
         }
       }
-      if (diffBox) diffBox.textContent = data.diff || '（没有可显示的文本差异）';
+      if (diffsBox) {
+        diffsBox.replaceChildren();
+        diffs.forEach((item, index) => {
+          const details = document.createElement('details');
+          details.className = 'server-audit-file';
+          details.id = 'audit-diff-' + index;
+          if (index === 0) details.open = true;
+          const summary = document.createElement('summary');
+          summary.textContent = ({ added: '+ ', removed: '- ', modified: '~ ' }[item.status] || '')
+            + item.path;
+          const pre = document.createElement('pre');
+          const lines = String(item.diff || '').split('\n');
+          if (lines.length === 0 || (lines.length === 1 && !lines[0])) {
+            const empty = document.createElement('div');
+            empty.className = 'server-audit-file-empty';
+            empty.textContent = '没有可显示的文本差异。';
+            details.append(summary, empty);
+          } else {
+            for (const line of lines) {
+              if (line === '') continue;
+              const span = document.createElement('span');
+              span.className = line.startsWith('+') ? 'server-audit-line-add'
+                : line.startsWith('-') ? 'server-audit-line-del' : 'server-audit-line-ctx';
+              span.textContent = line;
+              pre.append(span);
+            }
+            details.append(summary, pre);
+          }
+          diffsBox.append(details);
+        });
+        if (diffs.length === 0) {
+          const empty = document.createElement('div');
+          empty.className = 'muted small';
+          empty.textContent = '没有可显示的文本差异。';
+          diffsBox.append(empty);
+        }
+      }
+      if (diffBox) {
+        diffBox.hidden = diffs.length > 0;
+        diffBox.textContent = data.diff || '（没有可显示的文本差异）';
+      }
       if (wrap) wrap.hidden = false;
       wrap?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     } catch (error) {

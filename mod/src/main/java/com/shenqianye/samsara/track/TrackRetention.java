@@ -110,15 +110,30 @@ public final class TrackRetention {
             return 1.0;
         }
         int age = Math.max(0, ageDays);
-        for (int i = 0; i < curve.size(); i++) {
-            CurvePoint point = curve.get(i);
-            boolean last = i == curve.size() - 1;
-            if (!last && point.ageDays() <= 0) {
-                continue;
+        CurvePoint first = curve.get(0);
+        if (first.ageDays() == 0) {
+            return first.keepRatio();
+        }
+        // 从 (0, 100%) 开始，在相邻档位之间线性插值；最后一档 age=0 表示“更老”，
+        // 用 prev*2（至少 prev+30 天）作为平滑过渡的终点，之后保持终值。
+        double prevAge = 0;
+        double prevRatio = 1.0;
+        for (CurvePoint point : curve) {
+            int pointAge = point.ageDays();
+            if (pointAge == 0) {
+                double horizon = Math.max(prevAge * 2.0, prevAge + 30.0);
+                if (age <= prevAge) return prevRatio;
+                if (age >= horizon) return point.keepRatio();
+                double t = (age - prevAge) / (horizon - prevAge);
+                return prevRatio + (point.keepRatio() - prevRatio) * t;
             }
-            if (point.ageDays() == 0 || age <= point.ageDays()) {
-                return point.keepRatio();
+            if (age <= pointAge) {
+                if (pointAge <= prevAge) return point.keepRatio();
+                double t = (age - prevAge) / (pointAge - prevAge);
+                return prevRatio + (point.keepRatio() - prevRatio) * t;
             }
+            prevAge = pointAge;
+            prevRatio = point.keepRatio();
         }
         return curve.get(curve.size() - 1).keepRatio();
     }

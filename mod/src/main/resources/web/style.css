@@ -1366,6 +1366,15 @@ body.server-section #panel-permissions {
 .server-audit-change.removed { color: #f87171; border-color: rgba(248, 113, 113, .45); }
 .server-audit-change.modified { color: #fbbf24; border-color: rgba(251, 191, 36, .45); }
 .server-audit-diff { max-height: 420px; overflow: auto; margin: 0; font: 11px/1.5 var(--mono); white-space: pre-wrap; word-break: break-all; }
+.server-audit-diffs { display: flex; flex-direction: column; gap: 6px; max-height: 460px; overflow: auto; }
+.server-audit-file { border: 1px solid var(--line); border-radius: 7px; background: rgba(8, 12, 17, .55); }
+.server-audit-file > summary { cursor: pointer; padding: 6px 9px; font: 11px var(--mono); color: #cbd5e1; position: sticky; top: 0; background: rgba(15, 23, 42, .96); z-index: 1; }
+.server-audit-file[open] > summary { border-bottom: 1px solid var(--line); }
+.server-audit-file pre { margin: 0; padding: 6px 9px; max-height: 260px; overflow: auto; font: 11px/1.55 var(--mono); white-space: pre; }
+.server-audit-line-add { color: #4ade80; background: rgba(74, 222, 128, .08); display: block; }
+.server-audit-line-del { color: #f87171; background: rgba(248, 113, 113, .08); display: block; }
+.server-audit-line-ctx { color: #94a3b8; display: block; }
+.server-audit-file-empty { color: var(--muted); font-size: 11px; padding: 6px 9px; }
 
 @media (max-width: 860px) {
   .timeline-card-head { flex-direction: column; }

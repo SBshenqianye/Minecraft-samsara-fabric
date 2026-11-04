@@ -1298,7 +1298,9 @@
   function stackMapTileUrl(stack) {
     const region = stackMapRegion(stack);
     if (!region) return '';
-    return tileUrl(stack.id, 'overworld', region.rx, region.rz, 4, true);
+    // 图标是 <img> 请求，无法携带 Bearer；用公开只读用户端 tile。
+    return '/api/user/map/tile?stack=' + encodeURIComponent(stack.id)
+      + '&dim=overworld&rx=' + region.rx + '&rz=' + region.rz + '&scale=4&shade=1';
   }
 
   function stackIconLabel(source) {

@@ -751,7 +751,13 @@ function buildCurve(file, entry, value) {
     for (const point of points) {
       if (point.ageDays > 0) limit = Math.max(limit, point.ageDays);
     }
-    maxDays = Math.max(10, Math.ceil(limit * 1.18));
+    const last = points[points.length - 1];
+    const beforeLast = points.length >= 2 ? points[points.length - 2] : null;
+    // 末档 age=0 表示“更老”：横轴延伸到 prev*2（至少 prev+30），
+    // 与服务端 keepRatioAt 的平滑尾部一致。
+    const tail = last && last.ageDays === 0 && beforeLast
+      ? Math.max(beforeLast.ageDays * 2, beforeLast.ageDays + 30) : 0;
+    maxDays = Math.max(10, Math.ceil(Math.max(limit * 1.18, tail)));
   };
 
   const xOf = (index, box, span) => {
@@ -953,24 +959,17 @@ function buildCurve(file, entry, value) {
     ctx.textAlign = 'center';
     ctx.fillText('年龄（天）', box.left + plotWidth(box) / 2, box.height - 6);
 
-    // 阶梯曲线：每一档的保留比例覆盖到该档年龄上限
+    // 平滑曲线：相邻档位之间线性插值；(0,100%) 作为起点，末档落到右边缘。
     ctx.strokeStyle = accent;
     ctx.lineWidth = 2;
     ctx.beginPath();
-    let previousX = box.left;
+    if (points[0].ageDays > 0) {
+      ctx.moveTo(box.left, yOf(1, box));
+    } else {
+      ctx.moveTo(xOf(0, box, span), yOf(points[0].keepRatio, box));
+    }
     points.forEach((point, index) => {
-      const isLast = index === points.length - 1;
-      const x = isLast ? box.right : xOf(index, box, span);
-      const y = yOf(point.keepRatio, box);
-      if (index === 0) {
-        ctx.moveTo(previousX, y);
-      } else {
-        const previousY = yOf(points[index - 1].keepRatio, box);
-        ctx.lineTo(previousX, previousY);
-        ctx.lineTo(x, previousY);
-      }
-      ctx.lineTo(x, y);
-      previousX = x;
+      ctx.lineTo(xOf(index, box, span), yOf(point.keepRatio, box));
     });
     ctx.lineTo(box.right, yOf(points[points.length - 1].keepRatio, box));
     ctx.stroke();
@@ -2157,6 +2156,7 @@ function claimRangePreview(file) {
   fillInput.addEventListener('change', () => {
     state.fillClosed = fillInput.checked;
     updateSummary();
+    draw();
   });
   const fillText = document.createElement('span');
   fillText.textContent = '闭合填充';
