@@ -2,6 +2,13 @@
 
 每次执行 `skill-sync` 追加一段，最新的放最上面。
 
+## 2026-11-04（增强：加载即采集 + 蝗虫开关）
+
+- 规则：`skill-sync` 加载时先做“项目 → 全局”采集，再分发
+- 阻断：`~/.config/opencode/skills/.locust-off`（全机器）、`.agents/.locust-off`（单仓库）、`DENYLIST.md`、frontmatter `metadata.locust: false`
+- 恢复：写全局前必须留快照 `~/.config/opencode/skills/.snapshots/<时间戳>/` + `MANIFEST.json`，保留最近 10 份
+- 变更文件：`skill-sync/SKILL.md`（全局 + 项目两份）
+
 ## 2026-11-04（多 agent 全扫）
 
 - 扫描源：`~/.config/opencode/skills`、`~/.claude/skills`、`~/.agents/skills`、`~/.dsh`、`~/Doubao/skills`、`%APPDATA%\CherryStudio\Data\Skills`、`~/.ghcp-appmod/skills`、`~/.vscode/agent-plugins/*/skills`、同工作区兄弟项目

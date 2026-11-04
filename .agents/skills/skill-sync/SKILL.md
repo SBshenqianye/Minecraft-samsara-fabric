@@ -13,6 +13,7 @@ whenToUse: 接手或 clone 新仓库后第一次开工时；用户说"同步 ski
 - **全局目录只在本机**，换设备就没了；**项目目录跟着 GitHub 走**。
 - 所以项目里存 skill 的真正目的不是"只给本项目用"，而是当**传播载体**。
 - 目标状态（蝗虫过境）：每个仓库都带一份可用的 skill 库 + 一个待命区；新机器 clone 后经验自动到位。
+- 本 skill 装在全局，**每次加载时先做一次“项目 → 全局”采集**：项目里打磨好的通用经验并回全局，再由全局分发到其他项目，形成闭环。
 
 ## 三层角色
 
@@ -86,14 +87,51 @@ Get-ChildItem $HOME -Directory -Force -Recurse -Depth 4 -Filter skills -EA 0 |
 5. **记账**：更新 `CATALOG.md`（全量表格）和 `SYNC.md`（本次变更一行一条）。
 6. **汇报**：新增/更新/暂存/冲突各几条；冲突单独列，等裁决；不要用"已完成"糊过去。
 
+## 加载即采集（项目 → 全局）
+
+触发：本 skill 被加载时（自动发现或 `@skill-sync`），**先跑这一步，再做分发**。
+
+1. 扫当前项目的 `.agents/skills`、`.opencode/skills`、`.dsh/skills`。
+2. 与全局同名 ID 比对：
+   - 全局没有 → 判断是否通用（不含项目路径、业务名、版本号绑定）。通用则**提议提升**；项目专属则保持 P 不动。
+   - 全局已有且内容一致 → 记"已同步"。
+   - 全局已有但内容不同 → 不覆盖，列 diff 问用户。
+3. 提升前先给全局留快照（见下一节）。
+4. 提升后写 `SYNC.md`：`promote <id> from <project> @ <date>`。
+5. **跨仓库巡检（可选）**：用户要求“全量巡检”时，在工作区根（如 `E:\workspace`）下找所有 `*/.agents/skills` 逐个比对；平时不要每次加载都扫盘。
+
+边界：含本仓库路径/命令/验收标准的项目级 skill **不自动提升**，否则全局会被单个仓库污染。判断不了就问。
+
+## 蝗虫开关：阻断与恢复
+
+阻断（任一命中，sync 只读不写，只报告）：
+
+| 粒度 | 做法 |
+| --- | --- |
+| 全机器 | 建 `~/.config/opencode/skills/.locust-off` |
+| 单仓库 | 建 `<repo>/.agents/.locust-off`（或 `.no-locust`） |
+| 单 skill | frontmatter 加 `metadata: { locust: false }`，或写入 `.agents/skill-inbox/DENYLIST.md` |
+| 敏感内容 | 命中密钥/token/被 `.gitignore` 忽略的路径，永不传播 |
+
+恢复（写入前必留快照）：
+
+- 全局：`~/.config/opencode/skills/.snapshots/<yyyyMMdd-HHmmss>/<id>/` + `MANIFEST.json`（id、sha256、动作 `added|updated`、来源项目）。
+- 项目：写入前确认 `git status` 干净，回滚靠 git 本身。
+- 恢复最近一次：读最新 `MANIFEST.json` → `updated` 的用快照覆盖回去 → `added` 的直接删除 → 在 `SYNC.md` 记 `restore <snapshot>`。
+- 只保留最近 10 份快照，超出按时间删最旧。
+
+硬性约束：**没有快照就不许写全局**；快照失败就整体中止，不要"先写了再说"。
+
 ## 目录契约
 
 ```text
 .agents/
 ├── skills/<id>/SKILL.md            # 会被加载
+├── .locust-off                     # 可选：存在则本仓库不参与同步
 └── skill-inbox/
     ├── CATALOG.md                  # 总账
     ├── SYNC.md                     # 变更日志
+    ├── DENYLIST.md                 # 可选：不参与传播的 ID
     └── <id>/
         ├── SKILL.md                # 原样副本
         └── META.md                 # 来源/日期/为何暂存/适合什么项目
@@ -129,6 +167,7 @@ Get-ChildItem $HOME -Directory -Force -Recurse -Depth 4 -Filter skills -EA 0 |
 - 定级提示：涉及 Minecraft/Fabric 构建、`test-server`、RCON、Web 面板、`docs/` 口径 → P；agent 通用工作方式 → G；别的游戏/框架/团队经验 → S。
 - 本仓库根目录有 `frp-dog.com.crt` / `frp-dog.com.key`（内网穿透证书私钥）。任何 skill 都不得写其中的内容、域名或密钥，`sensitive` 一律 true。
 - 同步后确认 `.agents/` 没有被 `.gitignore` 忽略，否则"随 GitHub 传播"就是空话：`git check-ignore -v .agents/skills` 应无输出。
+- 本仓库的项目源：`.agents/skills/`（6 个）与 `.dsh/skills/`（空）；阻断开关放 `.agents/.locust-off`。
 
 ## 收尾自检
 
