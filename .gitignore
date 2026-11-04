@@ -57,3 +57,5 @@ docs/待办项.md
 frp-dog.com.crt
 frp-dog.com.key
 *.pfx
+# skill 库只走私有载体，公开库只拉取不上传
+.agents/
