@@ -37,9 +37,3 @@ whenToUse: 在本机用 shell 读写含中文的文件、统计行数、拼接�
 - `$LASTEXITCODE` 只反映外部程序；cmdlet 是否成功看 `$?` 或 `$Error`。
 - 原生程序写 stderr 时 PS 5.1 可能记成红色错误记录，不代表命令失败，要看退出码。
 - 管道里 `Select-Object -First N` 会让上游提前终止，统计类命令别顺手加。
-
-## 本项目补充
-
-- 本仓库路径 `E:\workspace\deepseek harness\mc-mod-samsara` 含空格，shell 调用一律用 `workdir`，不要内联长路径。
-- RCON 相关的引号/编码坑在 `mc-build-deploy-test` 里有更具体的写法（`-D` 参数必须整体加引号），优先看那份。
-- 仓库根目录有证书私钥 `frp-dog.com.key`，涉及它的内容不得写进任何 skill 或文档。

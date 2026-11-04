@@ -62,7 +62,8 @@ Get-ChildItem $HOME -Directory -Force -Recurse -Depth 4 -Filter skills -EA 0 |
 ## 冲突规则
 
 - 同 ID 多处存在时，按上表高优先级胜出，但要**记录所有来源**。
-- 项目级覆盖全局是允许的（项目定制版），但要在 `META.md` 标"项目定制"。
+- 优先级（OpenCode 规则，低 → 高）：`.claude/skills` < `.agents/skills` < `~/.config/opencode/skills` < 项目 `.opencode/skills`。所以 `.agents/skills` 里的同名副本**打不过**全局，只当传播/备份；真要项目定制覆盖全局，必须放 `.opencode/skills`。
+- 因此 G 级 skill 的项目副本必须与全局**逐字一致**，不要加"本项目专属"段，否则会跟着提升污染全局。项目专属信息写进 `skill-inbox/README.md` 或 P 级 skill。
 - 内容不一致时**不静默覆盖**：先生成一句话 diff 摘要（谁多了哪段、日期谁新），问用户保留哪份或合并。
 
 ## 判级（三档）
@@ -158,16 +159,6 @@ Get-ChildItem $HOME -Directory -Force -Recurse -Depth 4 -Filter skills -EA 0 |
 - `skill-curator`：判断"这条经验值不值得写成 skill"，写入前问。
 - `skill-sync`：判断"已有的 skill 该放哪一层、要不要搬"，搬运前问。
 - 两边都会问用户，但问题不重叠：curator 生产条目，sync 负责分发。
-
-## 本项目专属（仅项目副本）
-
-- 仓库内 skill 目录固定用 `.agents/skills/<id>/SKILL.md`；不要新建 `.opencode/skills`。
-- 暂存区固定用 `.agents/skill-inbox/`，已建好 `CATALOG.md` 和 `SYNC.md`。
-- 现有 skill：`mc-build-deploy-test`、`docs-maintainer`、`version-policy`（P）；`skill-curator`、`skill-sync`（G，但同样在项目里留副本用于传播）。
-- 定级提示：涉及 Minecraft/Fabric 构建、`test-server`、RCON、Web 面板、`docs/` 口径 → P；agent 通用工作方式 → G；别的游戏/框架/团队经验 → S。
-- 本仓库根目录有 `frp-dog.com.crt` / `frp-dog.com.key`（内网穿透证书私钥）。任何 skill 都不得写其中的内容、域名或密钥，`sensitive` 一律 true。
-- 同步后确认 `.agents/` 没有被 `.gitignore` 忽略，否则"随 GitHub 传播"就是空话：`git check-ignore -v .agents/skills` 应无输出。
-- 本仓库的项目源：`.agents/skills/`（6 个）与 `.dsh/skills/`（空）；阻断开关放 `.agents/.locust-off`。
 
 ## 收尾自检
 

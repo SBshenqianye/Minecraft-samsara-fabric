@@ -2,6 +2,13 @@
 
 每次执行 `skill-sync` 追加一段，最新的放最上面。
 
+## 2026-11-04（修正：项目副本必须与全局逐字一致）
+
+- 发现优先级真相：`.agents/skills` **低于** `~/.config/opencode/skills`，同名时全局生效
+- 因此项目副本不能带「本项目专属」段，否则提升时会污染全局
+- 已把 `skill-curator`、`skill-sync`、`windows-powershell` 的项目副本与全局对齐（逐字一致）
+- 项目专属约定移到 `skill-inbox/README.md`
+
 ## 2026-11-04（增强：加载即采集 + 蝗虫开关）
 
 - 规则：`skill-sync` 加载时先做“项目 → 全局”采集，再分发
