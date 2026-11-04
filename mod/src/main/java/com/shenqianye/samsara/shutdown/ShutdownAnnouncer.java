@@ -8,6 +8,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -65,8 +66,10 @@ public final class ShutdownAnnouncer {
             return;
         }
         Component message = OutputRenderer.render("shutdown.disconnect", Map.of(), null, null);
-        int online = server.getPlayerList().getPlayers().size();
-        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+        // disconnect() 会把玩家从 PlayerList 里移除；必须遍历快照，否则 CME 会让停服卡住。
+        List<ServerPlayer> players = List.copyOf(server.getPlayerList().getPlayers());
+        int online = players.size();
+        for (ServerPlayer player : players) {
             try {
                 player.connection.disconnect(message);
             } catch (RuntimeException e) {
