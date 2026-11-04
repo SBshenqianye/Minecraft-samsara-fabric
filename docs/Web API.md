@@ -33,12 +33,12 @@
 | GET | `/api/user/worlds` | 世界栈公开列表：栈层 id/顺序/是否栈顶/种子/在线人数/出生点/图标白名单；栈顶在前、`stack_0` 在最后 |
 | GET | `/api/user/worlds/icon?stack=` | 栈层图标 PNG/JPEG/WebP 字节；无图返回 404，前端回退地图 |
 | GET | `/api/user/map` | 白名单地图模型：栈层、维度、region、保护区块、旗帜、出生点；不含路径/缓存 |
-| GET | `/api/user/map/players` | 在线玩家公开快照：部分隐藏的名字（保留首 2 末 1，中间 `***`）、栈层、维度、坐标；不含 UUID/生命/朝向 |
+| GET | `/api/user/map/players` | 在线玩家公开快照：混淆显示的名字（保留首字符、分隔符和末 3 位，其余 `*`，如 `xh_unpkire` → `x*_****ire`）、栈层、维度、坐标；不含 UUID/生命/朝向 |
 | GET | `/api/user/map/live` | 已加载实体、在线玩家、短轨迹与最近方块操作；不含 UUID/生命/朝向 |
 | GET | `/api/user/map/avatar?uuid=` / `?name=` | 本机代理 Mojang 官方皮肤 PNG；失败返回 404，前端回退本地 SVG |
 | GET | `/api/user/map/tile` | 地形 PNG；参数同管理端地图 tile |
 
-> 公网用户端的玩家名、操作者、发言者名做部分脱敏：保留首 2 位和末 1 位，中间固定替换为 `***`（如 `xh_unpkire` → `xh***e`）。管理端 `/api/map/*`、`/api/server/*` 仍返回完整名字。这样公开 Web 不会直接给出离线白名单里的完整名字。
+> 公网用户端的玩家名、操作者、发言者名做混淆显示：保留首字符、分隔符（如 `_`）和末 3 位，其余字符用 `*` 替换，长度不变（如 `xh_unpkire` → `x*_****ire`）。系统提示、聊天文本、实体自定义名中的已知玩家名也会替换。管理端 `/api/map/*`、`/api/server/*` 仍返回完整名字。
 
 ### 2.1 `GET /api/user/status`
 
@@ -301,7 +301,7 @@
 - **管理端 token 等同管理员密码**：拿到 token 就能读写全部配置、备份、权限和世界栈；不要把它发给普通玩家，不要放进 URL、日志、截图或公开仓库。token 轮换后需要重启 Web 服务才会生效（运行中的服务持有启动时的 token）。
 - **管理端静态页壳可能公开，但不含数据**：`/`、`/app.js` 等静态资源本身不需要 token；没有 token 时所有管理 API（`/api/config`、`/api/status`、`/api/server`、`/api/world-stack`、`/api/permissions`、`/api/map` 等）返回 `401`。如果连页面壳都不希望公开，需要在反向代理层做路径过滤、加独立端口或额外登录页。
 - **默认只公开用户端**：推荐反向代理只转发 `/user`、`/user.js`、`/style.css`、`/map.js`、`/banners.js`、`/api/user/*`。要公开管理端时，至少强制 HTTPS，并在代理层加限流/IP 白名单；当前 Mod 自身没有登录锁定、速率限制或二次验证。
-- **公网名字脱敏**：`WebUserService` 对玩家名、操作者、发言者做部分脱敏（首 2 末 1，中间 `***`）；完整名字只走管理端。不要把完整名字重新加回 `/api/user/*`。
+- **公网名字混淆**：`WebUserService` 对玩家名、操作者、发言者做混淆显示（保留首字符、分隔符和末 3 位，其余 `*`，如 `xh_unpkire` → `x*_****ire`）；系统提示/聊天/自定义名中的已知玩家名也替换。完整名字只走管理端。不要把完整名字重新加回 `/api/user/*`。
 - **浏览器安全头**：所有响应带 `Content-Security-Policy`（仅同源脚本）、`X-Frame-Options: DENY`、`X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、`Cache-Control: no-store`；前端不使用 `innerHTML`/内联脚本，CSP 不需要放开脚本。
 - **token 不落日志**：启动日志只打印 token 前缀，完整值只在 `config/samsara/web.yml`；不要恢复完整 token 日志。
 - **用户端无 token**：只注册 `/api/user/*`，不注册任何管理端 handler。用户端服务类 `WebUserService` 只依赖地图只读服务，不持有配置/身份/权限/备份服务。

@@ -188,6 +188,7 @@ public final class WebUserService {
             }
         }
         out.put("players", players);
+        Map<String, String> nameMasks = nameMasks(rawPlayers);
         List<Map<String, Object>> entities = new ArrayList<>();
         Object rawEntities = raw.get("entities");
         if (rawEntities instanceof List<?> list) {
@@ -199,7 +200,7 @@ public final class WebUserService {
                 item.put("type", source.get("type"));
                 item.put("category", source.get("category"));
                 item.put("rarity", source.get("rarity"));
-                item.put("customName", source.get("customName"));
+                item.put("customName", maskText(text(source.get("customName")), nameMasks));
                 item.put("stackId", source.get("stackId"));
                 item.put("dimension", source.get("dimension"));
                 item.put("dimensionId", source.get("dimensionId"));
@@ -239,7 +240,7 @@ public final class WebUserService {
                 Map<String, Object> item = new LinkedHashMap<>();
                 item.put("timeMs", source.get("timeMs"));
                 item.put("name", maskName(text(source.get("name"))));
-                item.put("text", source.get("text"));
+                item.put("text", maskText(text(source.get("text")), nameMasks));
                 item.put("stackId", source.get("stackId"));
                 item.put("dimension", source.get("dimension"));
                 item.put("x", source.get("x"));
@@ -256,7 +257,7 @@ public final class WebUserService {
                 if (!(value instanceof Map<?, ?> source)) continue;
                 Map<String, Object> item = new LinkedHashMap<>();
                 item.put("timeMs", source.get("timeMs"));
-                item.put("text", source.get("text"));
+                item.put("text", maskText(text(source.get("text")), nameMasks));
                 system.add(item);
             }
         }
@@ -275,22 +276,74 @@ public final class WebUserService {
     }
 
     /**
-     * 公网用户端只显示部分玩家名：保留首 2 位和末 1 位，中间固定替换为 ***。
-     * 这样朋友还能大致认出是谁，但陌生人无法直接从 Web 枚举白名单里的完整名字。
-     * 管理端 /api/map/* 仍返回完整名字。
+     * 公网用户端隐藏玩家名：保留首字符、分隔符（如 _）和末 3 位，其余统一替换为 *，长度不变。
+     * 例如 xh_unpkire → x*_****ire。管理端 /api/map/* 仍返回完整名字。
      */
     static String maskName(String name) {
         if (name == null || name.isBlank()) {
             return name;
         }
         int length = name.length();
-        if (length <= 2) {
-            return name.charAt(0) + "***";
+        if (length == 1) {
+            return "*";
         }
-        if (length <= 4) {
-            return name.charAt(0) + "***" + name.charAt(length - 1);
+        if (length == 2) {
+            return name.charAt(0) + "*";
         }
-        return name.substring(0, 2) + "***" + name.charAt(length - 1);
+        if (length == 3) {
+            return name.charAt(0) + "*" + name.charAt(2);
+        }
+        if (length == 4) {
+            return name.charAt(0) + "**" + name.charAt(3);
+        }
+        StringBuilder out = new StringBuilder(length);
+        boolean masked = false;
+        for (int i = 0; i < length; i++) {
+            char c = name.charAt(i);
+            boolean keep = i == 0 || i >= length - 3 || !Character.isLetterOrDigit(c);
+            if (!keep) {
+                masked = true;
+            }
+            out.append(keep ? c : '*');
+        }
+        if (!masked) {
+            for (int i = 1; i < length - 3; i++) {
+                if (Character.isLetterOrDigit(out.charAt(i))) {
+                    out.setCharAt(i, '*');
+                    break;
+                }
+            }
+        }
+        return out.toString();
+    }
+
+    /** 自由文本（系统提示/聊天/自定义名）里也要把已知玩家名替换成脱敏形式。 */
+    static String maskText(String text, Map<String, String> names) {
+        if (text == null || text.isBlank() || names == null || names.isEmpty()) {
+            return text;
+        }
+        String out = text;
+        for (Map.Entry<String, String> entry : names.entrySet()) {
+            if (entry.getKey() != null && !entry.getKey().isBlank()) {
+                out = out.replace(entry.getKey(), entry.getValue());
+            }
+        }
+        return out;
+    }
+
+    private static Map<String, String> nameMasks(Object rawPlayers) {
+        Map<String, String> masks = new LinkedHashMap<>();
+        if (rawPlayers instanceof List<?> list) {
+            for (Object value : list) {
+                if (value instanceof Map<?, ?> source) {
+                    String name = text(source.get("name"));
+                    if (name != null && !name.isBlank()) {
+                        masks.put(name, maskName(name));
+                    }
+                }
+            }
+        }
+        return masks;
     }
 
     private static String text(Object value) {

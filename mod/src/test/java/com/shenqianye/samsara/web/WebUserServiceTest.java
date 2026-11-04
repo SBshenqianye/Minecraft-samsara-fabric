@@ -88,12 +88,15 @@ class WebUserServiceTest {
     }
 
     @Test
-    void publicNamesArePartiallyMasked() {
-        assertEquals("xh***e", WebUserService.maskName("xh_unpkire"));
-        assertEquals("Al***e", WebUserService.maskName("Alice"));
-        assertEquals("B***t", WebUserService.maskName("Bot"));
-        assertEquals("A***", WebUserService.maskName("A"));
+    void publicNamesAreObfuscated() {
+        assertEquals("x*_****ire", WebUserService.maskName("xh_unpkire"));
+        assertEquals("A*ice", WebUserService.maskName("Alice"));
+        assertEquals("B*t", WebUserService.maskName("Bot"));
+        assertEquals("*", WebUserService.maskName("A"));
+        assertEquals("A*", WebUserService.maskName("AB"));
         assertEquals(null, WebUserService.maskName(null));
+        assertEquals("x*_****ire joined", WebUserService.maskText(
+                "xh_unpkire joined", java.util.Map.of("xh_unpkire", "x*_****ire")));
     }
 
     private static void write(Path file, String text) throws Exception {
