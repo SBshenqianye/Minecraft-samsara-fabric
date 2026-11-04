@@ -72,6 +72,18 @@
             <input id="user-values-search" type="search" placeholder="搜索中文 / 拼音 / 首字母 / 英文 / ID">
           </label>
           <label class="inline-field">
+            <span>分类</span>
+            <select id="user-values-category">
+              <option value="">全部</option>
+              <option value="材料">材料</option>
+              <option value="工具">工具</option>
+              <option value="护甲">护甲</option>
+              <option value="方块">方块</option>
+              <option value="食物">食物</option>
+              <option value="其他">其他</option>
+            </select>
+          </label>
+          <label class="inline-field">
             <span>排序</span>
             <select id="user-values-sort">
               <option value="value-desc">价值从高到低</option>
@@ -194,6 +206,8 @@
   </main>
 
   <script src="/banners.js"></script>
+  <script src="/item-ui.js"></script>
+  <script src="/value-table.js"></script>
   <script src="/user.js"></script>
   <script src="/map.js"></script>
 </body>

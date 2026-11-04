@@ -333,7 +333,7 @@
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/api/lottery` | 当前可下注日、正在统计日、实时死亡数、票、奖池、基金、历史、配置路径 |
-| GET | `/api/lottery/values` | 物品价值表：只返回可收物品（价值 > 0），按价值降序；`icon` 为空表示没有已打包的原版材质 |
+| GET | `/api/lottery/values` | 物品价值表（分页 + 服务端搜索）：`q` 中文/英文/ID/拼音、`category` 分类、`sort`（`value-desc`/`value-asc`/`name`）、`offset`/`limit`（默认 100，最大 200）；返回全部注册物品（含 0 VP） |
 | POST | `/api/lottery/draw` | 手动开奖（服务器线程执行，5 秒超时） |
 | POST | `/api/lottery/cancel` | 取消当前统计日并退款 |
 
@@ -356,21 +356,25 @@
 ```json
 {
   "ok": true,
+  "total": 1657,
+  "offset": 0,
+  "limit": 100,
   "values": [
-    { "id": "minecraft:dragon_egg", "name": "Dragon Egg", "zh": "龙蛋", "py": "longdan", "initials": "ld", "syllables": ["long", "dan"], "icon": "", "value": 65536.0, "category": "其他" },
-    { "id": "minecraft:diamond", "name": "Diamond", "zh": "钻石", "py": "zuanshi", "initials": "zs", "syllables": ["zuan", "shi"], "icon": "diamond", "value": 32.0, "category": "材料" }
+    { "id": "minecraft:dragon_egg", "name": "Dragon Egg", "zh": "龙蛋", "py": "longdan", "initials": "ld", "syllables": ["long", "dan"], "icon": "dragon_egg", "value": 65536.0, "acceptable": true, "category": "其他" },
+    { "id": "minecraft:diamond", "name": "Diamond", "zh": "钻石", "py": "zuanshi", "initials": "zs", "syllables": ["zuan", "shi"], "icon": "diamond", "value": 32.0, "acceptable": true, "category": "材料" },
+    { "id": "minecraft:barrier", "name": "Barrier", "zh": "屏障", "value": 0.0, "acceptable": false, "category": "其他" }
   ]
 }
 ```
 
-价值表只包含 `unitValue > 0` 的物品；`zh` / `py` / `initials` / `syllables` 用于中文与拼音搜索（全拼、首字母、逐字前缀）。前端负责搜索、分类、排序和增量渲染（默认先渲染 200 行）。
+返回全部注册物品（含 0 VP）；`zh` / `py` / `initials` / `syllables` 用于中文与拼音搜索（全拼、首字母、逐字前缀）。前端按 `offset`/`limit` 懒加载，滚动到底或点“加载更多”继续取下一页。
 
 ### 9.2 用户端（无需 token）
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/api/user/lottery` | 奖池、票数、开奖/截止时间、上期死亡数与脱敏中奖名、基金实物列表、保险聚合计数；**不含实时死亡数、UUID、坐标、路径、保单主人** |
-| GET | `/api/user/lottery/values` | 公开物品价值表（结构同管理端，含中文名与拼音字段）；无玩家/保单信息 |
+| GET | `/api/user/lottery/values` | 公开物品价值表（结构/分页/搜索参数同管理端，含中文名与拼音字段）；无玩家/保单信息 |
 
 ```json
 {

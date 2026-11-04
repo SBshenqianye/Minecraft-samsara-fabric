@@ -234,34 +234,127 @@ public final class ItemValueService {
         return unitValue(stack) * stack.getCount();
     }
 
-    /**
-     * 供 Web 价值表使用：所有可收物品的单价（不含附魔/耐久），按价值降序。
-     * 未知物品（0 VP）不返回，避免把整张注册表倒给前端。
-     */
-    public List<Map<String, Object>> valueTable() {
+    private volatile List<Map<String, Object>> allCache;
+
+    /** 全部注册物品（含 0 VP 的不可收物品）；懒加载价值表用。 */
+    public List<Map<String, Object>> allItems() {
+        List<Map<String, Object>> cached = allCache;
+        if (cached != null) {
+            return cached;
+        }
+        synchronized (this) {
+            if (allCache != null) {
+                return allCache;
+            }
+            allCache = buildAllItems();
+            return allCache;
+        }
+    }
+
+    private List<Map<String, Object>> buildAllItems() {
         List<Map<String, Object>> rows = new ArrayList<>();
         for (Item item : BuiltInRegistries.ITEM) {
-            String id = idOf(item);
-            double value = unitValue(id);
-            if (value <= 0.0) {
+            if (item == net.minecraft.world.item.Items.AIR) {
                 continue;
             }
+            String id = idOf(item);
+            double value = unitValue(id);
             ItemStack stack = new ItemStack(item);
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("id", id);
             row.put("name", stack.getHoverName().getString());
             row.put("icon", iconName(id));
             row.put("value", value);
+            row.put("acceptable", value > 0.0);
             row.put("category", categoryOf(id));
             applyLang(row, id);
             rows.add(row);
         }
-        rows.sort((a, b) -> {
-            int byValue = Double.compare(((Number) b.get("value")).doubleValue(),
-                    ((Number) a.get("value")).doubleValue());
-            return byValue != 0 ? byValue : String.valueOf(a.get("id")).compareTo(String.valueOf(b.get("id")));
-        });
         return rows;
+    }
+
+    /**
+     * 懒加载 + 服务端搜索：中文/英文/ID/分类、全拼、首字母、逐字拼音前缀。
+     * 返回当前页与匹配总数，避免一次把 1000+ 物品倒给前端。
+     */
+    public Map<String, Object> queryItems(String query, String category, String sort,
+                                          int offset, int limit) {
+        String q = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
+        String cat = category == null ? "" : category;
+        List<Map<String, Object>> filtered = new ArrayList<>();
+        for (Map<String, Object> row : allItems()) {
+            if (!cat.isBlank() && !cat.equals(row.get("category"))) {
+                continue;
+            }
+            if (!q.isEmpty() && !matches(row, q)) {
+                continue;
+            }
+            filtered.add(row);
+        }
+        String mode = sort == null ? "value-desc" : sort;
+        filtered.sort((a, b) -> {
+            if ("name".equals(mode)) {
+                String na = String.valueOf(a.getOrDefault("zh", a.get("name")));
+                String nb = String.valueOf(b.getOrDefault("zh", b.get("name")));
+                int cmp = na.compareToIgnoreCase(nb);
+                return cmp != 0 ? cmp : String.valueOf(a.get("id")).compareTo(String.valueOf(b.get("id")));
+            }
+            double va = ((Number) a.get("value")).doubleValue();
+            double vb = ((Number) b.get("value")).doubleValue();
+            int cmp = "value-asc".equals(mode) ? Double.compare(va, vb) : Double.compare(vb, va);
+            return cmp != 0 ? cmp : String.valueOf(a.get("id")).compareTo(String.valueOf(b.get("id")));
+        });
+        int safeLimit = Math.max(1, Math.min(200, limit));
+        int safeOffset = Math.max(0, offset);
+        int from = Math.min(safeOffset, filtered.size());
+        int to = Math.min(filtered.size(), from + safeLimit);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ok", true);
+        out.put("total", filtered.size());
+        out.put("offset", safeOffset);
+        out.put("limit", safeLimit);
+        out.put("values", filtered.subList(from, to));
+        return out;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static boolean matches(Map<String, Object> row, String query) {
+        String text = (String.valueOf(row.getOrDefault("name", "")) + ' '
+                + String.valueOf(row.getOrDefault("zh", "")) + ' '
+                + String.valueOf(row.getOrDefault("id", "")) + ' '
+                + String.valueOf(row.getOrDefault("category", ""))).toLowerCase(Locale.ROOT);
+        if (text.contains(query)) {
+            return true;
+        }
+        String py = String.valueOf(row.getOrDefault("py", ""));
+        String initials = String.valueOf(row.getOrDefault("initials", ""));
+        if (py.contains(query) || initials.contains(query)) {
+            return true;
+        }
+        Object syllables = row.get("syllables");
+        if (!(syllables instanceof List<?> list) || list.isEmpty()) {
+            return false;
+        }
+        boolean[] dp = new boolean[query.length() + 1];
+        dp[0] = true;
+        for (Object raw : list) {
+            String syllable = String.valueOf(raw);
+            if (syllable.isEmpty()) continue;
+            boolean[] next = new boolean[query.length() + 1];
+            for (int j = 0; j <= query.length(); j++) {
+                if (dp[j]) next[j] = true;
+            }
+            for (int j = 0; j < query.length(); j++) {
+                if (!dp[j]) continue;
+                for (int k = 1; k <= syllable.length() && j + k <= query.length(); k++) {
+                    if (query.startsWith(syllable.substring(0, k), j)) {
+                        next[j + k] = true;
+                    }
+                }
+            }
+            dp = next;
+        }
+        return dp[query.length()];
     }
 
     private static String iconName(String id) {

@@ -67,116 +67,6 @@
     return text + ' VP';
   }
 
-  let userValues = [];
-  let userValuesShown = 200;
-
-  function valueIcon(row) {
-    const box = makeEl('span', 'lottery-value-icon');
-    if (row.icon) {
-      const img = document.createElement('img');
-      img.src = '/items/' + row.icon + '.png';
-      img.alt = '';
-      img.onerror = () => img.remove();
-      if (row.id === 'minecraft:enchanted_golden_apple') img.classList.add('glint');
-      box.append(img);
-    } else {
-      box.classList.add('text');
-      box.textContent = String(row.zh || row.name || '?').slice(0, 1);
-    }
-    return box;
-  }
-
-  function pinyinMatch(row, query) {
-    if (!query) return true;
-    const py = String(row.py || '');
-    const initials = String(row.initials || '');
-    if (py.includes(query) || initials.includes(query)) return true;
-    const syllables = Array.isArray(row.syllables) ? row.syllables : [];
-    if (!syllables.length) return false;
-    let dp = new Array(query.length + 1).fill(false);
-    dp[0] = true;
-    for (const raw of syllables) {
-      const syllable = String(raw || '');
-      if (!syllable) continue;
-      const next = new Array(query.length + 1).fill(false);
-      for (let j = 0; j <= query.length; j++) if (dp[j]) next[j] = true;
-      for (let j = 0; j < query.length; j++) {
-        if (!dp[j]) continue;
-        for (let k = 1; k <= syllable.length && j + k <= query.length; k++) {
-          if (query.startsWith(syllable.slice(0, k), j)) next[j + k] = true;
-        }
-      }
-      dp = next;
-    }
-    return dp[query.length];
-  }
-
-  function renderUserValues() {
-    const root = $('user-values');
-    const emptyEl = $('user-values-empty');
-    const scroll = $('user-values-scroll');
-    const count = $('user-values-count');
-    if (!root) return;
-    const search = $('user-values-search');
-    const sort = $('user-values-sort');
-    const query = (search && search.value ? search.value : '').trim().toLowerCase();
-    let rows = userValues.filter((row) => {
-      if (!query) return true;
-      const text = ((row.name || '') + ' ' + (row.zh || '') + ' ' + (row.id || '')
-        + ' ' + (row.category || '')).toLowerCase();
-      return text.includes(query) || pinyinMatch(row, query);
-    });
-    const mode = sort ? sort.value : 'value-desc';
-    if (mode === 'name') {
-      rows.sort((a, b) => String(a.zh || a.name || a.id).localeCompare(String(b.zh || b.name || b.id), 'zh-Hans-CN'));
-    } else {
-      const dir = mode === 'value-asc' ? 1 : -1;
-      rows.sort((a, b) => dir * (Number(a.value || 0) - Number(b.value || 0)));
-    }
-    if (count) count.textContent = rows.length + ' / ' + userValues.length + ' 项';
-    root.replaceChildren();
-    if (!rows.length) {
-      if (scroll) scroll.hidden = true;
-      if (emptyEl) emptyEl.hidden = false;
-      return;
-    }
-    if (scroll) scroll.hidden = false;
-    if (emptyEl) emptyEl.hidden = true;
-    for (const row of rows.slice(0, userValuesShown)) {
-      const line = makeEl('div', 'lottery-value-row');
-      const item = makeEl('div', 'lottery-value-item');
-      item.append(valueIcon(row));
-      const zh = row.zh && row.zh !== row.name ? row.zh : '';
-      item.append(makeEl('span', 'lottery-value-name', zh || row.name || row.id));
-      item.append(makeEl('span', 'lottery-value-id',
-        zh ? (row.name || '') + ' · ' + row.id : row.id));
-      line.append(item, makeEl('span', 'lottery-value-cat', row.category || '其他'));
-      line.append(makeEl('strong', 'num', vp(row.value)));
-      root.append(line);
-    }
-    if (rows.length > userValuesShown) {
-      const more = makeEl('button', 'ghost lottery-more',
-        '显示更多（剩余 ' + (rows.length - userValuesShown) + ' 项）');
-      more.type = 'button';
-      more.addEventListener('click', () => {
-        userValuesShown += 300;
-        renderUserValues();
-      });
-      root.append(more);
-    }
-  }
-
-  async function loadUserValues() {
-    try {
-      const model = await api('/api/user/lottery/values');
-      userValues = Array.isArray(model.values) ? model.values : [];
-      userValuesShown = 200;
-      renderUserValues();
-    } catch (error) {
-      // 价值表是附加信息，失败时不影响主摘要。
-    }
-  }
-
   function renderStatus(status) {
     const root = $('user-status');
     if (!root) return;
@@ -278,16 +168,7 @@
       const items = data.fund && Array.isArray(data.fund.items) ? data.fund.items : [];
       for (const item of items) {
         const card = makeEl('div', 'lottery-item-card');
-        if (item.icon) {
-          const img = document.createElement('img');
-          img.src = '/items/' + item.icon + '.png';
-          img.alt = '';
-          img.onerror = () => img.remove();
-          card.append(img);
-        } else {
-          card.append(makeEl('span', 'lottery-item-fallback',
-            String(item.zh || item.name || '?').slice(0, 1)));
-        }
+        card.append(window.SamsaraItem.icon(item, { size: 'md' }));
         const body = makeEl('div', 'lottery-item-body');
         body.append(
           makeEl('span', 'lottery-item-name', item.zh || item.name || item.item || '—'),
@@ -336,22 +217,30 @@
 
   // map.js 在 user.js 之后加载；等 DOMContentLoaded 后再渲染世界栈卡片，
   // 这样卡片可以复用 map.js 导出的 SamsaraStackIcon（地图回退/图标区域）。
+  let userValueTable = null;
+
   function start() {
-    const search = $('user-values-search');
-    if (search) {
-      search.addEventListener('input', () => {
-        userValuesShown = 200;
-        renderUserValues();
+    if ($('user-values') && window.SamsaraValueTable) {
+      userValueTable = window.SamsaraValueTable.create({
+        rootId: 'user-values',
+        scrollId: 'user-values-scroll',
+        emptyId: 'user-values-empty',
+        countId: 'user-values-count',
+        searchId: 'user-values-search',
+        categoryId: 'user-values-category',
+        sortId: 'user-values-sort',
+        endpoint: '/api/user/lottery/values',
+        fetch: api,
+        onError: (text) => {
+          const message = $('user-message');
+          if (message) {
+            message.textContent = text;
+            message.className = 'message error';
+          }
+        },
       });
+      userValueTable.refresh();
     }
-    const sort = $('user-values-sort');
-    if (sort) {
-      sort.addEventListener('change', () => {
-        userValuesShown = 200;
-        renderUserValues();
-      });
-    }
-    loadUserValues();
     loadSummary();
     window.setInterval(loadSummary, 5000);
   }

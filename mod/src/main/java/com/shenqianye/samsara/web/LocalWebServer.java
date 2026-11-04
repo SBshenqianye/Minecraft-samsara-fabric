@@ -681,7 +681,12 @@ public final class LocalWebServer {
                 return;
             }
             if ("/api/user/lottery/values".equals(path)) {
-                json(exchange, 200, userService.lotteryValues());
+                json(exchange, 200, userService.lotteryValues(
+                        query.getOrDefault("q", ""),
+                        query.getOrDefault("category", ""),
+                        query.getOrDefault("sort", "value-desc"),
+                        intParam(query, "offset", 0),
+                        intParam(query, "limit", 100)));
                 return;
             }
             if ("/api/user/worlds/icon".equals(path)) {
@@ -1171,6 +1176,11 @@ public final class LocalWebServer {
         }
     }
 
+    private static int intParam(Map<String, String> query, String key, int fallback) {
+        Integer value = intParam(query.get(key));
+        return value == null ? fallback : value;
+    }
+
     @SuppressWarnings("unchecked")
     private static Map<String, Object> parseObject(String body) {
         Map<String, Object> map = GSON.fromJson(body, MAP_TYPE);
@@ -1193,7 +1203,13 @@ public final class LocalWebServer {
                 return;
             }
             if ("GET".equals(method) && "/api/lottery/values".equals(path)) {
-                json(exchange, 200, lotteryService.values());
+                Map<String, String> query = parseQuery(exchange.getRequestURI().getRawQuery());
+                json(exchange, 200, lotteryService.values(
+                        query.getOrDefault("q", ""),
+                        query.getOrDefault("category", ""),
+                        query.getOrDefault("sort", "value-desc"),
+                        intParam(query, "offset", 0),
+                        intParam(query, "limit", 100)));
                 return;
             }
             if ("POST".equals(method) && "/api/lottery/draw".equals(path)) {

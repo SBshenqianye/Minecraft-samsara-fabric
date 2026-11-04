@@ -170,17 +170,20 @@ public final class WebUserService {
     }
 
     /** 公网价值表：价格公开，不含玩家/保单/路径信息。 */
-    public Map<String, Object> lotteryValues() {
-        List<Map<String, Object>> rows = com.shenqianye.samsara.lottery.ItemValueService
-                .getInstance().valueTable();
-        for (Map<String, Object> row : rows) {
-            Object icon = row.get("icon");
-            row.put("icon", icon == null ? "" : WebIcons.orEmpty(String.valueOf(icon)));
+    public Map<String, Object> lotteryValues(String query, String category, String sort,
+                                             int offset, int limit) {
+        Map<String, Object> out = com.shenqianye.samsara.lottery.ItemValueService
+                .getInstance().queryItems(query, category, sort, offset, limit);
+        if (out.get("values") instanceof List<?> rows) {
+            for (Object entry : rows) {
+                if (entry instanceof Map<?, ?> raw) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> row = (Map<String, Object>) raw;
+                    Object icon = row.get("icon");
+                    row.put("icon", icon == null ? "" : WebIcons.orEmpty(String.valueOf(icon)));
+                }
+            }
         }
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("ok", true);
-        out.put("scope", "user");
-        out.put("values", rows);
         return out;
     }
 

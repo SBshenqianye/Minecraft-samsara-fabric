@@ -1458,13 +1458,41 @@ img.glint { filter: drop-shadow(0 0 3px #b26cff) saturate(1.2); }
 .lottery-value-row:first-child { border-top: 0; }
 .lottery-value-row:hover { background: var(--panel-soft); }
 .lottery-value-item { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.lottery-value-icon {
+.lottery-value-row.zero { opacity: .62; }
+.item-icon {
   width: 22px; height: 22px; flex: 0 0 auto; display: inline-flex;
   align-items: center; justify-content: center; overflow: hidden;
   border: 1px solid var(--line); border-radius: 5px; background: var(--panel-soft);
+  cursor: help;
 }
-.lottery-value-icon img { width: 20px; height: 20px; image-rendering: pixelated; }
-.lottery-value-icon.text { color: var(--muted); font-size: 11px; font-weight: 700; }
+.item-icon img { width: 20px; height: 20px; image-rendering: pixelated; }
+.item-icon.md { width: 26px; height: 26px; }
+.item-icon.md img { width: 24px; height: 24px; }
+.item-icon.lg { width: 64px; height: 64px; }
+.item-icon.lg img { width: 64px; height: 64px; }
+.item-icon.text { color: var(--muted); font-size: 11px; font-weight: 700; }
+.item-icon.md.text { font-size: 12px; }
+.item-icon.lg.text { font-size: 28px; }
+.item-tooltip {
+  position: fixed; z-index: 200; display: none; gap: 12px; align-items: flex-start;
+  max-width: 340px; padding: 12px; border: 1px solid var(--line-strong); border-radius: 12px;
+  background: var(--panel); box-shadow: 0 18px 46px rgba(8, 12, 17, .28);
+  pointer-events: none;
+}
+.item-tooltip.open { display: flex; }
+.item-tooltip-icon {
+  width: 64px; height: 64px; flex: 0 0 auto; display: inline-flex;
+  align-items: center; justify-content: center; overflow: hidden;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--panel-soft);
+}
+.item-tooltip-icon img { width: 64px; height: 64px; image-rendering: pixelated; }
+.item-tooltip-icon.text { color: var(--muted); font-size: 28px; font-weight: 700; }
+.item-tooltip-body { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.item-tooltip-name { font-size: 14px; font-weight: 700; }
+.item-tooltip-en, .item-tooltip-id, .item-tooltip-meta {
+  color: var(--muted); font-size: 11px; line-height: 1.45; word-break: break-word;
+}
+.item-tooltip-id { font-family: var(--mono); font-size: 10px; }
 .lottery-value-name {
   font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }

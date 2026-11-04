@@ -52,16 +52,21 @@ public final class LotteryWebService {
         return LotteryService.getInstance().publicModel();
     }
 
-    public Map<String, Object> values() {
+    public Map<String, Object> values(String query, String category, String sort,
+                                      int offset, int limit) {
         return run(() -> {
-            List<Map<String, Object>> rows = ItemValueService.getInstance().valueTable();
-            for (Map<String, Object> row : rows) {
-                Object icon = row.get("icon");
-                row.put("icon", icon == null ? "" : WebIcons.orEmpty(String.valueOf(icon)));
+            Map<String, Object> out = ItemValueService.getInstance()
+                    .queryItems(query, category, sort, offset, limit);
+            if (out.get("values") instanceof List<?> rows) {
+                for (Object entry : rows) {
+                    if (entry instanceof Map<?, ?> raw) {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> row = (Map<String, Object>) raw;
+                        Object icon = row.get("icon");
+                        row.put("icon", icon == null ? "" : WebIcons.orEmpty(String.valueOf(icon)));
+                    }
+                }
             }
-            Map<String, Object> out = new java.util.LinkedHashMap<>();
-            out.put("ok", true);
-            out.put("values", rows);
             return out;
         });
     }

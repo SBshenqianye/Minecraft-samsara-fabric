@@ -6,10 +6,7 @@
   const $ = (id) => document.getElementById(id);
   const KEY = 'samsara-token';
   let token = sessionStorage.getItem(KEY) || '';
-  let valueRows = [];
-  let valuesLoaded = false;
-  let valuesLoading = null;
-  let valuesShown = 200;
+  let valueTable = null;
 
   function headers() {
     return token ? { Authorization: 'Bearer ' + token } : {};
@@ -156,17 +153,7 @@
     }
     for (const item of items) {
       const card = make('div', 'lottery-item-card');
-      if (item.icon) {
-        const img = document.createElement('img');
-        img.src = '/items/' + item.icon + '.png';
-        img.alt = '';
-        img.onerror = () => img.remove();
-        if (item.item === 'minecraft:enchanted_golden_apple') img.classList.add('glint');
-        card.append(img);
-      } else {
-        card.append(make('span', 'lottery-item-fallback',
-          String(item.zh || item.name || '?').slice(0, 1)));
-      }
+      card.append(window.SamsaraItem.icon(item, { size: 'md' }));
       const body = make('div', 'lottery-item-body');
       body.append(
         make('span', 'lottery-item-name', item.zh || item.name || item.item || '—'),
@@ -249,134 +236,6 @@
     }
   }
 
-  function iconNode(row) {
-    const box = make('span', 'lottery-value-icon');
-    if (row.icon) {
-      const img = document.createElement('img');
-      img.src = '/items/' + row.icon + '.png';
-      img.alt = '';
-      img.onerror = () => img.remove();
-      if (row.id === 'minecraft:enchanted_golden_apple') img.classList.add('glint');
-      box.append(img);
-    } else {
-      box.classList.add('text');
-      box.textContent = String(row.zh || row.name || '?').slice(0, 1);
-    }
-    return box;
-  }
-
-  /** 全拼/首字母/逐字拼音前缀的模糊匹配（Just Enough Characters 风格）。 */
-  function pinyinMatch(row, query) {
-    if (!query) return true;
-    const py = String(row.py || '');
-    const initials = String(row.initials || '');
-    if (py.includes(query) || initials.includes(query)) return true;
-    const syllables = Array.isArray(row.syllables) ? row.syllables : [];
-    if (!syllables.length) return false;
-    let dp = new Array(query.length + 1).fill(false);
-    dp[0] = true;
-    for (const raw of syllables) {
-      const syllable = String(raw || '');
-      if (!syllable) continue;
-      const next = new Array(query.length + 1).fill(false);
-      for (let j = 0; j <= query.length; j++) if (dp[j]) next[j] = true;
-      for (let j = 0; j < query.length; j++) {
-        if (!dp[j]) continue;
-        for (let k = 1; k <= syllable.length && j + k <= query.length; k++) {
-          if (query.startsWith(syllable.slice(0, k), j)) next[j + k] = true;
-        }
-      }
-      dp = next;
-    }
-    return dp[query.length];
-  }
-
-  function renderValueRows(rows) {
-    const root = $('lottery-values');
-    const emptyEl = $('lottery-values-empty');
-    const scroll = $('lottery-values-scroll');
-    const count = $('lottery-values-count');
-    if (count) count.textContent = rows.length + ' / ' + valueRows.length + ' 项';
-    if (!root) return;
-    root.replaceChildren();
-    if (!rows.length) {
-      if (scroll) scroll.hidden = true;
-      if (emptyEl) emptyEl.hidden = false;
-      return;
-    }
-    if (scroll) scroll.hidden = false;
-    if (emptyEl) emptyEl.hidden = true;
-    for (const row of rows.slice(0, valuesShown)) {
-      const line = make('div', 'lottery-value-row');
-      const item = make('div', 'lottery-value-item');
-      item.append(iconNode(row));
-      const zh = row.zh && row.zh !== row.name ? row.zh : '';
-      item.append(make('span', 'lottery-value-name', zh || row.name || row.id));
-      const secondary = zh ? (row.name || '') + ' · ' + row.id : row.id;
-      item.append(make('span', 'lottery-value-id', secondary));
-      line.append(item, make('span', 'lottery-value-cat', row.category || '其他'));
-      line.append(make('strong', 'num', vp(row.value)));
-      root.append(line);
-    }
-    if (rows.length > valuesShown) {
-      const more = make('button', 'ghost lottery-more',
-        '显示更多（剩余 ' + (rows.length - valuesShown) + ' 项）');
-      more.type = 'button';
-      more.addEventListener('click', () => {
-        valuesShown += 300;
-        filterValues();
-      });
-      root.append(more);
-    }
-  }
-
-  function filterValues() {
-    const search = $('lottery-values-search');
-    const category = $('lottery-values-category');
-    const sort = $('lottery-values-sort');
-    const query = (search && search.value ? search.value : '').trim().toLowerCase();
-    const cat = category ? category.value : '';
-    let rows = valueRows.slice();
-    if (cat) rows = rows.filter((row) => row.category === cat);
-    if (query) {
-      rows = rows.filter((row) => {
-        const text = ((row.name || '') + ' ' + (row.zh || '') + ' ' + (row.id || '')
-          + ' ' + (row.category || '')).toLowerCase();
-        return text.includes(query) || pinyinMatch(row, query);
-      });
-    }
-    const mode = sort ? sort.value : 'value-desc';
-    if (mode === 'name') {
-      rows.sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id), 'zh-Hans-CN'));
-    } else {
-      const dir = mode === 'value-asc' ? 1 : -1;
-      rows.sort((a, b) => dir * (Number(a.value || 0) - Number(b.value || 0)));
-    }
-    renderValueRows(rows);
-  }
-
-  async function loadValues(force) {
-    if (valuesLoading && !force) return valuesLoading;
-    if (valuesLoaded && !force) { filterValues(); return; }
-    const stored = sessionStorage.getItem(KEY);
-    if (stored) token = stored;
-    if (!token) return;
-    valuesLoading = (async () => {
-      try {
-        const model = await api('/api/lottery/values');
-        valueRows = Array.isArray(model.values) ? model.values : [];
-        valuesLoaded = true;
-        valuesShown = 200;
-        filterValues();
-      } catch (error) {
-        message('价值表读取失败：' + (error.message || '未知错误'), true);
-      } finally {
-        valuesLoading = null;
-      }
-    })();
-    return valuesLoading;
-  }
-
   function render(model) {
     renderStats(model);
     renderRound(model);
@@ -419,12 +278,12 @@
     if (!token) { message('token 不能为空。', true); return; }
     sessionStorage.setItem(KEY, token);
     load();
-    loadValues(true);
+    if (valueTable) valueTable.refresh();
   }
 
   function refreshAll() {
     load();
-    if (valuesLoaded) loadValues(true);
+    if (valueTable) valueTable.refresh();
   }
 
   function start() {
@@ -440,24 +299,38 @@
       action('/api/lottery/draw', '确认手动开奖当前统计日？'));
     if (cancelButton) cancelButton.addEventListener('click', () =>
       action('/api/lottery/cancel', '确认取消当前统计日并全额退款？'));
-    const search = $('lottery-values-search');
-    const category = $('lottery-values-category');
-    const sort = $('lottery-values-sort');
-    if (search) search.addEventListener('input', () => { valuesShown = 200; filterValues(); });
-    if (category) category.addEventListener('change', () => { valuesShown = 200; filterValues(); });
-    if (sort) sort.addEventListener('change', () => { valuesShown = 200; filterValues(); });
+    if ($('lottery-values') && window.SamsaraValueTable) {
+      valueTable = window.SamsaraValueTable.create({
+        rootId: 'lottery-values',
+        scrollId: 'lottery-values-scroll',
+        emptyId: 'lottery-values-empty',
+        countId: 'lottery-values-count',
+        searchId: 'lottery-values-search',
+        categoryId: 'lottery-values-category',
+        sortId: 'lottery-values-sort',
+        endpoint: '/api/lottery/values',
+        fetch: (url) => {
+          const stored = sessionStorage.getItem(KEY);
+          if (stored) token = stored;
+          return api(url);
+        },
+        onError: (text) => message(text, true),
+      });
+    }
     if (token) {
       load();
       // 独立页直接打开价值表；管理端由标签激活时再懒加载，避免每次进后台都拉整表。
-      if ($('lottery-token')) loadValues();
+      if ($('lottery-token') && valueTable) valueTable.refresh();
     }
   }
 
   // 供管理端“业务信息 → 经济业务”标签直接调用，不通过 iframe 嵌套。
   window.samsaraLottery = {
-    activate: () => { load(); loadValues(); },
+    activate: () => {
+      load();
+      if (valueTable) valueTable.ensure();
+    },
     load,
-    loadValues,
   };
 
   if (document.readyState === 'loading') {

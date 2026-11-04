@@ -54,6 +54,8 @@ public final class WebSecurity {
             case "/user.js" -> "/web/user.js";
             case "/lottery", "/lottery.html" -> "/web/lottery.html";
             case "/lottery.js" -> "/web/lottery.js";
+            case "/item-ui.js" -> "/web/item-ui.js";
+            case "/value-table.js" -> "/web/value-table.js";
             case "/app.js" -> "/web/app.js";
             case "/identity", "/identity.html" -> "/web/identity.html";
             case "/identity.js" -> "/web/identity.js";

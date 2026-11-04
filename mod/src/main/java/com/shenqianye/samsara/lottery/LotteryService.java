@@ -364,7 +364,9 @@ public final class LotteryService {
             ItemStack stack = items.get(i);
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("index", i);
-            item.put("item", ItemValueService.getInstance().idOf(stack.getItem()));
+            String itemId = ItemValueService.getInstance().idOf(stack.getItem());
+            item.put("id", itemId);
+            item.put("item", itemId);
             item.put("name", stack.getHoverName().getString());
             item.put("icon", iconName(ItemValueService.getInstance().idOf(stack.getItem())));
             item.put("count", stack.getCount());
@@ -434,7 +436,7 @@ public final class LotteryService {
             for (Object entry : list) {
                 if (!(entry instanceof Map<?, ?> raw)) continue;
                 Map<String, Object> item = new LinkedHashMap<>();
-                for (String key : List.of("item", "name", "zh", "icon", "count", "value")) {
+                for (String key : List.of("id", "item", "name", "zh", "icon", "count", "value")) {
                     if (raw.containsKey(key)) item.put(key, raw.get(key));
                 }
                 publicItems.add(item);
