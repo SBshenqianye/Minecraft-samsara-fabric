@@ -76,7 +76,7 @@ Get-ChildItem $HOME -Directory -Force -Recurse -Depth 4 -Filter skills -EA 0 |
 
 ## 流程
 
-1. **扫描**：按源清单建索引，生成或读取 `.agents/skill-inbox/CATALOG.md`。
+1. **扫描**：按源清单建索引，读取全局清单 `~/.config/opencode/skills/.inventory.md` 和项目 `.agents/skill-inbox/CATALOG.md`。
 2. **对比**：算出新增、更新、消失、冲突四类。
 3. **判级**：逐条给 P / G / S。
 4. **落地**（每步动手前把计划汇总给用户确认，一次确认可批量执行）：
@@ -102,6 +102,13 @@ Get-ChildItem $HOME -Directory -Force -Recurse -Depth 4 -Filter skills -EA 0 |
 5. **跨仓库巡检（可选）**：用户要求“全量巡检”时，在工作区根（如 `E:\workspace`）下找所有 `*/.agents/skills` 逐个比对；平时不要每次加载都扫盘。
 
 边界：含本仓库路径/命令/验收标准的项目级 skill **不自动提升**，否则全局会被单个仓库污染。判断不了就问。
+
+## 全局清单（收敛用）
+
+- 位置：`~/.config/opencode/skills/.inventory.md`（隐藏文件，不会被当成 skill 加载）。
+- 一行一个：`id | 状态(global/parked/local) | 首次来源 | 最近同步 | 备注`。
+- 作用：记住"已经统合过什么"，避免每次巡检重复提议同一批；只有内容哈希变了才重新问。
+- 项目里的 `CATALOG.md` 是单仓库视角，全局 `.inventory.md` 是跨仓库视角，两边同步更新。
 
 ## 蝗虫开关：阻断与恢复
 
