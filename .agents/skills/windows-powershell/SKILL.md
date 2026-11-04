@@ -24,6 +24,7 @@ whenToUse: 在本机用 shell 读写含中文的文件、统计行数、拼接�
 
 - 控制台代码页不是 UTF-8 时，原生程序输出会乱码：先 `[Console]::OutputEncoding = [Text.Encoding]::UTF8`，必要时 `chcp 65001`。
 - `git status` 里中文文件名显示成 `实现状�?` 多半只是终端显示问题；用 read 工具或 `git status --porcelain` 核对，不要因此重命名文件。
+- **中文提交信息别用 `git commit -m "…"`**：PS 5.1 按 ANSI 传参，仓库里会存成乱码。写成 UTF-8 文件后 `git commit -F msg.txt`，验证用 `git cat-file -p HEAD`（cmd 重定向到文件再读），不要看 `git log` 的控制台输出。
 
 ## 含空格 / 中文的路径
 
