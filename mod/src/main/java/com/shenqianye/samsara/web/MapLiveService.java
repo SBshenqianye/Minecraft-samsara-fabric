@@ -41,6 +41,44 @@ public final class MapLiveService {
 
     private static final int MAX_CHAT = 120;
     private static final Deque<Map<String, Object>> CHAT = new ArrayDeque<>();
+    private static final int MAX_SYSTEM = 80;
+    private static final Deque<Map<String, Object>> SYSTEM = new ArrayDeque<>();
+    private static final java.util.Set<String> RARE_ENTITIES = java.util.Set.of(
+            "ender_dragon", "wither", "elder_guardian", "warden", "evoker", "illusioner",
+            "ravager", "piglin_brute", "breeze", "bogged", "creaking", "sniffer",
+            "armadillo", "axolotl", "mooshroom", "panda", "polar_bear", "goat");
+    private static final java.util.regex.Pattern GAMEPLAY = java.util.regex.Pattern.compile(
+            "(?i)(joined the game|left the game|slain|killed|shot|blew up|fell|drowned|"
+                    + "burned|wither|starved|suffocated|magic|advanced|advancement|challenge|"
+                    + "goal|unlocked|raid|victory|tamed|bred|sleeping|respawned)");
+
+    /** 记录一条玩法层面的系统提示（死亡/加入/离开/进度），过滤命令反馈。 */
+    public static void recordSystem(String text) {
+        if (text == null || text.isBlank()) return;
+        String value = text.strip();
+        String lower = value.toLowerCase(java.util.Locale.ROOT);
+        if (lower.startsWith("/") || lower.contains("commands.")
+                || lower.contains("unknown or incomplete command")
+                || lower.contains("usage:") || lower.contains("permission")) {
+            return;
+        }
+        if (!GAMEPLAY.matcher(value).find()) return;
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("timeMs", System.currentTimeMillis());
+        item.put("text", value.length() > 300 ? value.substring(0, 300) : value);
+        synchronized (SYSTEM) {
+            SYSTEM.addLast(item);
+            while (SYSTEM.size() > MAX_SYSTEM) SYSTEM.removeFirst();
+        }
+    }
+
+    private static List<Map<String, Object>> recentSystem() {
+        synchronized (SYSTEM) {
+            List<Map<String, Object>> out = new ArrayList<>(SYSTEM.size());
+            for (Map<String, Object> item : SYSTEM) out.add(new LinkedHashMap<>(item));
+            return out;
+        }
+    }
 
     /** 记录一条玩家发言，供实时层展示（不写盘；完整记录在轨迹 .evt）。 */
     public static void recordChat(ServerPlayer player, String text) {
@@ -107,6 +145,7 @@ public final class MapLiveService {
         out.put("entities", List.of());
         out.put("operations", List.of());
         out.put("chat", List.of());
+        out.put("system", List.of());
         out.put("truncated", false);
         return out;
     }
@@ -162,6 +201,10 @@ public final class MapLiveService {
                 item.put("name", entity.getName().getString());
                 item.put("type", BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString());
                 item.put("category", entity.getType().getCategory().getSerializedName());
+                item.put("rarity", rarityOf(entity));
+                if (entity.hasCustomName()) {
+                    item.put("customName", entity.getName().getString());
+                }
                 item.put("stackId", stackId);
                 item.put("dimension", dim);
                 item.put("dimensionId", level.dimension().identifier().toString());
@@ -201,6 +244,7 @@ public final class MapLiveService {
         out.put("entities", entities);
         out.put("operations", operations);
         out.put("chat", recentChat());
+        out.put("system", recentSystem());
         out.put("truncated", truncated);
         return out;
     }
@@ -244,6 +288,18 @@ public final class MapLiveService {
 
     private static double round(double value) {
         return Math.round(value * 10.0) / 10.0;
+    }
+
+    /** 0 = 玩家/命名/稀有，1 = 敌对，2 = 被动，3 = 其他（掉落物/投射物等）。 */
+    private static int rarityOf(Entity entity) {
+        if (entity.hasCustomName()) return 0;
+        String id = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).getPath();
+        if (RARE_ENTITIES.contains(id)) return 0;
+        String category = entity.getType().getCategory().getSerializedName();
+        if ("monster".equals(category)) return 1;
+        if ("creature".equals(category) || "water_creature".equals(category)
+                || "axolotls".equals(category) || "ambient".equals(category)) return 2;
+        return 3;
     }
 
     private static final class Trail {

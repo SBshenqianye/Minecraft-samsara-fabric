@@ -36,6 +36,11 @@ public final class MojangSkinService {
             "https://sessionserver.mojang.com/session/minecraft/profile/";
     private static final String NAME_URL =
             "https://api.mojang.com/users/profiles/minecraft/";
+    /** 官方不可用时的第三方皮肤站回退（按名字或 UUID 取完整皮肤）。 */
+    private static final String[] FALLBACK_SKIN_URLS = {
+            "https://mc-heads.net/skin/",
+            "https://minotar.net/skin/"
+    };
     private static final long SUCCESS_TTL_MS = 6L * 60 * 60 * 1000;
     private static final long FAILURE_TTL_MS = 2L * 60 * 1000;
     private static final int MAX_SKIN_BYTES = 2 * 1024 * 1024;
@@ -73,24 +78,38 @@ public final class MojangSkinService {
     }
 
     private Skin load(String uuid, String name) {
+        String id = uuid;
         try {
-            String id = uuid;
             if (id == null && name != null) {
                 id = lookupUuid(name);
             }
-            if (id == null) {
-                return null;
+            if (id != null) {
+                String skinUrl = lookupSkinUrl(id);
+                if (skinUrl != null) {
+                    Skin skin = downloadSkin(skinUrl, false);
+                    if (skin != null) return skin;
+                }
             }
-            String skinUrl = lookupSkinUrl(id);
-            if (skinUrl == null) {
-                return null;
-            }
-            return downloadSkin(skinUrl);
         } catch (Exception e) {
             Samsara.LOGGER.debug("[web] Mojang 皮肤解析失败 {} / {}: {}",
                     uuid, name, e.getMessage());
-            return null;
         }
+        // 官方查不到（离线玩家/正版档案隐藏/网络失败）时回退第三方皮肤站；
+        // 仍只接受 PNG 魔数与大小校验，失败才让前端用 SVG。
+        String fallbackKey = name != null ? name : id;
+        if (fallbackKey != null) {
+            for (String base : FALLBACK_SKIN_URLS) {
+                try {
+                    Skin skin = downloadSkin(base
+                            + URLEncoder.encode(fallbackKey, StandardCharsets.UTF_8)
+                            .replace("+", "%20"), true);
+                    if (skin != null) return skin;
+                } catch (Exception e) {
+                    Samsara.LOGGER.debug("[web] 第三方皮肤回退失败 {}: {}", base, e.getMessage());
+                }
+            }
+        }
+        return null;
     }
 
     private String lookupUuid(String name) throws Exception {
@@ -132,9 +151,16 @@ public final class MojangSkinService {
     }
 
     private Skin downloadSkin(String url) throws Exception {
+        return downloadSkin(url, false);
+    }
+
+    private Skin downloadSkin(String url, boolean fallbackHost) throws Exception {
         URI uri = URI.create(url);
         String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(Locale.ROOT);
-        if (!"textures.minecraft.net".equals(host) && !"textures.mojang.com".equals(host)) {
+        boolean allowed = "textures.minecraft.net".equals(host)
+                || "textures.mojang.com".equals(host)
+                || (fallbackHost && ("mc-heads.net".equals(host) || "minotar.net".equals(host)));
+        if (!allowed) {
             return null;
         }
         HttpRequest request = HttpRequest.newBuilder(uri)
@@ -144,15 +170,16 @@ public final class MojangSkinService {
                 .build();
         HttpResponse<byte[]> response = CLIENT.send(request,
                 HttpResponse.BodyHandlers.ofByteArray());
-        if (response.statusCode() != 200 || response.body().length == 0
+        if (response.statusCode() != 200 || response.body().length < 8
                 || response.body().length > MAX_SKIN_BYTES) {
             return null;
         }
-        String type = response.headers().firstValue("Content-Type").orElse("");
-        if (!type.toLowerCase(Locale.ROOT).startsWith("image/png")) {
+        byte[] body = response.body();
+        // PNG 魔数：89 50 4E 47 0D 0A 1A 0A；防止第三方返回 HTML/错误页。
+        if ((body[0] & 0xFF) != 0x89 || body[1] != 'P' || body[2] != 'N' || body[3] != 'G') {
             return null;
         }
-        return new Skin(response.body(), "image/png");
+        return new Skin(body, "image/png");
     }
 
     private JsonObject getJson(String url) throws Exception {

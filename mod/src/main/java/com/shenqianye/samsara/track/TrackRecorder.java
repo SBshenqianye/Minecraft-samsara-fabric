@@ -193,6 +193,12 @@ public final class TrackRecorder {
             r.recordChat(sender, text);
             com.shenqianye.samsara.web.MapLiveService.recordChat(sender, text);
         });
+        // 玩法层系统提示（加入/离开/死亡/进度）；命令反馈不进入实时层。
+        ServerMessageEvents.GAME_MESSAGE.register((server, message, overlay) -> {
+            if (!overlay) {
+                com.shenqianye.samsara.web.MapLiveService.recordSystem(message.getString());
+            }
+        });
     }
 
     /**

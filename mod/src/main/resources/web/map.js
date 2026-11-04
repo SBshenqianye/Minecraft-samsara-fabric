@@ -48,6 +48,8 @@
     liveTimer: 0,
     showEntities: true,
     showTrails: true,
+    showRareNames: true,
+    entityHold: new Map(),
     showSeparation: false,
     playerMotion: new Map(),
     playerAvatars: new Map(),
@@ -117,6 +119,7 @@
       showPlayers: $('map-show-players'),
       showEntities: $('map-show-entities'),
       showTrails: $('map-show-trails'),
+      showRareNames: $('map-show-rare-names'),
       showSeparation: $('map-show-separation'),
       liveStatus: $('map-live-status'),
       activity: $('map-activity'),
@@ -1258,7 +1261,9 @@
   // ---- 世界栈卡片图标：自定义上传 > 存档 icon.png > 出生点地图缩略图 ----
 
   function stackMapRegion(stack) {
-    const spawn = stack && stack.spawn;
+    const rawSpawn = stack && (stack.spawn || (Number.isFinite(Number(stack.spawnX))
+      ? { x: stack.spawnX, y: stack.spawnY, z: stack.spawnZ } : null));
+    const spawn = rawSpawn;
     let rx = spawn && Number.isFinite(Number(spawn.x))
       ? Math.floor(Number(spawn.x) / 512) : null;
     let rz = spawn && Number.isFinite(Number(spawn.z))
@@ -1726,32 +1731,68 @@
       && item.dimension === dim.dim);
     if (state.showTrails) {
       for (const item of players) drawTrail(liveCtx, item, liveEmphasis(item));
-      for (const item of entities) drawTrail(liveCtx, item, liveEmphasis(item));
+      for (const item of entities) {
+        if (Number(item.rarity || 0) <= 1) drawTrail(liveCtx, item, liveEmphasis(item));
+      }
     }
     if (state.showEntities) {
-      for (const item of entities) {
-        const point = worldToScreen(Number(item.x) || 0, Number(item.z) || 0);
+      const tierInterval = [0, 1200, 2500, 4000];
+      const stamp = Date.now();
+      const seen = new Set();
+      entities.forEach((item, index) => {
+        const key = String(item.kind) + '|' + String(item.type) + '|'
+          + String(item.name) + '|' + index;
+        seen.add(key);
+        const tier = Math.max(0, Math.min(3, Number(item.rarity || 0)));
+        const interval = tierInterval[tier] || 0;
+        let hold = state.entityHold.get(key);
+        if (!hold || interval === 0 || stamp - hold.at >= interval) {
+          hold = { x: Number(item.x) || 0, z: Number(item.z) || 0, at: stamp };
+          state.entityHold.set(key, hold);
+        }
+        const point = worldToScreen(hold.x, hold.z);
         if (point.x < -8 || point.y < -8 || point.x > width + 8 || point.y > height + 8) {
-          continue;
+          return;
         }
         const emphasis = liveEmphasis(item);
         const color = liveColor(item);
+        const radius = tier === 0 ? 3.4 : item.category === 'monster' ? 3 : 2.4;
         liveCtx.beginPath();
-        liveCtx.arc(point.x, point.y, item.category === 'monster' ? 3 : 2.4, 0, Math.PI * 2);
+        liveCtx.arc(point.x, point.y, radius, 0, Math.PI * 2);
         liveCtx.fillStyle = emphasis >= 1 ? 'rgba(251, 191, 36, .95)'
-          : emphasis > 0 ? 'rgba(226, 232, 240, .8)' : color.replace(/\.\d+\)$/, '.85)');
+          : emphasis > 0 ? 'rgba(226, 232, 240, .8)'
+            : tier === 0 ? 'rgba(244, 114, 182, .95)' : color.replace(/\.\d+\)$/, '.85)');
         liveCtx.fill();
         liveCtx.strokeStyle = 'rgba(8, 12, 17, .65)';
         liveCtx.lineWidth = .8;
         liveCtx.stroke();
-        if (emphasis > 0) {
+        if (emphasis > 0 || tier === 0) {
           liveCtx.beginPath();
           liveCtx.arc(point.x, point.y, emphasis >= 1 ? 7 : 5, 0, Math.PI * 2);
           liveCtx.strokeStyle = emphasis >= 1 ? 'rgba(251, 191, 36, .95)'
-            : 'rgba(226, 232, 240, .5)';
+            : tier === 0 ? 'rgba(244, 114, 182, .55)' : 'rgba(226, 232, 240, .5)';
           liveCtx.lineWidth = emphasis >= 1 ? 1.8 : 1.1;
           liveCtx.stroke();
         }
+        if (tier === 0 && state.showRareNames) {
+          const label = String(item.customName || item.name || item.type || '')
+            .replace('minecraft:', '');
+          if (label) {
+            liveCtx.save();
+            liveCtx.font = 'bold 10px system-ui, sans-serif';
+            liveCtx.textAlign = 'center';
+            liveCtx.textBaseline = 'bottom';
+            liveCtx.lineWidth = 3;
+            liveCtx.strokeStyle = 'rgba(8, 12, 17, .9)';
+            liveCtx.strokeText(label, point.x, point.y - 7);
+            liveCtx.fillStyle = '#fbcfe8';
+            liveCtx.fillText(label, point.x, point.y - 7);
+            liveCtx.restore();
+          }
+        }
+      });
+      for (const key of state.entityHold.keys()) {
+        if (!seen.has(key)) state.entityHold.delete(key);
       }
     }
   }
@@ -1849,6 +1890,25 @@
       activity.append(card);
     }
     const chats = Array.isArray(live.chat) ? live.chat : [];
+    const systems = Array.isArray(live.system) ? live.system : [];
+    if (systems.length > 0) {
+      const sysHead = document.createElement('div');
+      sysHead.className = 'map-live-section';
+      sysHead.textContent = '系统提示（' + systems.length + '）';
+      activity.append(sysHead);
+      for (const tip of systems.slice(-10).reverse()) {
+        const row = document.createElement('div');
+        row.className = 'map-activity-row';
+        const time = document.createElement('span');
+        time.className = 'map-activity-time';
+        time.textContent = formatTime(tip.timeMs);
+        const text = document.createElement('span');
+        text.className = 'map-activity-text';
+        text.textContent = tip.text || '';
+        row.append(time, text);
+        activity.append(row);
+      }
+    }
     if (chats.length > 0) {
       const chatHead = document.createElement('div');
       chatHead.className = 'map-live-section';
@@ -2760,6 +2820,14 @@
       state.showTrails = showTrails.checked;
       showTrails.addEventListener('change', () => {
         state.showTrails = showTrails.checked;
+        drawLiveLayer();
+      });
+    }
+    const showRareNames = els.showRareNames;
+    if (showRareNames) {
+      state.showRareNames = showRareNames.checked;
+      showRareNames.addEventListener('change', () => {
+        state.showRareNames = showRareNames.checked;
         drawLiveLayer();
       });
     }

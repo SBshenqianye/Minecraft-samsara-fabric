@@ -224,6 +224,10 @@
                 <span>轨迹</span>
               </label>
               <label class="check-line">
+                <input id="map-show-rare-names" type="checkbox" checked>
+                <span>稀有名字</span>
+              </label>
+              <label class="check-line">
                 <input id="map-show-separation" type="checkbox">
                 <span>排斥半径</span>
               </label>
@@ -605,6 +609,10 @@
                 <button id="server-console-clear" class="ghost" type="button">清空输出</button>
               </div>
             </div>
+            <div class="console-quick-filter">
+              <input id="server-console-filter" type="search" autocomplete="off" placeholder="筛选快捷命令，例如 save / 玩家 / 诊断">
+              <button id="server-console-copy" class="ghost" type="button">复制输出</button>
+            </div>
             <div class="console-quick" id="server-console-quick">
               <div class="console-quick-group">
                 <span class="console-quick-label">服务器</span>
@@ -612,11 +620,14 @@
                 <button type="button" class="ghost" data-console-command="save-all" title="立即保存世界与玩家">save-all</button>
                 <button type="button" class="ghost" data-console-command="tps" title="查看 tick 性能">tps</button>
                 <button type="button" class="ghost" data-console-command="mspt" title="查看每 tick 耗时">mspt</button>
+                <button type="button" class="ghost" data-console-command="seed" title="查看当前世界种子">seed</button>
               </div>
               <div class="console-quick-group">
                 <span class="console-quick-label">世界</span>
                 <button type="button" class="ghost" data-console-command="samsara world list">world list</button>
                 <button type="button" class="ghost" data-console-command="time query daytime">time</button>
+                <button type="button" class="ghost" data-console-command="time set day">白天</button>
+                <button type="button" class="ghost" data-console-command="weather clear">晴天</button>
                 <button type="button" class="ghost" data-console-command="weather query">weather</button>
                 <button type="button" class="ghost" data-console-command="difficulty">difficulty</button>
               </div>
@@ -626,12 +637,14 @@
                 <button type="button" class="ghost" data-console-command="samsara season status">赛季</button>
                 <button type="button" class="ghost" data-console-command="samsara claim info">圈地</button>
                 <button type="button" class="ghost" data-console-command="samsara where">坐标</button>
+                <button type="button" class="ghost" data-console-command="samsara info">samsara 概况</button>
               </div>
               <div class="console-quick-group">
                 <span class="console-quick-label">诊断</span>
                 <button type="button" class="ghost" data-console-command="samsara version">version</button>
                 <button type="button" class="ghost" data-console-command="samsara debug reload">reload</button>
                 <button type="button" class="ghost" data-console-command="samsara help">help</button>
+                <button type="button" class="ghost" data-console-command="samsara debug info">debug info</button>
               </div>
               <div class="console-quick-group danger-zone">
                 <span class="console-quick-label">危险</span>
@@ -661,6 +674,14 @@
             </div>
             <div id="server-audit-message" class="message" role="status"></div>
             <div id="server-audit-list" class="server-audit-list"></div>
+            <div id="server-audit-diff-wrap" class="server-audit-diff-wrap" hidden>
+              <div class="server-audit-diff-head">
+                <strong id="server-audit-diff-title">差异</strong>
+                <button id="server-audit-diff-close" class="ghost" type="button">关闭</button>
+              </div>
+              <div id="server-audit-changes" class="server-audit-changes"></div>
+              <pre id="server-audit-diff" class="server-audit-diff" aria-live="polite"></pre>
+            </div>
           </section>
         </div>
       </div>

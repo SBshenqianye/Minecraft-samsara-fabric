@@ -812,12 +812,12 @@ async function main() {
         ? composer.querySelector('[data-role="layer-pattern-trigger"] .claim-trigger-label')?.textContent || ''
         : '';
 
-      // 单旗 border + 白色（距离 1）= 3×3 闭合正方形 = 9，而不是八向星形
+      // 单旗 border + 白色（距离 1）= 3×3 边框周长 8 格（不填内部）
       const summary = () => document.querySelector('.claim-preview-summary')?.textContent || '';
       const borderSummary = summary();
       const borderCells = Number(canvas.dataset.protectedCells);
 
-      // 单旗 border + 橙色（距离 2）= 5×5 闭合正方形 = 25
+      // 单旗 border + 橙色（距离 2）= 5×5 边框周长 16 格（不填内部）
       const borderColorTrigger = preview.querySelector('[data-role="canvas-pattern-color-trigger"]');
       borderColorTrigger.click();
       await wait(140);
@@ -829,6 +829,22 @@ async function main() {
       await wait(140);
       document.querySelector('.claim-color-popover .claim-color-cell[data-index="0"]')?.click();
       await wait(180);
+
+      // 画布“闭合填充”开关：关闭后只显示原始线段，dataset 同步
+      const fillToggle = document.getElementById('claim-fill-closed');
+      const fillBefore = canvas.dataset.fillClosed || '';
+      if (fillToggle) {
+        fillToggle.checked = false;
+        fillToggle.dispatchEvent(new Event('change', { bubbles: true }));
+        await wait(180);
+      }
+      const fillOff = canvas.dataset.fillClosed || '';
+      if (fillToggle) {
+        fillToggle.checked = true;
+        fillToggle.dispatchEvent(new Event('change', { bubbles: true }));
+        await wait(180);
+      }
+      const fillOn = canvas.dataset.fillClosed || '';
 
       // 单旗 cross + 白色 = 中心 + 4 条斜向射线 = 5
       patternTrigger.click();
@@ -963,6 +979,7 @@ async function main() {
         patternClosed,
         composerSelects, composerTriggers, composerCanvases, composerPatternText,
         borderSummary, borderCells, border5Summary, border5Cells,
+        fillBefore, fillOff, fillOn,
         crossSummary, crossCells,
         facingEast, rotated,
         beforeRadius, afterZoomRadius, beforeCenter, afterCenter,
@@ -1001,10 +1018,13 @@ async function main() {
     check('合成器图案触发器带预览图标与图案名',
         claim.composerCanvases >= 1 && claim.composerPatternText.length > 0,
         'canvas=' + claim.composerCanvases + ' label=' + claim.composerPatternText);
-    check('单面 border 白色距离 1 = 3×3 正方形（9 格）', claim.borderCells === 9
+    check('单面 border 白色距离 1 = 3×3 边框（9 格）', claim.borderCells === 9
         && claim.borderSummary.includes('保护 9 区块'), 'cells=' + claim.borderCells);
-    check('单面 border 橙色距离 2 = 5×5 正方形（25 格）', claim.border5Cells === 25
-        && claim.border5Summary.includes('保护 25 区块'), 'cells=' + claim.border5Cells);
+    check('单面 border 橙色距离 2 = 5×5 边框（17 格）', claim.border5Cells === 17
+        && claim.border5Summary.includes('保护 17 区块'), 'cells=' + claim.border5Cells);
+    check('调试画布可切换原始线段/闭合填充', claim.fillBefore === '1'
+        && claim.fillOff === '0' && claim.fillOn === '1',
+        JSON.stringify({ before: claim.fillBefore, off: claim.fillOff, on: claim.fillOn }));
     check('单面 cross 只出射线（5 格，不填充）', claim.crossCells === 5
         && claim.crossSummary.includes('保护 5 区块'), 'cells=' + claim.crossCells);
     check('朝向控件与画布同步（东）',
@@ -1203,6 +1223,10 @@ async function main() {
         entities: Array.isArray(data.entities) ? data.entities.length : -1,
         operations: Array.isArray(data.operations) ? data.operations.length : -1,
         chatArray: Array.isArray(data.chat),
+        systemArray: Array.isArray(data.system),
+        rarityPresent: Array.isArray(data.entities)
+          && data.entities.every((item) => typeof item.rarity === 'number'),
+        rareToggle: Boolean(document.getElementById('map-show-rare-names')),
         playerTrailArray: Boolean(player && Array.isArray(player.trail)),
         entityTrailArray: Boolean(entity && Array.isArray(entity.trail)),
         sensitiveEntityUuid: Boolean(entity && entity.uuid),
@@ -1217,6 +1241,10 @@ async function main() {
     check('地图实时层 API 返回实体/轨迹/操作/发言', liveMap.ok === true
         && liveMap.players >= 0 && liveMap.entities >= 1 && liveMap.operations >= 0
         && liveMap.entityTrailArray && liveMap.chatArray, JSON.stringify(liveMap));
+    check('实时层返回系统提示/稀有度并提供稀有名字开关', liveMap.systemArray === true
+        && liveMap.rarityPresent === true && liveMap.rareToggle === true,
+        JSON.stringify({ system: liveMap.systemArray, rarity: liveMap.rarityPresent,
+          toggle: liveMap.rareToggle }));
     check('地图实时层画布与开关可用', liveMap.liveCanvas && liveMap.liveStatus.includes('在线')
         && liveMap.hasEntityToggle && liveMap.hasTrailToggle && liveMap.hasSeparationToggle,
         JSON.stringify(liveMap));
@@ -1417,29 +1445,47 @@ async function main() {
       await new Promise((resolve) => setTimeout(resolve, 800));
       const rows = [...document.querySelectorAll('#server-audit-list .server-audit-item')];
       const first = rows[0];
-      const preview = first?.querySelector('button');
+      const loadMessage = document.getElementById('server-audit-message')?.textContent || '';
+      const diffRow = rows.find((row) => row.textContent.includes('可回滚')) || first;
+      const preview = diffRow?.querySelector('button');
       let previewMessage = '';
+      let previewDiff = '';
+      let diffVisible = false;
+      let changes = 0;
       if (preview) {
         preview.click();
-        await new Promise((resolve) => setTimeout(resolve, 500));
+        await new Promise((resolve) => setTimeout(resolve, 700));
         previewMessage = document.getElementById('server-audit-message')?.textContent || '';
+        previewDiff = document.getElementById('server-audit-diff')?.textContent || '';
+        diffVisible = !document.getElementById('server-audit-diff-wrap')?.hidden;
+        changes = document.querySelectorAll('#server-audit-changes .server-audit-change').length;
       }
       return {
         panelVisible: !document.getElementById('server-audit-panel')?.hidden,
+        loadMessage,
         rows: rows.length,
         text: first?.textContent || '',
         rowsWithRollback: rows.filter((row) => row.textContent.includes('可回滚')).length,
         previewMessage,
+        previewDiff,
+        diffVisible,
+        changes,
         hash: location.hash,
       };
     })()`);
     check('Web 审计有写请求快照记录', auditState.panelVisible && auditState.rows >= 1
         && auditState.text.includes('文件') && auditState.rowsWithRollback >= 1,
         JSON.stringify({ rows: auditState.rows, rollback: auditState.rowsWithRollback,
-          text: auditState.text.slice(0, 120) }));
+          text: auditState.text.slice(0, 120), panel: auditState.panelVisible,
+          message: auditState.loadMessage }));
     check('Web 审计预览可用', auditState.previewMessage.includes('快照')
         && auditState.hash === '#server-audit', JSON.stringify({
           message: auditState.previewMessage, hash: auditState.hash }));
+    check('Web 审计可查看文件级 diff', auditState.diffVisible === true
+        && auditState.changes >= 0
+        && (auditState.previewDiff.includes('---') || auditState.previewDiff.includes('没有可显示')),
+        JSON.stringify({ visible: auditState.diffVisible, changes: auditState.changes,
+          diff: auditState.previewDiff.slice(0, 160) }));
 
     // ---- 刷新页面验证区块网格本地持久化 ----
     await navigate(base + '/#map');
@@ -1500,6 +1546,9 @@ async function main() {
         liveChat: Array.isArray(userLive.chat) ? userLive.chat.length : -1,
         liveChatHasUuid: Array.isArray(userLive.chat)
           && userLive.chat.some((item) => 'uuid' in item || 'actorUuid' in item),
+        liveSystem: Array.isArray(userLive.system) ? userLive.system.length : -1,
+        liveSystemHasUuid: Array.isArray(userLive.system)
+          && userLive.system.some((item) => 'uuid' in item || 'actorUuid' in item),
         liveHasUuid: livePlayers.some((item) => 'uuid' in item)
           || liveEntities.some((item) => 'uuid' in item),
         liveHasHealth: livePlayers.some((item) => 'health' in item)
@@ -1543,6 +1592,9 @@ async function main() {
           entities: userPage.liveEntities, uuid: userPage.liveHasUuid,
           health: userPage.liveHasHealth, chat: userPage.liveChat,
           chatUuid: userPage.liveChatHasUuid }));
+    check('用户端系统提示只保留时间/文本', userPage.liveSystem >= 0
+        && userPage.liveSystemHasUuid === false,
+        JSON.stringify({ system: userPage.liveSystem, uuid: userPage.liveSystemHasUuid }));
     check('用户端世界栈栈顶在前、stack_0 在最后', userPage.worldStacks.length >= 1
         && userPage.worldStacks[0].top === true
         && userPage.worldStacks.every((stack, index) => index === 0

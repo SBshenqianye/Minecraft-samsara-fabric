@@ -45,7 +45,10 @@ public final class ClaimShape {
      */
     public static final String CENTER = "center";
 
-    /** 3×3 单位方向全集（8 向 + 中心），用于配置校验与 Web 罗盘。 */
+    /** 「边框」语义：选中后按图案颜色距离画正方形边框（不填充内部）。 */
+    public static final String BORDER = "border";
+
+    /** 3×3 单位方向全集（8 向 + 边框），用于配置校验与 Web 罗盘。 */
     public static final List<String> ALL_DIRECTIONS = List.of(
             "north", "northeast", "east", "southeast",
             "south", "southwest", "west", "northwest", CENTER);
@@ -75,8 +78,8 @@ public final class ClaimShape {
 
     static {
         Map<String, List<String>> defaults = new LinkedHashMap<>();
-        // border = 八向 + 中心：末端连成环，单面旗帜即可围出 (2d+1)² 的正方形保护范围。
-        defaults.put("border", ALL_DIRECTIONS);
+        // border = 只画正方形边框：颜色距离 = 边框半径，内部不填充。
+        defaults.put("border", List.of(CENTER));
         defaults.put("cross", List.of("northeast", "southeast", "southwest", "northwest"));
         defaults.put("straight_cross", List.of("north", "east", "south", "west"));
         defaults.put("stripe_top", List.of("north"));
@@ -136,35 +139,54 @@ public final class ClaimShape {
     public static List<int[]> segments(String patternId, int distance, String facing,
                                        List<String> directions) {
         List<int[]> out = new ArrayList<>();
+        out.addAll(raySegments(patternId, distance, facing, directions));
+        out.addAll(borderSegments(patternId, distance, facing, directions));
+        return out;
+    }
+
+    /** 只返回八向射线（不包含边框），供全局“化线为面”使用。 */
+    public static List<int[]> raySegments(String patternId, int distance, String facing,
+                                          List<String> directions) {
+        List<int[]> out = new ArrayList<>();
         int d = Math.max(0, distance);
         if (d == 0) return out;
-        List<String> normalized = effectiveDirections(patternId, directions);
-        List<String> rotatedRays = new ArrayList<>(8);
-        for (String direction : normalized) {
-            if (CENTER.equalsIgnoreCase(direction)) continue;
+        for (String direction : effectiveDirections(patternId, directions)) {
+            if (containsBorder(List.of(direction))) continue;
             String rotated = rotateDirection(direction, facing);
             int[] vector = VECTORS.get(rotated);
             if (vector == null) continue;
-            if (!rotatedRays.contains(rotated)) rotatedRays.add(rotated);
             out.add(new int[]{0, 0, vector[0] * d, vector[1] * d});
-        }
-        if (containsCenter(normalized) && rotatedRays.size() >= 3) {
-            // 按固定方向顺序排列末端，连接成环；8 向在 d 距离上恰好是 (2d+1)² 正方形的边。
-            rotatedRays.sort((a, b) -> Integer.compare(DIRECTION_ORDER.indexOf(a), DIRECTION_ORDER.indexOf(b)));
-            for (int i = 0; i < rotatedRays.size(); i++) {
-                int[] from = VECTORS.get(rotatedRays.get(i));
-                int[] to = VECTORS.get(rotatedRays.get((i + 1) % rotatedRays.size()));
-                out.add(new int[]{from[0] * d, from[1] * d, to[0] * d, to[1] * d});
-            }
         }
         return out;
     }
 
-    /** 方向列表是否包含「中心 / 闭合」。 */
-    public static boolean containsCenter(List<String> directions) {
+    /**
+     * 边框线段：方向含 {@code center}/{@code border} 时，按颜色距离 d 画正方形周长。
+     * 返回 4 条边，不填充内部；d=2 即 5×5 的边框。
+     */
+    public static List<int[]> borderSegments(String patternId, int distance, String facing,
+                                             List<String> directions) {
+        List<int[]> out = new ArrayList<>();
+        int d = Math.max(0, distance);
+        if (d == 0 || !containsBorder(effectiveDirections(patternId, directions))) return out;
+        out.add(new int[]{-d, -d, d, -d});
+        out.add(new int[]{d, -d, d, d});
+        out.add(new int[]{d, d, -d, d});
+        out.add(new int[]{-d, d, -d, -d});
+        return out;
+    }
+
+    /** 方向列表是否包含“边框/中心/闭合”。 */
+    public static boolean containsBorder(List<String> directions) {
         if (directions == null) return false;
         return directions.stream().anyMatch(item -> item != null
-                && item.trim().equalsIgnoreCase(CENTER));
+                && (item.trim().equalsIgnoreCase(CENTER)
+                        || item.trim().equalsIgnoreCase(BORDER)));
+    }
+
+    /** 兼容旧调用名。 */
+    public static boolean containsCenter(List<String> directions) {
+        return containsBorder(directions);
     }
 
     /**
@@ -178,8 +200,13 @@ public final class ClaimShape {
     public static Set<ChunkCoord> cells(String patternId, int distance, String facing,
                                         List<String> directions) {
         Set<ChunkCoord> out = new LinkedHashSet<>();
+        List<int[]> rays = raySegments(patternId, distance, facing, directions);
+        // 旗帜所在区块始终属于保护范围；边框只额外贡献周长。
         out.add(new ChunkCoord(0, 0));
-        for (int[] segment : segments(patternId, distance, facing, directions)) {
+        for (int[] segment : rays) {
+            rasterize(segment, out);
+        }
+        for (int[] segment : borderSegments(patternId, distance, facing, directions)) {
             rasterize(segment, out);
         }
         return out;
@@ -223,7 +250,10 @@ public final class ClaimShape {
         List<String> out = new ArrayList<>(9);
         for (String name : ALL_DIRECTIONS) {
             for (String raw : directions) {
-                if (raw != null && raw.trim().equalsIgnoreCase(name) && !out.contains(name)) {
+                if (raw == null) continue;
+                String value = raw.trim();
+                if (BORDER.equalsIgnoreCase(value)) value = CENTER;
+                if (value.equalsIgnoreCase(name) && !out.contains(name)) {
                     out.add(name);
                     break;
                 }

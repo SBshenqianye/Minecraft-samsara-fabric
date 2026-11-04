@@ -1,6 +1,6 @@
 # samsara · Web API 接口文档
 
-> 状态：v0.42.0（2026-11-04）
+> 状态：v0.43.0（2026-11-04）
 > 适用：本地管理端 `/`、用户端只读页 `/user`、以及未来接入的脚本/面板。
 > 代码入口：`mod/src/main/java/com/shenqianye/samsara/web/LocalWebServer.java`
 > 安全边界：`WebSecurity.java`、`WebUserService.java`
@@ -116,7 +116,7 @@
 
 ### 2.6 `GET /api/user/map/avatar?uuid=` / `?name=`
 
-本机代理 Mojang 官方皮肤（完整 64×64 PNG）。`uuid` 优先；没有 UUID 时用玩家名查询 `api.mojang.com`，再读 `sessionserver.mojang.com` 的 textures 属性，只允许 `textures.minecraft.net` 的 PNG。成功返回 `image/png`；无正版档案/网络失败返回 `404`，前端使用本地 SVG 首字母头。成功缓存 6 小时、失败缓存 2 分钟，不返回 UUID 解析结果或文件路径。
+本机代理 Mojang 官方皮肤（完整 64×64 PNG）。`uuid` 优先；没有 UUID 时用玩家名查询 `api.mojang.com`，再读 `sessionserver.mojang.com` 的 textures 属性，只允许 `textures.minecraft.net`/`textures.mojang.com` 的 PNG。官方查不到（离线玩家/档案隐藏/网络失败）时按名字或 UUID 回退 `mc-heads.net`、`minotar.net`，仍只接受 PNG 魔数；全部失败返回 `404`，前端使用本地 SVG 首字母头。成功缓存 6 小时、失败缓存 2 分钟，不返回 UUID 解析结果或文件路径。
 
 > 前端不再把整张皮肤缩成头像：`map.js` 统一从 `(8,8)` 取 8×8 头部正面并叠加 `(40,8)` 帽子层，只在 UI 上显示头部；接口本身仍返回完整皮肤，方便以后做披风/全身预览。
 
@@ -144,11 +144,14 @@
     { "timeMs": 1760000000000, "name": "Steve", "text": "有人吗",
       "stackId": "world", "dimension": "overworld", "x": 1, "y": 64, "z": 2 }
   ],
+  "system": [
+    { "timeMs": 1760000000000, "text": "Steve was slain by Zombie" }
+  ],
   "truncated": false
 }
 ```
 
-只枚举当前已加载区块中的实体；轨迹为进程内短轨迹，不写存档。`chat` 是最近 120 条玩家发言，只保留内存；完整发言同时写入轨迹 `.evt`（`TYPE_CHAT = 0x09`）。用户端不返回 `uuid`、`health`、`yaw` 和操作者 UUID。
+只枚举当前已加载区块中的实体；轨迹为进程内短轨迹，不写存档。实体带 `rarity`（0 玩家/命名/稀有，1 敌对，2 被动，3 其他）与可选 `customName`。`chat` 是最近 120 条玩家发言，`system` 是最近 80 条玩法层系统提示（加入/离开/死亡/进度，过滤命令反馈），都只保留内存；完整发言同时写入轨迹 `.evt`（`TYPE_CHAT = 0x09`）。用户端不返回 `uuid`、`health`、`yaw` 和操作者 UUID。
 
 ### 2.8 `GET /api/user/map/tile`
 

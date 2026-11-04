@@ -198,6 +198,8 @@ public final class WebUserService {
                 item.put("name", source.get("name"));
                 item.put("type", source.get("type"));
                 item.put("category", source.get("category"));
+                item.put("rarity", source.get("rarity"));
+                item.put("customName", source.get("customName"));
                 item.put("stackId", source.get("stackId"));
                 item.put("dimension", source.get("dimension"));
                 item.put("dimensionId", source.get("dimensionId"));
@@ -247,6 +249,18 @@ public final class WebUserService {
             }
         }
         out.put("chat", chat);
+        List<Map<String, Object>> system = new ArrayList<>();
+        Object rawSystem = raw.get("system");
+        if (rawSystem instanceof List<?> list) {
+            for (Object value : list) {
+                if (!(value instanceof Map<?, ?> source)) continue;
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("timeMs", source.get("timeMs"));
+                item.put("text", source.get("text"));
+                system.add(item);
+            }
+        }
+        out.put("system", system);
         return out;
     }
 

@@ -453,9 +453,13 @@ function totalEntries() {
 }
 
 function renderEntry(file, entry) {
+  const wideTypes = new Set(['string-list', 'int-list', 'level-map', 'template', 'curve']);
+  const wide = wideTypes.has(entry.type)
+      || (entry.description && entry.description.length > 110)
+      || (typeof entry.default === 'string' && entry.default.length > 80);
   const row = document.createElement('div');
   row.className = 'entry' + (entry.restart ? ' restart' : '')
-      + (entry.type === 'int-list' ? ' entry-wide' : '');
+      + (wide ? ' entry-wide' : '');
   row.id = 'cfg-entry-' + encodeURIComponent(file.id + '|' + entry.path);
   if (entry.visibleWhen) row.dataset.visibleWhen = entry.visibleWhen;
 
@@ -1182,8 +1186,8 @@ const CLAIM_DIRECTION_NAMES = [
   'north', 'northeast', 'east', 'southeast',
   'south', 'southwest', 'west', 'northwest', 'center',
 ];
-const CLAIM_DIRECTION_LABELS = ['北', '东北', '东', '东南', '南', '西南', '西', '西北', '中心/闭合'];
-const CLAIM_DIRECTION_GLYPHS = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖', '■'];
+const CLAIM_DIRECTION_LABELS = ['北', '东北', '东', '东南', '南', '西南', '西', '西北', '边框'];
+const CLAIM_DIRECTION_GLYPHS = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖', '▣'];
 // 3×3 罗盘位置：列、行（1-based）；center 占正中间
 const CLAIM_DIRECTION_CELLS = [
   [2, 1], [3, 1], [3, 2], [3, 3],
@@ -1204,7 +1208,7 @@ const DEFAULT_CLAIM_PATTERN_DIRECTIONS = {
   stripe_middle: ['east', 'west'],
   cross: ['northeast', 'southeast', 'southwest', 'northwest'],
   straight_cross: ['north', 'east', 'south', 'west'],
-  border: ['north', 'northeast', 'east', 'southeast', 'south', 'southwest', 'west', 'northwest', 'center'],
+  border: ['center'],
 };
 
 const CLAIM_FACINGS = [
@@ -1455,7 +1459,7 @@ function openPatternGrid(anchor, options) {
 
   const foot = document.createElement('div');
   foot.className = 'claim-popover-foot';
-  foot.textContent = '图案决定单位方向；“中心/闭合”会把射线末端连成环。图案颜色决定射线长度（区块）。';
+  foot.textContent = '图案决定单位方向；“边框”按图案颜色距离画正方形边框。图案颜色决定射线/边框长度（区块）。';
 
   pop.append(head, grid, foot);
   mountClaimPopover(pop, anchor, buttons.find((button) => button.dataset.pattern === selected) || buttons[0]);
@@ -1794,9 +1798,9 @@ function patternDirectionsEditor(file, entries, onTrial) {
   const note = document.createElement('div');
   note.className = 'pattern-directions-note';
   note.textContent = '统一采用“看旗人正面视角”：图标上方 = 北，下方 = 南，左侧 = 西，右侧 = 东。'
-      + '点 3×3 罗盘上的方向即可开关；正中间的“■ 中心/闭合”会把同层射线末端连成环并填充内部。'
-      + '例如“全边框”默认八向 + 中心，白色图案颜色就是 3×3，黑色则 33×33；'
-      + '交叉 / 正向十字 / 条纹 / 角默认不选中心，保持原来的线形。点“试用”可把该图案放到下方调试画布。';
+      + '点 3×3 罗盘上的方向即可开关；正中间的“▣ 边框”按图案颜色距离画正方形边框，颜色 = 边框半径，内部不填充。'
+      + '例如“全边框”默认只选边框，白色距离 1 就是 3×3 周长，橙色距离 2 就是 5×5 周长。'
+      + '内部由多面旗帜的射线闭合后填充；点“试用”可把该图案放到下方调试画布。';
 
   const grid = document.createElement('div');
   grid.className = 'pattern-direction-grid';
@@ -1973,7 +1977,7 @@ function claimRangePreview(file) {
   title.textContent = '保护范围调试画布';
   const sub = document.createElement('span');
   sub.className = 'muted small';
-  sub.textContent = '射线 + “中心/闭合”会围成面并填充；多面旗帜的射线在全局闭合后也会填充内部。滚轮缩放、空白处拖动平移、点击放置、拖动移动、右键或 R 旋转。';
+  sub.textContent = '射线会参与全局闭合填充；边框只画正方形周长，不填内部。“闭合填充”开关可对比原始线段与算完闭合后的结果。滚轮缩放、空白处拖动平移、点击放置、拖动移动、右键或 R 旋转。';
   titles.append(title, sub);
 
   const readValue = (path, fallback) => {
@@ -1993,8 +1997,9 @@ function claimRangePreview(file) {
       // 与服务端 ClaimRangeConfig.normalizeDirections 一致：配置为空时回退默认方向。
       const configured = normalizeDirectionNames(readValue('patternDirections.' + id,
           DEFAULT_CLAIM_PATTERN_DIRECTIONS[id] || []));
-      // 旧配置迁移：border 八向全开但没有 center 时按升级后语义补上中心。
-      if (id === 'border' && configured.length === 8 && !configured.includes('center')) {
+      // 旧配置迁移：border 过去是八向（或八向 + center），新语义统一为纯边框。
+      if (id === 'border' && configured.filter((name) => name !== 'center').length >= 8) {
+        configured.length = 0;
         configured.push('center');
       }
       return [id, configured.length ? configured : (DEFAULT_CLAIM_PATTERN_DIRECTIONS[id] || [])];
@@ -2018,6 +2023,7 @@ function claimRangePreview(file) {
     pan: null,
     pendingPlace: null,
     lastSummary: 0,
+    fillClosed: true,
     view: { radius: 12, cx: 0, cz: 0 },
     draft: { patternId: 'border', color: 0, baseColor: 15, facing: 'north' },
   };
@@ -2142,8 +2148,21 @@ function claimRangePreview(file) {
   clearBtn.type = 'button';
   clearBtn.className = 'ghost danger';
   clearBtn.textContent = '清空';
+  const fillToggle = document.createElement('label');
+  fillToggle.className = 'check-line claim-fill-toggle';
+  const fillInput = document.createElement('input');
+  fillInput.type = 'checkbox';
+  fillInput.id = 'claim-fill-closed';
+  fillInput.checked = state.fillClosed;
+  fillInput.addEventListener('change', () => {
+    state.fillClosed = fillInput.checked;
+    updateSummary();
+  });
+  const fillText = document.createElement('span');
+  fillText.textContent = '闭合填充';
+  fillToggle.append(fillInput, fillText);
   toolbar.append(chip, spacer, zoomOut, zoomLabel, zoomIn, fitBtn, resetBtn,
-      rotateBtn, deleteBtn, clearBtn);
+      rotateBtn, deleteBtn, clearBtn, fillToggle);
 
   const canvas = document.createElement('canvas');
   canvas.id = 'claim-sim-canvas';
@@ -2154,7 +2173,7 @@ function claimRangePreview(file) {
   summary.className = 'claim-preview-summary';
   const legend = document.createElement('div');
   legend.className = 'claim-preview-legend';
-  legend.textContent = '绿色粒子 = 全局保护边界；青色射线 = 选中旗帜的单旗线段；琥珀色 = 选中旗帜范围。八向 + 中心会闭合成正方形。';
+  legend.textContent = '绿色粒子 = 保护边界；青色线段 = 选中旗帜的射线/边框；琥珀色 = 选中旗帜范围。“闭合填充”关闭时只看原始线段。';
 
   section.append(head, toolbar, canvas, summary, legend);
 
@@ -2216,8 +2235,8 @@ function claimRangePreview(file) {
     return { rays, center };
   };
 
-  /** 单面旗帜的线段：基础射线 + 可选的中心闭合环（与服务端 ClaimShape 同源）。 */
-  const shapeSegments = (banner, cfg) => {
+  /** 单面旗帜的八向射线。 */
+  const raySegmentsFor = (banner, cfg) => {
     const out = [];
     for (const layer of banner.patterns || []) {
       const distance = distanceOfColor(layer.color, cfg);
@@ -2227,21 +2246,37 @@ function claimRangePreview(file) {
         out.push([banner.x, banner.z,
           banner.x + dir.dx * distance, banner.z + dir.dz * distance]);
       }
-      if (shape.center && shape.rays.length >= 3) {
-        for (let i = 0; i < shape.rays.length; i += 1) {
-          const from = CLAIM_DIRECTIONS[shape.rays[i]];
-          const to = CLAIM_DIRECTIONS[shape.rays[(i + 1) % shape.rays.length]];
-          out.push([banner.x + from.dx * distance, banner.z + from.dz * distance,
-            banner.x + to.dx * distance, banner.z + to.dz * distance]);
-        }
-      }
     }
     return out;
   };
 
-  /** 单面旗帜：射线 + 中心闭合环（含中心），绝不单独填充。 */
+  /** 单面旗帜的边框：图案颜色距离 = 半径，画正方形周长（不填充内部）。 */
+  const borderSegmentsFor = (banner, cfg) => {
+    const out = [];
+    for (const layer of banner.patterns || []) {
+      const distance = distanceOfColor(layer.color, cfg);
+      const shape = rotatedShape(layer.id, banner.facing, cfg);
+      if (!shape.center) continue;
+      const x = banner.x;
+      const z = banner.z;
+      out.push([x - distance, z - distance, x + distance, z - distance]);
+      out.push([x + distance, z - distance, x + distance, z + distance]);
+      out.push([x + distance, z + distance, x - distance, z + distance]);
+      out.push([x - distance, z + distance, x - distance, z - distance]);
+    }
+    return out;
+  };
+
+  /** 单面旗帜的线段：射线 + 边框（用于选中高亮）。 */
+  const shapeSegments = (banner, cfg) => [
+    ...raySegmentsFor(banner, cfg),
+    ...borderSegmentsFor(banner, cfg),
+  ];
+
+  /** 单面旗帜：射线 + 边框（含中心），绝不单独填充。 */
   const cellsFor = (banner, cfg) => {
     const cells = new Set();
+    // 旗帜所在区块始终属于保护范围；边框只额外贡献周长。
     cells.add(banner.x + ',' + banner.z);
     for (const segment of shapeSegments(banner, cfg)) {
       addLineCells(segment[0], segment[1], segment[2], segment[3],
@@ -2403,19 +2438,28 @@ function claimRangePreview(file) {
       colors: cfg.colorDistances,
       max: cfg.maxDistance,
       directions: cfg.patternDirections,
+      fill: state.fillClosed,
     });
     if (key === geometryKey) return geometryCells;
     const points = new Set();
     const adj = new Map();
+    const borderCells = new Set();
     for (const banner of banners) {
       addGraphPoint(points, banner.x, banner.z);
-      for (const segment of shapeSegments(banner, cfg)) {
+      // 射线参与全局化线为面；边框只做周长，不进入填充图。
+      for (const segment of raySegmentsFor(banner, cfg)) {
         rasterLine(points, adj, segment[0], segment[1], segment[2], segment[3]);
+      }
+      for (const segment of borderSegmentsFor(banner, cfg)) {
+        rasterLine(borderCells, new Map(), segment[0], segment[1], segment[2], segment[3]);
       }
     }
     const cells = new Set(points);
-    for (const face of findFaces(points, adj)) {
-      for (const cell of scanlineFill(face, adj)) cells.add(cell);
+    for (const key of borderCells) cells.add(key);
+    if (state.fillClosed) {
+      for (const face of findFaces(points, adj)) {
+        for (const cell of scanlineFill(face, adj)) cells.add(cell);
+      }
     }
     geometryKey = key;
     geometryCells = cells;
@@ -2535,7 +2579,8 @@ function claimRangePreview(file) {
     const boundary = boundaryOf(union);
     const banner = selectedBanner();
     let text = '已放置 ' + state.banners.length + ' 面 · 保护 ' + union.size
-        + ' 区块 · 边界 ' + boundary.length + ' 格';
+        + ' 区块 · 边界 ' + boundary.length + ' 格 · '
+        + (state.fillClosed ? '闭合填充' : '原始线段');
     if (banner) {
       const layers = banner.patterns || [];
       const baseDye = DYE_PALETTE[banner.baseColor ?? 0] || { name: '颜色 ' + (banner.baseColor ?? 0) };
@@ -2546,7 +2591,7 @@ function claimRangePreview(file) {
       const shapes = layers.map((layer) => rotatedShape(layer.id, banner.facing, cfg));
       const dirs = [...new Set(shapes.flatMap((shape) => shape.rays))]
           .map((index) => CLAIM_DIRECTION_LABELS[index])
-          .concat(shapes.some((shape) => shape.center) ? ['中心/闭合'] : [])
+          .concat(shapes.some((shape) => shape.center) ? ['边框'] : [])
           .join('+') || '无方向';
       const facingLabel = CLAIM_FACINGS.find((item) => item.id === banner.facing)?.label || '北';
       text += ' · 选中：' + (layerText || '无图案')
@@ -2567,6 +2612,7 @@ function claimRangePreview(file) {
     canvas.dataset.patternDistance = String(distanceOfColor(
         banner ? firstLayer(banner).color : state.draft.color, cfg));
     canvas.dataset.rayCells = String(banner ? cellsFor(banner, cfg).size : 0);
+    canvas.dataset.fillClosed = state.fillClosed ? '1' : '0';
   };
 
   const drawFacing = (banner, cx, cz, cell, isSelected) => {

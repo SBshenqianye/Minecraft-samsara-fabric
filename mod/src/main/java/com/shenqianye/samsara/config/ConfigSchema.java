@@ -301,8 +301,8 @@ public final class ConfigSchema {
                     ClaimRangeConfig.DEFAULT_PATTERN_DIRECTIONS.get(pattern[0]), "图案方向",
                     pattern[1] + "（" + pattern[0] + "）：该图案在单位长度上的延伸方向"
                             + "（north/northeast/east/southeast/south/southwest/west/northwest/center）；"
-                            + "center = 中心/闭合，把同层射线末端连成环并填充，"
-                            + "全边框八向 + center 就是完整正方形；颜色只负责延长这些方向，图案本身不决定距离"));
+                            + "center = 边框，按图案颜色距离画正方形边框（颜色 = 边框半径），"
+                            + "不填充内部；只有多面旗帜的射线闭合才会填充内部。颜色只负责延长这些方向，图案本身不决定距离"));
         }
         return entries;
     }

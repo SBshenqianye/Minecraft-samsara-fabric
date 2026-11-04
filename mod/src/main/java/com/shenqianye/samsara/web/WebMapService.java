@@ -4,6 +4,7 @@ import com.shenqianye.samsara.Samsara;
 import com.shenqianye.samsara.claim.AreaService;
 import com.shenqianye.samsara.claim.ClaimNode;
 import com.shenqianye.samsara.claim.ClaimRangeConfig;
+import com.shenqianye.samsara.claim.ClaimShape;
 import com.shenqianye.samsara.geometry.ChunkCoord;
 import com.shenqianye.samsara.geometry.Geometry;
 import com.shenqianye.samsara.season.SeasonManager;
@@ -508,8 +509,13 @@ public class WebMapService {
                 nodeSet.add(node.getLocation());
                 segments.addAll(node.getShapeSegments());
             }
-            byDimension.put(entry.getKey(), new DimClaims(entry.getValue(),
-                    Geometry.compute(nodeSet, segments)));
+            Set<ChunkCoord> whitelist = new HashSet<>(Geometry.compute(nodeSet, segments));
+            for (ClaimNode node : entry.getValue()) {
+                for (int[] segment : node.getBorderSegments()) {
+                    ClaimShape.rasterize(segment, whitelist);
+                }
+            }
+            byDimension.put(entry.getKey(), new DimClaims(entry.getValue(), whitelist));
         }
         claimsCache.put(file,
                 new ClaimsSnapshot(mtime, size, rangeFingerprint, Map.copyOf(byDimension)));

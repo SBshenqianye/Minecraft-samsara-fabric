@@ -172,8 +172,35 @@
         return;
       }
       const preview = data.entry || entry;
+      const changes = Array.isArray(data.changes) ? data.changes : [];
+      const changed = Number(data.changedCount || 0);
       auditMessage('快照 ' + preview.id + '：' + (preview.fileCount || 0) + ' 文件 / '
-        + formatBytes(preview.bytes) + '；' + (preview.note || ''), 'ok');
+        + formatBytes(preview.bytes) + '；差异 ' + changed + ' 个文件；'
+        + (preview.note || ''), 'ok');
+      const wrap = $('server-audit-diff-wrap');
+      const title = $('server-audit-diff-title');
+      const changeBox = $('server-audit-changes');
+      const diffBox = $('server-audit-diff');
+      if (title) title.textContent = '差异 · ' + preview.id + ' · ' + changed + ' 个文件';
+      if (changeBox) {
+        changeBox.replaceChildren();
+        for (const change of changes.filter((item) => item.status !== 'unchanged')) {
+          const chip = document.createElement('span');
+          chip.className = 'server-audit-change ' + change.status;
+          chip.textContent = ({ added: '+ ', removed: '- ', modified: '~ ' }[change.status] || '')
+            + change.path;
+          changeBox.append(chip);
+        }
+        if (changeBox.children.length === 0) {
+          const same = document.createElement('span');
+          same.className = 'muted small';
+          same.textContent = '当前文件与这次快照完全一致（没有差异）。';
+          changeBox.append(same);
+        }
+      }
+      if (diffBox) diffBox.textContent = data.diff || '（没有可显示的文本差异）';
+      if (wrap) wrap.hidden = false;
+      wrap?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     } catch (error) {
       auditMessage(error.message || '预览失败', 'error');
     }
@@ -1670,9 +1697,40 @@
   }
   const auditRefresh = $('server-audit-refresh');
   if (auditRefresh) auditRefresh.addEventListener('click', loadAudit);
+  const auditDiffClose = $('server-audit-diff-close');
+  if (auditDiffClose) auditDiffClose.addEventListener('click', () => {
+    const wrap = $('server-audit-diff-wrap');
+    if (wrap) wrap.hidden = true;
+  });
   for (const button of document.querySelectorAll('[data-console-command]')) {
     button.addEventListener('click', () => {
       runConsole(button.dataset.consoleCommand || '');
+    });
+  }
+  const consoleFilter = $('server-console-filter');
+  if (consoleFilter) {
+    consoleFilter.addEventListener('input', () => {
+      const query = consoleFilter.value.trim().toLowerCase();
+      for (const button of document.querySelectorAll('#server-console-quick [data-console-command]')) {
+        button.hidden = Boolean(query) && !(button.textContent + ' ' + (button.dataset.consoleCommand || ''))
+          .toLowerCase().includes(query);
+      }
+      for (const group of document.querySelectorAll('#server-console-quick .console-quick-group')) {
+        group.hidden = ![...group.querySelectorAll('button')].some((button) => !button.hidden);
+      }
+    });
+  }
+  const consoleCopy = $('server-console-copy');
+  if (consoleCopy) {
+    consoleCopy.addEventListener('click', async () => {
+      const output = $('server-console-output');
+      const text = output ? output.textContent || '' : '';
+      try {
+        await navigator.clipboard.writeText(text);
+        consoleMessage('已复制输出', 'ok');
+      } catch (e) {
+        consoleMessage('复制失败：' + (e.message || '浏览器不允许'), 'error');
+      }
     });
   }
 

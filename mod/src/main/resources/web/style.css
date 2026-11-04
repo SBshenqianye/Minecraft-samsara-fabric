@@ -384,7 +384,13 @@ details[open].file-block > .file-summary { border-bottom-color: var(--line); }
 .particle-canvas { width: 132px; height: 52px; border-radius: 9px; border: 1px solid var(--line); background: #0b1017; flex: 0 0 auto; image-rendering: pixelated; }
 
 /* ---- 圈地保护范围（染料色块 + 形状预览） ---- */
-.entry.entry-wide { grid-template-columns: minmax(220px, .7fr) minmax(460px, 1.3fr) auto; }
+.entry.entry-wide {
+  grid-template-columns: minmax(0, 1fr) auto;
+  row-gap: 8px;
+}
+.entry.entry-wide .entry-control { grid-column: 1 / -1; grid-row: 2; }
+.entry.entry-wide .entry-actions { grid-column: 2; grid-row: 1; justify-self: end; flex-direction: row; align-self: start; }
+.entry.entry-wide .entry-desc { max-width: none; }
 .claim-preview {
   margin-top: 14px; padding: 14px; border: 1px solid var(--line); border-radius: 13px;
   background: var(--panel-soft);
@@ -849,8 +855,7 @@ body.locked .tabs, body.locked .tab-actions { opacity: .45; pointer-events: none
 .map-activity-time { flex: 0 0 auto; color: var(--muted); font-family: var(--mono); }
 .map-activity-actor { flex: 0 0 auto; color: var(--accent); font-weight: 600; }
 .map-activity-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.map-activity-empty { color: var(--muted); font-size: 11px; }
-.map-live-section { color: #93c5fd; font-size: 11px; margin: 8px 0 4px; font-weight: 600; }
+.map-activity-empty { color: var(--muted); font-size: 11px; }.map-live-section { color: #93c5fd; font-size: 11px; margin: 8px 0 4px; font-weight: 600; }
 .map-live-detail { border: 1px solid rgba(251, 191, 36, .45); border-radius: 9px; padding: 8px 10px; margin-bottom: 8px; background: rgba(251, 191, 36, .07); display: flex; flex-direction: column; gap: 6px; }
 .map-live-detail-title { display: flex; flex-direction: column; gap: 2px; }
 .map-live-detail-title strong { color: #fde68a; font-size: 13px; }
@@ -1329,6 +1334,9 @@ body.server-section #panel-permissions {
 .server-job-head strong { font-family: var(--mono); font-size: 12px; }
 .server-job-log { max-height: 180px; overflow: auto; padding: 8px; border-radius: 7px; background: rgba(15, 23, 42, .75); color: var(--muted); font: 11px/1.45 var(--mono); white-space: pre-wrap; }
 .console-quick { display: flex; flex-direction: column; gap: 7px; margin: 4px 0 10px; }
+.console-quick-filter { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.console-quick-filter input { flex: 1 1 auto; }
+.console-quick-filter button { flex: 0 0 auto; }
 .console-quick-group { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .console-quick-group + .console-quick-group { border-top: 1px dashed var(--line); padding-top: 7px; }
 .console-quick-label { flex: 0 0 44px; color: var(--muted); font-size: 10px; letter-spacing: .08em; }
@@ -1350,6 +1358,14 @@ body.server-section #panel-permissions {
 .server-audit-main span { color: var(--muted); font-size: 11px; }
 .server-audit-actions { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
 .server-audit-actions button { padding: 3px 7px; font-size: 11px; }
+.server-audit-diff-wrap { margin-top: 10px; border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; background: rgba(15, 23, 42, .45); }
+.server-audit-diff-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+.server-audit-changes { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 7px; }
+.server-audit-change { font-family: var(--mono); font-size: 10px; padding: 2px 6px; border-radius: 5px; border: 1px solid var(--line); }
+.server-audit-change.added { color: #4ade80; border-color: rgba(74, 222, 128, .45); }
+.server-audit-change.removed { color: #f87171; border-color: rgba(248, 113, 113, .45); }
+.server-audit-change.modified { color: #fbbf24; border-color: rgba(251, 191, 36, .45); }
+.server-audit-diff { max-height: 420px; overflow: auto; margin: 0; font: 11px/1.5 var(--mono); white-space: pre-wrap; word-break: break-all; }
 
 @media (max-width: 860px) {
   .timeline-card-head { flex-direction: column; }

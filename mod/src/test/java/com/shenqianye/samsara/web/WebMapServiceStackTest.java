@@ -62,7 +62,7 @@ class WebMapServiceStackTest {
         assertEquals("stack_0", stacks.get(1).get("id"));
 
         Map<String, Object> worldOverworld = dimension(stacks.get(0), "minecraft:overworld");
-        // border 图案向 8 个方向各延伸 1 区块 → 以旗帜区块为中心的 3×3。
+        // border = 以旗帜区块为中心的 3×3 边框（8 格周长 + 旗帜区块 = 9，不填内部）。
         assertEquals(9, worldOverworld.get("protectedCount"));
         assertEquals(1, worldOverworld.get("bannerCount"));
         @SuppressWarnings("unchecked")

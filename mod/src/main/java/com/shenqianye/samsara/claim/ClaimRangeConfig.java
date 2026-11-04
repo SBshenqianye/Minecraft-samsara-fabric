@@ -61,7 +61,7 @@ public final class ClaimRangeConfig {
         out.put("stripe_middle", List.of("east", "west"));
         out.put("cross", List.of("northeast", "southeast", "southwest", "northwest"));
         out.put("straight_cross", List.of("north", "east", "south", "west"));
-        out.put("border", DIRECTION_NAMES);
+        out.put("border", List.of("center"));
         return Map.copyOf(out);
     }
 
@@ -237,23 +237,19 @@ public final class ClaimRangeConfig {
     }
 
     /**
-     * 旧 `claim-range.yml` 的 border 只有八向；升级后补 center，使单面全边框成为正方形。
-     * 只在「恰好八向、无 center」时触发，避免影响自定义方向。
+     * 旧配置迁移：border 过去是八向射线（后来是八向 + center）。新语义下 border
+     * 是“正方形边框”，颜色距离 = 边框半径；因此统一收敛为只保留 center。
      */
     private static void migrateLegacyBorder(Map<String, List<String>> directions) {
         List<String> border = directions.get("border");
-        if (border == null || border.size() != DIRECTION_ORDER.size()
-                || border.contains("center")) {
-            return;
-        }
+        if (border == null) return;
+        int rays = 0;
         for (String direction : DIRECTION_ORDER) {
-            if (!border.contains(direction)) {
-                return;
-            }
+            if (border.contains(direction)) rays++;
         }
-        List<String> upgraded = new ArrayList<>(border);
-        upgraded.add("center");
-        directions.put("border", List.copyOf(upgraded));
+        if (rays >= 8) {
+            directions.put("border", List.of("center"));
+        }
     }
 
     private static final List<String> DIRECTION_ORDER = List.of(
@@ -266,7 +262,9 @@ public final class ClaimRangeConfig {
         List<String> out = new ArrayList<>(9);
         for (String name : DIRECTION_NAMES) {
             if (raw.stream().anyMatch(item -> item != null
-                    && item.trim().equalsIgnoreCase(name)) && !out.contains(name)) {
+                    && (item.trim().equalsIgnoreCase(name)
+                        || ("center".equals(name) && item.trim().equalsIgnoreCase("border"))))
+                    && !out.contains(name)) {
                 out.add(name);
             }
         }

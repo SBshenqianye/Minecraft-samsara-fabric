@@ -252,7 +252,12 @@ public class AreaService {
             // getShapeSegments() 只含射线（多旗帜、多图案的并集），没有任何末端环。
             segments.addAll(node.getShapeSegments());
         }
-        Set<ChunkCoord> whitelist = Geometry.compute(nodes, segments);
+        Set<ChunkCoord> whitelist = new HashSet<>(Geometry.compute(nodes, segments));
+        for (ClaimNode node : dimNodes(dim).values()) {
+            for (int[] segment : node.getBorderSegments()) {
+                ClaimShape.rasterize(segment, whitelist);
+            }
+        }
         for (ChunkCoord c : whitelist) {
             geo.addChunk(dim, c);
         }

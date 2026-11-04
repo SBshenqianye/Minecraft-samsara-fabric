@@ -145,7 +145,149 @@ public final class WebAuditService {
         out.put("ok", true);
         out.put("entry", entry.toMap());
         out.put("restorable", entry.rollbackable);
+        try {
+            DiffResult diff = diff(entry);
+            out.put("changes", diff.changes);
+            out.put("diff", diff.text);
+            out.put("changedCount", diff.changed);
+        } catch (Exception e) {
+            out.put("changes", List.of());
+            out.put("diff", "");
+            out.put("changedCount", 0);
+            out.put("diffError", e.getMessage());
+        }
         return out;
+    }
+
+    /** 对比快照与当前文件；文本文件给出逐行 +/- 差异。 */
+    private DiffResult diff(Entry entry) throws IOException {
+        Path filesDir = root.resolve(entry.id).resolve("files");
+        Map<String, FileInfo> snapshot = new LinkedHashMap<>();
+        for (FileInfo file : entry.files) snapshot.put(file.path, file);
+        Map<String, CurrentFile> current = currentFiles();
+        List<String> paths = new ArrayList<>(snapshot.keySet());
+        for (String path : current.keySet()) {
+            if (!snapshot.containsKey(path)) paths.add(path);
+        }
+        paths.sort(String::compareTo);
+        List<Map<String, Object>> changes = new ArrayList<>();
+        StringBuilder text = new StringBuilder();
+        int changed = 0;
+        for (String path : paths) {
+            FileInfo before = snapshot.get(path);
+            CurrentFile after = current.get(path);
+            String status = before == null ? "added"
+                    : after == null ? "removed"
+                    : before.sha256.equals(after.sha256) ? "unchanged" : "modified";
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("path", path);
+            item.put("status", status);
+            item.put("beforeSize", before == null ? -1 : before.size);
+            item.put("afterSize", after == null ? -1 : after.size);
+            changes.add(item);
+            if ("unchanged".equals(status)) continue;
+            changed++;
+            if (text.length() > 240_000) continue;
+            String beforeText = before == null ? "" : readText(filesDir, path);
+            String afterText = after == null ? "" : readText(after.path);
+            if (beforeText == null && afterText == null) {
+                text.append("--- ").append(path).append("\n");
+                text.append("（二进制文件，仅比较 SHA-256）\n\n");
+                continue;
+            }
+            text.append("--- ").append(path).append('\n');
+            text.append("+++ ").append(path).append('\n');
+            text.append(lineDiff(beforeText == null ? "" : beforeText,
+                    afterText == null ? "" : afterText));
+            text.append('\n');
+        }
+        return new DiffResult(changes, text.toString(), changed);
+    }
+
+    private Map<String, CurrentFile> currentFiles() throws IOException {
+        Map<String, CurrentFile> out = new LinkedHashMap<>();
+        for (Path scope : scopes()) {
+            if (scope == null || !Files.exists(scope)) continue;
+            if (Files.isRegularFile(scope)) {
+                addCurrent(scope, out);
+            } else if (Files.isDirectory(scope)) {
+                try (Stream<Path> stream = Files.walk(scope)) {
+                    for (Path file : (Iterable<Path>) stream.filter(Files::isRegularFile).sorted()::iterator) {
+                        if (file.toAbsolutePath().normalize().startsWith(root)) continue;
+                        addCurrent(file, out);
+                    }
+                }
+            }
+        }
+        return out;
+    }
+
+    private void addCurrent(Path file, Map<String, CurrentFile> out) throws IOException {
+        String relative = serverRoot.relativize(file.toAbsolutePath().normalize())
+                .toString().replace('\\', '/');
+        if (relative.startsWith("../") || relative.contains("/../")) return;
+        out.put(relative, new CurrentFile(file, Files.size(file), sha256(file)));
+    }
+
+    private static String readText(Path filesDir, String relative) {
+        Path path = filesDir.resolve(relative).normalize();
+        if (!path.startsWith(filesDir.normalize()) || !Files.isRegularFile(path)) return null;
+        return readText(path);
+    }
+
+    private static String readText(Path path) {
+        String name = path.getFileName().toString().toLowerCase(Locale.ROOT);
+        if (!(name.endsWith(".yml") || name.endsWith(".yaml") || name.endsWith(".json")
+                || name.endsWith(".properties") || name.endsWith(".txt")
+                || name.endsWith(".mcmeta") || name.endsWith(".toml")
+                || name.endsWith(".conf") || name.endsWith(".ini"))) {
+            return null;
+        }
+        try {
+            if (Files.size(path) > 256 * 1024) return null;
+            return Files.readString(path, StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** 简单逐行 diff（LCS）；配置文本通常很小，够用且不引入额外依赖。 */
+    private static String lineDiff(String before, String after) {
+        String[] a = before.split("\\R", -1);
+        String[] b = after.split("\\R", -1);
+        if (a.length > 4000) a = java.util.Arrays.copyOf(a, 4000);
+        if (b.length > 4000) b = java.util.Arrays.copyOf(b, 4000);
+        int[][] lcs = new int[a.length + 1][b.length + 1];
+        for (int i = a.length - 1; i >= 0; i--) {
+            for (int j = b.length - 1; j >= 0; j--) {
+                lcs[i][j] = a[i].equals(b[j]) ? lcs[i + 1][j + 1] + 1
+                        : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+            }
+        }
+        StringBuilder out = new StringBuilder();
+        int i = 0;
+        int j = 0;
+        int lines = 0;
+        while (i < a.length && j < b.length && lines < 800) {
+            if (a[i].equals(b[j])) {
+                out.append(' ').append(a[i++]).append('\n');
+                j++;
+            } else if (lcs[i + 1][j] >= lcs[i][j + 1]) {
+                out.append('-').append(a[i++]).append('\n');
+            } else {
+                out.append('+').append(b[j++]).append('\n');
+            }
+            lines++;
+        }
+        while (i < a.length && lines++ < 800) out.append('-').append(a[i++]).append('\n');
+        while (j < b.length && lines++ < 800) out.append('+').append(b[j++]).append('\n');
+        return out.toString();
+    }
+
+    private record CurrentFile(Path path, long size, String sha256) {
+    }
+
+    private record DiffResult(List<Map<String, Object>> changes, String text, int changed) {
     }
 
     public Map<String, Object> rollback(String id, boolean confirm) {

@@ -136,11 +136,10 @@ public class ClaimNode {
     }
 
     /**
-     * 计算影响坐标集：该节点所有旗帜、所有图案产生的**射线格**（含旗帜所在区块）。
+     * 计算影响坐标集：该节点所有旗帜、所有图案产生的射线格 + 边框格。
      * <p>
-     * 这里不返回填充面——单面旗帜永远只有线；填充由
-     * {@code AreaService.rebuildGeometry()} 把所有旗帜的射线汇总后交给
-     * {@code Geometry.compute} 全局完成。
+     * 边框只保护周长，不填充内部；内部由 {@code AreaService.rebuildGeometry()}
+     * 把所有旗帜的射线汇总后交给 {@code Geometry.compute} 全局闭合填充。
      */
     public List<ChunkCoord> getInfluencedCoords() {
         if (influencedCoords != null) return influencedCoords;
@@ -149,8 +148,38 @@ public class ClaimNode {
         for (int[] segment : getShapeSegments()) {
             ClaimShape.rasterize(segment, cells);
         }
+        for (int[] segment : getBorderSegments()) {
+            ClaimShape.rasterize(segment, cells);
+        }
         influencedCoords = new ArrayList<>(cells);
         return influencedCoords;
+    }
+
+    /** 该节点所有旗帜的边框线段（绝对区块坐标），只用于白名单周长，不参与填充。 */
+    public List<int[]> getBorderSegments() {
+        List<int[]> out = new ArrayList<>();
+        if (banners.isEmpty()) {
+            appendBorderSegments(out, facing, patterns);
+        } else {
+            for (BannerEntry banner : banners) {
+                appendBorderSegments(out, banner.facing(), banner.patterns());
+            }
+        }
+        return out;
+    }
+
+    private void appendBorderSegments(List<int[]> out, String bannerFacing,
+                                      List<PatternEntry> bannerPatterns) {
+        ClaimRangeConfig config = ClaimRangeConfig.getInstance();
+        for (PatternEntry pe : bannerPatterns) {
+            int distance = config.distanceForColor(pe.color());
+            for (int[] segment : ClaimShape.borderSegments(pe.patternId(), distance,
+                    bannerFacing, config.directionsFor(pe.patternId()))) {
+                out.add(new int[]{
+                        location.x + segment[0], location.z + segment[1],
+                        location.x + segment[2], location.z + segment[3]});
+            }
+        }
     }
 
     /**
@@ -203,7 +232,7 @@ public class ClaimNode {
         for (PatternEntry pe : bannerPatterns) {
             int distance = config.distanceForColor(pe.color());
             List<String> directions = config.directionsFor(pe.patternId());
-            for (int[] segment : ClaimShape.segments(pe.patternId(), distance,
+            for (int[] segment : ClaimShape.raySegments(pe.patternId(), distance,
                     bannerFacing, directions)) {
                 out.add(new int[]{
                         location.x + segment[0], location.z + segment[1],

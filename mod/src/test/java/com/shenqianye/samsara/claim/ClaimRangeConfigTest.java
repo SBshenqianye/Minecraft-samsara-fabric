@@ -61,7 +61,7 @@ class ClaimRangeConfigTest {
                 ClaimRangeConfig.DEFAULT_PATTERN_DIRECTIONS.get("straight_cross"));
         assertEquals(List.of("northeast", "southeast", "southwest", "northwest"),
                 ClaimRangeConfig.DEFAULT_PATTERN_DIRECTIONS.get("cross"));
-        assertEquals(ClaimRangeConfig.DIRECTION_NAMES,
+        assertEquals(List.of("center"),
                 ClaimRangeConfig.DEFAULT_PATTERN_DIRECTIONS.get("border"));
     }
 
