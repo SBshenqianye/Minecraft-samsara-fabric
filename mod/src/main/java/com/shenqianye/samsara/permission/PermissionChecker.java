@@ -61,6 +61,9 @@ public class PermissionChecker {
             return PermissionLevel.CONFIG;
         }
         ServerPlayer player = (ServerPlayer) src.getEntity();
+        if (com.shenqianye.samsara.opauth.OpAuthService.getInstance().isPending(player)) {
+            return PermissionLevel.USER;
+        }
         String name = player.getGameProfile().name();
 
         // owner 名单检查

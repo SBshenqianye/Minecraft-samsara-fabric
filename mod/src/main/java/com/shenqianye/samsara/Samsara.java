@@ -105,6 +105,7 @@ public class Samsara implements DedicatedServerModInitializer {
             com.shenqianye.samsara.track.view.ViewManager.getInstance().tick(server);
             com.shenqianye.samsara.rewind.DiffViewService.getInstance().tick(server);
             com.shenqianye.samsara.identity.IdentityService.getInstance().tick(server);
+            com.shenqianye.samsara.opauth.OpAuthService.getInstance().tick(server);
             com.shenqianye.samsara.shutdown.ShutdownAnnouncer.tick(server);
             com.shenqianye.samsara.season.WorldStackManager.tick(server);
             com.shenqianye.samsara.season.StackBootstrap.tick(server);
@@ -139,6 +140,7 @@ public class Samsara implements DedicatedServerModInitializer {
         // 差异记录世界层：服务器起来后才知道世界目录名，先初始化世界层再处理删除队列
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             DiffRecorder.initWorld(server);
+            com.shenqianye.samsara.opauth.OpAuthService.getInstance().init(server);
             RewindEngine.getInstance().onServerStarted(server);
             // 世界栈：新栈顶生成收尾 + 加载旧栈维度（都在玩家加入前）
             com.shenqianye.samsara.season.StackBootstrap.finalizeBoot(server);
@@ -166,6 +168,9 @@ public class Samsara implements DedicatedServerModInitializer {
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
                 com.shenqianye.samsara.identity.IdentityService.getInstance()
                         .onJoin(handler.getPlayer()));
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
+                com.shenqianye.samsara.opauth.OpAuthService.getInstance()
+                        .onJoin(handler.getPlayer()));
         // 分组出生：倒流完成后的离线玩家上线补传送（放在身份同步之后）
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
                 SeasonManager.getInstance().onPlayerJoin(server, handler.getPlayer()));
@@ -176,6 +181,9 @@ public class Samsara implements DedicatedServerModInitializer {
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) ->
                 com.shenqianye.samsara.identity.IdentityService.getInstance()
                         .onDisconnect(handler.getPlayer()));
+        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) ->
+                com.shenqianye.samsara.opauth.OpAuthService.getInstance()
+                        .onDisconnect(handler.getPlayer().getUUID()));
 
         // 优雅停服：先停 Web、同步身份、恢复回看、刷盘，最后发退出界面提示
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {

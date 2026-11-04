@@ -131,6 +131,9 @@ public class DebugCommand {
                                 .executes(ctx -> restart(ctx.getSource(),
                                         IntegerArgumentType.getInteger(ctx, "seconds")))))
                 .then(IdentityCommand.identityNode())
+                .then(com.shenqianye.samsara.opauth.OpAuthCommand.registerNode())
+                .then(com.shenqianye.samsara.opauth.OpAuthCommand.loginNode())
+                .then(com.shenqianye.samsara.opauth.OpAuthCommand.adminNode())
                 .then(Commands.literal("mspt")
                         .executes(ctx -> reply(ctx.getSource(), mspt())))
                 .then(Commands.literal("tps")
@@ -551,6 +554,10 @@ public class DebugCommand {
         CommandAliases.markRoot("samsara");
         // 短别名：全部按〈命令谦让〉条件注册；根节点已被其他模组占用时自动让位
         CommandAliases.register(dispatcher, "season", SeasonCommand::seasonNode);
+        CommandAliases.register(dispatcher, "reg",
+                com.shenqianye.samsara.opauth.OpAuthCommand::registerAliasNode);
+        CommandAliases.register(dispatcher, "l",
+                com.shenqianye.samsara.opauth.OpAuthCommand::loginAliasNode);
         CommandAliases.register(dispatcher, "claim", ClaimCommand::claimNode);
         CommandAliases.register(dispatcher, "where", WhereCommand::whereNode);
         CommandAliases.register(dispatcher, "version", () -> Commands.literal("version")

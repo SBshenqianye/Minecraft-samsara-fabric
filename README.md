@@ -49,6 +49,7 @@
 | 新世界与跨世界传送 | ✅ 可用 | `reset new [种子] [levelType] [archiveData]` 把当前 world 压入 `stack_<n>` 维度，新 world 用独立种子/生成器（flat/amplified 等）；`archiveData=true` 只把旧 `data/minecraft` 归档到旧栈层，运行期所有栈共享当前 data；旧世界原位保留；主世界/下界虚空与顶部阈值可连续穿越栈层，栈底下界虚空保留原版死亡；多个玩家可同时待在不同栈 |
 | 全员同意开新周目 | ✅ 可用 | 无管理员且在线 >1 人时，任何玩家可 `/samsara season advance [same\|new]` 发起；发起者自动同意，当前在线与新加入玩家都需 `/samsara season agree`；全员同意后执行一次同世界重置或新世界入栈；48 小时内未达成自动过期，重启后仍按发起时间计算；发起者可用 `/samsara season cancel` 撤回，管理员/控制台可取消；管理员在线时请直接 `/samsara reset same\|new` |
 | 身份组 | ✅ 可用 | 把正版账号/离线账号/历史账号映射到同一个 data UUID；默认关闭，关闭时不解析、不同步；组由本地 Web 的“身份组”标签页以卡片方式维护，不提供注册/登录/密码 |
+| OP/owner 登录 | ✅ 可用 | 离线服中，`ops.json` 或 `permissions.yml` owners 里的名字进服后必须先 `/reg <注册码> <密码> <密码>` 或 `/l <密码>`；登录前所有命令被拦、samsara 权限降为 USER。注册码由 `/samsara opauth code\|reset\|set\|list` 生成/重置，一次性、30 分钟、错 5 次作废；普通玩家无感知 |
 | 账号切换同步 | ✅ 可用 | 同账号重连不同步；正版账号 ↔ 离线账号切换时同步背包/位置/进度/统计；失败保留 journal、`.bak` 与源数据 |
 | 宠物多主人 | ✅ 可用 | 保留原版主主人，额外主人写入 `samsara:owners`；所有主人可交互/坐下/染色/喂食/繁殖；跟随按主主人→最后手持驯服物品→最近在线主人 |
 | 开场流程（Fabric） | ✅ 可用 | 新一轮开场、分组与传送由 Fabric 服务端事件/代码实现；`reset new` 首次生成新世界后自动计算出生点、分组并迁移；数据包不依赖 |

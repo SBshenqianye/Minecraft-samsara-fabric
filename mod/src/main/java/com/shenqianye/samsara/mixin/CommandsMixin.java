@@ -31,6 +31,17 @@ public class CommandsMixin {
     private void samsara$chatCompletionForIncompleteCommand(ParseResults<CommandSourceStack> parse,
                                                             String command,
                                                             CallbackInfo ci) {
+        if (parse != null) {
+            CommandSourceStack source = parse.getContext().getSource();
+            if (source.getEntity() instanceof net.minecraft.server.level.ServerPlayer player
+                    && com.shenqianye.samsara.opauth.OpAuthService.getInstance().isPending(player)
+                    && !com.shenqianye.samsara.opauth.OpAuthService.isAuthCommand(command)) {
+                source.sendFailure(Component.literal(
+                        "请先 /login <密码>，或用 /register <注册码> <密码> <密码> 注册。"));
+                ci.cancel();
+                return;
+            }
+        }
         if (parse != null && IncompleteCommandHandler.isSamsaraCommand(command)) {
             CommandSourceStack source = parse.getContext().getSource();
             String path = permissionPath(parse);
