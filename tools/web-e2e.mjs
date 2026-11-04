@@ -962,6 +962,14 @@ async function main() {
       }
       const multiBannerCount = Number(canvas.dataset.bannerCount);
       const multiBannerCells = Number(canvas.dataset.protectedCells);
+      fillToggle.checked = false;
+      fillToggle.dispatchEvent(new Event('change', { bubbles: true }));
+      await wait(220);
+      const multiRawCells = Number(canvas.dataset.protectedCells);
+      fillToggle.checked = true;
+      fillToggle.dispatchEvent(new Event('change', { bubbles: true }));
+      await wait(220);
+      const multiFilledCells = Number(canvas.dataset.protectedCells);
       const multiBannerPattern = canvas.dataset.pattern;
       const multiBannerColor = Number(canvas.dataset.patternColor);
 
@@ -986,6 +994,7 @@ async function main() {
         bannerBefore, bannerAfter,
         draftDistance, singleStraightCrossCells, singleDistance, singleRayCells,
         multiBannerCount, multiBannerCells, multiBannerPattern, multiBannerColor,
+        multiRawCells, multiFilledCells,
         overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
       };
     })()`);
@@ -1052,6 +1061,8 @@ async function main() {
           pattern: claim.multiBannerPattern,
           color: claim.multiBannerColor,
         }));
+    check('闭合填充开关改变多旗闭合区域', claim.multiFilledCells > claim.multiRawCells,
+        JSON.stringify({ raw: claim.multiRawCells, filled: claim.multiFilledCells }));
 
     await cdp.send('Emulation.setDeviceMetricsOverride', {
       width: 800, height: 900, deviceScaleFactor: 1, mobile: false,

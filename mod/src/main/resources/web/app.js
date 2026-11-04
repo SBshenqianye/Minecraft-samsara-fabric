@@ -1078,6 +1078,7 @@ function buildCurve(file, entry, value) {
     event.preventDefault();
     points.splice(index, 1);
     selected = Math.max(0, Math.min(selected, points.length - 1));
+    recomputeMaxDays();
     apply();
     draw();
   });
@@ -1093,6 +1094,7 @@ function buildCurve(file, entry, value) {
     event.preventDefault();
     points.splice(selected, 1);
     selected = Math.max(0, Math.min(selected, points.length - 1));
+    recomputeMaxDays();
     apply();
     draw();
   });
