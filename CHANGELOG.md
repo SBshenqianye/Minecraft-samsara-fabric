@@ -8,7 +8,7 @@
 ### 新增
 
 - **OP/owner 离线登录**：离线服中，名字在 `ops.json` 或 `permissions.yml` owners 的玩家进服后进入 pending；除 `/l`、`/reg`、`/login`、`/register`、`/help` 外所有命令被拦截，samsara 权限检查同时降为 USER。登录成功后才恢复 OP/owner 命令。
-- **防注册抢注**：后台 `/samsara opauth code|reset|set|list` 生成一次性注册码（10 位、30 分钟、错 5 次作废）；重置旧密码必须换新码，任何人不能直接 `/reg` 占名字。
+- **防注册抢注**：后台 `/samsara opauth code|reset|list` 生成一次性注册码（10 位、30 分钟、错 5 次作废）；重置旧密码必须换新码，任何人不能直接 `/reg` 占名字。不提供后台直接设置明文密码的命令，避免 RCON 日志泄漏。
 - **密码存储**：`config/samsara/op-auth.yml` 只存 PBKDF2WithHmacSHA256 哈希；密码至少 8 位，注册需输两遍；登录连续错 5 次踢出，120 秒未登录踢出。
 - **命令谦让**：`/reg`、`/l` 仅在根节点空闲时注册；已有登录插件占用时自动让位，只保留 `/samsara register|login`。
 

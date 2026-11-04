@@ -227,14 +227,6 @@ public final class OpAuthService {
         return store == null ? null : store.reset(name);
     }
 
-    public synchronized boolean setPassword(String name, String password) {
-        if (store == null || password == null || password.length() < 8) {
-            return false;
-        }
-        store.setPassword(name, password);
-        return true;
-    }
-
     public synchronized Map<String, Object> status() {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("enabled", enabled());

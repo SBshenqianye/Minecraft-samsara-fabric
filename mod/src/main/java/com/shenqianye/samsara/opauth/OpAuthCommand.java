@@ -39,10 +39,17 @@ public final class OpAuthCommand {
                                             if (player == null) {
                                                 return fail(ctx.getSource(), "只能由玩家执行。");
                                             }
-                                            OpAuthService.getInstance().register(player,
-                                                    StringArgumentType.getString(ctx, "code"),
-                                                    StringArgumentType.getString(ctx, "password"),
-                                                    StringArgumentType.getString(ctx, "confirm"));
+                                            try {
+                                                OpAuthService.getInstance().register(player,
+                                                        StringArgumentType.getString(ctx, "code"),
+                                                        StringArgumentType.getString(ctx, "password"),
+                                                        StringArgumentType.getString(ctx, "confirm"));
+                                            } catch (RuntimeException e) {
+                                                com.shenqianye.samsara.Samsara.LOGGER.warn(
+                                                        "[opauth] register 失败: {}",
+                                                        e.getClass().getSimpleName());
+                                                return fail(ctx.getSource(), "注册处理失败，请稍后重试。");
+                                            }
                                             return 1;
                                         }))));
     }
@@ -64,8 +71,15 @@ public final class OpAuthCommand {
                             if (player == null) {
                                 return fail(ctx.getSource(), "只能由玩家执行。");
                             }
-                            OpAuthService.getInstance().login(player,
-                                    StringArgumentType.getString(ctx, "password"));
+                            try {
+                                OpAuthService.getInstance().login(player,
+                                        StringArgumentType.getString(ctx, "password"));
+                            } catch (RuntimeException e) {
+                                com.shenqianye.samsara.Samsara.LOGGER.warn(
+                                        "[opauth] login 失败: {}",
+                                        e.getClass().getSimpleName());
+                                return fail(ctx.getSource(), "登录处理失败，请稍后重试。");
+                            }
                             return 1;
                         }));
     }
@@ -101,19 +115,6 @@ public final class OpAuthCommand {
                                                     + code), false);
                                     return 1;
                                 })))
-                .then(Commands.literal("set")
-                        .then(Commands.argument("name", StringArgumentType.word())
-                                .then(Commands.argument("password", StringArgumentType.word())
-                                        .executes(ctx -> {
-                                            String name = StringArgumentType.getString(ctx, "name");
-                                            String password = StringArgumentType.getString(ctx, "password");
-                                            if (!OpAuthService.getInstance().setPassword(name, password)) {
-                                                return fail(ctx.getSource(), "密码至少 8 位。");
-                                            }
-                                            ctx.getSource().sendSuccess(() -> Component.literal(
-                                                    "已设置 " + name + " 的登录密码。"), false);
-                                            return 1;
-                                        }))))
                 .then(Commands.literal("list")
                         .executes(ctx -> {
                             ctx.getSource().sendSuccess(() -> Component.literal(
