@@ -166,7 +166,7 @@ public class DiffRestore {
             return 0;
         }
 
-        // 收集已加载区块：collectSpawningChunks 拿全部真正加载的区块（含 forceload/玩家附近）
+        // 收集已加载区块（含 forceload/玩家附近）
         Set<Long> loadedChunks = loadedChunks(target, server);
         if (loadedChunks.isEmpty()) {
             prevA = A;
@@ -339,11 +339,12 @@ public class DiffRestore {
     private static Set<Long> loadedChunks(ServerLevel level, MinecraftServer server) {
         Set<Long> loadedChunks = new HashSet<>();
         try {
-            List<net.minecraft.world.level.chunk.LevelChunk> chunks = new ArrayList<>();
-            level.getChunkSource().chunkMap.collectSpawningChunks(chunks);
-            for (net.minecraft.world.level.chunk.LevelChunk c : chunks) {
-                loadedChunks.add(((long) c.getPos().x() << 32) | (c.getPos().z() & 0xFFFFFFFFL));
-            }
+            // 2026-11-05 修复：26.3 的 collectSpawningChunks 只收集"刷怪候选区块"
+            //（要求 anyPlayerCloseEnoughForSpawning，创造/旁观玩家被排除），倒流期间
+            // 全员创造时恒为空集 → 恢复轮静默跳过、isFinished 误报完成。改用
+            // forEachBlockTickingChunk：枚举全部正在 tick 的加载区块，与游戏模式无关。
+            level.getChunkSource().chunkMap.forEachBlockTickingChunk(c ->
+                    loadedChunks.add(((long) c.getPos().x() << 32) | (c.getPos().z() & 0xFFFFFFFFL)));
         } catch (Exception e) {
             int view = 5;
             for (ServerPlayer pl : server.getPlayerList().getPlayers()) {
@@ -400,27 +401,28 @@ public class DiffRestore {
         DiffStore store = restoreStore(dataRootFor(server, data), data.worldKey, data.seasonId,
                 dimensionKey(data.dimension));
         try {
-            List<net.minecraft.world.level.chunk.LevelChunk> chunks = new ArrayList<>();
-            target.getChunkSource().chunkMap.collectSpawningChunks(chunks);
-            for (net.minecraft.world.level.chunk.LevelChunk c : chunks) {
+            // 与 restoreRound 同源：forEachBlockTickingChunk 枚举全部正在 tick 的加载区块
+            //（2026-11-05 修复，原 collectSpawningChunks 在创造玩家场景恒为空集）
+            java.util.concurrent.atomic.AtomicBoolean finished = new java.util.concurrent.atomic.AtomicBoolean(true);
+            target.getChunkSource().chunkMap.forEachBlockTickingChunk(c -> {
                 int cx = c.getPos().x();
                 int cz = c.getPos().z();
                 if (isProtected(target, cx, cz)) {
-                    continue; // 受保护区块本轮不参与恢复，故不参与完成判定
+                    return; // 受保护区块本轮不参与恢复，故不参与完成判定
                 }
                 List<DiffStore.Edit> edits = store.readChunk(cx, cz);
                 if (edits.isEmpty()) {
-                    continue;
+                    return;
                 }
                 long key = ((long) cx << 32) | (cz & 0xFFFFFFFFL);
                 if (perChunkRestored.getOrDefault(key, 0) < edits.size()) {
-                    return false;
+                    finished.set(false);
                 }
-            }
+            });
+            return finished.get();
         } catch (Exception e) {
             return false;
         }
-        return true;
     }
 
     private static boolean tryRestore(ServerLevel level, DiffStore.Edit e) {

@@ -148,8 +148,8 @@ public class McaRegion {
      * 批量删除区块：按文件分组，利用白名单索引快速决策。
      * <ul>
      *   <li>索引显示该文件白名单数=0 → 整文件秒删（不读 header）</li>
-     *   <li>索引显示白名单数=N（混合文件）→ 读一次 header，只清零非白名单 slot</li>
-     *   <li>无索引 → 退化为读 header 统计</li>
+     *   <li>无索引/混合 → 读一次 header：所有已占用 slot 都在待删列表才整文件删，
+     *       否则只清零待删 slot（保护同文件内其他区块，如受保护区块的实体数据）</li>
      * </ul>
      *
      * @param whitelistCounts 可选索引：region 文件名 → 白名单区块数（null=无索引）
@@ -195,19 +195,23 @@ public class McaRegion {
                 byte[] header = readHeader(file);
                 if (header == null) continue;
 
-                int totalSlots = countOccupiedInHeader(header);
-
-                if (totalSlots <= slots.size()) {
-                    // 所有区块都在删除列表 → 整文件删
+                // 2026-11-05 修复：整文件删除的前提改为"所有已占用 slot 都在待删列表"。
+                // 旧判据 totalSlots <= slots.size() 对 entities/poi（以及含未生成区块的
+                // region 文件）不成立：实体文件只含有实体的稀疏槽，占用数几乎总小于待删
+                // 区块数，会把同区域内受保护区块的实体数据整文件连带删除。
+                java.util.Set<Integer> slotSet = new java.util.HashSet<>(slots);
+                int occupied = countOccupiedInHeader(header);
+                if (allOccupiedSlotsMarked(header, slotSet)) {
+                    // 所有已占用区块都在删除列表 → 整文件删
                     try {
                         Files.deleteIfExists(file);
-                        Samsara.LOGGER.info("[周目管理 samsara] 全文件删除（{} 区块）: {}", totalSlots, fileName);
-                        total += totalSlots;
+                        Samsara.LOGGER.info("[周目管理 samsara] 全文件删除（{} 区块）: {}", occupied, fileName);
+                        total += occupied;
                     } catch (IOException ex) {
                         Samsara.LOGGER.warn("[周目管理 samsara] 全文件删除失败 {}: {}", fileName, ex.getMessage());
                     }
                 } else {
-                    // 混合：只清零对应 slot
+                    // 混合：只清零待删 slot（同文件内其他区块——含受保护区块——不动）
                     int deleted = zeroSlotsFromHeader(header, file, slots);
                     total += deleted;
                 }
@@ -226,6 +230,18 @@ public class McaRegion {
             }
         }
         return count;
+    }
+
+    /** 判断文件中所有已占用 slot 是否都在待删列表内（整文件删除的唯一安全前提）。 */
+    private static boolean allOccupiedSlotsMarked(byte[] header, java.util.Set<Integer> slots) {
+        for (int s = 0; s < 1024; s++) {
+            int off = s * 4;
+            int sectorOffset = ((header[off] & 0xFF) << 16) | ((header[off + 1] & 0xFF) << 8) | (header[off + 2] & 0xFF);
+            if (sectorOffset != 0 && !slots.contains(s)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** 快速统计文件中已占用 slot 数（读一次 header） */
