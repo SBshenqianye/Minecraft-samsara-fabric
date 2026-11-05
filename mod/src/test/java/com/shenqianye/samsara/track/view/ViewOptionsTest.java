@@ -60,6 +60,15 @@ class ViewOptionsTest {
     }
 
     @Test
+    void loopIsOptInAndSupportsOnOff() {
+        assertFalse(ViewOptions.parse("", START, END).loop());
+        assertTrue(ViewOptions.parse("--loop", START, END).loop());
+        assertTrue(ViewOptions.parse("--loop=on", START, END).loop());
+        assertFalse(ViewOptions.parse("--loop=off", START, END).loop());
+        assertFalse(ViewOptions.parse("--loop off", START, END).loop());
+    }
+
+    @Test
     void scrubDefaultsToConfigAndCanBeOverridden() {
         assertNull(ViewOptions.parse("", START, END).scrub());
         assertEquals(Boolean.TRUE, ViewOptions.parse("--scrub", START, END).scrub());

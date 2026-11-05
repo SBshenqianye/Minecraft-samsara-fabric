@@ -37,7 +37,9 @@ public record ViewOptions(
         /** --follow=on/off 是否显式给出值；bare --follow 为 false */
         boolean followValueExplicit,
         /** F-98：--follow <玩家> 只跟指定目标；null = 未指定 */
-        String followTarget) {
+        String followTarget,
+        /** F-80：--loop 到达端点后回绕继续播放，直到手动停止 */
+        boolean loop) {
 
     public static final double MIN_SPEED = 0.1;
     public static final double MAX_SPEED = 64.0;
@@ -48,7 +50,7 @@ public record ViewOptions(
             + "--follow[=<on|off|玩家>]、--spectator、--glow、--no-glow、--no-name-tag、--cycle <cycleN>、"
             + "--dim <维度>、--players <a,b,c>、"
             + "--aim[=on|off]、--aim-deadzone <2..45>、--aim-edge <外圈>、--aim-speed <10..360>、--aim-pitch on|off、"
-            + "--equipment-drop=on|off、--scrub[=on|off]";
+            + "--equipment-drop=on|off、--scrub[=on|off]、--loop[=on|off]";
 
     public ViewOptions {
         if (speed < MIN_SPEED || speed > MAX_SPEED) {
@@ -78,6 +80,7 @@ public record ViewOptions(
         Long end = null;
         Integer cycle = null;
         Boolean aim = null;
+        boolean loop = false;
         double aimDeadzone = DEFAULT_AIM_DEADZONE;
         double aimEdge = DEFAULT_AIM_EDGE;
         double aimSpeed = DEFAULT_AIM_SPEED;
@@ -259,7 +262,18 @@ public record ViewOptions(
                     }
                     cycle = parsed;
                 }
-                case "loop" -> throw new IllegalArgumentException("--loop 本轮（P1）未实现；请用 --duration 控制窗口");
+                case "loop" -> {
+                    if (inline == null) {
+                        if (i + 1 < tokens.length && !tokens[i + 1].startsWith("--")
+                                && isOnOff(tokens[i + 1])) {
+                            loop = parseOnOff(tokens[++i]);
+                        } else {
+                            loop = true;
+                        }
+                    } else {
+                        loop = parseOnOff(inline);
+                    }
+                }
                 default -> throw new IllegalArgumentException("未知参数 --" + key + "。" + SUPPORTED);
             }
         }
@@ -270,7 +284,7 @@ public record ViewOptions(
         return new ViewOptions(speed, follow, spectator, glow, nameTag,
                 effectiveEnd, end != null, cycle,
                 aim, aimDeadzone, aimEdge, aimSpeed, aimPitch, equipmentDrop, scrub,
-                dimension, players, followExplicit, followValueExplicit, followTarget);
+                dimension, players, followExplicit, followValueExplicit, followTarget, loop);
     }
 
     private static String value(String key, String[] tokens, int nextIndex) {

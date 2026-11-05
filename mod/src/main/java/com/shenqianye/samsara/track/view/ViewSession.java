@@ -65,6 +65,8 @@ public final class ViewSession {
     /** 当前倍速与方向（1 = 正放，-1 = 倒放）；点击控制面板可动态修改 */
     double speed;
     int direction = 1;
+    /** F-80 --loop：本次会话已完成的循环次数。 */
+    int loopCount;
     /** 自动瞄准（会话内可即时开关；参数来自选项或 commands.json） */
     boolean aimEnabled;
     double aimDeadzone = ViewOptions.DEFAULT_AIM_DEADZONE;

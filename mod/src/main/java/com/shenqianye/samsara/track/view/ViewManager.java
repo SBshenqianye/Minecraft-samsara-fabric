@@ -469,12 +469,17 @@ public final class ViewManager {
             if (s.state == ViewSession.State.PLAYING) {
                 long trackTime = s.trackTime(now);
                 if (s.direction() > 0 && trackTime >= s.endTrackMs) {
-                    restore(s, "播放完毕");
-                    continue;
-                }
-                if (s.direction() < 0 && trackTime <= s.timelineStartMs) {
-                    restore(s, "倒放到起点");
-                    continue;
+                    if (!s.options.loop()) {
+                        restore(s, "播放完毕");
+                        continue;
+                    }
+                    trackTime = loopTo(s, s.timelineStartMs, now);
+                } else if (s.direction() < 0 && trackTime <= s.timelineStartMs) {
+                    if (!s.options.loop()) {
+                        restore(s, "倒放到起点");
+                        continue;
+                    }
+                    trackTime = loopTo(s, s.endTrackMs, now);
                 }
                 List<ViewTarget> visible = new ArrayList<>();
                 for (ViewTarget target : s.targets) {
@@ -785,7 +790,8 @@ public final class ViewManager {
                     + (s.group ? " · 群组 " + s.targets.size() + " 个目标" : "")
                     + (s.followActive ? " · 跟随" : "")
                     + (s.options.spectator() ? " · 旁观" : "")
-                    + (s.aimEnabled ? " · 自瞄" : "") + "）"
+                    + (s.aimEnabled ? " · 自瞄" : "")
+                    + (s.options.loop() ? " · 循环" : "") + "）"
                     + (s.chatCount > 0 ? " · 聊天 " + s.chatCount + " 条" : "")
                     + (s.cutoffApplied ? " · 已按捕捉截断" : "")
                     + (s.truncated ? " · 文件尾部已截断" : "")
@@ -809,6 +815,22 @@ public final class ViewManager {
             Samsara.LOGGER.warn("[回看] 应用会话失败，回滚观看者状态: {}", e.getMessage());
             restore(s, "启动异常: " + e.getMessage());
         }
+    }
+
+    /** 循环回看：把时间轴跳到另一端，重置聊天/事件游标并返回新的轨迹时间。 */
+    private long loopTo(ViewSession s, long targetTrackMs, long now) {
+        s.loopCount++;
+        s.seekTo(targetTrackMs);
+        for (ViewTarget target : s.targets) {
+            target.eventsJumpPending = true;
+        }
+        s.resetChatCursors(targetTrackMs);
+        long trackTime = s.trackTime(now);
+        if (s.loopCount <= 1 || s.loopCount % 10 == 0) {
+            Samsara.LOGGER.info("[回看] 循环 {} 次: viewer={} target={} → {}",
+                    s.loopCount, s.viewerName, s.displayName, ViewTime.format(trackTime));
+        }
+        return trackTime;
     }
 
     private static int sampleCount(ViewSession s) {
