@@ -49,6 +49,15 @@ public class ServerWebService {
         return console.execute(value == null ? "" : String.valueOf(value));
     }
 
+    public Map<String, Object> completeConsole(Map<String, Object> body) {
+        Object value = body == null ? null : body.get("command");
+        Integer cursor = null;
+        if (body != null && body.get("cursor") instanceof Number number) {
+            cursor = number.intValue();
+        }
+        return console.complete(value == null ? "" : String.valueOf(value), cursor);
+    }
+
     public Map<String, Object> model() {
         Map<String, Object> out = new LinkedHashMap<>(ServerBackup.model(serverRoot));
         Path world = worldDir();

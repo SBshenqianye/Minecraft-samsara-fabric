@@ -101,11 +101,17 @@ public final class WebIdentityService implements IdentityWebService {
             return out;
         }
         service.applySavedConfig(next);
+        Map<String, Object> whitelist = com.shenqianye.samsara.identity.IdentityWhitelistSync
+                .sync(service.server(), next);
         IdentityAudit.log(service.identityRoot(), "web_save", "web", null,
-                "groups=" + next.groups.size() + " enabled=" + next.enabled);
+                "groups=" + next.groups.size() + " enabled=" + next.enabled
+                        + " whitelist=" + whitelist.get("message"));
         Map<String, Object> out = model();
         out.put("ok", true);
-        out.put("message", "身份组配置已保存并热重载");
+        out.put("whitelist", whitelist);
+        out.put("message", "身份组配置已保存并热重载"
+                + (Boolean.TRUE.equals(whitelist.get("ok"))
+                ? "；" + whitelist.get("message") : "；白名单同步失败：" + whitelist.get("message")));
         return out;
     }
 
@@ -230,6 +236,8 @@ public final class WebIdentityService implements IdentityWebService {
             return fail("重绑失败：identity.yml 未写入（数据副本与备份保留）：" + saved.errors());
         }
         service.applySavedConfig(next);
+        Map<String, Object> whitelist = com.shenqianye.samsara.identity.IdentityWhitelistSync
+                .sync(service.server(), next);
         IdentityStateStore states = service.stateStore();
         if (states != null) {
             IdentityStateStore.GroupState oldState = states.get(oldData);
@@ -245,8 +253,9 @@ public final class WebIdentityService implements IdentityWebService {
                         + " mode=" + mode + " archive=" + archive);
         Map<String, Object> out = model();
         out.put("ok", true);
+        out.put("whitelist", whitelist);
         out.put("message", "data UUID 已重绑：" + oldData + " → " + newData
-                + "（旧数据与备份保留）");
+                + "（旧数据与备份保留）；" + whitelist.get("message"));
         out.put("archive", archive.toString());
         return out;
     }

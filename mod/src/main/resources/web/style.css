@@ -92,7 +92,10 @@ button.icon-btn:hover { background: var(--panel-soft); color: var(--fg); }
 .segmented {
   display: inline-flex;
   flex-wrap: wrap;
+  align-items: stretch;
   gap: 2px;
+  width: max-content;
+  max-width: 100%;
   padding: 3px;
   border: 1px solid var(--line);
   border-radius: 9px;
@@ -100,6 +103,8 @@ button.icon-btn:hover { background: var(--panel-soft); color: var(--fg); }
   vertical-align: middle;
 }
 .segmented-btn {
+  flex: 0 0 auto;
+  min-width: max-content;
   padding: 4px 11px;
   border: 0;
   border-radius: 6px;
@@ -108,6 +113,8 @@ button.icon-btn:hover { background: var(--panel-soft); color: var(--fg); }
   font-size: 12px;
   font-weight: 600;
   line-height: 1.5;
+  white-space: nowrap;
+  text-align: center;
   box-shadow: none;
 }
 .segmented-btn:hover:not(:disabled) { background: var(--panel); color: var(--fg); filter: none; }
@@ -1602,3 +1609,57 @@ img.glint { filter: drop-shadow(0 0 3px #b26cff) saturate(1.2); }
   .announcement-row { grid-template-columns: 1fr !important; }
 }
 .preview-label { color: var(--muted); font-size: 10px; font-weight: 700; margin-top: 4px; }
+
+/* ── § 颜色/格式文本编辑器 ── */
+.chat-text-editor { display: flex; flex-direction: column; gap: 6px; width: 100%; max-width: 720px; }
+.chat-text-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.chat-text-swatches { display: flex; flex-wrap: wrap; gap: 3px; }
+.chat-text-swatch {
+  width: 20px; height: 20px; min-width: 20px; padding: 0; border-radius: 5px;
+  border: 1px solid rgba(255,255,255,.28); box-shadow: inset 0 0 0 1px rgba(0,0,0,.22);
+}
+.chat-text-swatch:hover:not(:disabled) { filter: brightness(1.18); transform: translateY(-1px); }
+.chat-text-formats { display: flex; flex-wrap: wrap; gap: 3px; }
+.chat-text-format {
+  min-width: 28px; padding: 2px 7px; font-size: 11px; background: var(--panel);
+  color: var(--fg-soft); border: 1px solid var(--line); box-shadow: none;
+}
+.chat-text-input { width: 100%; min-height: 54px; resize: vertical; font-family: var(--mono); font-size: 12px; }
+.chat-text-preview-head { display: flex; align-items: center; gap: 8px; }
+.chat-text-preview-label { color: var(--muted); font-size: 10px; font-weight: 700; }
+.chat-text-toggle { padding: 2px 8px; font-size: 10px; background: transparent; color: var(--muted); border: 1px solid var(--line); box-shadow: none; }
+.chat-text-preview {
+  min-height: 34px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--panel-soft); line-height: 1.55; word-break: break-word;
+}
+.chat-text-rendered { white-space: pre-wrap; font-size: 13px; }
+.chat-text-raw { margin: 0; white-space: pre-wrap; word-break: break-word; font-family: var(--mono); font-size: 12px; color: var(--fg-soft); }
+
+/* ── RCON 控制台 Tab 补全 ── */
+.console-complete {
+  margin: 6px 0 0; border: 1px solid var(--line); border-radius: 9px;
+  background: var(--panel); box-shadow: 0 14px 30px rgba(0,0,0,.28);
+  overflow: hidden;
+}
+.console-complete-list { max-height: 240px; overflow: auto; display: flex; flex-direction: column; }
+.console-complete-item {
+  display: flex; align-items: baseline; gap: 10px; width: 100%; padding: 6px 10px;
+  border: 0; border-radius: 0; background: transparent; color: var(--fg-soft);
+  font-family: var(--mono); font-size: 11px; text-align: left; box-shadow: none;
+}
+.console-complete-item:hover, .console-complete-item.active {
+  background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--fg);
+}
+.console-complete-text { flex: 0 0 auto; }
+.console-complete-tip { color: var(--muted); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.console-complete-footer {
+  display: flex; justify-content: space-between; gap: 10px; padding: 6px 10px;
+  border-top: 1px solid var(--line); color: var(--muted); font-size: 10px;
+}
+.console-complete-preview { font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── Web 审计差异浮窗 ── */
+.server-audit-dialog { width: min(1100px, 94vw); max-width: 94vw; }
+.server-audit-dialog .dialog-body { max-height: 86vh; overflow: auto; }
+.server-audit-dialog .server-audit-changes { margin-bottom: 10px; }
+.server-audit-dialog .server-audit-diffs { max-height: 52vh; overflow: auto; }

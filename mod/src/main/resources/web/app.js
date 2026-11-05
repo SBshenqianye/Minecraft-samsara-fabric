@@ -3390,10 +3390,6 @@ function setActiveTab(name) {
   for (const tab of document.querySelectorAll('.tab[data-panel]')) {
     tab.classList.toggle('active', tab.dataset.panel === 'panel-' + name);
   }
-  const shell = document.querySelector('.app-shell');
-  if (shell) shell.classList.toggle('no-nav', name === 'lottery');
-  const aside = $('global-nav');
-  if (aside) aside.hidden = name === 'lottery';
   try { history.replaceState(null, '', '#' + name); } catch (e) { /* file:// 等场景忽略 */ }
   updateTabActions(name);
   if (name === 'config') {
@@ -3474,6 +3470,11 @@ const TAB_ACTIONS = {
     hint: '节点修改即时保存；owner 名单用保存按钮',
     save: '保存 owner 名单',
   },
+  lottery: {
+    title: '经济业务',
+    hint: '死人乐透、服务器基金与保险；只读总览，开奖/退款需二次确认',
+    save: null,
+  },
 };
 
 function updateTabActions(name) {
@@ -3517,6 +3518,7 @@ async function saveActive() {
   if (state.tab === 'output') return window.SamsaraOutput?.save?.();
   if (state.tab === 'permissions') return window.SamsaraPermissions?.saveOwners?.();
   if (state.tab === 'map') return window.SamsaraMap?.reload?.();
+  if (state.tab === 'lottery') return window.samsaraLottery?.load?.();
   if (state.tab === 'claim-range') return saveConfig('claim-range');
   return saveConfig();
 }
@@ -3528,6 +3530,7 @@ async function reloadActive() {
   if (state.tab === 'output') return window.SamsaraOutput?.reload?.();
   if (state.tab === 'permissions') return window.SamsaraPermissions?.reload?.();
   if (state.tab === 'map') return window.SamsaraMap?.reload?.();
+  if (state.tab === 'lottery') return window.samsaraLottery?.load?.();
   if (state.tab === 'world-stack') return window.SamsaraWorldStack?.reload?.();
   return reloadConfig();
 }

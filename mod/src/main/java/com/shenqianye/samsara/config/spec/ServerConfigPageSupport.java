@@ -57,7 +57,7 @@ public final class ServerConfigPageSupport {
                             ps == null ? inferGroup(key) : ps.group(),
                             ps == null ? "服务器属性；按文本/数字/布尔自动识别" : ps.description(),
                             spec.restartRequired(), null, ps != null && ps.secret(),
-                            false, null, ""));
+                            false, chatWidget(key), ""));
                 }
             }
             case JSON_ARRAY -> {
@@ -283,6 +283,10 @@ public final class ServerConfigPageSupport {
             return "number";
         }
         return "text";
+    }
+
+    private static String chatWidget(String key) {
+        return "motd".equals(key) || "resource-pack-prompt".equals(key) ? "chat" : null;
     }
 
     private static String inferGroup(String key) {

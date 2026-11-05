@@ -324,13 +324,37 @@
     }
   }
 
+  function buildNav() {
+    const UI = window.SamsaraUI;
+    if (!UI || !UI.buildNav) return;
+    const sections = [
+      ['lottery-overview', '概览'],
+      ['lottery-round-panel', '当前轮次'],
+      ['lottery-values-panel', '物品价值表'],
+      ['lottery-fund-panel', '服务器基金'],
+      ['lottery-insurance-panel', '保险'],
+      ['lottery-history-panel', '历史开奖'],
+    ];
+    const items = [];
+    const targets = [];
+    for (const [id, label] of sections) {
+      const element = $(id);
+      if (!element) continue;
+      items.push({ label, target: id });
+      targets.push({ id, el: element });
+    }
+    UI.buildNav('经济业务', items, targets);
+  }
+
   // 供管理端“业务信息 → 经济业务”标签直接调用，不通过 iframe 嵌套。
   window.samsaraLottery = {
     activate: () => {
+      buildNav();
       load();
       if (valueTable) valueTable.ensure();
     },
     load,
+    buildNav,
   };
 
   if (document.readyState === 'loading') {

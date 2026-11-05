@@ -1,5 +1,8 @@
 package com.shenqianye.samsara.web;
 
+import com.mojang.brigadier.ParseResults;
+import com.mojang.brigadier.suggestion.Suggestion;
+import com.mojang.brigadier.suggestion.Suggestions;
 import net.minecraft.commands.CommandSource;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.network.chat.Component;
@@ -49,6 +52,69 @@ public final class WebConsoleService {
         } catch (Exception e) {
             return fail("执行失败：" + e.getMessage());
         }
+    }
+
+    /** Brigadier Tab 补全：返回替换区间与候选（含 tooltip）。 */
+    public Map<String, Object> complete(String command, Integer requestedCursor) {
+        if (server == null) {
+            return fail("服务器未启动");
+        }
+        String raw = command == null ? "" : command;
+        int cursor = requestedCursor == null ? raw.length() : requestedCursor;
+        cursor = Math.max(0, Math.min(cursor, raw.length()));
+        if (raw.startsWith("/")) {
+            raw = raw.substring(1);
+            cursor = Math.max(0, cursor - 1);
+        }
+        if (raw.length() > 4000) {
+            return fail("命令过长（最多 4000 字符）");
+        }
+        final String input = raw;
+        final int at = cursor;
+        try {
+            return server.isSameThread() ? completeNow(input, at) : completeOnServer(input, at);
+        } catch (Exception e) {
+            return fail("补全失败：" + e.getMessage());
+        }
+    }
+
+    private Map<String, Object> completeOnServer(String input, int cursor) throws Exception {
+        CompletableFuture<Map<String, Object>> future = new CompletableFuture<>();
+        server.execute(() -> {
+            try {
+                future.complete(completeNow(input, cursor));
+            } catch (Throwable t) {
+                future.completeExceptionally(t);
+            }
+        });
+        return future.get(4, TimeUnit.SECONDS);
+    }
+
+    private Map<String, Object> completeNow(String input, int cursor) {
+        CommandSourceStack source = new CommandSourceStack(new CaptureSource(),
+                Vec3.ZERO, new Vec2(0, 0), server.overworld(), PermissionSet.ALL_PERMISSIONS,
+                Component.literal("Web RCON"), server);
+        ParseResults<CommandSourceStack> parsed = server.getCommands().getDispatcher()
+                .parse(input, source);
+        Suggestions suggestions = server.getCommands().getDispatcher()
+                .getCompletionSuggestions(parsed, cursor).join();
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (Suggestion suggestion : suggestions.getList()) {
+            if (rows.size() >= 200) break;
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("text", suggestion.getText());
+            row.put("tooltip", suggestion.getTooltip() == null
+                    ? "" : suggestion.getTooltip().getString());
+            rows.add(row);
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ok", true);
+        out.put("input", input);
+        out.put("cursor", cursor);
+        out.put("range", Map.of("start", suggestions.getRange().getStart(),
+                "end", suggestions.getRange().getEnd()));
+        out.put("suggestions", rows);
+        return out;
     }
 
     private Map<String, Object> runOnServer(String command, long started) throws Exception {

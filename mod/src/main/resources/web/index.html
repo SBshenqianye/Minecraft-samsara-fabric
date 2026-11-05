@@ -340,7 +340,7 @@
       </div>
 
       <div id="panel-lottery" class="panel-stack" hidden>
-        <section class="panel">
+        <section class="panel" id="lottery-overview">
           <div class="panel-head">
             <div>
               <h2>经济业务</h2>
@@ -356,7 +356,7 @@
           <div id="lottery-stats" class="stat-row"></div>
         </section>
 
-        <section class="panel">
+        <section class="panel" id="lottery-round-panel">
           <div class="panel-head">
             <div>
               <h2>当前轮次</h2>
@@ -368,7 +368,7 @@
           <div id="lottery-bets" class="lottery-list"></div>
         </section>
 
-        <section class="panel">
+        <section class="panel" id="lottery-values-panel">
           <div class="panel-head">
             <div>
               <h2>物品价值表</h2>
@@ -411,7 +411,7 @@
           <div id="lottery-values-empty" class="lottery-empty" hidden>没有匹配的物品。</div>
         </section>
 
-        <section class="panel">
+        <section class="panel" id="lottery-fund-panel">
           <div class="panel-head">
             <div>
               <h2>服务器基金</h2>
@@ -422,7 +422,7 @@
           <div id="lottery-fund" class="lottery-items"></div>
         </section>
 
-        <section class="panel">
+        <section class="panel" id="lottery-insurance-panel">
           <div class="panel-head">
             <div>
               <h2>保险</h2>
@@ -433,7 +433,7 @@
           <div id="lottery-insurance" class="lottery-list"></div>
         </section>
 
-        <section class="panel">
+        <section class="panel" id="lottery-history-panel">
           <div class="panel-head">
             <div>
               <h2>历史开奖</h2>
@@ -823,9 +823,10 @@
             <pre id="server-console-output" class="server-console-output" role="log" aria-live="polite"></pre>
             <div class="server-console-input">
               <input id="server-console-command" type="text" autocomplete="off"
-                     placeholder="输入命令，不需要前导 /，例如 list">
+                     placeholder="输入命令，不需要前导 /；Tab 补全，↑↓ 选择；例如 list">
               <button id="server-console-send" class="primary" type="button">执行</button>
             </div>
+            <div id="server-console-complete" class="console-complete" hidden></div>
             <div id="server-console-message" class="message" role="status"></div>
           </section>
         </div>
@@ -843,20 +844,26 @@
             </div>
             <div id="server-audit-message" class="message" role="status"></div>
             <div id="server-audit-list" class="server-audit-list"></div>
-            <div id="server-audit-diff-wrap" class="server-audit-diff-wrap" hidden>
-              <div class="server-audit-diff-head">
-                <strong id="server-audit-diff-title">差异</strong>
-                <button id="server-audit-diff-close" class="ghost" type="button">关闭</button>
-              </div>
-              <div id="server-audit-changes" class="server-audit-changes"></div>
-              <div id="server-audit-diffs" class="server-audit-diffs"></div>
-              <pre id="server-audit-diff" class="server-audit-diff" aria-live="polite" hidden></pre>
-            </div>
           </section>
         </div>
       </div>
     </div>
   </main>
+
+  <dialog id="server-audit-diff-wrap" class="app-dialog server-audit-dialog">
+    <div class="dialog-body">
+      <div class="dialog-head">
+        <div>
+          <h3 id="server-audit-diff-title">差异</h3>
+          <p class="dialog-sub">预览快照与当前文件的差异；回滚前请确认影响范围。</p>
+        </div>
+        <button id="server-audit-diff-close" class="ghost" type="button">关闭</button>
+      </div>
+      <div id="server-audit-changes" class="server-audit-changes"></div>
+      <div id="server-audit-diffs" class="server-audit-diffs"></div>
+      <pre id="server-audit-diff" class="server-audit-diff" aria-live="polite" hidden></pre>
+    </div>
+  </dialog>
 
   <dialog id="uuid-dialog" class="app-dialog">
     <form method="dialog" class="dialog-body" id="uuid-form">
@@ -1042,6 +1049,7 @@
   <script src="/value-table.js"></script>
   <script src="/lottery.js"></script>
   <script src="/app.js"></script>
+  <script src="/chat-text.js"></script>
   <script src="/config-editor.js"></script>
   <script src="/announcements.js"></script>
   <script src="/map.js"></script>

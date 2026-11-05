@@ -52,6 +52,118 @@
 
   const consoleHistory = [];
   let consoleHistoryIndex = -1;
+  const consoleComplete = { items: [], selected: 0, range: null };
+
+  function closeConsoleComplete() {
+    const box = $('server-console-complete');
+    if (box) {
+      box.hidden = true;
+      box.replaceChildren();
+    }
+    consoleComplete.items = [];
+    consoleComplete.selected = 0;
+    consoleComplete.range = null;
+  }
+
+  function applyConsoleComplete(item) {
+    const input = $('server-console-command');
+    if (!input || !item || !consoleComplete.range) return;
+    const start = consoleComplete.range.start;
+    const end = consoleComplete.range.end;
+    const value = input.value;
+    const next = value.slice(0, start) + item.text + value.slice(end);
+    input.value = next;
+    const cursor = start + item.text.length;
+    input.setSelectionRange(cursor, cursor);
+    closeConsoleComplete();
+    input.focus();
+  }
+
+  function renderConsoleComplete(result) {
+    const box = $('server-console-complete');
+    if (!box) return;
+    box.replaceChildren();
+    consoleComplete.items = Array.isArray(result.suggestions) ? result.suggestions : [];
+    consoleComplete.selected = 0;
+    consoleComplete.range = result.range || null;
+    if (!consoleComplete.items.length || !consoleComplete.range) {
+      box.hidden = true;
+      return;
+    }
+    const list = document.createElement('div');
+    list.className = 'console-complete-list';
+    consoleComplete.items.forEach((item, index) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'console-complete-item';
+      button.dataset.index = String(index);
+      const text = document.createElement('span');
+      text.className = 'console-complete-text';
+      text.textContent = item.text;
+      button.append(text);
+      if (item.tooltip) {
+        const tip = document.createElement('span');
+        tip.className = 'console-complete-tip';
+        tip.textContent = item.tooltip;
+        button.append(tip);
+      }
+      button.addEventListener('mousedown', (event) => event.preventDefault());
+      button.addEventListener('click', () => applyConsoleComplete(item));
+      list.append(button);
+    });
+    const footer = document.createElement('div');
+    footer.className = 'console-complete-footer';
+    const preview = document.createElement('span');
+    preview.className = 'console-complete-preview';
+    footer.append(preview, document.createTextNode('Tab 补全 · ↑↓ 选择 · Esc 关闭'));
+    box.append(list, footer);
+    box.hidden = false;
+    selectConsoleComplete(0);
+  }
+
+  function selectConsoleComplete(index) {
+    const box = $('server-console-complete');
+    if (!box || !consoleComplete.items.length) return;
+    const count = consoleComplete.items.length;
+    consoleComplete.selected = (index + count) % count;
+    const buttons = [...box.querySelectorAll('.console-complete-item')];
+    buttons.forEach((button, i) => button.classList.toggle('active',
+        i === consoleComplete.selected));
+    const active = buttons[consoleComplete.selected];
+    if (active) active.scrollIntoView({ block: 'nearest' });
+    const preview = box.querySelector('.console-complete-preview');
+    const item = consoleComplete.items[consoleComplete.selected];
+    const input = $('server-console-command');
+    if (preview && item && input && consoleComplete.range) {
+      const next = input.value.slice(0, consoleComplete.range.start) + item.text
+          + input.value.slice(consoleComplete.range.end);
+      preview.textContent = '将补全为：' + next;
+    }
+  }
+
+  async function requestConsoleComplete() {
+    const input = $('server-console-command');
+    if (!input) return;
+    try {
+      const result = await UI.api('/api/server/console/complete', {
+        method: 'POST',
+        body: JSON.stringify({ command: input.value, cursor: input.selectionStart }),
+      });
+      if (!result.ok) {
+        closeConsoleComplete();
+        return;
+      }
+      if (Array.isArray(result.suggestions) && result.suggestions.length === 1) {
+        consoleComplete.range = result.range;
+        applyConsoleComplete(result.suggestions[0]);
+        return;
+      }
+      renderConsoleComplete(result);
+    } catch (error) {
+      closeConsoleComplete();
+      consoleMessage(error.message || '补全失败', 'error');
+    }
+  }
 
   function dangerousCommand(command) {
     const raw = String(command || '').trim().toLowerCase();
@@ -198,7 +310,7 @@
             const target = document.getElementById('audit-diff-' + index);
             if (!target) return;
             target.open = true;
-            target.scrollIntoView({ block: 'start', behavior: 'smooth' });
+            target.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
           });
           changeBox.append(chip);
         });
@@ -250,8 +362,10 @@
         diffBox.hidden = diffs.length > 0;
         diffBox.textContent = data.diff || '（没有可显示的文本差异）';
       }
-      if (wrap) wrap.hidden = false;
-      wrap?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      if (wrap) {
+        wrap.hidden = false;
+        if (typeof wrap.showModal === 'function') wrap.showModal();
+      }
     } catch (error) {
       auditMessage(error.message || '预览失败', 'error');
     }
@@ -533,7 +647,7 @@
     'max-players': { group: '网络与状态', type: 'int', min: 0, desc: '最大在线玩家数' },
     'max-tick-time': { group: '性能与区块', type: 'int', min: -1, desc: '单 tick 超时（毫秒）；-1 关闭看门狗' },
     'max-world-size': { group: '世界与玩法', type: 'int', min: 1, desc: '世界边界半径（方块）' },
-    'motd': { group: '网络与状态', type: 'text', desc: '服务器列表显示的描述；支持 § 颜色代码' },
+    'motd': { group: '网络与状态', type: 'text', chat: true, desc: '服务器列表显示的描述；支持 § 颜色代码，可直接选色并预览' },
     'network-compression-threshold': { group: '性能与区块', type: 'int', min: -1, desc: '网络压缩阈值（字节）；-1 关闭' },
     'online-mode': { group: '网络与状态', type: 'bool', desc: '正版验证；离线服设为 false' },
     'op-permission-level': { group: '管理与 RCON', type: 'int', min: 0, max: 4, desc: 'OP 的默认权限等级（0-4）' },
@@ -552,7 +666,7 @@
     'require-resource-pack': { group: '网络与状态', type: 'bool', desc: '强制玩家使用资源包' },
     'resource-pack': { group: '网络与状态', type: 'url', desc: '资源包下载地址' },
     'resource-pack-id': { group: '网络与状态', type: 'text', desc: '资源包唯一标识' },
-    'resource-pack-prompt': { group: '网络与状态', type: 'text', desc: '资源包提示文本' },
+    'resource-pack-prompt': { group: '网络与状态', type: 'text', chat: true, desc: '资源包提示文本；支持 § 颜色代码' },
     'resource-pack-sha1': { group: '网络与状态', type: 'text', desc: '资源包 SHA-1 校验值' },
     'server-ip': { group: '网络与状态', type: 'text', desc: '监听地址；留空表示所有网卡' },
     'server-port': { group: '网络与状态', type: 'int', min: 1, max: 65535, desc: '游戏端口' },
@@ -864,10 +978,22 @@
     const badges = [];
     if (file.restartRequired) badges.push({ text: '需重启', kind: 'restart' });
     if (spec.type === 'password') badges.push({ text: '敏感' });
-    const control = KIT.control(spec, token.value, (next) => {
-      token.value = typeof next === 'boolean' ? String(next) : String(next == null ? '' : next);
-      markDirty(file, draft);
-    });
+    let control;
+    if (spec.chat && window.SamsaraChatText) {
+      control = window.SamsaraChatText.create({
+        value: token.value,
+        rows: 3,
+        onChange: (next) => {
+          token.value = next == null ? '' : String(next);
+          markDirty(file, draft);
+        },
+      }).element;
+    } else {
+      control = KIT.control(spec, token.value, (next) => {
+        token.value = typeof next === 'boolean' ? String(next) : String(next == null ? '' : next);
+        markDirty(file, draft);
+      });
+    }
     const actions = [];
     if (file.kind === 'properties') {
       const reset = KIT.button('恢复默认', 'ghost', () => {
@@ -1722,20 +1848,42 @@
     consoleSend.addEventListener('click', () => runConsole(consoleInput ? consoleInput.value : ''));
   }
   if (consoleInput) {
+    consoleInput.addEventListener('input', () => closeConsoleComplete());
     consoleInput.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') {
+      const popup = $('server-console-complete');
+      const popupOpen = popup && !popup.hidden && consoleComplete.items.length > 0;
+      if (event.key === 'Tab') {
         event.preventDefault();
+        if (popupOpen) {
+          applyConsoleComplete(consoleComplete.items[consoleComplete.selected]);
+        } else {
+          requestConsoleComplete();
+        }
+      } else if (event.key === 'Enter') {
+        event.preventDefault();
+        closeConsoleComplete();
         runConsole(consoleInput.value);
+      } else if (event.key === 'Escape') {
+        if (popupOpen) {
+          event.preventDefault();
+          closeConsoleComplete();
+        }
       } else if (event.key === 'ArrowUp') {
         event.preventDefault();
-        if (consoleHistory.length) {
+        if (popupOpen) {
+          selectConsoleComplete(consoleComplete.selected - 1);
+        } else if (consoleHistory.length) {
           consoleHistoryIndex = Math.min(consoleHistory.length - 1, consoleHistoryIndex + 1);
           consoleInput.value = consoleHistory[consoleHistoryIndex] || '';
         }
       } else if (event.key === 'ArrowDown') {
         event.preventDefault();
-        consoleHistoryIndex = Math.max(-1, consoleHistoryIndex - 1);
-        consoleInput.value = consoleHistoryIndex < 0 ? '' : (consoleHistory[consoleHistoryIndex] || '');
+        if (popupOpen) {
+          selectConsoleComplete(consoleComplete.selected + 1);
+        } else {
+          consoleHistoryIndex = Math.max(-1, consoleHistoryIndex - 1);
+          consoleInput.value = consoleHistoryIndex < 0 ? '' : (consoleHistory[consoleHistoryIndex] || '');
+        }
       }
     });
   }
@@ -1748,11 +1896,17 @@
   }
   const auditRefresh = $('server-audit-refresh');
   if (auditRefresh) auditRefresh.addEventListener('click', loadAudit);
+  const auditDiff = $('server-audit-diff-wrap');
   const auditDiffClose = $('server-audit-diff-close');
-  if (auditDiffClose) auditDiffClose.addEventListener('click', () => {
-    const wrap = $('server-audit-diff-wrap');
-    if (wrap) wrap.hidden = true;
-  });
+  if (auditDiffClose && auditDiff) {
+    auditDiffClose.addEventListener('click', () => {
+      if (typeof auditDiff.close === 'function') auditDiff.close();
+      auditDiff.hidden = true;
+    });
+    auditDiff.addEventListener('close', () => {
+      auditDiff.hidden = true;
+    });
+  }
   for (const button of document.querySelectorAll('[data-console-command]')) {
     button.addEventListener('click', () => {
       runConsole(button.dataset.consoleCommand || '');

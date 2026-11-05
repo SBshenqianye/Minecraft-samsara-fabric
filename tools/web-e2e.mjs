@@ -271,6 +271,55 @@ async function main() {
     check('保存按钮初始状态', server.saveLabel === '保存并重载', server.saveLabel);
     check('页面没有重复 id', server.duplicateIds === 0, 'duplicates=' + server.duplicateIds);
 
+    const motdEditor = await evaluate(`(() => {
+      const entry = [...document.querySelectorAll('#server-config-files .entry')]
+        .find((node) => node.querySelector('.entry-key')?.textContent.includes('motd'));
+      const editor = entry?.querySelector('.chat-text-editor');
+      const input = editor?.querySelector('.chat-text-input');
+      const swatches = editor ? [...editor.querySelectorAll('.chat-text-swatch')] : [];
+      const before = input ? input.value : '';
+      if (swatches[10]) swatches[10].click();
+      const after = input ? input.value : '';
+      const toggle = editor?.querySelector('.chat-text-toggle');
+      if (toggle) toggle.click();
+      const raw = editor?.querySelector('.chat-text-raw')?.textContent || '';
+      if (toggle) toggle.click();
+      if (input) {
+        input.value = before;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      return { found: Boolean(editor), swatches: swatches.length,
+        inserted: after !== before && after.includes('§'),
+        rawHasCode: raw.includes('§'),
+        previewSpans: editor?.querySelectorAll('.chat-text-rendered span').length || 0 };
+    })()`);
+    check('MOTD 使用 § 颜色编辑器', motdEditor.found && motdEditor.swatches >= 16,
+        JSON.stringify(motdEditor));
+    check('MOTD 选色直接插入并渲染，可看纯文本', motdEditor.inserted
+        && motdEditor.rawHasCode && motdEditor.previewSpans > 0,
+        JSON.stringify(motdEditor));
+
+    const segmentedFit = await evaluate(`(() => {
+      const groups = [...document.querySelectorAll('#server-config-files .segmented')];
+      return {
+        total: groups.length,
+        overflow: groups.filter((node) => node.scrollWidth > node.clientWidth + 2).length,
+        textOverflow: groups.flatMap((node) => [...node.querySelectorAll('.segmented-btn')])
+          .filter((node) => node.scrollWidth > node.clientWidth + 1).length,
+      };
+    })()`);
+    check('分段按钮适配中文与段数宽度', segmentedFit.total > 0
+        && segmentedFit.overflow === 0 && segmentedFit.textOverflow === 0,
+        JSON.stringify(segmentedFit));
+
+    // MOTD 测试会修改草稿；重新读取，避免影响后续“未保存计数”断言。
+    await evaluate(`(async () => {
+      if (window.SamsaraServer?.reload) await window.SamsaraServer.reload();
+      return true;
+    })()`);
+    await until("document.querySelectorAll('#server-config-files > details.file-block').length >= 6",
+        15000, '服务器配置重载');
+
     const collapse = await evaluate(`(() => {
       const file = [...document.querySelectorAll('#server-config-files > details.file-block')]
         .find((node) => node.id.includes('server-properties'));
@@ -698,6 +747,35 @@ async function main() {
           && mods.identityTerms.zonesOk && mods.identityTerms.poolsOk
           && mods.identityTerms.assignOk && !mods.identityTerms.bareOld,
         JSON.stringify(mods.identityTerms));
+
+    const identityData = await evaluate(`(async () => {
+      window.SamsaraUI.setActiveTab('identity');
+      await new Promise((resolve) => setTimeout(resolve, 700));
+      const chip = document.querySelector('#panel-identity .uuid-chip.data');
+      const detail = chip ? [...chip.querySelectorAll('.chip-action')]
+        .find((node) => node.textContent.trim() === '详情') : null;
+      if (detail) detail.click();
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      const dialog = document.getElementById('identity-data-dialog');
+      const text = document.getElementById('identity-data-content')?.textContent || '';
+      const copyButton = [...document.querySelectorAll('#identity-data-content button')]
+        .find((node) => node.textContent.includes('复制 UUID'));
+      const backupButton = [...document.querySelectorAll('#identity-data-content button')]
+        .find((node) => node.textContent.includes('备份数据'));
+      const wasOpen = Boolean(dialog && dialog.open);
+      if (dialog && dialog.open) dialog.close();
+      return { open: wasOpen, text,
+        hasCopy: Boolean(copyButton), hasBackup: Boolean(backupButton),
+        hasInventory: text.includes('背包'), hasEnder: text.includes('末影箱'),
+        hasAdvancements: text.includes('成就') };
+    })()`);
+    check('身份组 data UUID 可查看详情', identityData.open && identityData.hasInventory
+        && identityData.hasEnder && identityData.hasAdvancements
+        && identityData.hasCopy && identityData.hasBackup,
+        JSON.stringify({ open: identityData.open, hasInventory: identityData.hasInventory,
+          hasEnder: identityData.hasEnder, hasAdvancements: identityData.hasAdvancements,
+          hasCopy: identityData.hasCopy, hasBackup: identityData.hasBackup,
+          text: identityData.text.slice(0, 160) }));
     check('输出格式布尔改为按钮', mods.output === 2, 'buttons=' + mods.output);
     check('权限树布尔改为按钮', mods.permissions > 0, 'segmented=' + mods.permissions);
     check('配置页布尔改为按钮', mods.configBool > 0, 'segmented=' + mods.configBool);
@@ -796,6 +874,22 @@ async function main() {
         && mods.lottery.iframe === false && mods.lottery.stats >= 8
         && mods.lottery.values >= 1
         && mods.lottery.tab.includes('经济业务'), JSON.stringify(mods.lottery || {}));
+
+    const lotteryNav = await evaluate(`(async () => {
+      window.SamsaraUI.setActiveTab('lottery');
+      await new Promise((resolve) => setTimeout(resolve, 900));
+      const items = [...document.querySelectorAll('#global-nav .nav-item')]
+        .map((node) => node.textContent.trim());
+      return {
+        title: document.querySelector('#global-nav .nav-title')?.textContent.trim() || '',
+        items,
+        saveHidden: document.getElementById('save')?.hidden,
+      };
+    })()`);
+    check('经济业务使用通用左侧导航', lotteryNav.title.includes('经济业务')
+        && lotteryNav.items.length >= 6 && lotteryNav.items.includes('当前轮次')
+        && lotteryNav.items.includes('物品价值表') && lotteryNav.saveHidden === true,
+        JSON.stringify(lotteryNav));
 
     // ---- 权限分段控件：保存 deny → 回显 → 恢复原等级 ----
     const permLevels = await evaluate(`(async () => {
@@ -1576,6 +1670,24 @@ async function main() {
         && consoleState.message.includes('完成'), JSON.stringify({
           output: consoleState.output.slice(0, 120), message: consoleState.message }));
     check('RCON 控制台入口哈希', consoleState.hash === '#server-console', consoleState.hash);
+
+    const consoleComplete = await evaluate(`(async () => {
+      const input = document.getElementById('server-console-command');
+      input.value = 'samsara ';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      const box = document.getElementById('server-console-complete');
+      return {
+        hidden: box ? box.hidden : true,
+        items: box ? box.querySelectorAll('.console-complete-item').length : 0,
+        preview: box ? box.querySelector('.console-complete-preview')?.textContent || '' : '',
+        first: box ? box.querySelector('.console-complete-text')?.textContent || '' : '',
+      };
+    })()`);
+    check('RCON 控制台 Tab 补全与预览', !consoleComplete.hidden
+        && consoleComplete.items > 0 && consoleComplete.preview.includes('将补全为')
+        && consoleComplete.first.length > 0, JSON.stringify(consoleComplete));
 
     // ---- 一级分栏：切到“本体”后经济业务标签不能残留 ----
     const sectionSwitch = await evaluate(`(async () => {

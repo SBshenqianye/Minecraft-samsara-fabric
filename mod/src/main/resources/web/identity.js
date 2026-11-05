@@ -353,6 +353,162 @@ function renderZone(group, role, labelText, hintText) {
   return zone;
 }
 
+function dataNode(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text != null) node.textContent = text;
+  return node;
+}
+
+async function backupData(uuid) {
+  if (!window.confirm('备份 data UUID ' + uuid + ' 的玩家数据、成就与统计？')) return;
+  try {
+    const result = await window.SamsaraUI.api('/api/identity/data/backup', {
+      method: 'POST',
+      body: JSON.stringify({ uuid }),
+    });
+    identityMessage(result.message || (result.ok ? '已备份' : result.error), result.ok ? 'ok' : 'error');
+  } catch (e) {
+    identityMessage(window.SamsaraUI.authMessage(e, '备份失败'), 'error');
+  }
+}
+
+function openDataDialog(uuid) {
+  let dialog = document.getElementById('identity-data-dialog');
+  let content;
+  if (!dialog) {
+    dialog = document.createElement('dialog');
+    dialog.id = 'identity-data-dialog';
+    dialog.className = 'app-dialog identity-data-dialog';
+    const body = document.createElement('div');
+    body.className = 'dialog-body';
+    const head = document.createElement('div');
+    head.className = 'dialog-head';
+    const titleBox = document.createElement('div');
+    const title = document.createElement('h3');
+    title.textContent = 'data UUID 详情';
+    const sub = document.createElement('p');
+    sub.className = 'dialog-sub';
+    sub.textContent = '只读查看身份数据文件；备份会复制到 identity/backups/data/。';
+    titleBox.append(title, sub);
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'ghost';
+    close.textContent = '关闭';
+    close.addEventListener('click', () => dialog.close());
+    head.append(titleBox, close);
+    content = document.createElement('div');
+    content.id = 'identity-data-content';
+    content.className = 'identity-data-content';
+    body.append(head, content);
+    dialog.append(body);
+    document.body.append(dialog);
+  } else {
+    content = document.getElementById('identity-data-content');
+  }
+  content.replaceChildren(dataNode('p', 'muted', '加载中…'));
+  if (typeof dialog.showModal === 'function') dialog.showModal();
+  window.SamsaraUI.api('/api/identity/data?uuid=' + encodeURIComponent(uuid))
+      .then((data) => renderDataDetail(content, uuid, data))
+      .catch((e) => content.replaceChildren(dataNode('p', 'message error',
+          window.SamsaraUI.authMessage(e, '读取详情失败'))));
+}
+
+function renderDataDetail(root, uuid, data) {
+  root.replaceChildren();
+  const head = dataNode('div', 'identity-data-head');
+  const copy = dataNode('button', 'ghost', '复制 UUID');
+  copy.type = 'button';
+  copy.addEventListener('click', () => {
+    copyText(uuid);
+    identityMessage('已复制 ' + uuid, 'ok');
+  });
+  const backup = dataNode('button', 'ghost', '备份数据');
+  backup.type = 'button';
+  backup.addEventListener('click', () => backupData(uuid));
+  head.append(dataNode('code', 'identity-data-uuid', uuid), copy, backup);
+  root.append(head);
+  if (!data.ok) {
+    root.append(dataNode('p', 'message error', data.error || data.message || '读取失败'));
+    return;
+  }
+  const chips = dataNode('div', 'status-chips');
+  const values = [
+    ['数据文件', data.exists ? '存在' : '不存在'],
+    ['大小', data.bytes ? (Number(data.bytes) / 1024).toFixed(1) + ' KiB' : '—'],
+    ['生命', data.health == null ? '—' : String(data.health)],
+    ['饥饿', data.food == null ? '—' : String(data.food)],
+    ['经验', data.xpLevel == null ? '—' : data.xpLevel + ' 级 / ' + (data.xpTotal || 0)],
+    ['维度', data.dimension || '—'],
+    ['坐标', Array.isArray(data.pos) && data.pos.length >= 3
+      ? data.pos.slice(0, 3).map((v) => Number(v).toFixed(1)).join(', ') : '—'],
+  ];
+  for (const [label, value] of values) {
+    const chip = dataNode('div', 'status-chip');
+    chip.append(dataNode('span', null, label), dataNode('strong', null, value));
+    chips.append(chip);
+  }
+  root.append(chips);
+
+  root.append(itemSection('背包', data.inventory));
+  root.append(itemSection('末影箱', data.enderItems));
+  const adv = data.advancements || {};
+  const advBox = dataNode('div', 'identity-data-section');
+  advBox.append(dataNode('h4', null, '成就 · ' + (adv.done || 0) + ' / ' + (adv.total || 0)));
+  if (Array.isArray(adv.ids) && adv.ids.length) {
+    const list = dataNode('div', 'identity-data-tags');
+    for (const id of adv.ids) list.append(dataNode('span', 'identity-data-tag', id));
+    advBox.append(list);
+  } else {
+    advBox.append(dataNode('p', 'muted small', '没有已完成的成就记录。'));
+  }
+  root.append(advBox);
+
+  const stats = data.stats || {};
+  const statBox = dataNode('div', 'identity-data-section');
+  statBox.append(dataNode('h4', null, '统计'));
+  const statGrid = dataNode('div', 'identity-data-stats');
+  const labels = {
+    play_time: '游玩时间', deaths: '死亡', mob_kills: '击杀生物',
+    player_kills: '击杀玩家', walk_one_cm: '步行', sprint_one_cm: '疾跑',
+    fly_one_cm: '飞行', damage_dealt: '造成伤害',
+  };
+  let statCount = 0;
+  for (const [key, label] of Object.entries(labels)) {
+    if (stats[key] == null) continue;
+    statCount++;
+    const row = dataNode('div', 'identity-data-stat');
+    row.append(dataNode('span', null, label), dataNode('strong', null, String(stats[key])));
+    statGrid.append(row);
+  }
+  statBox.append(statCount ? statGrid : dataNode('p', 'muted small', '没有统计数据。'));
+  root.append(statBox);
+}
+
+function itemSection(title, items) {
+  const box = dataNode('div', 'identity-data-section');
+  box.append(dataNode('h4', null, title + ' · ' + (items || []).length));
+  if (!Array.isArray(items) || !items.length) {
+    box.append(dataNode('p', 'muted small', '空'));
+    return box;
+  }
+  const grid = dataNode('div', 'identity-data-items');
+  for (const item of items) {
+    const row = dataNode('div', 'identity-data-item');
+    if (window.SamsaraItem?.icon) {
+      row.append(window.SamsaraItem.icon(item, { size: 'sm' }));
+    }
+    const text = dataNode('div', 'identity-data-item-text');
+    text.append(dataNode('span', 'identity-data-item-name', item.name || item.id));
+    text.append(dataNode('span', 'identity-data-item-meta',
+        'x' + (item.count || 1) + ' · ' + (item.id || '')));
+    row.append(text);
+    grid.append(row);
+  }
+  box.append(grid);
+  return box;
+}
+
 function uuidChip(uuid, role, groupId) {
   const chip = document.createElement('span');
   chip.className = 'uuid-chip ' + role;
@@ -385,6 +541,28 @@ function uuidChip(uuid, role, groupId) {
     identityMessage('已复制 ' + uuid, 'ok');
   });
   actions.append(copy);
+  if (role === 'data') {
+    const detail = document.createElement('button');
+    detail.type = 'button';
+    detail.className = 'chip-action';
+    detail.textContent = '详情';
+    detail.title = '查看背包、末影箱、成就与统计';
+    detail.addEventListener('click', (event) => {
+      event.stopPropagation();
+      openDataDialog(uuid);
+    });
+    actions.append(detail);
+    const backup = document.createElement('button');
+    backup.type = 'button';
+    backup.className = 'chip-action';
+    backup.textContent = '备份';
+    backup.title = '备份该 data UUID 的玩家数据、成就与统计';
+    backup.addEventListener('click', (event) => {
+      event.stopPropagation();
+      backupData(uuid);
+    });
+    actions.append(backup);
+  }
   const clear = document.createElement('button');
   clear.type = 'button';
   clear.className = 'chip-action';

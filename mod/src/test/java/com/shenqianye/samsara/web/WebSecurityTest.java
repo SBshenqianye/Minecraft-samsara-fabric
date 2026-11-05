@@ -26,6 +26,7 @@ class WebSecurityTest {
         assertEquals("/web/index.html", WebSecurity.staticResource("/"));
         assertEquals("/web/app.js", WebSecurity.staticResource("/app.js"));
         assertEquals("/web/config-editor.js", WebSecurity.staticResource("/config-editor.js"));
+        assertEquals("/web/chat-text.js", WebSecurity.staticResource("/chat-text.js"));
         assertEquals("/web/announcements.js", WebSecurity.staticResource("/announcements.js"));
         assertEquals("/web/openapi.json", WebSecurity.staticResource("/openapi.json"));
         assertEquals("/web/user.html", WebSecurity.staticResource("/user"));
@@ -64,6 +65,8 @@ class WebSecurityTest {
         assertTrue(WebSecurity.safeApiPath("/api/announcements/stop"));
         assertTrue(WebSecurity.safeApiPath("/api/agent/whoami"));
         assertTrue(WebSecurity.safeApiPath("/api/agent/tokens"));
+        assertTrue(WebSecurity.safeApiPath("/api/identity/data"));
+        assertTrue(WebSecurity.safeApiPath("/api/identity/data/backup"));
         assertTrue(WebSecurity.safeApiPath("/api/world-stack"));
         assertTrue(WebSecurity.safeApiPath("/api/world-stack/import/preview"));
         assertTrue(WebSecurity.safeApiPath("/api/world-stack/jobs/imp-1"));

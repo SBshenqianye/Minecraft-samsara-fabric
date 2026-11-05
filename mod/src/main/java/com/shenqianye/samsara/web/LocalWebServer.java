@@ -547,6 +547,25 @@ public final class LocalWebServer {
         }
     }
 
+    private static Map<String, Object> inspectIdentityData(String raw) {
+        try {
+            return com.shenqianye.samsara.identity.IdentityDataInspector.inspect(
+                    com.shenqianye.samsara.identity.IdentityService.getInstance().server(),
+                    java.util.UUID.fromString(raw));
+        } catch (RuntimeException e) {
+            return Map.of("ok", false, "error", "data UUID 格式不正确");
+        }
+    }
+
+    private static Map<String, Object> backupIdentityData(Object raw) {
+        try {
+            return com.shenqianye.samsara.identity.IdentityDataInspector.backup(
+                    java.util.UUID.fromString(String.valueOf(raw)));
+        } catch (RuntimeException e) {
+            return Map.of("ok", false, "error", "data UUID 格式不正确");
+        }
+    }
+
     private void handleIdentity(HttpExchange exchange) throws IOException {
         long start = System.currentTimeMillis();
         int status = 200;
@@ -635,6 +654,23 @@ public final class LocalWebServer {
                         result = Map.of("error", "Method Not Allowed");
                     } else {
                         result = identityService.resolve(body);
+                    }
+                }
+                case "/api/identity/data" -> {
+                    if (!"GET".equals(method)) {
+                        status = 405;
+                        result = Map.of("error", "Method Not Allowed");
+                    } else {
+                        Map<String, String> query = parseQuery(exchange.getRequestURI().getRawQuery());
+                        result = inspectIdentityData(query.get("uuid"));
+                    }
+                }
+                case "/api/identity/data/backup" -> {
+                    if (!"POST".equals(method)) {
+                        status = 405;
+                        result = Map.of("error", "Method Not Allowed");
+                    } else {
+                        result = backupIdentityData(body.get("uuid"));
                     }
                 }
                 default -> {
@@ -1117,6 +1153,7 @@ public final class LocalWebServer {
                             result = serverService.previewRestore(body);
                     case "/api/server/backups/restore" -> result = serverService.restore(body);
                     case "/api/server/console" -> result = serverService.console(body);
+                case "/api/server/console/complete" -> result = serverService.completeConsole(body);
                     default -> {
                         status = 404;
                         result = Map.of("error", "Not Found");
@@ -1467,6 +1504,9 @@ public final class LocalWebServer {
             return "PUT".equals(method) ? AgentScope.CONFIG : AgentScope.READ;
         }
         if (path.equals("/api/reload")) {
+            return AgentScope.CONFIG;
+        }
+        if (path.startsWith("/api/identity/data")) {
             return AgentScope.CONFIG;
         }
         if (path.startsWith("/api/permissions") || path.startsWith("/api/output")

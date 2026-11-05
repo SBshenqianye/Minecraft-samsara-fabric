@@ -1,0 +1,246 @@
+package com.shenqianye.samsara.identity;
+
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import com.shenqianye.samsara.lottery.ItemValueService;
+import net.minecraft.core.RegistryAccess;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.NbtAccounter;
+import net.minecraft.nbt.NbtIo;
+import net.minecraft.nbt.NbtOps;
+import net.minecraft.nbt.Tag;
+import net.minecraft.resources.RegistryOps;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.world.item.ItemStack;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+/** 只读查看某个 data UUID 的玩家数据与备份。 */
+public final class IdentityDataInspector {
+    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
+    private static final DateTimeFormatter STAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS");
+
+    private IdentityDataInspector() {
+    }
+
+    public static Map<String, Object> inspect(MinecraftServer server, UUID data) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        if (data == null) {
+            return error("缺少 data UUID");
+        }
+        IdentityService service = IdentityService.getInstance();
+        IdentityDataSync sync = service.dataSync();
+        if (sync == null) {
+            return error("身份服务尚未初始化");
+        }
+        Path dataFile = sync.identityData(data);
+        Path advancementsFile = sync.identityAdvancements(data);
+        Path statsFile = sync.identityStats(data);
+        out.put("ok", true);
+        out.put("uuid", data.toString());
+        out.put("dataFile", dataFile.toString());
+        out.put("exists", Files.isRegularFile(dataFile));
+        out.put("bytes", size(dataFile));
+        out.put("modified", modified(dataFile));
+        out.put("advancementsExists", Files.isRegularFile(advancementsFile));
+        out.put("statsExists", Files.isRegularFile(statsFile));
+        if (!Files.isRegularFile(dataFile)) {
+            out.put("message", "该 data UUID 还没有玩家数据文件");
+            return out;
+        }
+        try {
+            CompoundTag tag = NbtIo.readCompressed(dataFile, NbtAccounter.unlimitedHeap());
+            out.put("health", tag.getFloatOr("Health", 20.0f));
+            out.put("food", tag.getIntOr("foodLevel", 20));
+            out.put("xpLevel", tag.getIntOr("XpLevel", 0));
+            out.put("xpTotal", tag.getIntOr("XpTotal", 0));
+            out.put("dimension", tag.getStringOr("Dimension", ""));
+            out.put("pos", positions(tag.getListOrEmpty("Pos")));
+            out.put("inventory", items(server, tag.getListOrEmpty("Inventory")));
+            out.put("enderItems", items(server, tag.getListOrEmpty("EnderItems")));
+            out.put("effects", effects(tag.getListOrEmpty("active_effects")));
+        } catch (IOException | RuntimeException e) {
+            out.put("ok", false);
+            out.put("message", "读取玩家数据失败：" + e.getMessage());
+            return out;
+        }
+        out.put("advancements", advancements(advancementsFile));
+        out.put("stats", stats(statsFile));
+        return out;
+    }
+
+    public static Map<String, Object> backup(UUID data) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        if (data == null) {
+            return error("缺少 data UUID");
+        }
+        IdentityService service = IdentityService.getInstance();
+        IdentityDataSync sync = service.dataSync();
+        if (sync == null || service.identityRoot() == null) {
+            return error("身份服务尚未初始化");
+        }
+        Path dir = service.identityRoot().resolve("backups").resolve("data")
+                .resolve(data.toString()).resolve(LocalDateTime.now().format(STAMP));
+        List<String> copied = new ArrayList<>();
+        try {
+            Files.createDirectories(dir);
+            copyIfExists(sync.identityData(data), dir, copied);
+            copyIfExists(sync.identityAdvancements(data), dir, copied);
+            copyIfExists(sync.identityStats(data), dir, copied);
+        } catch (IOException e) {
+            return error("备份失败：" + e.getMessage());
+        }
+        if (copied.isEmpty()) {
+            return error("该 data UUID 没有可备份的数据文件");
+        }
+        out.put("ok", true);
+        out.put("uuid", data.toString());
+        out.put("path", dir.toString());
+        out.put("files", copied);
+        out.put("message", "已备份 " + copied.size() + " 个文件到 " + dir.getFileName());
+        return out;
+    }
+
+    private static List<Map<String, Object>> items(MinecraftServer server, ListTag list) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        RegistryAccess registries = server == null ? RegistryAccess.EMPTY : server.registryAccess();
+        RegistryOps<Tag> ops = RegistryOps.create(NbtOps.INSTANCE, registries);
+        for (int i = 0; i < list.size(); i++) {
+            CompoundTag entry = list.getCompoundOrEmpty(i);
+            ItemStack stack = ItemStack.CODEC.parse(ops, entry)
+                    .result().orElse(ItemStack.EMPTY);
+            if (stack.isEmpty()) {
+                continue;
+            }
+            String id = String.valueOf(BuiltInRegistries.ITEM.getKey(stack.getItem()));
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("slot", entry.getByteOr("Slot", (byte) i));
+            row.put("id", id);
+            row.put("name", stack.getHoverName().getString());
+            int colon = id.indexOf(':');
+            row.put("icon", colon >= 0 ? id.substring(colon + 1) : id);
+            row.put("count", stack.getCount());
+            row.put("value", ItemValueService.getInstance().valueOf(stack));
+            out.add(row);
+        }
+        return out;
+    }
+
+    private static List<Double> positions(ListTag list) {
+        List<Double> out = new ArrayList<>();
+        for (int i = 0; i < list.size(); i++) {
+            out.add(list.getDoubleOr(i, 0.0));
+        }
+        return out;
+    }
+
+    private static List<Map<String, Object>> effects(ListTag list) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (int i = 0; i < list.size(); i++) {
+            CompoundTag tag = list.getCompoundOrEmpty(i);
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", tag.getStringOr("id", ""));
+            row.put("amplifier", tag.getByteOr("amplifier", (byte) 0));
+            row.put("duration", tag.getIntOr("duration", 0));
+            out.add(row);
+        }
+        return out;
+    }
+
+    private static Map<String, Object> advancements(Path file) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("exists", Files.isRegularFile(file));
+        if (!Files.isRegularFile(file)) {
+            return out;
+        }
+        try {
+            JsonObject root = JsonParser.parseString(Files.readString(file, StandardCharsets.UTF_8)).getAsJsonObject();
+            int done = 0;
+            List<String> ids = new ArrayList<>();
+            for (Map.Entry<String, JsonElement> entry : root.entrySet()) {
+                if (entry.getValue().isJsonObject()
+                        && entry.getValue().getAsJsonObject().has("done")
+                        && entry.getValue().getAsJsonObject().get("done").getAsBoolean()) {
+                    done++;
+                    if (ids.size() < 80) ids.add(entry.getKey());
+                }
+            }
+            out.put("total", root.size());
+            out.put("done", done);
+            out.put("ids", ids);
+        } catch (IOException | RuntimeException e) {
+            out.put("error", e.getMessage());
+        }
+        return out;
+    }
+
+    private static Map<String, Object> stats(Path file) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("exists", Files.isRegularFile(file));
+        if (!Files.isRegularFile(file)) {
+            return out;
+        }
+        try {
+            JsonObject root = JsonParser.parseString(Files.readString(file, StandardCharsets.UTF_8)).getAsJsonObject();
+            JsonObject custom = root.has("minecraft:custom") && root.get("minecraft:custom").isJsonObject()
+                    ? root.getAsJsonObject("minecraft:custom") : new JsonObject();
+            for (String key : List.of("play_time", "deaths", "mob_kills", "player_kills",
+                    "walk_one_cm", "sprint_one_cm", "fly_one_cm", "damage_dealt")) {
+                if (custom.has(key)) {
+                    out.put(key, custom.get(key).getAsLong());
+                }
+            }
+            out.put("categories", root.keySet().size());
+        } catch (IOException | RuntimeException e) {
+            out.put("error", e.getMessage());
+        }
+        return out;
+    }
+
+    private static void copyIfExists(Path source, Path dir, List<String> copied) throws IOException {
+        if (!Files.isRegularFile(source)) {
+            return;
+        }
+        Files.copy(source, dir.resolve(source.getFileName()), StandardCopyOption.REPLACE_EXISTING);
+        copied.add(source.getFileName().toString());
+    }
+
+    private static long size(Path file) {
+        try {
+            return Files.isRegularFile(file) ? Files.size(file) : 0L;
+        } catch (IOException e) {
+            return 0L;
+        }
+    }
+
+    private static long modified(Path file) {
+        try {
+            return Files.isRegularFile(file) ? Files.getLastModifiedTime(file).toMillis() : 0L;
+        } catch (IOException e) {
+            return 0L;
+        }
+    }
+
+    private static Map<String, Object> error(String message) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ok", false);
+        out.put("error", message);
+        return out;
+    }
+}

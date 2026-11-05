@@ -230,6 +230,13 @@
     if (field.readOnly || !page.writable) {
       return el('div', 'entry-readonly', value == null ? '' : String(value));
     }
+    if (field.widget === 'chat' && window.SamsaraChatText) {
+      return window.SamsaraChatText.create({
+        value: value == null ? '' : String(value),
+        rows: 3,
+        onChange: (next) => setEdit(page, field, next),
+      }).element;
+    }
     switch (field.type) {
       case 'bool': {
         if (KIT && KIT.control) {

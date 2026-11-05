@@ -207,8 +207,12 @@
 | GET | `/api/identity/audit` | 身份审计记录 |
 | POST | `/api/identity/generate` | 生成 data UUID |
 | POST | `/api/identity/resolve` | 解析玩家名/UUID，返回正版账号（premium）与离线账号（offline）UUID 及类型 |
+| GET | `/api/identity/data?uuid=<dataUuid>` | 只读查看 data UUID 的玩家数据：背包、末影箱、成就、统计、生命/饥饿/经验/坐标 |
+| POST | `/api/identity/data/backup` | 备份 `{uuid}` 的 .dat / advancements / stats 到 `identity/backups/data/<uuid>/<时间戳>/` |
 
 > 字段语义：`premium` = **正版账号 UUID**（Mojang），`offline` = **离线账号 UUID**（非正版）。两者都是账号类型，不是“当前在线/当前不在线”；只有 `online`/`states` 才表示连接状态。前端不得把账号类型简写成裸“正版/离线”。
+
+> 保存身份组时（`PUT/POST /api/identity`）会自动把各组的 `premium`、`offline` UUID 补充到 `whitelist.json`，保留手动白名单条目，并立即调用 `reloadWhiteList()`；data UUID 不写入白名单。响应中的 `whitelist` 字段返回新增/更新数量。
 
 ### 3.3 输出格式
 
@@ -284,6 +288,7 @@
 | POST | `/api/server/backups/restore` | 恢复备份（排队到停服） |
 | POST | `/api/server/backups/delete` | 删除备份 |
 | POST | `/api/server/console` | Web RCON：在服务器线程执行命令并回显 `{command}` |
+| POST | `/api/server/console/complete` | Brigadier Tab 补全；`{command,cursor}` → `range` + `suggestions[{text,tooltip}]` |
 
 ### 3.9 Web 审计与回滚
 
