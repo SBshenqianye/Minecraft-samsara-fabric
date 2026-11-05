@@ -554,6 +554,11 @@
     return Number.isInteger(number) ? String(number) : number.toFixed(1);
   }
 
+  function canCopyTp() {
+    // 公共 /user 页只读；传送命令属于管理端能力。
+    return !window.SamsaraUserView;
+  }
+
   function playerCommand(player) {
     return '/execute in ' + player.dimensionId + ' run tp ' + playerName(player)
       + ' ' + fmtCoord(player.x) + ' ' + fmtCoord(player.y) + ' ' + fmtCoord(player.z);
@@ -905,8 +910,11 @@
       + ' · ' + dimensionLabel(player.dimension)
       + '\n坐标 ' + fmtCoord(player.x) + ', ' + fmtCoord(player.y) + ', ' + fmtCoord(player.z)
       + (position.outside ? '\n（在缩略图范围外，标记已贴边）' : '')
-      + '\n点击复制 TP 命令';
-    marker.setAttribute('aria-label', playerName(player) + '，点击复制 TP 命令');
+      + (canCopyTp() ? '\n点击复制 TP 命令' : '');
+    marker.setAttribute('aria-label', canCopyTp()
+      ? playerName(player) + '，点击复制 TP 命令'
+      : playerName(player) + '，坐标 ' + fmtCoord(player.x) + ', '
+        + fmtCoord(player.y) + ', ' + fmtCoord(player.z));
   }
 
   function createPlayerMarker(player, panel) {
@@ -928,10 +936,12 @@
     tip.className = 'pin-tip';
     tip.setAttribute('aria-hidden', 'true');
     marker.append(avatar, name, tip);
-    marker.addEventListener('click', (event) => {
-      event.stopPropagation();
-      copyPlayerCommand(marker.__player || player);
-    });
+    if (canCopyTp()) {
+      marker.addEventListener('click', (event) => {
+        event.stopPropagation();
+        copyPlayerCommand(marker.__player || player);
+      });
+    }
     applyPlayerMarker(marker, player, panel);
     return marker;
   }
@@ -1874,7 +1884,7 @@
         drawLiveLayer();
       });
       actions.append(locate);
-      if (item.kind === 'player') {
+      if (item.kind === 'player' && canCopyTp()) {
         const copy = document.createElement('button');
         copy.type = 'button';
         copy.className = 'ghost';
@@ -2339,12 +2349,13 @@
     const banner = bannerAt(x, y);
     const dim = currentDim();
     if (player) {
-      tooltip.textContent = [
+      const lines = [
         playerName(player) + ' · ' + stackLabelOf(player.stackId)
           + ' · ' + dimensionLabel(player.dimension),
         '坐标 ' + fmtCoord(player.x) + ', ' + fmtCoord(player.y) + ', ' + fmtCoord(player.z),
-        '点击复制 TP 命令',
-      ].join('\n');
+      ];
+      if (canCopyTp()) lines.push('点击复制 TP 命令');
+      tooltip.textContent = lines.join('\n');
       tooltip.hidden = false;
       tooltip.style.left = Math.min(rect.width - 240, x + 14) + 'px';
       tooltip.style.top = Math.min(rect.height - 70, y + 12) + 'px';
@@ -2665,32 +2676,34 @@
         ['时间', formatTime(point.cycle.createdAt)],
         ['Y', target.yEstimated ? '估算值（地形未生成/不可用）' : '地表高度'],
       ]);
-      const command = teleportCommand(target);
-      const code = document.createElement('div');
-      code.className = 'map-command';
-      const codeText = document.createElement('span');
-      codeText.className = 'map-command-text';
-      codeText.textContent = command;
-      const copy = document.createElement('button');
-      copy.type = 'button';
-      copy.className = 'map-copy-inline';
-      copy.textContent = '⧉';
-      copy.title = '复制传送命令';
-      copy.setAttribute('aria-label', '复制传送命令');
-      copy.addEventListener('click', () => copyText(command, copy, '⧉'));
-      code.append(codeText, copy);
-      selection.append(code);
-      const note = document.createElement('p');
-      note.className = 'map-hud-note';
-      const notes = ['把 <玩家> 换成游戏内 ID；传送执行属于模组玩法层，Web 只提供坐标与命令。'];
-      if (dim && dim.dim === 'the_nether') {
-        notes.push('下界坐标按主世界出生点 /8 推算，若基地不在对应坐标请以游戏内实际基地为准。');
+      if (canCopyTp()) {
+        const command = teleportCommand(target);
+        const code = document.createElement('div');
+        code.className = 'map-command';
+        const codeText = document.createElement('span');
+        codeText.className = 'map-command-text';
+        codeText.textContent = command;
+        const copy = document.createElement('button');
+        copy.type = 'button';
+        copy.className = 'map-copy-inline';
+        copy.textContent = '⧉';
+        copy.title = '复制传送命令';
+        copy.setAttribute('aria-label', '复制传送命令');
+        copy.addEventListener('click', () => copyText(command, copy, '⧉'));
+        code.append(codeText, copy);
+        selection.append(code);
+        const note = document.createElement('p');
+        note.className = 'map-hud-note';
+        const notes = ['把 <玩家> 换成游戏内 ID；传送执行属于模组玩法层，Web 只提供坐标与命令。'];
+        if (dim && dim.dim === 'the_nether') {
+          notes.push('下界坐标按主世界出生点 /8 推算，若基地不在对应坐标请以游戏内实际基地为准。');
+        }
+        if (target.yEstimated) {
+          notes.push('Y 为估算值，传送后请确认落点。');
+        }
+        note.textContent = notes.join(' ');
+        selection.append(note);
       }
-      if (target.yEstimated) {
-        notes.push('Y 为估算值，传送后请确认落点。');
-      }
-      note.textContent = notes.join(' ');
-      selection.append(note);
       return;
     }
     title.textContent = '选中的旗帜';
@@ -2936,7 +2949,7 @@
       const player = playerAt(x, y);
       if (player) {
         selectLive({ ...player, kind: 'player' });
-        copyPlayerCommand(player);
+        if (canCopyTp()) copyPlayerCommand(player);
         return;
       }
       const live = liveAt(x, y);

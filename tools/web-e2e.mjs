@@ -701,6 +701,50 @@ async function main() {
     check('输出格式布尔改为按钮', mods.output === 2, 'buttons=' + mods.output);
     check('权限树布尔改为按钮', mods.permissions > 0, 'segmented=' + mods.permissions);
     check('配置页布尔改为按钮', mods.configBool > 0, 'segmented=' + mods.configBool);
+
+    // ---- PageSpec/FormSpec 配置编辑器（F-168，只读检查 + 预览不写盘） ----
+    const editor = await evaluate(`(async () => {
+      const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      window.SamsaraUI.setActiveTab('config-editor');
+      await wait(1200);
+      const nav = [...document.querySelectorAll('#config-editor-nav .nav-item')];
+      const groups = [...document.querySelectorAll('#config-editor-nav .nav-group')]
+        .map((node) => node.textContent.trim());
+      const third = nav.find((node) => (node.dataset.page || '').startsWith('third-party:'));
+      let fields = 0;
+      let title = '';
+      let previewOpen = false;
+      let previewText = '';
+      if (third) {
+        third.click();
+        await wait(900);
+        fields = document.querySelectorAll('#config-editor-body .entry').length;
+        title = document.querySelector('#config-editor-body h3')?.textContent || '';
+        const preview = [...document.querySelectorAll('#config-editor-body button')]
+          .find((node) => node.textContent.includes('预览'));
+        if (preview) {
+          preview.click();
+          await wait(1400);
+          const dialog = document.getElementById('config-editor-preview-dialog');
+          previewOpen = Boolean(dialog && dialog.open);
+          previewText = document.getElementById('config-editor-preview-sub')?.textContent || '';
+          if (dialog && dialog.open) dialog.close();
+        }
+      }
+      return { nav: nav.length, groups, fields, title, previewOpen, previewText,
+        summary: document.getElementById('config-editor-summary')?.textContent || '' };
+    })()`);
+    check('配置编辑器加载 PageSpec 页面导航', editor.nav >= 3
+        && editor.groups.some((text) => text.includes('samsara'))
+        && editor.groups.some((text) => text.includes('服务器'))
+        && editor.groups.some((text) => text.includes('第三方')),
+        JSON.stringify({ nav: editor.nav, groups: editor.groups }));
+    check('配置编辑器渲染第三方 FormSpec 字段', editor.fields > 0
+        && editor.title.length > 0, JSON.stringify({ fields: editor.fields, title: editor.title }));
+    check('配置编辑器预览弹窗可用且不写盘', editor.previewOpen
+        && editor.previewText.includes('将修改'), JSON.stringify({ open: editor.previewOpen,
+          text: editor.previewText }));
+
     check('经济业务标签为原生面板', mods.lottery && mods.lottery.hidden === false
         && mods.lottery.iframe === false && mods.lottery.stats >= 8
         && mods.lottery.values >= 1
@@ -1625,6 +1669,10 @@ async function main() {
           && playerCanvas.height === mapCanvas.height
           && playerCanvas.width > 0),
         adminScript: Boolean(document.querySelector('script[src="/app.js"]')),
+        userViewFlag: window.SamsaraUserView === true,
+        tpText: document.body.innerText.includes('TP 命令'),
+        tpHtml: document.body.innerHTML.includes('TP 命令'),
+        markerTitle: document.querySelector('.map-player-marker')?.title || '',
         userCalls: resources.filter((url) => url.includes('/api/user/')).length,
         adminCalls: resources.filter((url) => url.includes('/api/config')
           || url.includes('/api/server') || url.includes('/api/world-stack')
@@ -1651,6 +1699,11 @@ async function main() {
           overflow: userPage.horizontalOverflow }));
     check('用户端地图复用玩家独立图层', userPage.mapStats.length > 0 && userPage.overlaySized,
         JSON.stringify({ stats: userPage.mapStats.slice(0, 80), overlay: userPage.overlaySized }));
+    check('用户端地图不显示也不提供 TP 命令', userPage.userViewFlag
+        && !userPage.tpText && !userPage.tpHtml
+        && !userPage.markerTitle.includes('TP 命令'),
+        JSON.stringify({ userView: userPage.userViewFlag, text: userPage.tpText,
+          html: userPage.tpHtml, marker: userPage.markerTitle }));
     check('用户端实时层保留实体/轨迹/发言但不含 UUID/生命', userPage.liveEntities >= 1
         && userPage.liveHasUuid === false
         && userPage.liveHasHealth === false

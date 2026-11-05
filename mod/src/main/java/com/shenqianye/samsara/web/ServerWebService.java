@@ -40,6 +40,10 @@ public class ServerWebService {
         return serverRoot;
     }
 
+    public MinecraftServer server() {
+        return server;
+    }
+
     public Map<String, Object> console(Map<String, Object> body) {
         Object value = body == null ? null : body.get("command");
         return console.execute(value == null ? "" : String.valueOf(value));

@@ -176,9 +176,11 @@
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/config` | 读取全部配置模型（文件/分组/条目/值/默认值/说明） |
-| PUT | `/api/config` | 保存配置；请求体 `{"file":"commands","values":{...}}` |
-| POST | `/api/reload` | 热重载配置 |
+| GET | `/api/config` | 读取 samsara 自有 YAML 的兼容模型（文件/分组/条目/值/默认值/说明） |
+| GET | `/api/config/pages` | PageSpec/FormSpec 模型：samsara YAML、服务器本体 6 文件、第三方 YAML/JSON/TOML/properties；含 `source`/`format`/`revision`/`writable`/`requiresConfirmation`/`customWidget`/`values` |
+| POST | `/api/config/preview` | 预览配置变更；请求体 `{"file":"samsara:commands","values":{...}}`，返回字段级错误、变更清单、diff、revision |
+| PUT | `/api/config` | 保存配置；旧格式 `{"file":"commands","values":{...}}`；PageSpec 页面使用 `{"file":"samsara:commands","source":"samsara","values":{...},"revision":"...","confirm":true}`（第三方/服务器配置必须 `confirm`） |
+| POST | `/api/reload` | 热重载 samsara 配置（第三方/服务器页面刷新会重新读取文件） |
 | GET | `/api/status` | 管理端运行状态、警告、配置路径等 |
 | GET | `/api/config/retention-estimate` | 轨迹保留容量预估；查询参数 `curve`（JSON 数组）、`keepAll` |
 
@@ -306,6 +308,7 @@
 - **token 不落日志**：启动日志只打印 token 前缀，完整值只在 `config/samsara/web.yml`；不要恢复完整 token 日志。
 - **用户端无 token**：只注册 `/api/user/*`，不注册任何管理端 handler。用户端服务类 `WebUserService` 只依赖地图只读服务，不持有配置/身份/权限/备份服务。
 - **不要直接把管理端 Map 透传**：新增用户端字段时必须显式白名单重建；尤其是 `worldRoot`、`metaPath`、`cache`、`ownerUUID`、`uuid`、`health`、`yaw`、备份路径、token。
+- **用户端不提供 TP 信息**：公共 `/user` 地图只显示玩家位置与只读详情，不显示传送命令、不提供“复制 TP 命令”；`window.SamsaraUserView` 为真时 `map.js` 会跳过所有 TP 复制入口，管理端不受影响。
 - **写接口只出现在管理端**：用户端只接受 `GET`，其他方法直接 `405`。栈层图标是公开只读字节，管理端页面与用户端都通过 `/api/user/worlds/icon` 显示；上传/删除仍要求 Bearer token，避免 `<img>` 无法附带 Authorization 头。头像同理通过公开只读 `/api/user/map/avatar` 代理 Mojang，URL 不带 token。
 - **Web RCON 等同控制台权限**：`POST /api/server/console` 在服务器线程执行命令，权限为 `ALL_PERMISSIONS`，危险命令由前端二次确认；不要把管理端 token 暴露给普通玩家。RCON 密码不进入浏览器。
 - **Web 审计不是世界备份**：它只快照 Web 可管理的小文件；世界栈/本体世界数据分别依赖各自时间线和备份，RCON 任意命令可能修改快照范围外的世界数据。

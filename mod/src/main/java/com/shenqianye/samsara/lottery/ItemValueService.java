@@ -3,10 +3,13 @@ package com.shenqianye.samsara.lottery;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.component.BundleContents;
+import net.minecraft.world.item.component.ItemContainerContents;
 
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -27,6 +30,7 @@ import java.util.Map;
  *   <li>原版配方比例：木板/木棍/方块按 1/4、1/9 等可逆关系推导；</li>
  *   <li>工具/护甲按材料成本 + 少量加工费；</li>
  *   <li>战利品/稀有物品手工锚点；</li>
+ *   <li>潜影盒/收纳袋等容器：容器自身价值 + 内容物价值（递归，限深防止恶意嵌套）；</li>
  *   <li>未知物品默认 0（不收），由 {@code /samsara lottery value missing} 排查。</li>
  * </ol>
  *
@@ -37,6 +41,8 @@ public final class ItemValueService {
     private static ItemValueService instance;
 
     private static final double ENCHANT_PER_LEVEL = 8.0;
+    /** 容器内容递归上限：防止异常深层嵌套拖垮估值；超过后只计当前层物品自身价值。 */
+    private static final int MAX_CONTAINER_DEPTH = 8;
 
     /** 常见物品锚点（完整表由构建期生成器扩展；这里覆盖高频交易物）。 */
     private static final Map<String, Double> BASE = new LinkedHashMap<>();
@@ -66,6 +72,8 @@ public final class ItemValueService {
         put("minecraft:elytra", 2048.0);
         put("minecraft:totem_of_undying", 1024.0);
         put("minecraft:shulker_shell", 512.0);
+        put("minecraft:shulker_box", 2 * 512.0 + 1.0);
+        put("minecraft:bundle", 0.75);
         put("minecraft:enchanted_golden_apple", 2048.0);
         put("minecraft:golden_apple", 8.0);
         put("minecraft:netherite_upgrade_smithing_template", 256.0);
@@ -211,27 +219,54 @@ public final class ItemValueService {
         return Math.max(0.0, BASE.getOrDefault(itemId, derive(itemId)));
     }
 
-    /** 单件物品价值（不含数量）。 */
+    /** 单件物品价值（不含数量），容器会递归计入内容物。 */
     public double unitValue(ItemStack stack) {
+        return unitValue(stack, 0);
+    }
+
+    private double unitValue(ItemStack stack, int depth) {
         if (stack == null || stack.isEmpty()) {
             return 0.0;
         }
         String id = idOf(stack.getItem());
         double base = unitValue(id);
-        if (base <= 0.0) {
-            return 0.0;
-        }
-        double enchant = enchantValue(stack);
-        double durability = durabilityFactor(stack);
-        return Math.max(0.0, (base + enchant) * durability);
+        // 容器自身没有价签时仍要计算内容物；普通未知物品保持 0。
+        double own = base <= 0.0 ? 0.0 : (base + enchantValue(stack)) * durabilityFactor(stack);
+        double contents = depth < MAX_CONTAINER_DEPTH ? containerValue(stack, depth + 1) : 0.0;
+        return Math.max(0.0, own + contents);
     }
 
-    /** 整堆价值。 */
+    /** 整堆价值（含潜影盒/收纳袋等内容物，按堆叠数量放大）。 */
     public double valueOf(ItemStack stack) {
+        return valueOf(stack, 0);
+    }
+
+    private double valueOf(ItemStack stack, int depth) {
         if (stack == null || stack.isEmpty()) {
             return 0.0;
         }
-        return unitValue(stack) * stack.getCount();
+        return unitValue(stack, depth) * stack.getCount();
+    }
+
+    /** 容器内容物价值；兼容潜影盒 CONTAINER 与收纳袋 BUNDLE_CONTENTS。 */
+    private double containerValue(ItemStack stack, int depth) {
+        if (depth > MAX_CONTAINER_DEPTH) {
+            return 0.0;
+        }
+        double total = 0.0;
+        ItemContainerContents container = stack.get(DataComponents.CONTAINER);
+        if (container != null) {
+            total += container.nonEmptyItemCopyStream()
+                    .mapToDouble(child -> valueOf(child, depth))
+                    .sum();
+        }
+        BundleContents bundle = stack.get(DataComponents.BUNDLE_CONTENTS);
+        if (bundle != null) {
+            total += bundle.itemCopies()
+                    .mapToDouble(child -> valueOf(child, depth))
+                    .sum();
+        }
+        return total;
     }
 
     private volatile List<Map<String, Object>> allCache;
@@ -440,6 +475,14 @@ public final class ItemValueService {
     /** 按命名/材料推导工具、护甲、方块、矿石等价值；未知返回 0。 */
     private double derive(String id) {
         String path = id.startsWith("minecraft:") ? id.substring("minecraft:".length()) : id;
+        // 潜影盒：2 个潜影壳 + 1 个箱子；所有颜色同价。
+        if (path.equals("shulker_box") || path.endsWith("_shulker_box")) {
+            return 2.0 * BASE.getOrDefault("minecraft:shulker_shell", 512.0) + 1.0;
+        }
+        // 收纳袋：皮革 + 线；所有颜色同价。
+        if (path.equals("bundle") || path.endsWith("_bundle")) {
+            return 0.75;
+        }
         if (path.endsWith("_block")) {
             String material = path.substring(0, path.length() - "_block".length());
             Double unit = MATERIALS.get(material);

@@ -31,6 +31,15 @@ class ItemValueServiceTest {
     }
 
     @Test
+    void containersHaveOwnValueForAllVariants() {
+        assertEquals(1025.0, values.unitValue("minecraft:shulker_box"), 1e-6);
+        assertEquals(1025.0, values.unitValue("minecraft:white_shulker_box"), 1e-6);
+        assertEquals(1025.0, values.unitValue("minecraft:lime_shulker_box"), 1e-6);
+        assertEquals(0.75, values.unitValue("minecraft:bundle"), 1e-6);
+        assertEquals(0.75, values.unitValue("minecraft:white_bundle"), 1e-6);
+    }
+
+    @Test
     void unknownItemsAreRejected() {
         assertEquals(0.0, values.unitValue(""), 1e-6);
         assertEquals(0.0, values.unitValue("minecraft:barrier"), 1e-6);

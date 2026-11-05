@@ -12,8 +12,8 @@ const state = {
   tab: 'config',
   navTargets: [],
   navScrollHandler: null,
-  scrollPositions: { config: 0, identity: 0, 'claim-range': 0, output: 0, permissions: 0, map: 0, 'world-stack': 0, lottery: 0 },
-  navScrollPositions: { config: 0, identity: 0, 'claim-range': 0, output: 0, permissions: 0, map: 0, 'world-stack': 0, lottery: 0 },
+  scrollPositions: { config: 0, 'config-editor': 0, identity: 0, 'claim-range': 0, output: 0, permissions: 0, map: 0, 'world-stack': 0, lottery: 0 },
+  navScrollPositions: { config: 0, 'config-editor': 0, identity: 0, 'claim-range': 0, output: 0, permissions: 0, map: 0, 'world-stack': 0, lottery: 0 },
   claimPreview: null,
 };
 
@@ -23,8 +23,8 @@ const connectedHooks = [];
 // 不能只依赖原生 input/change 或 DOM 冒泡（分段按钮不在表单事件链里）。
 const fileBlockFiles = new WeakMap();
 const curveEstimators = new Map();
-const panelIds = ['panel-identity', 'panel-config', 'panel-claim-range', 'panel-output', 'panel-permissions', 'panel-map', 'panel-world-stack', 'panel-lottery'];
-const tabNames = { 'panel-identity': 'identity', 'panel-config': 'config', 'panel-claim-range': 'claim-range', 'panel-output': 'output', 'panel-permissions': 'permissions', 'panel-map': 'map', 'panel-world-stack': 'world-stack', 'panel-lottery': 'lottery' };
+const panelIds = ['panel-identity', 'panel-config', 'panel-config-editor', 'panel-claim-range', 'panel-output', 'panel-permissions', 'panel-map', 'panel-world-stack', 'panel-lottery'];
+const tabNames = { 'panel-identity': 'identity', 'panel-config': 'config', 'panel-config-editor': 'config-editor', 'panel-claim-range': 'claim-range', 'panel-output': 'output', 'panel-permissions': 'permissions', 'panel-map': 'map', 'panel-world-stack': 'world-stack', 'panel-lottery': 'lottery' };
 
 const $ = (id) => document.getElementById(id);
 
@@ -3398,6 +3398,8 @@ function setActiveTab(name) {
   updateTabActions(name);
   if (name === 'config') {
     render();
+  } else if (name === 'config-editor') {
+    window.SamsaraConfigEditor?.activate();
   } else if (name === 'claim-range') {
     renderClaimRange();
   } else if (name === 'map') {
@@ -3426,9 +3428,14 @@ function setActiveTab(name) {
 
 const TAB_ACTIONS = {
   config: {
-    title: '配置',
+    title: '高级配置',
     hint: '保存会写入全部配置并热重载',
     save: '保存并重载',
+  },
+  'config-editor': {
+    title: '配置编辑器',
+    hint: 'PageSpec/FormSpec 驱动；第三方与服务器配置需预览确认，写入前自动备份',
+    save: '预览并保存',
   },
   'claim-range': {
     title: '圈地范围',
@@ -3497,6 +3504,7 @@ function refreshCounts() {
 }
 
 async function saveActive() {
+  if (state.tab === 'config-editor') return window.SamsaraConfigEditor?.save?.();
   if (state.tab === 'identity') return window.SamsaraIdentity?.save?.();
   if (state.tab === 'output') return window.SamsaraOutput?.save?.();
   if (state.tab === 'permissions') return window.SamsaraPermissions?.saveOwners?.();
@@ -3506,6 +3514,7 @@ async function saveActive() {
 }
 
 async function reloadActive() {
+  if (state.tab === 'config-editor') return window.SamsaraConfigEditor?.reload?.();
   if (state.tab === 'identity') return window.SamsaraIdentity?.reload?.();
   if (state.tab === 'output') return window.SamsaraOutput?.reload?.();
   if (state.tab === 'permissions') return window.SamsaraPermissions?.reload?.();
@@ -3613,7 +3622,7 @@ window.SamsaraUI = {
 };
 
 const initialTab = (location.hash || '').replace('#', '');
-if (['config', 'claim-range', 'identity', 'output', 'permissions', 'map', 'world-stack', 'lottery'].includes(initialTab)) {
+if (['config', 'config-editor', 'claim-range', 'identity', 'output', 'permissions', 'map', 'world-stack', 'lottery'].includes(initialTab)) {
   setActiveTab(initialTab);
 } else {
   updateTabActions('config');

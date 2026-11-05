@@ -32,8 +32,11 @@
     <nav id="mods-tabs" class="tabs tabs-grouped" aria-label="页面">
       <div class="tab-group" role="group" aria-label="配置">
         <span class="tab-group-label">配置</span>
+        <button class="tab" data-panel="panel-config-editor">
+          配置编辑器 <span class="tab-count" id="config-editor-count">0</span>
+        </button>
         <button class="tab active" data-panel="panel-config">
-          配置 <span class="tab-count" id="config-count">0</span>
+          高级配置 <span class="tab-count" id="config-count">0</span>
         </button>
         <button class="tab" data-panel="panel-claim-range">
           圈地范围 <span class="tab-count" id="claim-range-count">0</span>
@@ -161,6 +164,29 @@
           </div>
           <div id="message" class="message" role="status"></div>
           <div id="files" class="config-files"></div>
+        </section>
+      </div>
+
+      <div id="panel-config-editor" class="panel-stack" hidden>
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>配置编辑器</h2>
+              <p class="panel-sub">PageSpec / FormSpec 驱动：samsara YAML、服务器本体与第三方 YAML/JSON/TOML/properties。第三方与服务器配置需先预览确认，写入前自动备份。</p>
+            </div>
+            <div class="panel-tools">
+              <label class="search-box">
+                <span aria-hidden="true">⌕</span>
+                <input id="config-editor-search" type="search" placeholder="搜索页面 / 字段 / 分组">
+              </label>
+              <span id="config-editor-summary" class="muted small"></span>
+            </div>
+          </div>
+          <div id="config-editor-message" class="message" role="status"></div>
+          <div class="config-editor-layout">
+            <aside id="config-editor-nav" class="config-editor-nav" aria-label="配置页面"></aside>
+            <div id="config-editor-body" class="config-editor-body"></div>
+          </div>
         </section>
       </div>
 
@@ -959,6 +985,20 @@
     </div>
   </dialog>
 
+  <dialog id="config-editor-preview-dialog" class="app-dialog">
+    <form method="dialog" class="dialog-body">
+      <h3>预览变更</h3>
+      <p id="config-editor-preview-sub" class="dialog-sub"></p>
+      <div id="config-editor-preview-errors" class="message error" hidden></div>
+      <pre id="config-editor-preview-diff" class="config-editor-diff"></pre>
+      <div class="dialog-actions">
+        <span class="spacer"></span>
+        <button type="button" id="config-editor-preview-cancel" class="ghost">取消</button>
+        <button type="button" id="config-editor-preview-confirm" class="primary">确认保存</button>
+      </div>
+    </form>
+  </dialog>
+
   <input id="world-stack-icon-input" type="file" accept="image/png,image/jpeg,image/webp" hidden>
 
   <datalist id="identity-candidates"></datalist>
@@ -974,6 +1014,7 @@
   <script src="/value-table.js"></script>
   <script src="/lottery.js"></script>
   <script src="/app.js"></script>
+  <script src="/config-editor.js"></script>
   <script src="/map.js"></script>
   <script src="/world-stack.js"></script>
   <script src="/output.js"></script>

@@ -1505,3 +1505,55 @@ img.glint { filter: drop-shadow(0 0 3px #b26cff) saturate(1.2); }
   text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; font-weight: 600;
 }
 .lottery-more { margin: 10px auto; display: block; }
+
+/* ── PageSpec/FormSpec 配置编辑器（F-168） ── */
+.config-editor-layout {
+  display: grid; grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+  gap: 16px; align-items: start;
+}
+.config-editor-nav {
+  position: sticky; top: 12px; max-height: calc(100vh - 180px); overflow: auto;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--panel-soft);
+  padding: 8px;
+}
+.config-editor-nav .nav-title { margin: 6px 8px; }
+.config-editor-nav .nav-item {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  padding: 6px 8px; border: 0; border-radius: 6px; background: transparent;
+  color: inherit; text-align: left; cursor: pointer; font: inherit;
+}
+.config-editor-nav .nav-item:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.config-editor-nav .nav-item.active { background: color-mix(in srgb, var(--accent) 18%, transparent); font-weight: 700; }
+.config-editor-nav .nav-group { margin: 8px 8px 4px; color: var(--muted); font-size: 11px; font-weight: 700; }
+.config-editor-nav .nav-count { margin-left: auto; color: var(--muted); font-size: 10px; }
+.config-editor-body { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+.config-editor-page-head {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  border-bottom: 1px solid var(--line); padding-bottom: 10px;
+}
+.config-editor-page-head h3 { margin: 0; font-size: 16px; }
+.config-editor-page-head .muted { font-size: 11px; }
+.config-editor-badge {
+  display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px;
+  border: 1px solid var(--line); border-radius: 999px; font-size: 10px; color: var(--muted);
+}
+.config-editor-actions { margin-left: auto; display: flex; gap: 6px; }
+.config-editor-toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.config-editor-toolbar .message { margin: 0; flex: 1 1 240px; }
+.config-editor-group { border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+.config-editor-group > summary {
+  cursor: pointer; padding: 8px 12px; background: var(--panel-soft); font-weight: 700; font-size: 12px;
+}
+.config-editor-group .group-body { padding: 4px 12px 12px; }
+.config-editor-diff {
+  max-height: 42vh; overflow: auto; white-space: pre-wrap; word-break: break-word;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--panel-soft);
+  padding: 10px; font-family: var(--mono); font-size: 11px; line-height: 1.5;
+}
+.config-editor-readonly {
+  padding: 12px; border: 1px dashed var(--line); border-radius: 8px; color: var(--muted);
+}
+@media (max-width: 760px) {
+  .config-editor-layout { grid-template-columns: 1fr; }
+  .config-editor-nav { position: static; max-height: 220px; }
+}

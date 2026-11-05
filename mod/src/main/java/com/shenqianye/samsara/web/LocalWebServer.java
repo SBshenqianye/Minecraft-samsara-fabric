@@ -5,6 +5,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.reflect.TypeToken;
+import com.shenqianye.samsara.config.spec.ConfigEditorService;
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -277,8 +278,33 @@ public final class LocalWebServer {
                 return;
             }
             String method = exchange.getRequestMethod();
+            String path = exchange.getRequestURI().getPath();
+            if ("GET".equals(method) && "/api/config/pages".equals(path)) {
+                json(exchange, 200, ConfigEditorService.getInstance().pages(serverRoot()));
+                return;
+            }
+            if ("POST".equals(method) && "/api/config/preview".equals(path)) {
+                String body;
+                try {
+                    body = readBody(exchange);
+                } catch (BodyTooLarge e) {
+                    status = 413;
+                    json(exchange, status, Map.of("error", "请求体过大"));
+                    return;
+                }
+                SaveRequest request = parseSave(body);
+                if (request == null) {
+                    status = 400;
+                    json(exchange, status, Map.of("error",
+                            "请求体应为 {\"file\":\"samsara:commands\",\"values\":{...}}"));
+                    return;
+                }
+                json(exchange, 200, ConfigEditorService.getInstance()
+                        .preview(serverRoot(), request.file(), request.values()));
+                return;
+            }
             if ("GET".equals(method)
-                    && "/api/config/retention-estimate".equals(exchange.getRequestURI().getPath())) {
+                    && "/api/config/retention-estimate".equals(path)) {
                 Map<String, String> query = parseQuery(exchange.getRequestURI().getRawQuery());
                 String curveJson = query.get("curve");
                 List<Map<String, Object>> raw;
@@ -352,6 +378,19 @@ public final class LocalWebServer {
                 status = 400;
                 json(exchange, status, Map.of("error",
                         "请求体应为 {\"file\":\"commands\",\"values\":{...}}"));
+                return;
+            }
+            if (request.file().contains(":") || !request.source().isBlank()) {
+                Map<String, Object> result = ConfigEditorService.getInstance().save(
+                        serverService == null ? null : serverService.server(),
+                        serverRoot(), request.file(), request.values(),
+                        request.confirm(), request.revision());
+                if (!Boolean.TRUE.equals(result.get("ok"))) {
+                    status = 400;
+                    json(exchange, status, result);
+                    return;
+                }
+                json(exchange, 200, result);
                 return;
             }
             ConfigService.SaveOutcome outcome = service.save(request.file(), request.values());
@@ -1248,6 +1287,14 @@ public final class LocalWebServer {
 
     // ---- 工具 ----
 
+    private Path serverRoot() {
+        if (serverService != null) {
+            return serverService.serverRoot();
+        }
+        return net.fabricmc.loader.api.FabricLoader.getInstance().getGameDir()
+                .toAbsolutePath().normalize();
+    }
+
     private boolean authorized(HttpExchange exchange) {
         boolean allowed = WebSecurity.authorized(token, exchange.getRequestHeaders()
                 .getFirst("Authorization"));
@@ -1300,7 +1347,14 @@ public final class LocalWebServer {
             for (Map.Entry<String, JsonElement> e : object.getAsJsonObject("values").entrySet()) {
                 values.put(e.getKey(), GSON.fromJson(e.getValue(), Object.class));
             }
-            return new SaveRequest(file, values);
+            String source = object.has("source") && object.get("source").isJsonPrimitive()
+                    ? object.get("source").getAsString() : "";
+            String revision = object.has("revision") && object.get("revision").isJsonPrimitive()
+                    ? object.get("revision").getAsString() : "";
+            boolean confirm = object.has("confirm")
+                    && object.get("confirm").isJsonPrimitive()
+                    && object.get("confirm").getAsBoolean();
+            return new SaveRequest(file, values, source, revision, confirm);
         } catch (RuntimeException e) {
             return null;
         }
@@ -1384,7 +1438,8 @@ public final class LocalWebServer {
                 status, System.currentTimeMillis() - startMs);
     }
 
-    private record SaveRequest(String file, Map<String, Object> values) {
+    private record SaveRequest(String file, Map<String, Object> values,
+                               String source, String revision, boolean confirm) {
     }
 
     private static final class BodyTooLarge extends Exception {
