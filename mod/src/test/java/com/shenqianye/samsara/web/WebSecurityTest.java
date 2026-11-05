@@ -62,6 +62,8 @@ class WebSecurityTest {
         assertTrue(WebSecurity.safeApiPath("/api/announcements/preview"));
         assertTrue(WebSecurity.safeApiPath("/api/announcements/send"));
         assertTrue(WebSecurity.safeApiPath("/api/announcements/stop"));
+        assertTrue(WebSecurity.safeApiPath("/api/agent/whoami"));
+        assertTrue(WebSecurity.safeApiPath("/api/agent/tokens"));
         assertTrue(WebSecurity.safeApiPath("/api/world-stack"));
         assertTrue(WebSecurity.safeApiPath("/api/world-stack/import/preview"));
         assertTrue(WebSecurity.safeApiPath("/api/world-stack/jobs/imp-1"));

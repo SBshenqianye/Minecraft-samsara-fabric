@@ -14,7 +14,7 @@
       "bearerAuth": {
         "type": "http",
         "scheme": "bearer",
-        "description": "web.yml 中的管理员 token"
+        "description": "管理员 token（web.yml，全 scope）或 /api/agent/tokens 创建的 scoped token。写请求可带 Idempotency-Key。"
       }
     },
     "schemas": {
@@ -118,6 +118,31 @@
           "content": { "application/json": { "schema": { "type": "object", "properties": { "announcement": { "$ref": "#/components/schemas/Announcement" }, "id": { "type": "string" }, "player": { "type": "string", "description": "只发给该玩家；留空按 target" }, "dryRun": { "type": "boolean", "default": true }, "confirm": { "type": "boolean", "default": false } } } } }
         },
         "responses": { "200": { "description": "预览或发送结果" }, "400": { "description": "校验失败/无匹配玩家" }, "401": { "description": "未授权" } }
+      }
+    },
+    "/api/agent/whoami": {
+      "get": {
+        "summary": "当前 Agent token 信息",
+        "responses": { "200": { "description": "actor/scope/限流" }, "401": { "description": "未授权" } }
+      }
+    },
+    "/api/agent/tokens": {
+      "get": {
+        "summary": "Agent token 列表（不返回明文）",
+        "responses": { "200": { "description": "token 名称/scope/创建时间" }, "403": { "description": "仅管理员" } }
+      },
+      "post": {
+        "summary": "创建 Agent token（仅管理员）",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "object", "required": ["name"], "properties": { "name": { "type": "string" }, "scopes": { "type": "array", "items": { "type": "string", "enum": ["read", "announce", "config", "ops", "rcon"] } } } } } }
+        },
+        "responses": { "200": { "description": "token 只显示一次" }, "400": { "description": "名称/scope 非法" }, "403": { "description": "仅管理员" } }
+      },
+      "delete": {
+        "summary": "撤销 Agent token（仅管理员）",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["name"], "properties": { "name": { "type": "string" } } } } } },
+        "responses": { "200": { "description": "已撤销" }, "403": { "description": "仅管理员" } }
       }
     },
     "/api/announcements/stop": {

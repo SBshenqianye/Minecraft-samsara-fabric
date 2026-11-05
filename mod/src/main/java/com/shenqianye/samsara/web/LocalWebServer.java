@@ -174,6 +174,7 @@ public final class LocalWebServer {
         server.createContext("/", this::handleStatic);
         server.createContext("/api/config", this::handleConfig);
         server.createContext("/api/announcements", this::handleAnnouncements);
+        server.createContext("/api/agent", this::handleAgent);
         server.createContext("/api/reload", this::handleReload);
         server.createContext("/api/status", this::handleStatus);
         if (identityService != null) {
@@ -274,9 +275,9 @@ public final class LocalWebServer {
         long start = System.currentTimeMillis();
         int status = 200;
         try {
-            if (!authorized(exchange)) {
-                status = 401;
-                json(exchange, status, Map.of("error", "未授权：缺少或错误的 Bearer token"));
+            int auth = authorize(exchange);
+            if (auth != 0) {
+                status = auth;
                 return;
             }
             String method = exchange.getRequestMethod();
@@ -421,9 +422,9 @@ public final class LocalWebServer {
         long start = System.currentTimeMillis();
         int status = 200;
         try {
-            if (!authorized(exchange)) {
-                status = 401;
-                json(exchange, status, Map.of("error", "未授权：缺少或错误的 Bearer token"));
+            int auth = authorize(exchange);
+            if (auth != 0) {
+                status = auth;
                 return;
             }
             String method = exchange.getRequestMethod();
@@ -530,9 +531,9 @@ public final class LocalWebServer {
         long start = System.currentTimeMillis();
         int status = 200;
         try {
-            if (!authorized(exchange)) {
-                status = 401;
-                json(exchange, status, Map.of("error", "未授权：缺少或错误的 Bearer token"));
+            int auth = authorize(exchange);
+            if (auth != 0) {
+                status = auth;
                 return;
             }
             if (!"POST".equals(exchange.getRequestMethod())) {
@@ -550,9 +551,9 @@ public final class LocalWebServer {
         long start = System.currentTimeMillis();
         int status = 200;
         try {
-            if (!authorized(exchange)) {
-                status = 401;
-                json(exchange, status, Map.of("error", "未授权：缺少或错误的 Bearer token"));
+            int auth = authorize(exchange);
+            if (auth != 0) {
+                status = auth;
                 return;
             }
             if (identityService == null) {
@@ -658,9 +659,9 @@ public final class LocalWebServer {
         long start = System.currentTimeMillis();
         int status = 200;
         try {
-            if (!authorized(exchange)) {
-                status = 401;
-                json(exchange, status, Map.of("error", "未授权：缺少或错误的 Bearer token"));
+            int auth = authorize(exchange);
+            if (auth != 0) {
+                status = auth;
                 return;
             }
             if (outputService == null) {
@@ -734,9 +735,9 @@ public final class LocalWebServer {
         long start = System.currentTimeMillis();
         int status = 200;
         try {
-            if (!authorized(exchange)) {
-                status = 401;
-                json(exchange, status, Map.of("error", "未授权：缺少或错误的 Bearer token"));
+            int auth = authorize(exchange);
+            if (auth != 0) {
+                status = auth;
                 return;
             }
             if (permissionService == null) {
@@ -915,9 +916,9 @@ public final class LocalWebServer {
         long start = System.currentTimeMillis();
         int status = 200;
         try {
-            if (!authorized(exchange)) {
-                status = 401;
-                json(exchange, status, Map.of("error", "未授权：缺少或错误的 Bearer token"));
+            int auth = authorize(exchange);
+            if (auth != 0) {
+                status = auth;
                 return;
             }
             if (mapService == null) {
@@ -986,9 +987,9 @@ public final class LocalWebServer {
         long start = System.currentTimeMillis();
         int status = 200;
         try {
-            if (!authorized(exchange)) {
-                status = 401;
-                json(exchange, status, Map.of("error", "未授权：缺少或错误的 Bearer token"));
+            int auth = authorize(exchange);
+            if (auth != 0) {
+                status = auth;
                 return;
             }
             if (diffService == null) {
@@ -1057,9 +1058,9 @@ public final class LocalWebServer {
         long start = System.currentTimeMillis();
         int status = 200;
         try {
-            if (!authorized(exchange)) {
-                status = 401;
-                json(exchange, status, Map.of("error", "未授权：缺少或错误的 Bearer token"));
+            int auth = authorize(exchange);
+            if (auth != 0) {
+                status = auth;
                 return;
             }
             if (serverService == null) {
@@ -1142,9 +1143,9 @@ public final class LocalWebServer {
         long start = System.currentTimeMillis();
         int status = 200;
         try {
-            if (!authorized(exchange)) {
-                status = 401;
-                json(exchange, status, Map.of("error", "未授权：缺少或错误的 Bearer token"));
+            int auth = authorize(exchange);
+            if (auth != 0) {
+                status = auth;
                 return;
             }
             String path = exchange.getRequestURI().getPath();
@@ -1198,9 +1199,9 @@ public final class LocalWebServer {
         long start = System.currentTimeMillis();
         int status = 200;
         try {
-            if (!authorized(exchange)) {
-                status = 401;
-                json(exchange, status, Map.of("error", "未授权：缺少或错误的 Bearer token"));
+            int auth = authorize(exchange);
+            if (auth != 0) {
+                status = auth;
                 return;
             }
             if (worldStackService == null) {
@@ -1341,9 +1342,9 @@ public final class LocalWebServer {
         long start = System.currentTimeMillis();
         int status = 200;
         try {
-            if (!authorized(exchange)) {
-                status = 401;
-                json(exchange, status, Map.of("error", "未授权：缺少或错误的 Bearer token"));
+            int auth = authorize(exchange);
+            if (auth != 0) {
+                status = auth;
                 return;
             }
             String path = exchange.getRequestURI().getPath();
@@ -1380,9 +1381,9 @@ public final class LocalWebServer {
     private void handleStatus(HttpExchange exchange) throws IOException {        long start = System.currentTimeMillis();
         int status = 200;
         try {
-            if (!authorized(exchange)) {
-                status = 401;
-                json(exchange, status, Map.of("error", "未授权：缺少或错误的 Bearer token"));
+            int auth = authorize(exchange);
+            if (auth != 0) {
+                status = auth;
                 return;
             }
             if (!"GET".equals(exchange.getRequestMethod())) {
@@ -1406,11 +1407,157 @@ public final class LocalWebServer {
                 .toAbsolutePath().normalize();
     }
 
-    private boolean authorized(HttpExchange exchange) {
-        boolean allowed = WebSecurity.authorized(token, exchange.getRequestHeaders()
-                .getFirst("Authorization"));
-        if (allowed) WebAuditService.capture(exchange);
-        return allowed;
+    /**
+     * 鉴权 + scope + 限流 + 幂等重放。返回 0 表示继续处理；非 0 时响应已发送，
+     * 调用方只需把状态码写入日志并返回。
+     */
+    private int authorize(HttpExchange exchange) throws IOException {
+        AgentAuthService.AuthContext context = AgentAuthService.getInstance().authenticate(
+                exchange.getRequestHeaders().getFirst("Authorization"), token);
+        if (context == null) {
+            json(exchange, 401, Map.of("error", "未授权：缺少或错误的 Bearer token"));
+            return 401;
+        }
+        exchange.setAttribute(AgentAuthService.ATTR_CONTEXT, context);
+        String path = exchange.getRequestURI().getPath();
+        if (path.startsWith("/api/agent/tokens") && !context.admin()) {
+            json(exchange, 403, Map.of("error", "token 管理仅管理员可用"));
+            return 403;
+        }
+        AgentScope required = requiredScope(exchange.getRequestMethod(), path);
+        if (!context.has(required)) {
+            json(exchange, 403, Map.of("error", "token 缺少 scope：" + required.id()));
+            return 403;
+        }
+        if (!AgentAuthService.getInstance().allow(context, required)) {
+            exchange.getResponseHeaders().set("Retry-After", "60");
+            json(exchange, 429, Map.of("error", "请求过于频繁，请稍后再试"));
+            return 429;
+        }
+        IdempotencyService idempotency = IdempotencyService.getInstance();
+        idempotency.attach(exchange, context.actor());
+        IdempotencyService.Cached cached = idempotency.replay(exchange);
+        if (cached != null) {
+            exchange.getResponseHeaders().set("Idempotency-Replayed", "true");
+            sendBytes(exchange, cached.status(), "application/json; charset=utf-8",
+                    cached.body().getBytes(StandardCharsets.UTF_8));
+            return cached.status();
+        }
+        WebAuditService.capture(exchange);
+        return 0;
+    }
+
+    private static AgentScope requiredScope(String method, String path) {
+        if ("GET".equals(method)) {
+            return AgentScope.READ;
+        }
+        if (path.startsWith("/api/agent/tokens")) {
+            return AgentScope.OPS;
+        }
+        if (path.startsWith("/api/server/console")) {
+            return AgentScope.RCON;
+        }
+        if (path.startsWith("/api/announcements")) {
+            return path.endsWith("/preview") ? AgentScope.READ : AgentScope.ANNOUNCE;
+        }
+        if (path.startsWith("/api/config")) {
+            if (path.equals("/api/config/preview")) {
+                return AgentScope.READ;
+            }
+            return "PUT".equals(method) ? AgentScope.CONFIG : AgentScope.READ;
+        }
+        if (path.equals("/api/reload")) {
+            return AgentScope.CONFIG;
+        }
+        if (path.startsWith("/api/permissions") || path.startsWith("/api/output")
+                || path.startsWith("/api/identity")) {
+            return AgentScope.CONFIG;
+        }
+        if (path.startsWith("/api/audit")) {
+            return path.equals("/api/audit/preview") ? AgentScope.READ : AgentScope.OPS;
+        }
+        if (path.startsWith("/api/diff")) {
+            return path.equals("/api/diff/view") ? AgentScope.READ : AgentScope.OPS;
+        }
+        return AgentScope.OPS;
+    }
+
+    private void handleAgent(HttpExchange exchange) throws IOException {
+        long start = System.currentTimeMillis();
+        int status = 200;
+        try {
+            int auth = authorize(exchange);
+            if (auth != 0) {
+                status = auth;
+                return;
+            }
+            AgentAuthService.AuthContext context = AgentAuthService.getInstance()
+                    .context(exchange);
+            String path = exchange.getRequestURI().getPath();
+            String method = exchange.getRequestMethod();
+            if ("/api/agent/whoami".equals(path) && "GET".equals(method)) {
+                json(exchange, 200, AgentAuthService.getInstance().describe(context));
+                return;
+            }
+            if ("/api/agent/tokens".equals(path)) {
+                AgentTokenStore store = AgentTokenStore.getInstance();
+                if ("GET".equals(method)) {
+                    Map<String, Object> out = new LinkedHashMap<>();
+                    out.put("ok", true);
+                    out.put("path", store.file().toString());
+                    out.put("tokens", store.listPublic());
+                    out.put("scopes", AgentScope.ids());
+                    json(exchange, 200, out);
+                    return;
+                }
+                String body;
+                try {
+                    body = readBody(exchange);
+                } catch (BodyTooLarge e) {
+                    status = 413;
+                    json(exchange, status, Map.of("error", "请求体过大"));
+                    return;
+                }
+                Map<String, Object> request = GSON.fromJson(body, MAP_TYPE);
+                if (request == null) {
+                    status = 400;
+                    json(exchange, status, Map.of("error", "请求体应为 JSON 对象"));
+                    return;
+                }
+                if ("POST".equals(method)) {
+                    Object rawScopes = request.get("scopes");
+                    List<String> scopes = rawScopes instanceof List<?> list
+                            ? list.stream().map(String::valueOf).toList() : List.of();
+                    Map<String, Object> result = store.create(
+                            String.valueOf(request.getOrDefault("name", "")), scopes);
+                    if (!Boolean.TRUE.equals(result.get("ok"))) {
+                        status = 400;
+                    }
+                    json(exchange, status, result);
+                    return;
+                }
+                if ("DELETE".equals(method)) {
+                    Map<String, Object> result = store.revoke(
+                            String.valueOf(request.getOrDefault("name", "")));
+                    if (!Boolean.TRUE.equals(result.get("ok"))) {
+                        status = 400;
+                    }
+                    json(exchange, status, result);
+                    return;
+                }
+                status = 405;
+                json(exchange, status, Map.of("error", "Method Not Allowed"));
+                return;
+            }
+            status = 404;
+            json(exchange, status, Map.of("error", "Not Found"));
+        } catch (RuntimeException e) {
+            status = 500;
+            json(exchange, status, Map.of("error", "服务器内部错误"));
+            LOG.warn("[web] 处理 {} 失败: {}", exchange.getRequestURI().getPath(), e.getMessage());
+        } finally {
+            log(exchange, status, start);
+        }
     }
 
     private static String readBody(HttpExchange exchange) throws IOException, BodyTooLarge {
@@ -1488,8 +1635,10 @@ public final class LocalWebServer {
     }
 
     private static void json(HttpExchange exchange, int status, Object body) throws IOException {
+        String text = GSON.toJson(body);
+        IdempotencyService.getInstance().store(exchange, status, text);
         sendBytes(exchange, status, "application/json; charset=utf-8",
-                GSON.toJson(body).getBytes(StandardCharsets.UTF_8));
+                text.getBytes(StandardCharsets.UTF_8));
     }
 
     private static void sendText(HttpExchange exchange, int status, String type, String body)

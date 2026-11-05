@@ -770,6 +770,28 @@ async function main() {
         && announcements.previewText.includes('聊天'), JSON.stringify({
           preview: announcements.previewText.slice(0, 160) }));
 
+    const agentWhoami = await evaluate(`window.SamsaraUI.api('/api/agent/whoami')`);
+    check('Agent whoami 返回 actor/scope/限流', agentWhoami.ok === true
+        && agentWhoami.actor === 'admin' && agentWhoami.admin === true
+        && Array.isArray(agentWhoami.scopes) && agentWhoami.scopes.includes('announce')
+        && agentWhoami.limits && agentWhoami.limits.readPerMinute > 0,
+        JSON.stringify(agentWhoami));
+
+    const idempotency = await evaluate(`(async () => {
+      const token = window.SamsaraUI.getToken();
+      const key = 'e2e-idem-' + Date.now();
+      const headers = { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json',
+        'Idempotency-Key': key };
+      const body = JSON.stringify({ file: 'samsara:commands', values: {} });
+      const first = await fetch('/api/config/preview', { method: 'POST', headers, body });
+      const second = await fetch('/api/config/preview', { method: 'POST', headers, body });
+      return { first: first.status, second: second.status,
+        replay: second.headers.get('Idempotency-Replayed') };
+    })()`);
+    check('Idempotency-Key 重放同一写请求', idempotency.first === 200
+        && idempotency.second === 200 && idempotency.replay === 'true',
+        JSON.stringify(idempotency));
+
     check('经济业务标签为原生面板', mods.lottery && mods.lottery.hidden === false
         && mods.lottery.iframe === false && mods.lottery.stats >= 8
         && mods.lottery.values >= 1

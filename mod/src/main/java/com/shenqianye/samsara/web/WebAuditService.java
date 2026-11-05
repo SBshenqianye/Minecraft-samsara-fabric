@@ -74,14 +74,19 @@ public final class WebAuditService {
                 return;
             }
             String path = exchange.getRequestURI().getPath();
-            get().capture(path);
+            String actor = "admin";
+            AgentAuthService.AuthContext context = AgentAuthService.getInstance().context(exchange);
+            if (context != null) {
+                actor = context.actor();
+            }
+            get().capture(path, actor);
         } catch (Throwable t) {
             // 审计失败绝不能阻塞配置保存。
             Samsara.LOGGER.debug("[web] Web 审计快照失败: {}", t.getMessage());
         }
     }
 
-    private synchronized void capture(String path) {
+    private synchronized void capture(String path, String actor) {
         if (path == null || path.isBlank() || isReadOnly(path)) return;
         try {
             String id = "wa-" + System.currentTimeMillis() + "-" + SEQ.incrementAndGet();
@@ -96,6 +101,7 @@ public final class WebAuditService {
             Entry entry = new Entry();
             entry.id = id;
             entry.createdAt = System.currentTimeMillis();
+            entry.actor = actor == null || actor.isBlank() ? "admin" : actor;
             entry.action = path;
             entry.target = path;
             entry.status = "captured";
@@ -357,6 +363,7 @@ public final class WebAuditService {
             Entry entry = new Entry();
             entry.id = id;
             entry.createdAt = System.currentTimeMillis();
+            entry.actor = "system-rollback";
             entry.action = "/api/audit/rollback";
             entry.target = "回滚前当前状态";
             entry.status = "captured";
@@ -516,6 +523,7 @@ public final class WebAuditService {
     public static final class Entry {
         public String id = "";
         public long createdAt;
+        public String actor = "admin";
         public String action = "";
         public String target = "";
         public String status = "captured";
@@ -529,6 +537,7 @@ public final class WebAuditService {
             Map<String, Object> out = new LinkedHashMap<>();
             out.put("id", id);
             out.put("createdAt", createdAt);
+            out.put("actor", actor);
             out.put("action", action);
             out.put("target", target);
             out.put("status", status);

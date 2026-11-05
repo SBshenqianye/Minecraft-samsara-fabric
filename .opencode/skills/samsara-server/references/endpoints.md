@@ -7,6 +7,8 @@ Base：`$SAMSARA_URL`，默认 `http://127.0.0.1:8720`
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
+| GET | `/api/agent/whoami` | 当前 token actor/scope/限流 |
+| GET/POST/DELETE | `/api/agent/tokens` | Agent token 管理（仅管理员） |
 | GET | `/api/status` | 服务器/配置路径/警告 |
 | GET | `/api/config/pages` | PageSpec/FormSpec 配置页面 |
 | POST | `/api/config/preview` | 预览配置变更，返回 fields/diff/revision |

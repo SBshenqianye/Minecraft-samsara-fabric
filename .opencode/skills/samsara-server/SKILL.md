@@ -16,8 +16,12 @@ description: 管理 samsara Minecraft 服务器。通过本机 Web API 查看状
 
 - 默认地址：`http://127.0.0.1:8720`；测试服通常 `8722`
 - 鉴权：`Authorization: Bearer $SAMSARA_TOKEN`
+- Whoami：`GET /api/agent/whoami`（actor/scope/限流）
 - OpenAPI：`GET /openapi.json`
 - 完整接口：`references/endpoints.md`；仓库内还有 `docs/Agent API.md`
+
+token 可能是管理员 token（全 scope）或 scoped token（read/announce/config/ops/rcon）。
+写请求可带 `Idempotency-Key`；429 时按 `Retry-After` 等待，不要狂重试。
 
 不要猜测端口；先读环境变量 `SAMSARA_URL`，没有再用默认值。
 

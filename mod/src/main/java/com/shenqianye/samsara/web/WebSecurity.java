@@ -118,6 +118,8 @@ public final class WebSecurity {
                 || "/api/announcements/preview".equals(path)
                 || "/api/announcements/send".equals(path)
                 || "/api/announcements/stop".equals(path)
+                || "/api/agent/whoami".equals(path)
+                || "/api/agent/tokens".equals(path)
                 || "/api/world-stack".equals(path)
                 || "/api/world-stack/timeline".equals(path)
                 || "/api/world-stack/timeline/preview".equals(path)

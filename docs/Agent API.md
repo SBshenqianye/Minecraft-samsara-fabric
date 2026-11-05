@@ -6,13 +6,47 @@
 
 - 监听地址：`127.0.0.1`（只回环）
 - 默认端口：生产 `8720`，测试服 `8722`
-- 鉴权：`Authorization: Bearer <config/samsara/web.yml 的 token>`
+- 鉴权：`Authorization: Bearer <token>`
+  - 管理员 token：`config/samsara/web.yml`，拥有全部 scope
+  - Agent token：`/api/agent/tokens` 创建，按 scope 限权
 - OpenAPI：`GET /openapi.json`
+- Whoami：`GET /api/agent/whoami`
 - 远程 Agent 建议通过 SSH 隧道或同机 bridge，不要把端口直接暴露公网。
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8720/api/status
 ```
+
+## 1.1 Scoped token
+
+scope：
+
+| scope | 允许 |
+|---|---|
+| `read` | 所有 GET、preview、审计预览 |
+| `announce` | 公告保存/发送/停止 |
+| `config` | 配置写入、reload、权限/输出/身份组写入 |
+| `ops` | 服务器配置、备份、世界栈、审计回滚、Agent token 管理 |
+| `rcon` | `/api/server/console` |
+
+创建 token 需要**管理员 token**（Agent token 不能自我提权）：
+
+```bash
+curl -X POST http://127.0.0.1:8720/api/agent/tokens \
+  -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
+  -d '{"name":"ops-agent","scopes":["read","announce","config"]}'
+```
+
+响应中的 `token` 只显示一次，服务端只保存 SHA-256。
+
+`GET /api/agent/tokens` 列表不返回明文；`DELETE /api/agent/tokens` + `{"name":"ops-agent"}` 撤销。
+
+## 1.2 限流与幂等
+
+- 每分钟限额：read 300、announce 60、config 60、ops 30、rcon 20。
+- 超限返回 `429` 和 `Retry-After: 60`。
+- 写请求可带 `Idempotency-Key: <唯一值>`；同一 actor + method + path + key 在 10 分钟内重复提交直接返回首次响应，并带 `Idempotency-Replayed: true`。
+- 建议 Agent 为每个任务生成一次 key，重试时复用同一个 key。
 
 ## 2. 通用约定
 
@@ -127,9 +161,8 @@ samsara-agent/
 
 ## 6. 当前边界
 
-- 当前只有单一管理员 token；尚未实现 read/announce/config/ops/rcon 分 scope。
-- 写审计没有 actor 字段；Agent 名称暂不能写入审计。
-- 长操作还没有统一的 `jobId`/`Idempotency-Key`。
+- 已支持 read/announce/config/ops/rcon scoped token；token 管理仅管理员。
+- Web 审计已记录 actor；`/api/audit` 的每条记录带 `actor`。
+- 写请求已支持 `Idempotency-Key`；长操作仍沿用各业务自己的 jobId（世界栈/备份），没有统一 job 查询层。
 - 只有回环监听，远程访问需要 SSH 隧道或本机 bridge。
-
-这些是下一阶段“Agent 控制面”改造项，不影响现在用外部 Agent 调用公告与配置 API。
+- 写审计快照范围仍是 Web 可管理的小文件，不覆盖整个世界数据。

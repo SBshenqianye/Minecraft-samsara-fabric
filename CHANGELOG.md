@@ -3,6 +3,15 @@
 > 面向玩家与服主的功能变化；实现细节、未达标项与证据见[《实现状态》](docs/实现状态.md)。
 > 每个版本按「新增 / 修复 / 优化 / 变更 / 重构 / 文档」分组，只写功能口径。
 
+## v0.46.6（2026-11-05）· Agent 控制面
+
+### 新增
+
+- **Scoped Agent token**：`/api/agent/tokens` 可创建/查看/撤销 Agent token，scope 分为 read / announce / config / ops / rcon；token 只存 SHA-256，明文只在创建时显示一次。
+- **Whoami 与限流**：`/api/agent/whoami` 返回 actor、scope 与每分钟限额；写接口按 scope 限流。
+- **幂等写请求**：支持 `Idempotency-Key`，10 分钟内重复提交直接返回首次响应，避免网络重试造成重复公告/重复保存。
+- **审计 actor**：Web 审计记录每次写操作由哪个管理员或 Agent 发起。
+
 ## v0.46.5（2026-11-05）· 回看循环播放
 
 ### 新增
