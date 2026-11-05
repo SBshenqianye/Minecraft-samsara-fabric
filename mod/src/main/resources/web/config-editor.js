@@ -63,7 +63,7 @@
   }
 
   function render() {
-    renderNav();
+    renderGlobalNav();
     renderBody();
     const count = $('config-editor-count');
     if (count) count.textContent = String(state.pages.length);
@@ -75,10 +75,8 @@
     }
   }
 
-  function renderNav() {
-    const nav = $('config-editor-nav');
-    if (!nav) return;
-    nav.replaceChildren();
+  function renderGlobalNav() {
+    if (!UI.buildNav) return;
     const groups = new Map();
     for (const page of filteredPages()) {
       const source = page.source || 'samsara';
@@ -87,27 +85,33 @@
       if (!groups.has(label)) groups.set(label, []);
       groups.get(label).push(page);
     }
+    const navItems = [];
     for (const [label, pages] of groups) {
-      nav.append(el('div', 'nav-group', label));
-      for (const page of pages) {
-        const button = el('button', 'nav-item');
-        button.type = 'button';
-        button.dataset.page = page.id;
-        button.classList.toggle('active', state.current && state.current.id === page.id);
-        button.append(el('span', 'nav-name', page.title || page.fileName));
-        const count = (page.form && page.form.fields || []).length;
-        button.append(el('span', 'nav-count', String(count)));
-        button.addEventListener('click', () => {
+      if (!pages.length) continue;
+      const children = pages.map((page) => ({
+        label: page.title || page.fileName,
+        count: (page.form && page.form.fields || []).length,
+        target: page.id,
+        onClick: () => {
           state.current = page;
           state.edits.clear();
           render();
-        });
-        nav.append(button);
-      }
+        },
+      }));
+      navItems.push({
+        label,
+        count: pages.length,
+        target: pages[0].id,
+        onClick: () => {
+          state.current = pages[0];
+          state.edits.clear();
+          render();
+        },
+        children,
+      });
     }
-    if (!state.pages.length) {
-      nav.append(el('p', 'muted small', '没有可显示的配置页面。'));
-    }
+    UI.buildNav('配置编辑器', navItems, []);
+    if (state.current) UI.setNavActive(state.current.id);
   }
 
   function renderBody() {
@@ -153,6 +157,10 @@
 
     if (page.readOnlyReason) {
       body.append(el('div', 'config-editor-readonly', page.readOnlyReason));
+    }
+    if (page.customWidget || !page.writable) {
+      // 专用编辑器 / 只读页面不在通用表单里重复渲染字段，避免把对象值显示成 [object Object]。
+      return;
     }
     if (!page.form || !(page.form.fields || []).length) {
       if (page.readOnlyReason) return;
@@ -228,7 +236,9 @@
   function buildControl(page, field) {
     const value = currentValue(page, field);
     if (field.readOnly || !page.writable) {
-      return el('div', 'entry-readonly', value == null ? '' : String(value));
+      const text = value != null && typeof value === 'object' ? pretty(value)
+        : (value == null ? '' : String(value));
+      return el('div', 'entry-readonly', text);
     }
     if (field.widget === 'chat' && window.SamsaraChatText) {
       return window.SamsaraChatText.create({
@@ -472,7 +482,12 @@
   }
 
   function activate() {
-    if (!state.loaded) load().catch(showError);
+    if (!state.loaded) {
+      load().catch(showError);
+      return;
+    }
+    // 切回本页时其他页面可能已重建 #global-nav，这里必须重新渲染导航与正文。
+    render();
   }
 
   const search = $('config-editor-search');

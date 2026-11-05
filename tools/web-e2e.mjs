@@ -785,10 +785,9 @@ async function main() {
       const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
       window.SamsaraUI.setActiveTab('config-editor');
       await wait(1200);
-      const nav = [...document.querySelectorAll('#config-editor-nav .nav-item')];
-      const groups = [...document.querySelectorAll('#config-editor-nav .nav-group')]
-        .map((node) => node.textContent.trim());
-      const third = nav.find((node) => (node.dataset.page || '').startsWith('third-party:'));
+      const nav = [...document.querySelectorAll('#global-nav .nav-item')];
+      const groups = nav.map((node) => node.textContent.trim());
+      const third = nav.find((node) => (node.dataset.target || '').startsWith('third-party:'));
       let fields = 0;
       let title = '';
       let previewOpen = false;

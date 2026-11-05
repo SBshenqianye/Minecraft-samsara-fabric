@@ -1515,24 +1515,9 @@ img.glint { filter: drop-shadow(0 0 3px #b26cff) saturate(1.2); }
 
 /* ── PageSpec/FormSpec 配置编辑器（F-168） ── */
 .config-editor-layout {
-  display: grid; grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+  display: grid; grid-template-columns: minmax(0, 1fr);
   gap: 16px; align-items: start;
 }
-.config-editor-nav {
-  position: sticky; top: 12px; max-height: calc(100vh - 180px); overflow: auto;
-  border: 1px solid var(--line); border-radius: 10px; background: var(--panel-soft);
-  padding: 8px;
-}
-.config-editor-nav .nav-title { margin: 6px 8px; }
-.config-editor-nav .nav-item {
-  display: flex; align-items: center; gap: 6px; width: 100%;
-  padding: 6px 8px; border: 0; border-radius: 6px; background: transparent;
-  color: inherit; text-align: left; cursor: pointer; font: inherit;
-}
-.config-editor-nav .nav-item:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
-.config-editor-nav .nav-item.active { background: color-mix(in srgb, var(--accent) 18%, transparent); font-weight: 700; }
-.config-editor-nav .nav-group { margin: 8px 8px 4px; color: var(--muted); font-size: 11px; font-weight: 700; }
-.config-editor-nav .nav-count { margin-left: auto; color: var(--muted); font-size: 10px; }
 .config-editor-body { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
 .config-editor-page-head {
   display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
@@ -1562,7 +1547,6 @@ img.glint { filter: drop-shadow(0 0 3px #b26cff) saturate(1.2); }
 }
 @media (max-width: 760px) {
   .config-editor-layout { grid-template-columns: 1fr; }
-  .config-editor-nav { position: static; max-height: 220px; }
 }
 
 /* ── Web 公告系统 ── */
