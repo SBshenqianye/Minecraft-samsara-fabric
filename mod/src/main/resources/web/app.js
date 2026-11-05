@@ -12,8 +12,8 @@ const state = {
   tab: 'config',
   navTargets: [],
   navScrollHandler: null,
-  scrollPositions: { config: 0, 'config-editor': 0, identity: 0, 'claim-range': 0, output: 0, permissions: 0, map: 0, 'world-stack': 0, lottery: 0 },
-  navScrollPositions: { config: 0, 'config-editor': 0, identity: 0, 'claim-range': 0, output: 0, permissions: 0, map: 0, 'world-stack': 0, lottery: 0 },
+  scrollPositions: { config: 0, 'config-editor': 0, identity: 0, 'claim-range': 0, output: 0, permissions: 0, map: 0, announcements: 0, 'world-stack': 0, lottery: 0 },
+  navScrollPositions: { config: 0, 'config-editor': 0, identity: 0, 'claim-range': 0, output: 0, permissions: 0, map: 0, announcements: 0, 'world-stack': 0, lottery: 0 },
   claimPreview: null,
 };
 
@@ -23,8 +23,8 @@ const connectedHooks = [];
 // 不能只依赖原生 input/change 或 DOM 冒泡（分段按钮不在表单事件链里）。
 const fileBlockFiles = new WeakMap();
 const curveEstimators = new Map();
-const panelIds = ['panel-identity', 'panel-config', 'panel-config-editor', 'panel-claim-range', 'panel-output', 'panel-permissions', 'panel-map', 'panel-world-stack', 'panel-lottery'];
-const tabNames = { 'panel-identity': 'identity', 'panel-config': 'config', 'panel-config-editor': 'config-editor', 'panel-claim-range': 'claim-range', 'panel-output': 'output', 'panel-permissions': 'permissions', 'panel-map': 'map', 'panel-world-stack': 'world-stack', 'panel-lottery': 'lottery' };
+const panelIds = ['panel-identity', 'panel-config', 'panel-config-editor', 'panel-claim-range', 'panel-output', 'panel-permissions', 'panel-map', 'panel-announcements', 'panel-world-stack', 'panel-lottery'];
+const tabNames = { 'panel-identity': 'identity', 'panel-config': 'config', 'panel-config-editor': 'config-editor', 'panel-claim-range': 'claim-range', 'panel-output': 'output', 'panel-permissions': 'permissions', 'panel-map': 'map', 'panel-announcements': 'announcements', 'panel-world-stack': 'world-stack', 'panel-lottery': 'lottery' };
 
 const $ = (id) => document.getElementById(id);
 
@@ -3404,6 +3404,8 @@ function setActiveTab(name) {
     renderClaimRange();
   } else if (name === 'map') {
     window.SamsaraMap?.activate();
+  } else if (name === 'announcements') {
+    window.SamsaraAnnouncements?.activate();
   } else if (name === 'world-stack') {
     window.SamsaraWorldStack?.activate();
   } else if (name === 'identity') {
@@ -3446,6 +3448,11 @@ const TAB_ACTIONS = {
     title: '地图',
     hint: '只读扫描存档；世界栈总览显示在线玩家（2 秒刷新）；切世界后点“重新读取”',
     save: null,
+  },
+  announcements: {
+    title: '公告',
+    hint: '编辑后保存；发送前先预览，确认后才推送；定时/进服触发由服务端执行',
+    save: '保存公告',
   },
   'world-stack': {
     title: '世界栈',
@@ -3505,6 +3512,7 @@ function refreshCounts() {
 
 async function saveActive() {
   if (state.tab === 'config-editor') return window.SamsaraConfigEditor?.save?.();
+  if (state.tab === 'announcements') return window.SamsaraAnnouncements?.save?.();
   if (state.tab === 'identity') return window.SamsaraIdentity?.save?.();
   if (state.tab === 'output') return window.SamsaraOutput?.save?.();
   if (state.tab === 'permissions') return window.SamsaraPermissions?.saveOwners?.();
@@ -3515,6 +3523,7 @@ async function saveActive() {
 
 async function reloadActive() {
   if (state.tab === 'config-editor') return window.SamsaraConfigEditor?.reload?.();
+  if (state.tab === 'announcements') return window.SamsaraAnnouncements?.reload?.();
   if (state.tab === 'identity') return window.SamsaraIdentity?.reload?.();
   if (state.tab === 'output') return window.SamsaraOutput?.reload?.();
   if (state.tab === 'permissions') return window.SamsaraPermissions?.reload?.();
@@ -3622,7 +3631,7 @@ window.SamsaraUI = {
 };
 
 const initialTab = (location.hash || '').replace('#', '');
-if (['config', 'config-editor', 'claim-range', 'identity', 'output', 'permissions', 'map', 'world-stack', 'lottery'].includes(initialTab)) {
+if (['config', 'config-editor', 'claim-range', 'identity', 'output', 'permissions', 'map', 'announcements', 'world-stack', 'lottery'].includes(initialTab)) {
   setActiveTab(initialTab);
 } else {
   updateTabActions('config');

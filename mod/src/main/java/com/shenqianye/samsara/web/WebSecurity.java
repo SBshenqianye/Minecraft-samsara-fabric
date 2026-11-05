@@ -58,6 +58,8 @@ public final class WebSecurity {
             case "/value-table.js" -> "/web/value-table.js";
             case "/app.js" -> "/web/app.js";
             case "/config-editor.js" -> "/web/config-editor.js";
+            case "/announcements.js" -> "/web/announcements.js";
+            case "/openapi.json" -> "/web/openapi.json";
             case "/identity", "/identity.html" -> "/web/identity.html";
             case "/identity.js" -> "/web/identity.js";
             case "/structured.js" -> "/web/structured.js";
@@ -112,6 +114,10 @@ public final class WebSecurity {
                 || "/api/config/retention-estimate".equals(path)
                 || "/api/config/pages".equals(path)
                 || "/api/config/preview".equals(path)
+                || "/api/announcements".equals(path)
+                || "/api/announcements/preview".equals(path)
+                || "/api/announcements/send".equals(path)
+                || "/api/announcements/stop".equals(path)
                 || "/api/world-stack".equals(path)
                 || "/api/world-stack/timeline".equals(path)
                 || "/api/world-stack/timeline/preview".equals(path)

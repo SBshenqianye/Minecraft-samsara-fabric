@@ -745,6 +745,31 @@ async function main() {
         && editor.previewText.includes('将修改'), JSON.stringify({ open: editor.previewOpen,
           text: editor.previewText }));
 
+    // ---- Web 公告：列表/表单/预览 ----
+    const announcements = await evaluate(`(async () => {
+      const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      window.SamsaraUI.setActiveTab('announcements');
+      await wait(1000);
+      const items = document.querySelectorAll('#announcements-list .announcement-item').length;
+      const fields = document.querySelectorAll('#announcements-editor .announcement-row').length;
+      const preview = [...document.querySelectorAll('#announcements-editor button')]
+        .find((node) => node.textContent.trim() === '预览');
+      let previewText = '';
+      if (preview) {
+        preview.click();
+        await wait(900);
+        previewText = document.querySelector('#announcement-preview')?.textContent || '';
+      }
+      return { items, fields, previewText,
+        summary: document.getElementById('announcements-summary')?.textContent || '' };
+    })()`);
+    check('公告页加载列表与编辑表单', announcements.items >= 1
+        && announcements.fields >= 5, JSON.stringify({ items: announcements.items,
+          fields: announcements.fields }));
+    check('公告预览显示变量替换结果', announcements.previewText.includes('预览')
+        && announcements.previewText.includes('聊天'), JSON.stringify({
+          preview: announcements.previewText.slice(0, 160) }));
+
     check('经济业务标签为原生面板', mods.lottery && mods.lottery.hidden === false
         && mods.lottery.iframe === false && mods.lottery.stats >= 8
         && mods.lottery.values >= 1

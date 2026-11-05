@@ -173,6 +173,7 @@ public final class LocalWebServer {
         }
         server.createContext("/", this::handleStatic);
         server.createContext("/api/config", this::handleConfig);
+        server.createContext("/api/announcements", this::handleAnnouncements);
         server.createContext("/api/reload", this::handleReload);
         server.createContext("/api/status", this::handleStatus);
         if (identityService != null) {
@@ -260,6 +261,7 @@ public final class LocalWebServer {
             String type = resource.endsWith(".js") ? "application/javascript; charset=utf-8"
                     : resource.endsWith(".css") ? "text/css; charset=utf-8"
                     : resource.endsWith(".png") ? "image/png"
+                    : resource.endsWith(".json") ? "application/json; charset=utf-8"
                     : "text/html; charset=utf-8";
             status = 200;
             sendBytes(exchange, status, type, body);
@@ -406,6 +408,115 @@ public final class LocalWebServer {
             result.put("ok", true);
             result.put("config", service.configModel());
             json(exchange, 200, result);
+        } catch (RuntimeException e) {
+            status = 500;
+            json(exchange, status, Map.of("error", "服务器内部错误"));
+            LOG.warn("[web] 处理 {} 失败: {}", exchange.getRequestURI().getPath(), e.getMessage());
+        } finally {
+            log(exchange, status, start);
+        }
+    }
+
+    private void handleAnnouncements(HttpExchange exchange) throws IOException {
+        long start = System.currentTimeMillis();
+        int status = 200;
+        try {
+            if (!authorized(exchange)) {
+                status = 401;
+                json(exchange, status, Map.of("error", "未授权：缺少或错误的 Bearer token"));
+                return;
+            }
+            String method = exchange.getRequestMethod();
+            String path = exchange.getRequestURI().getPath();
+            com.shenqianye.samsara.announce.AnnouncementService service =
+                    com.shenqianye.samsara.announce.AnnouncementService.getInstance();
+            if ("GET".equals(method)) {
+                json(exchange, 200, service.model());
+                return;
+            }
+            String body;
+            try {
+                body = readBody(exchange);
+            } catch (BodyTooLarge e) {
+                status = 413;
+                json(exchange, status, Map.of("error", "请求体过大"));
+                return;
+            }
+            JsonObject object;
+            try {
+                JsonElement parsed = GSON.fromJson(body, JsonElement.class);
+                object = parsed != null && parsed.isJsonObject() ? parsed.getAsJsonObject() : null;
+            } catch (RuntimeException e) {
+                object = null;
+            }
+            if (object == null) {
+                status = 400;
+                json(exchange, status, Map.of("error", "请求体应为 JSON 对象"));
+                return;
+            }
+            if ("PUT".equals(method)) {
+                List<com.shenqianye.samsara.announce.Announcement> list = null;
+                if (object.has("announcements") && object.get("announcements").isJsonArray()) {
+                    list = GSON.fromJson(object.get("announcements"),
+                            new TypeToken<List<com.shenqianye.samsara.announce.Announcement>>() { }.getType());
+                }
+                if (list == null) {
+                    status = 400;
+                    json(exchange, status, Map.of("error", "缺少 announcements 数组"));
+                    return;
+                }
+                Map<String, Object> result = service.save(list);
+                if (!Boolean.TRUE.equals(result.get("ok"))) {
+                    status = 400;
+                }
+                json(exchange, status, result);
+                return;
+            }
+            if (!"POST".equals(method)) {
+                status = 405;
+                json(exchange, status, Map.of("error", "Method Not Allowed"));
+                return;
+            }
+            String player = object.has("player") && object.get("player").isJsonPrimitive()
+                    ? object.get("player").getAsString() : "";
+            com.shenqianye.samsara.announce.Announcement announcement = null;
+            if (object.has("announcement") && object.get("announcement").isJsonObject()) {
+                announcement = GSON.fromJson(object.get("announcement"),
+                        com.shenqianye.samsara.announce.Announcement.class);
+            } else if (object.has("id") && object.get("id").isJsonPrimitive()) {
+                String id = object.get("id").getAsString();
+                announcement = service.announcements().stream()
+                        .filter(item -> id.equals(item.id)).findFirst().orElse(null);
+            }
+            if ("/api/announcements/preview".equals(path)) {
+                json(exchange, 200, service.preview(serverService == null ? null
+                        : serverService.server(), announcement, player));
+                return;
+            }
+            if ("/api/announcements/stop".equals(path)) {
+                String id = object.has("id") && object.get("id").isJsonPrimitive()
+                        ? object.get("id").getAsString() : "";
+                json(exchange, 200, service.stop(id));
+                return;
+            }
+            if ("/api/announcements/send".equals(path)) {
+                boolean dryRun = !object.has("dryRun")
+                        || !object.get("dryRun").isJsonPrimitive()
+                        || object.get("dryRun").getAsBoolean();
+                boolean confirm = object.has("confirm")
+                        && object.get("confirm").isJsonPrimitive()
+                        && object.get("confirm").getAsBoolean();
+                Map<String, Object> result = service.send(serverService == null ? null
+                                : serverService.server(), announcement, player,
+                        dryRun, confirm, "web");
+                if (!Boolean.TRUE.equals(result.get("ok"))) {
+                    status = 400;
+                }
+                json(exchange, status, result);
+                return;
+            }
+            status = 404;
+            json(exchange, status, Map.of("error", "Not Found"));
         } catch (RuntimeException e) {
             status = 500;
             json(exchange, status, Map.of("error", "服务器内部错误"));

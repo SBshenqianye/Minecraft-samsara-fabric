@@ -123,6 +123,7 @@ public class Samsara implements DedicatedServerModInitializer {
             com.shenqianye.samsara.identity.IdentityService.getInstance().tick(server);
             com.shenqianye.samsara.opauth.OpAuthService.getInstance().tick(server);
             com.shenqianye.samsara.shutdown.ShutdownAnnouncer.tick(server);
+            com.shenqianye.samsara.announce.AnnouncementService.getInstance().tick(server);
             com.shenqianye.samsara.season.WorldStackManager.tick(server);
             com.shenqianye.samsara.season.StackBootstrap.tick(server);
             com.shenqianye.samsara.season.SeasonManager.getInstance().tick(server);
@@ -204,6 +205,9 @@ public class Samsara implements DedicatedServerModInitializer {
                         .onJoin(handler.getPlayer()));
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
                 com.shenqianye.samsara.insurance.InsuranceService.getInstance()
+                        .onJoin(handler.getPlayer()));
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
+                com.shenqianye.samsara.announce.AnnouncementService.getInstance()
                         .onJoin(handler.getPlayer()));
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) ->
                 com.shenqianye.samsara.identity.IdentityService.getInstance()

@@ -183,6 +183,13 @@
 | POST | `/api/reload` | 热重载 samsara 配置（第三方/服务器页面刷新会重新读取文件） |
 | GET | `/api/status` | 管理端运行状态、警告、配置路径等 |
 | GET | `/api/config/retention-estimate` | 轨迹保留容量预估；查询参数 `curve`（JSON 数组）、`keepAll` |
+| GET | `/api/announcements` | 公告模型：列表、变量、枚举、发送历史 |
+| PUT | `/api/announcements` | 保存公告列表；请求体 `{"announcements":[...]}`，字段级校验，写前 `.bak` |
+| POST | `/api/announcements/preview` | 预览公告变量替换；`{announcement}` 或 `{id}`，可带 `player` |
+| POST | `/api/announcements/send` | 发送公告；默认 `dryRun=true`，真正发送需 `dryRun=false` + `confirm=true` |
+| POST | `/api/announcements/stop` | 停止指定 `id` 的 BossBar；省略 `id` 停止全部 |
+
+**公告字段速览**：`trigger`（manual/interval/schedule/join）、`target`（all/permission/world/dimension/players）、`chat`/`actionbar`/`title`/`bossbar`/`sound`、`clickAction`（none/run/suggest/open_url/copy）、`clickValue`、`clickPermission`、`hoverText`、`bossbarColor`/`bossbarOverlay`/`durationSeconds`、`intervalSeconds`/`startAt`、`priority`。文本支持 `&` 颜色码、`&#RRGGBB`、`\n` 与变量 `{player}`/`{display}`/`{world}`/`{dimension}`/`{online}`/`{time}`/`{date}`/`{prefix}`。`run` 点击默认要求 OP，或用 `clickPermission` 指定权限路径。
 
 ### 3.2 身份组
 

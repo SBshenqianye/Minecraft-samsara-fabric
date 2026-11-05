@@ -1,0 +1,153 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "samsara Web API",
+    "version": "0.39.0",
+    "description": "samsara 本地管理端 API。仅监听 127.0.0.1，使用 Authorization: Bearer <token>。公告发送等有副作用的接口默认先 dryRun，确认后才执行。"
+  },
+  "servers": [
+    { "url": "http://127.0.0.1:8720" }
+  ],
+  "security": [ { "bearerAuth": [] } ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "web.yml 中的管理员 token"
+      }
+    },
+    "schemas": {
+      "Announcement": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "enabled": { "type": "boolean" },
+          "trigger": { "type": "string", "enum": ["manual", "interval", "schedule", "join"] },
+          "intervalSeconds": { "type": "integer", "minimum": 10 },
+          "startAt": { "type": "string", "example": "2026-11-05 20:00" },
+          "target": { "type": "string", "enum": ["all", "permission", "world", "dimension", "players"] },
+          "targetValue": { "type": "string" },
+          "chat": { "type": "boolean" },
+          "chatText": { "type": "string" },
+          "actionbar": { "type": "boolean" },
+          "actionbarText": { "type": "string" },
+          "title": { "type": "boolean" },
+          "titleText": { "type": "string" },
+          "subtitleText": { "type": "string" },
+          "bossbar": { "type": "boolean" },
+          "bossbarText": { "type": "string" },
+          "bossbarColor": { "type": "string", "enum": ["PINK", "BLUE", "RED", "GREEN", "YELLOW", "PURPLE", "WHITE"] },
+          "bossbarOverlay": { "type": "string", "enum": ["PROGRESS", "NOTCHED_6", "NOTCHED_10", "NOTCHED_12", "NOTCHED_20"] },
+          "durationSeconds": { "type": "integer" },
+          "sound": { "type": "boolean" },
+          "soundId": { "type": "string" },
+          "clickAction": { "type": "string", "enum": ["none", "run", "suggest", "open_url", "copy"] },
+          "clickValue": { "type": "string" },
+          "clickPermission": { "type": "string" },
+          "hoverText": { "type": "string" }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/api/status": {
+      "get": {
+        "summary": "服务器状态与配置路径",
+        "responses": { "200": { "description": "状态模型" }, "401": { "description": "未授权" } }
+      }
+    },
+    "/api/config/pages": {
+      "get": {
+        "summary": "PageSpec/FormSpec 配置页面",
+        "description": "包含 samsara YAML、服务器本体与第三方配置；第三方/服务器写入前需 preview 并带 revision/confirm。",
+        "responses": { "200": { "description": "页面列表" }, "401": { "description": "未授权" } }
+      }
+    },
+    "/api/config/preview": {
+      "post": {
+        "summary": "预览配置变更",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "object", "required": ["file", "values"], "properties": { "file": { "type": "string" }, "values": { "type": "object" } } } } }
+        },
+        "responses": { "200": { "description": "字段错误/变更清单/diff/revision" } }
+      }
+    },
+    "/api/config": {
+      "put": {
+        "summary": "保存配置",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "object", "required": ["file", "values"], "properties": { "file": { "type": "string" }, "source": { "type": "string" }, "values": { "type": "object" }, "revision": { "type": "string" }, "confirm": { "type": "boolean" } } } } }
+        },
+        "responses": { "200": { "description": "保存成功" }, "400": { "description": "校验失败" }, "401": { "description": "未授权" } }
+      }
+    },
+    "/api/announcements": {
+      "get": {
+        "summary": "公告模型",
+        "responses": { "200": { "description": "公告列表、变量、枚举与历史" }, "401": { "description": "未授权" } }
+      },
+      "put": {
+        "summary": "保存公告列表",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "object", "required": ["announcements"], "properties": { "announcements": { "type": "array", "items": { "$ref": "#/components/schemas/Announcement" } } } } } }
+        },
+        "responses": { "200": { "description": "保存成功" }, "400": { "description": "公告校验失败" }, "401": { "description": "未授权" } }
+      }
+    },
+    "/api/announcements/preview": {
+      "post": {
+        "summary": "预览公告变量替换",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "object", "properties": { "announcement": { "$ref": "#/components/schemas/Announcement" }, "id": { "type": "string" }, "player": { "type": "string" } } } } }
+        },
+        "responses": { "200": { "description": "聊天/ActionBar/Title/BossBar/声音预览" } }
+      }
+    },
+    "/api/announcements/send": {
+      "post": {
+        "summary": "发送公告",
+        "description": "默认 dryRun=true；真正发送需 dryRun=false 且 confirm=true。",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "object", "properties": { "announcement": { "$ref": "#/components/schemas/Announcement" }, "id": { "type": "string" }, "player": { "type": "string", "description": "只发给该玩家；留空按 target" }, "dryRun": { "type": "boolean", "default": true }, "confirm": { "type": "boolean", "default": false } } } } }
+        },
+        "responses": { "200": { "description": "预览或发送结果" }, "400": { "description": "校验失败/无匹配玩家" }, "401": { "description": "未授权" } }
+      }
+    },
+    "/api/announcements/stop": {
+      "post": {
+        "summary": "停止 BossBar 公告",
+        "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "id": { "type": "string" } } } } } },
+        "responses": { "200": { "description": "已停止" } }
+      }
+    },
+    "/api/server": {
+      "get": {
+        "summary": "本体配置/备份概览",
+        "responses": { "200": { "description": "本体模型" } }
+      }
+    },
+    "/api/server/config": {
+      "post": {
+        "summary": "写入服务器本体配置",
+        "description": "兼容旧接口；新配置编辑器走 /api/config。",
+        "responses": { "200": { "description": "写入结果" } }
+      }
+    },
+    "/api/map": {
+      "get": { "summary": "地图模型", "responses": { "200": { "description": "地图数据" } } }
+    },
+    "/api/world-stack": {
+      "get": { "summary": "世界栈模型", "responses": { "200": { "description": "世界栈数据" } } }
+    },
+    "/api/audit": {
+      "get": { "summary": "Web 写操作审计", "responses": { "200": { "description": "审计列表" } } }
+    }
+  }
+}

@@ -53,6 +53,9 @@
         <button class="tab" data-panel="panel-map">
           地图 <span class="tab-count" id="map-count">0</span>
         </button>
+        <button class="tab" data-panel="panel-announcements">
+          公告 <span class="tab-count" id="announcements-count">0</span>
+        </button>
       </div>
       <div class="tab-group" role="group" aria-label="业务信息">
         <span class="tab-group-label">业务信息</span>
@@ -186,6 +189,31 @@
           <div class="config-editor-layout">
             <aside id="config-editor-nav" class="config-editor-nav" aria-label="配置页面"></aside>
             <div id="config-editor-body" class="config-editor-body"></div>
+          </div>
+        </section>
+      </div>
+
+      <div id="panel-announcements" class="panel-stack" hidden>
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>公告</h2>
+              <p class="panel-sub">Web 编辑、预览并推送到游戏；支持聊天、ActionBar、Title、BossBar、声音、变量、点击/悬浮事件与手动/定时/进服触发。</p>
+            </div>
+            <div class="panel-tools">
+              <span id="announcements-summary" class="muted small"></span>
+            </div>
+          </div>
+          <div id="announcements-message" class="message" role="status"></div>
+          <div class="announcements-layout">
+            <aside class="announcements-side">
+              <div class="announcements-toolbar">
+                <button type="button" id="announcements-add" class="ghost">+ 新建</button>
+                <button type="button" id="announcements-refresh" class="ghost">刷新</button>
+              </div>
+              <div id="announcements-list" class="announcements-list"></div>
+            </aside>
+            <div id="announcements-editor" class="announcements-editor"></div>
           </div>
         </section>
       </div>
@@ -1015,6 +1043,7 @@
   <script src="/lottery.js"></script>
   <script src="/app.js"></script>
   <script src="/config-editor.js"></script>
+  <script src="/announcements.js"></script>
   <script src="/map.js"></script>
   <script src="/world-stack.js"></script>
   <script src="/output.js"></script>
