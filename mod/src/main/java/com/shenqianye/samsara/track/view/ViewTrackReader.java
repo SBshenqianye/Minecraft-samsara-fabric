@@ -367,6 +367,78 @@ public final class ViewTrackReader {
 
     // ---- 可回看时段 ----
 
+    /** 群组回放候选：该周目、该时间窗口内至少有一个样本的轨迹文件。 */
+    public record AvailablePlayer(UUID uuid, long firstMs, long lastMs) {
+    }
+
+    /**
+     * 扫描窗口内有轨迹的玩家（含离线；以轨迹文件为准，不依赖在线名单）。
+     * 多栈层会去重同一文件；同一身份组的多个账号入口由调用方再聚合。
+     */
+    public static List<AvailablePlayer> availablePlayers(List<Path> roots, int cycleId,
+                                                         long from, long to) {
+        Map<UUID, AvailablePlayer> found = new LinkedHashMap<>();
+        LocalDate day = ViewTime.dayOf(from);
+        LocalDate lastDay = ViewTime.dayOf(Math.max(from, to - 1));
+        for (Path worldRoot : roots) {
+            for (LocalDate d = day; !d.isAfter(lastDay); d = d.plusDays(1)) {
+                Path dayDir = TrackLayout.dayDir(worldRoot, cycleId, d);
+                if (!Files.isDirectory(dayDir)) {
+                    continue;
+                }
+                List<Path> bins;
+                try (Stream<Path> list = Files.list(dayDir)) {
+                    bins = list.filter(Files::isRegularFile)
+                            .filter(p -> p.getFileName().toString().endsWith(".bin"))
+                            .toList();
+                } catch (IOException e) {
+                    continue;
+                }
+                for (Path file : bins) {
+                    UUID uuid = uuidOf(file);
+                    if (uuid == null) {
+                        continue;
+                    }
+                    try {
+                        ParsedFile parsed = read(file);
+                        long first = parsed.firstMs();
+                        long last = parsed.lastMs();
+                        if (first == Long.MAX_VALUE || last == Long.MIN_VALUE
+                                || last < from || first > to) {
+                            continue;
+                        }
+                        AvailablePlayer previous = found.get(uuid);
+                        if (previous == null) {
+                            found.put(uuid, new AvailablePlayer(uuid, first, last));
+                        } else {
+                            found.put(uuid, new AvailablePlayer(uuid,
+                                    Math.min(previous.firstMs(), first),
+                                    Math.max(previous.lastMs(), last)));
+                        }
+                    } catch (IOException ignored) {
+                        // 损坏文件不阻止其他目标回放
+                    }
+                }
+            }
+        }
+        List<AvailablePlayer> out = new ArrayList<>(found.values());
+        out.sort(Comparator.comparingLong(AvailablePlayer::firstMs)
+                .thenComparing(p -> p.uuid().toString()));
+        return out;
+    }
+
+    private static UUID uuidOf(Path file) {
+        String name = file.getFileName().toString();
+        if (!name.endsWith(".bin")) {
+            return null;
+        }
+        try {
+            return UUID.fromString(name.substring(0, name.length() - 4));
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
     /** 扫描同一身份组多个账号入口的轨迹文件（按 data UUID 聚合）。 */
     public static List<Available> available(Path worldRoot, java.util.Collection<UUID> uuids,
                                             java.util.function.BiFunction<UUID, Integer, Long> cutoffFor) {

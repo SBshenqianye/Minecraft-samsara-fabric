@@ -540,18 +540,40 @@ public final class SuggestionProviders {
         return (ctx, builder) -> CompletionSupport.offer(builder, List.of("true", "false"));
     }
 
-    /** 回看 greedyString：开始时间 / 选项 / cycle / duration / speed */
+    /** 回看 greedyString：目标列表 / 开始时间 / 选项 / cycle / duration / speed */
     public static SuggestionProvider<CommandSourceStack> viewGreedyProvider() {
         return (ctx, builder) -> {
             List<String> startTimes = List.of();
             try {
-                String player = ctx.getArgument("player", String.class);
-                startTimes = viewStartTimes(ctx.getSource().getServer(), player);
+                String remaining = builder.getRemaining().trim();
+                String first = remaining.isEmpty() ? ""
+                        : remaining.split("\\s+", 2)[0];
+                if (!first.isBlank() && !first.startsWith("--")
+                        && !first.equalsIgnoreCase("all")) {
+                    startTimes = viewStartTimes(ctx.getSource().getServer(), first);
+                }
             } catch (Exception ignored) {
-                // 没解析到目标玩家（例如 debug 入口参数名不同）：只补选项/周目
+                // 只补选项/周目
             }
             TokenSuggestions token = viewInput(builder.getRemaining(), startTimes);
             return offerToken(builder, token, SuggestionProviders::viewTooltip);
+        };
+    }
+
+    /** 收藏片段 id（/samsara track clip info|remove 与 view clip）。 */
+    public static SuggestionProvider<CommandSourceStack> clipIdProvider() {
+        return (ctx, builder) -> {
+            List<String> ids = new ArrayList<>();
+            try {
+                var recorder = com.shenqianye.samsara.track.TrackRecorder.getInstance();
+                for (var root : recorder.trackRoots()) {
+                    for (var clip : recorder.clipsForTrackRoot(root).all()) {
+                        ids.add(clip.id);
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+            return CompletionSupport.offer(builder, ids, id -> "收藏片段 " + id);
         };
     }
 

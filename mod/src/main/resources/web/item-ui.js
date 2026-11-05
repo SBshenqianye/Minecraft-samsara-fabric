@@ -79,10 +79,7 @@
     hideTimer = window.setTimeout(() => tip.classList.remove('open'), 80);
   }
 
-  /**
-   * row: { icon, zh, name, id, category, value, count }
-   * options: { size: 'sm' | 'md' | 'lg' }
-   */
+  // 物品图标统一使用构建期预渲染的 /items/<id>.png（与原版物品栏模型一致）。
   function icon(row, options) {
     const opts = options || {};
     const box = make('span', 'item-icon ' + (opts.size || 'sm'));

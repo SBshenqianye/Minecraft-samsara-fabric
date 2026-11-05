@@ -108,8 +108,44 @@ class TrackStoreTest {
     }
 
     @Test
-    void simplifyKeepsTurns() {
-        List<TrackStore.Sample> pts = new ArrayList<>();
+    void decimateKeepsProtectedSamplesAndSplitsSegments() throws Exception {
+        TrackStore.Segment seg = new TrackStore.Segment(
+                UUID.randomUUID(), "minecraft:overworld", 0L, 5.0);
+        for (int i = 0; i < 1000; i++) {
+            seg.samples.add(new TrackStore.Sample(i * 200L, i * 0.2, 64, 0, 0, 0, 0));
+        }
+        Path file = tmp.resolve("2026-10-03").resolve("z.bin");
+        TrackStore.write(file, List.of(seg));
+        long from = 200L * 400;
+        long to = 200L * 499;
+
+        assertTrue(TrackStore.decimate(file, 1.25, 100,
+                List.of(new TrackClips.Range(from, to))));
+
+        List<TrackStore.Segment> back = TrackStore.read(file);
+        assertTrue(back.size() >= 2, "保护边界应拆段");
+        long protectedCount = 0;
+        boolean protectedRun = false;
+        for (TrackStore.Segment s : back) {
+            long inRange = s.samples.stream()
+                    .filter(p -> p.timeMs() >= from && p.timeMs() <= to)
+                    .count();
+            if (inRange > 0) {
+                protectedCount += inRange;
+                if (s.hz >= 4.99) {
+                    protectedRun = true;
+                }
+            }
+        }
+        assertEquals(100, protectedCount, "保护区间内的样本必须全保留");
+        assertTrue(protectedRun, "保护段保留原采样率");
+        assertEquals(0L, back.get(0).samples.get(0).timeMs());
+        assertEquals(999 * 200L, back.get(back.size() - 1).samples
+                .get(back.get(back.size() - 1).samples.size() - 1).timeMs());
+    }
+
+    @Test
+    void simplifyKeepsTurns() {        List<TrackStore.Sample> pts = new ArrayList<>();
         pts.add(new TrackStore.Sample(0, 0, 64, 0, 0, 0, 0));
         pts.add(new TrackStore.Sample(1000, 10, 64, 0, 0, 0, 0));
         pts.add(new TrackStore.Sample(2000, 10, 64, 10, 0, 0, 0));

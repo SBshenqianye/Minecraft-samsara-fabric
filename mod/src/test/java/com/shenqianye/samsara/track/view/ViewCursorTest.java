@@ -67,6 +67,20 @@ class ViewCursorTest {
     }
 
     @Test
+    void coversHidesInterSegmentGaps() {
+        ViewCursor.Segment a = new ViewCursor.Segment("minecraft:overworld", List.of(
+                sample(1_000, 0, null), sample(2_000, 10, null)));
+        ViewCursor.Segment b = new ViewCursor.Segment("minecraft:overworld", List.of(
+                sample(5_000, 100, null), sample(6_000, 110, null)));
+        ViewCursor cursor = ViewCursor.build(List.of(a, b), 1_000, 6_000, false, false);
+
+        assertTrue(cursor.covers(1_500));
+        assertTrue(cursor.covers(2_000));
+        assertFalse(cursor.covers(3_000), "段间空隙应隐藏，而不是冻结在最后位置");
+        assertTrue(cursor.covers(5_500));
+    }
+
+    @Test
     void binarySearchHandlesBoundaries() {
         List<TrackStore.Sample> points = List.of(
                 sample(100, 0, null), sample(200, 1, null), sample(300, 2, null));

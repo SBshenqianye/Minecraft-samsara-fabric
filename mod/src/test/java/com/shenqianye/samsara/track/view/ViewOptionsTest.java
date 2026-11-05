@@ -2,6 +2,8 @@ package com.shenqianye.samsara.track.view;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -70,5 +72,28 @@ class ViewOptionsTest {
         ViewOptions o = ViewOptions.parse("--follow off --aim on", START, END);
         assertFalse(o.follow());
         assertEquals(Boolean.TRUE, o.aim());
+    }
+
+    @Test
+    void groupOptionsParsePlayersDimAndFollowTarget() {
+        ViewOptions o = ViewOptions.parse(
+                "--players Alice,Bob --dim minecraft:the_nether --follow Alice", START, END);
+        assertEquals(List.of("Alice", "Bob"), o.players());
+        assertEquals("minecraft:the_nether", o.dimension());
+        assertEquals("Alice", o.followTarget());
+        assertTrue(o.follow());
+        assertTrue(o.followExplicit());
+        assertTrue(o.followValueExplicit());
+    }
+
+    @Test
+    void bareFollowIsMarkedAsNoExplicitValue() {
+        ViewOptions bare = ViewOptions.parse("--follow", START, END);
+        assertTrue(bare.follow());
+        assertTrue(bare.followExplicit());
+        assertFalse(bare.followValueExplicit());
+
+        ViewOptions on = ViewOptions.parse("--follow=on", START, END);
+        assertTrue(on.followValueExplicit());
     }
 }

@@ -40,6 +40,24 @@ public final class ViewSession {
     ServerPlayer playerRef;
     java.util.UUID vehicleId;
 
+    /** F-97：本次回放的全部目标；单目标时只有 1 个。 */
+    final java.util.List<ViewTarget> targets = new java.util.ArrayList<>();
+    ViewTarget primary;
+    /** 群组共享时间轴（所有目标游标窗口的并集边界）。 */
+    long timelineStartMs;
+    /** 当前实际跟随的目标；null = 不跟随。 */
+    UUID followTarget;
+    boolean followActive;
+    /** 是否群组回放（2+ 目标）。 */
+    boolean group;
+    /** 展示名（单目标 = 名字；群组 = 逗号列表或 N 个目标）。 */
+    String displayName;
+    /** 本次会话加载到的聊天条数（F-111）。 */
+    int chatCount;
+
+    /** 本次会话的活动维度；其他维度目标跳过（F-97）。 */
+    String activeDimension;
+
     long startWallMs;
     long startTrackMs;
     long endTrackMs;
@@ -175,8 +193,11 @@ public final class ViewSession {
             return pausedTrackMs;
         }
         long t = startTrackMs + (long) ((nowWallMs - startWallMs) * speed * direction);
-        long lower = cursor == null ? startTrackMs : cursor.startMs();
-        return Math.max(lower, Math.min(endTrackMs, t));
+        return Math.max(timelineStartMs, Math.min(endTrackMs, t));
+    }
+
+    public long timelineStartMs() {
+        return timelineStartMs;
     }
 
     public double speed() {
@@ -208,7 +229,7 @@ public final class ViewSession {
             return;
         }
         long now = System.currentTimeMillis();
-        long t = Math.max(cursor.startMs(), Math.min(endTrackMs, targetTrackMs));
+        long t = Math.max(timelineStartMs, Math.min(endTrackMs, targetTrackMs));
         startTrackMs = t;
         startWallMs = now;
         if (state == State.PAUSED) {
@@ -230,19 +251,25 @@ public final class ViewSession {
 
     public long remainingMs(long nowWallMs) {
         if (direction < 0) {
-            long lower = cursor == null ? startTrackMs : cursor.startMs();
-            return Math.max(0, trackTime(nowWallMs) - lower);
+            return Math.max(0, trackTime(nowWallMs) - timelineStartMs);
         }
         return Math.max(0, endTrackMs - trackTime(nowWallMs));
     }
 
     public float progress(long nowWallMs) {
-        long from = cursor == null ? startTrackMs : cursor.startMs();
+        long from = timelineStartMs;
         long span = endTrackMs - from;
         if (span <= 0) {
             return 1f;
         }
         return Math.max(0f, Math.min(1f, (trackTime(nowWallMs) - from) / (float) span));
+    }
+
+    /** 把聊天模拟游标重置到 t（跳转/倒放不补发历史消息，F-111）。 */
+    void resetChatCursors(long t) {
+        for (ViewTarget target : targets) {
+            target.lastChatTrackMs = t;
+        }
     }
 
     void pause() {

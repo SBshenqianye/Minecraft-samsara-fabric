@@ -38,9 +38,21 @@ public final class CommandConfig {
     private boolean viewAimSnap;
     private int viewAimHz;
     private boolean viewAllowEquipmentDrop;
+    private int viewGroupMaxTargets;
+    private int viewGroupMaxSamples;
+    private int viewDedupeWindowMs;
+    private boolean viewChatToConsole;
+
+    private boolean rewindChatHolograms;
+    private int rewindChatMaxDisplays;
+    private int rewindChatRadius;
+    private int rewindChatWindowMs;
 
     private boolean trackRecordInventory;
     private TrackRetention.Settings trackRetention = TrackRetention.Settings.defaults();
+    private int trackChatRetentionDays;
+    private int trackClipMaxDurationMs;
+    private int trackClipMaxPerPlayer;
 
     private boolean chatCompletionEnabled;
     private boolean completionFuzzyEnabled;
@@ -154,6 +166,44 @@ public final class CommandConfig {
         return viewAllowEquipmentDrop;
     }
 
+    /** F-97：群组时段回放最多目标数。 */
+    public int viewGroupMaxTargets() {
+        return viewGroupMaxTargets;
+    }
+
+    /** F-97：群组回放合计样本上限。 */
+    public int viewGroupMaxSamples() {
+        return viewGroupMaxSamples;
+    }
+
+    /** F-99：同目标共享人偶的最大轨迹时间差（毫秒）。 */
+    public int viewDedupeWindowMs() {
+        return viewDedupeWindowMs;
+    }
+
+    /** F-111：回看聊天是否同时写服务端日志。 */
+    public boolean viewChatToConsole() {
+        return viewChatToConsole;
+    }
+
+    // ---- 倒流留言 ----
+
+    public boolean rewindChatHolograms() {
+        return rewindChatHolograms;
+    }
+
+    public int rewindChatMaxDisplays() {
+        return rewindChatMaxDisplays;
+    }
+
+    public int rewindChatRadius() {
+        return rewindChatRadius;
+    }
+
+    public int rewindChatWindowMs() {
+        return rewindChatWindowMs;
+    }
+
     // ---- 轨迹 v2 查询 ----
 
     public boolean trackRecordInventory() {
@@ -162,6 +212,19 @@ public final class CommandConfig {
 
     public TrackRetention.Settings trackRetention() {
         return trackRetention;
+    }
+
+    /** F-109：聊天记录保留天数，0 = 永久。 */
+    public int trackChatRetentionDays() {
+        return trackChatRetentionDays;
+    }
+
+    public int trackClipMaxDurationMs() {
+        return trackClipMaxDurationMs;
+    }
+
+    public int trackClipMaxPerPlayer() {
+        return trackClipMaxPerPlayer;
     }
 
     // ---- 指令补全查询 ----
@@ -230,6 +293,15 @@ public final class CommandConfig {
         viewAimSnap = !"smooth".equalsIgnoreCase(config.string(id, "view.aim.mode"));
         viewAimHz = Math.max(2, Math.min(20, config.integer(id, "view.aim.hz")));
         viewAllowEquipmentDrop = config.bool(id, "view.allowEquipmentDrop");
+        viewGroupMaxTargets = Math.max(1, config.integer(id, "view.groupMaxTargets"));
+        viewGroupMaxSamples = Math.max(10_000, config.integer(id, "view.groupMaxSamples"));
+        viewDedupeWindowMs = Math.max(0, config.integer(id, "view.dedupeWindowMs"));
+        viewChatToConsole = config.bool(id, "view.chatToConsole");
+
+        rewindChatHolograms = config.bool(id, "rewind.chatHolograms");
+        rewindChatMaxDisplays = Math.max(1, config.integer(id, "rewind.chatMaxDisplays"));
+        rewindChatRadius = Math.max(16, config.integer(id, "rewind.chatRadius"));
+        rewindChatWindowMs = Math.max(1_000, config.integer(id, "rewind.chatWindowMs"));
 
         trackRecordInventory = config.bool(id, "track.recordInventory");
         trackRetention = new TrackRetention.Settings(
@@ -239,6 +311,9 @@ public final class CommandConfig {
                 config.bool(id, "track.retention.keepAll"),
                 Math.max(0, config.integer(id, "track.retention.maxBytesPerPlayer")),
                 TrackRetention.parseCurve(config.value(id, "track.retention.curve")));
+        trackChatRetentionDays = Math.max(0, config.integer(id, "track.chatRetentionDays"));
+        trackClipMaxDurationMs = Math.max(1_000, config.integer(id, "track.clip.maxDurationMs"));
+        trackClipMaxPerPlayer = Math.max(1, config.integer(id, "track.clip.maxPerPlayer"));
 
         chatCompletionEnabled = config.bool(id, "completion.chatList");
         completionFuzzyEnabled = config.bool(id, "completion.fuzzy");

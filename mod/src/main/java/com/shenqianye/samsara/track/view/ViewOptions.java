@@ -1,5 +1,8 @@
 package com.shenqianye.samsara.track.view;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * 回看参数（设计〈命令与参数〉/ F-80、F-100）。
  * <p>
@@ -24,7 +27,17 @@ public record ViewOptions(
         /** F-107：null = 使用 view.allowEquipmentDrop；true/false = 单次回看覆盖 */
         Boolean equipmentDrop,
         /** null = 使用 view.scrub.enabled；true/false = 单次回看覆盖 */
-        Boolean scrub) {
+        Boolean scrub,
+        /** F-97：--dim 指定回放维度；null = 第一个目标起点所在维度 */
+        String dimension,
+        /** F-97：--players a,b,c 显式覆盖目标列表；空 = 未指定 */
+        List<String> players,
+        /** --follow 是否显式出现（用于多目标默认不跟随） */
+        boolean followExplicit,
+        /** --follow=on/off 是否显式给出值；bare --follow 为 false */
+        boolean followValueExplicit,
+        /** F-98：--follow <玩家> 只跟指定目标；null = 未指定 */
+        String followTarget) {
 
     public static final double MIN_SPEED = 0.1;
     public static final double MAX_SPEED = 64.0;
@@ -32,7 +45,8 @@ public record ViewOptions(
     public static final double DEFAULT_AIM_EDGE = 24.0;
     public static final double DEFAULT_AIM_SPEED = 90.0;
     public static final String SUPPORTED = "支持参数：--speed <0.1..64>、--to <时间>、--duration <30s/10m/2h>、"
-            + "--follow[=on|off]、--spectator、--glow、--no-glow、--no-name-tag、--cycle <cycleN>、"
+            + "--follow[=<on|off|玩家>]、--spectator、--glow、--no-glow、--no-name-tag、--cycle <cycleN>、"
+            + "--dim <维度>、--players <a,b,c>、"
             + "--aim[=on|off]、--aim-deadzone <2..45>、--aim-edge <外圈>、--aim-speed <10..360>、--aim-pitch on|off、"
             + "--equipment-drop=on|off、--scrub[=on|off]";
 
@@ -70,6 +84,11 @@ public record ViewOptions(
         boolean aimPitch = true;
         Boolean equipmentDrop = null;
         Boolean scrub = null;
+        String dimension = null;
+        List<String> players = List.of();
+        boolean followExplicit = false;
+        boolean followValueExplicit = false;
+        String followTarget = null;
 
         String[] tokens = raw == null ? new String[0] : raw.trim().split("\\s+");
         for (int i = 0; i < tokens.length; i++) {
@@ -118,16 +137,46 @@ public record ViewOptions(
                     end = startMs + duration;
                 }
                 case "follow" -> {
+                    followExplicit = true;
                     if (inline == null) {
-                        if (i + 1 < tokens.length && !tokens[i + 1].startsWith("--")
-                                && isOnOff(tokens[i + 1])) {
-                            follow = parseOnOff(tokens[++i]);
+                        if (i + 1 < tokens.length && !tokens[i + 1].startsWith("--")) {
+                            if (isOnOff(tokens[i + 1])) {
+                                follow = parseOnOff(tokens[++i]);
+                                followValueExplicit = true;
+                            } else {
+                                followTarget = tokens[++i];
+                                follow = true;
+                                followValueExplicit = true;
+                            }
                         } else {
                             follow = true;
                         }
-                    } else {
+                    } else if (isOnOff(inline)) {
                         follow = parseOnOff(inline);
+                        followValueExplicit = true;
+                    } else {
+                        followTarget = inline;
+                        follow = true;
+                        followValueExplicit = true;
                     }
+                }
+                case "players" -> {
+                    String value = inline != null ? inline : value(key, tokens, ++i);
+                    List<String> parsed = new ArrayList<>();
+                    for (String part : value.split(",")) {
+                        String name = part.trim();
+                        if (!name.isEmpty()) {
+                            parsed.add(name);
+                        }
+                    }
+                    if (parsed.isEmpty()) {
+                        throw new IllegalArgumentException("--players 需要至少一个玩家名");
+                    }
+                    players = List.copyOf(parsed);
+                }
+                case "dim", "dimension" -> {
+                    String value = inline != null ? inline : value(key, tokens, ++i);
+                    dimension = value.trim();
                 }
                 case "spectator" -> spectator = true;
                 case "interact" -> throw new IllegalArgumentException(
@@ -220,7 +269,8 @@ public record ViewOptions(
         long effectiveEnd = end == null ? defaultEnd : end;
         return new ViewOptions(speed, follow, spectator, glow, nameTag,
                 effectiveEnd, end != null, cycle,
-                aim, aimDeadzone, aimEdge, aimSpeed, aimPitch, equipmentDrop, scrub);
+                aim, aimDeadzone, aimEdge, aimSpeed, aimPitch, equipmentDrop, scrub,
+                dimension, players, followExplicit, followValueExplicit, followTarget);
     }
 
     private static String value(String key, String[] tokens, int nextIndex) {

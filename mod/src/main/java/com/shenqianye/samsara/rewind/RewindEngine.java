@@ -336,6 +336,7 @@ public class RewindEngine {
         if (durationMs <= 0) {
             return "倒流时长必须 &gt; 0";
         }
+        RewindChatHolograms.clear();
         StackLayer layer = targetLayer;
         if (layer == null) {
             layer = StackManifest.load(StackPaths.worldDir(server)).top();
@@ -427,6 +428,7 @@ public class RewindEngine {
 
     /** 服务端 tick（由 Samsara 注册的 END_SERVER_TICK 驱动；恢复轮 2s、其余状态 5s 节流） */
     public synchronized void tick(MinecraftServer server) {
+        RewindChatHolograms.tick(server, data);
         if (data == null) {
             return;
         }
@@ -659,6 +661,7 @@ public class RewindEngine {
 
     /** 服务器停止：兜底删除待删队列 + 未删完区块；按恢复完成情况归档或保留；停服窗口区域文件瘦身 */
     public synchronized void onServerStopped(MinecraftServer server) {
+        RewindChatHolograms.clear();
         DiffRecorder.flush(); // 常开窗口的最后一次落盘（Samsara 的 SERVER_STOPPING 也会调用，双保险）
         try {
             if (data != null) {
@@ -749,6 +752,7 @@ public class RewindEngine {
         }
         int seasonId = data.seasonId;
         String worldKey = data.worldKey;
+        RewindChatHolograms.clear();
         clearPersistence();
         DiffRestore.reset();
         pendingQueue.drop(); // 中止 = 一切保留；尚未删除的区块不再删除

@@ -177,6 +177,16 @@ public final class ViewCursor {
         return cutoffApplied;
     }
 
+    /** t 是否落在某个样本段的 [首样本, 末样本] 内；段间空隙返回 false。 */
+    public boolean covers(long t) {
+        for (Segment s : segments) {
+            if (s.firstMs() <= t && t <= s.lastMs()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public long remainingMs(long trackTime) {
         return Math.max(0, endMs - trackTime);
     }

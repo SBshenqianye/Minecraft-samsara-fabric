@@ -6,6 +6,7 @@ import com.shenqianye.samsara.command.ui.ChatUi;
 import com.shenqianye.samsara.config.CommandConfig;
 import com.shenqianye.samsara.rewind.DiffStore;
 import com.shenqianye.samsara.season.SeasonManager;
+import com.shenqianye.samsara.track.ChatLogStore;
 import com.shenqianye.samsara.track.TrackEventApplier;
 import com.shenqianye.samsara.track.TrackEventCursor;
 import com.shenqianye.samsara.track.TrackEventStore;
@@ -38,6 +39,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -81,16 +83,32 @@ public final class ViewManager {
 
     private static final class Pending {
         final ViewSession session;
-        final CompletableFuture<ViewTrackReader.LoadResult> future;
+        final CompletableFuture<GroupLoad> future;
         final ViewSession old;
-        final Long cutoff;
 
-        Pending(ViewSession session, CompletableFuture<ViewTrackReader.LoadResult> future,
-                ViewSession old, Long cutoff) {
+        Pending(ViewSession session, CompletableFuture<GroupLoad> future, ViewSession old) {
             this.session = session;
             this.future = future;
             this.old = old;
-            this.cutoff = cutoff;
+        }
+    }
+
+    private record TargetSpec(UUID uuid, String name, List<UUID> aliases) {
+    }
+
+    private record TargetLoad(TargetSpec spec, ViewTrackReader.LoadResult result,
+                              List<ChatLogStore.Entry> chats, String error) {
+    }
+
+    private record GroupLoad(List<TargetLoad> targets) {
+        int totalSamples() {
+            int total = 0;
+            for (TargetLoad load : targets) {
+                if (load.result() != null) {
+                    total += load.result().totalSamples();
+                }
+            }
+            return total;
         }
     }
 
@@ -105,6 +123,18 @@ public final class ViewManager {
     public synchronized String start(MinecraftServer server, ServerPlayer viewer,
                                      String targetName, String startSpec, String optionText,
                                      boolean allowOthers) {
+        return start(server, viewer, List.of(targetName), false, startSpec, optionText, allowOthers);
+    }
+
+    /**
+     * 群组时段回放（F-97）：
+     * {@code targets} 为空且 {@code allTargets=true} 表示该时段全体；
+     * 否则按列表解析（可含逗号分隔多项，由命令层拆好）。
+     */
+    public synchronized String start(MinecraftServer server, ServerPlayer viewer,
+                                     List<String> targetSpecs, boolean allTargets,
+                                     String startSpec, String optionText,
+                                     boolean allowOthers) {
         long now = System.currentTimeMillis();
         long last = lastStart.getOrDefault(viewer.getUUID(), 0L);
         if (now - last < COOLDOWN_MS) {
@@ -117,19 +147,6 @@ public final class ViewManager {
             return e.getMessage();
         }
 
-        ServerPlayer onlineTarget = server.getPlayerList().getPlayerByName(targetName);
-        UUID targetUuid = onlineTarget != null ? onlineTarget.getUUID() : resolvePlayerId(server, targetName);
-        if (targetUuid == null) {
-            return "找不到玩家: " + targetName + "（可用 /samsara debug fakeplayers 注入测试名单）";
-        }
-        String canonical = onlineTarget != null ? onlineTarget.getScoreboardName() : displayName(server, targetUuid, targetName);
-        boolean other = !targetUuid.equals(viewer.getUUID());
-        if (other && !allowOthers) {
-            return "回看他人记录需要管理员权限";
-        }
-        List<UUID> targetIds = com.shenqianye.samsara.identity.IdentityService.getInstance()
-                .aliasesOf(targetUuid);
-
         long dayEnd = ViewTime.dayOf(startMs).plusDays(1)
                 .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli() - 1;
         ViewOptions options;
@@ -138,9 +155,10 @@ public final class ViewManager {
         } catch (IllegalArgumentException e) {
             return e.getMessage();
         }
-        if (TrackReplay.isReplaying(targetUuid)) {
-            return "目标 " + canonical + " 已有捕捉式回放在进行中，请先 /samsara debug track stop " + canonical
-                    + "（回看与捕捉式回放不并行，F-92）";
+        List<String> specs = options.players().isEmpty()
+                ? targetSpecs : options.players();
+        if (specs == null || (specs.isEmpty() && !allTargets)) {
+            return "缺少回看目标（也可只给开始时间，表示该时段全体）";
         }
 
         int cycleId;
@@ -164,13 +182,53 @@ public final class ViewManager {
         if (roots.isEmpty()) {
             return "世界轨迹目录尚未初始化，请等服务器启动完成后再试";
         }
-        String worldKey = recorder.worldKey() == null ? DiffStore.sanitizeWorldKey("world") : recorder.worldKey();
-        Path topRoot = roots.get(0);
-        Long cutoff = recorder.cutsForTrackRoot(topRoot)
-                .cutoff(recorder.worldKeyOfTrackRoot(topRoot), cycleId, targetUuid);
-        final List<UUID> loadIds = targetIds;
+
+        List<TargetSpec> targets;
+        try {
+            targets = allTargets && options.players().isEmpty()
+                    ? discoverTargets(server, roots, cycleId, startMs, options.endMs())
+                    : resolveTargets(server, specs);
+        } catch (IllegalArgumentException e) {
+            return e.getMessage();
+        }
+        if (targets.isEmpty()) {
+            return allTargets && options.players().isEmpty()
+                    ? "该时段没有有轨迹的玩家（周目 " + cycleId + " · "
+                    + ViewTime.format(startMs) + " → " + ViewTime.format(options.endMs()) + "）"
+                    : "找不到玩家: " + String.join(",", specs);
+        }
+        int maxTargets = Math.max(1, CommandConfig.getInstance().viewGroupMaxTargets());
+        if (targets.size() > maxTargets) {
+            return "目标 " + targets.size() + " 个，超过 view.groupMaxTargets=" + maxTargets
+                    + "；请缩小目标列表或提高配置";
+        }
+
+        boolean allMode = allTargets && options.players().isEmpty();
+        boolean other = targets.stream().anyMatch(t -> !t.uuid().equals(viewer.getUUID()));
+        if (allMode && !allowOthers) {
+            return "回放该时段全体玩家需要管理员权限";
+        }
+        if (other && !allowOthers) {
+            return "回看他人记录需要管理员权限";
+        }
+        for (TargetSpec target : targets) {
+            boolean replaying = TrackReplay.isReplaying(target.uuid());
+            for (UUID alias : target.aliases()) {
+                replaying |= TrackReplay.isReplaying(alias);
+            }
+            if (replaying) {
+                return "目标 " + target.name() + " 已有捕捉式回放在进行中，请先 /samsara debug track stop "
+                        + target.name() + "（回看与捕捉式回放不并行，F-92）";
+            }
+        }
+
+        String canonical = targets.size() == 1 ? targets.get(0).name()
+                : (targets.size() <= 4
+                ? String.join(", ", targets.stream().map(TargetSpec::name).toList())
+                : targets.size() + " 个目标");
         String summary = "cycle" + cycleId + " · " + ViewTime.format(startMs) + " → "
-                + ViewTime.format(options.endMs());
+                + ViewTime.format(options.endMs())
+                + (targets.size() > 1 ? " · " + targets.size() + " 个目标" : "");
 
         ViewSession old = sessions.get(viewer.getUUID());
         if (pending.containsKey(viewer.getUUID())) {
@@ -182,35 +240,200 @@ public final class ViewManager {
         }
 
         ViewSession session = new ViewSession(viewer.getUUID(), viewer.getScoreboardName(),
-                canonical, targetUuid, options, cycleId, startMs, options.endMs(), summary);
+                canonical, targets.get(0).uuid(), options, cycleId, startMs, options.endMs(), summary);
+        session.displayName = canonical;
+        session.group = targets.size() > 1;
         session.liveCycleAtStart = recorder.cycleIdNow();
+        UUID followTarget = null;
+        boolean followActive;
+        if (options.followTarget() != null) {
+            TargetSpec follow = findTarget(targets, options.followTarget());
+            if (follow == null) {
+                return "--follow 指定的目标不在本次回放中: " + options.followTarget();
+            }
+            followTarget = follow.uuid();
+            followActive = true;
+        } else if (session.group) {
+            // 多目标默认不跟随；--follow 单独出现也视为 off（F-98）
+            followActive = options.followValueExplicit() && options.follow();
+        } else {
+            followActive = options.follow();
+        }
+        session.followTarget = followActive ? (followTarget != null ? followTarget : targets.get(0).uuid()) : null;
+        session.followActive = followActive;
+        for (TargetSpec spec : targets) {
+            ViewTarget viewTarget = new ViewTarget(spec.uuid(), spec.name(), spec.aliases(), cycleId);
+            viewTarget.session = session;
+            session.targets.add(viewTarget);
+        }
         lastStart.put(viewer.getUUID(), now);
 
         final long start = startMs;
         final long end = options.endMs();
         final int cycle = cycleId;
+        final List<TargetSpec> loadTargets = List.copyOf(targets);
+        final String all = allMode ? "all" : String.join(",", targets.stream().map(TargetSpec::name).toList());
 
-        CompletableFuture<ViewTrackReader.LoadResult> future = CompletableFuture.supplyAsync(() -> {
-            try {
-                return ViewTrackReader.load(roots, cycle, loadIds, start, end,
-                        (root, owner, ignored) -> recorder.cutsForTrackRoot(root)
-                                .cutoff(recorder.worldKeyOfTrackRoot(root), cycle, owner));
-            } catch (IOException e) {
-                throw new CompletionException(e);
+        CompletableFuture<GroupLoad> future = CompletableFuture.supplyAsync(() -> {
+            List<TargetLoad> results = new ArrayList<>();
+            for (TargetSpec spec : loadTargets) {
+                try {
+                    ViewTrackReader.LoadResult result = ViewTrackReader.load(roots, cycle,
+                            spec.aliases(), start, end,
+                            (root, owner, ignored) -> recorder.cutsForTrackRoot(root)
+                                    .cutoff(recorder.worldKeyOfTrackRoot(root), cycle, owner));
+                    List<ChatLogStore.Entry> chats = ChatLogStore.readRange(cycle, start, end,
+                            spec.aliases());
+                    results.add(new TargetLoad(spec, result, chats, null));
+                } catch (IOException e) {
+                    results.add(new TargetLoad(spec, null, List.of(), e.getMessage()));
+                } catch (RuntimeException e) {
+                    results.add(new TargetLoad(spec, null, List.of(),
+                            e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
+                }
             }
+            return new GroupLoad(List.copyOf(results));
         }, loader);
-        pending.put(viewer.getUUID(), new Pending(session, future, old, cutoff));
+        pending.put(viewer.getUUID(), new Pending(session, future, old));
 
-        Samsara.LOGGER.info("[回看] {} 请求回看 {}（周目 {} · {} → {} · {}x）",
+        Samsara.LOGGER.info("[回看] {} 请求回看 {}（周目 {} · {} → {} · {}x · {} 个目标）",
                 viewer.getScoreboardName(), canonical, cycleId,
-                ViewTime.format(startMs), ViewTime.format(options.endMs()), options.speed());
+                ViewTime.format(startMs), ViewTime.format(options.endMs()), options.speed(), targets.size());
         if (other) {
-            ViewAudit.append(viewer.getScoreboardName(), canonical, cycleId, startMs,
+            ViewAudit.append(viewer.getScoreboardName(), all, cycleId, startMs,
                     options.endMs(), options.speed(), "REQUEST");
         }
+        String groupHint = targets.size() > 1 && !followActive
+                ? " · 多目标默认不跟随，可用 --follow <玩家> 指定" : "";
         return "正在加载 " + canonical + " 的轨迹（周目 " + cycleId + " · "
                 + ViewTime.format(startMs) + " → " + ViewTime.format(options.endMs())
-                + " · " + options.speed() + "×）…";
+                + " · " + options.speed() + "×" + groupHint + "）…";
+    }
+
+    /** 命令层解析目标名/UUID → 身份 UUID + 展示名。 */
+    public record TargetRef(UUID uuid, String name) {
+    }
+
+    public static TargetRef resolveTargetRef(MinecraftServer server, String spec) {
+        TargetSpec target = resolveTarget(server, spec == null ? "" : spec.trim());
+        return target == null ? null : new TargetRef(target.uuid(), target.name());
+    }
+
+    /** 身份组别名（命令层收藏/统计用）。 */
+    public static List<UUID> aliasesOf(UUID uuid) {
+        List<UUID> aliases = new ArrayList<>(com.shenqianye.samsara.identity.IdentityService
+                .getInstance().aliasesOf(uuid));
+        UUID canonical = com.shenqianye.samsara.identity.IdentityService.getInstance()
+                .identityOf(uuid);
+        if (canonical != null && !aliases.contains(canonical)) {
+            aliases.add(canonical);
+        }
+        return aliases;
+    }
+
+    /** 从收藏片段开始回看（F-103）。 */
+    public synchronized String startFromClip(MinecraftServer server, ServerPlayer viewer,
+                                             String clipId, boolean allowOthers) {
+        TrackRecorder recorder = TrackRecorder.getInstance();
+        List<Path> roots = recorder.trackRoots();
+        if (roots.isEmpty()) {
+            return "世界轨迹目录尚未初始化，请等服务器启动完成后再试";
+        }
+        com.shenqianye.samsara.track.TrackClips.Entry entry = null;
+        for (Path root : roots) {
+            entry = recorder.clipsForTrackRoot(root).find(clipId);
+            if (entry != null) {
+                break;
+            }
+        }
+        if (entry == null) {
+            return "找不到收藏片段: " + clipId + "（用 /samsara track clip list 查看）";
+        }
+        if (!entry.createdBy.equalsIgnoreCase(viewer.getScoreboardName()) && !allowOthers) {
+            return "使用他人的收藏片段需要管理员权限";
+        }
+        String options = "--to " + entry.toMs + " --cycle cycle" + entry.cycle;
+        return start(server, viewer, List.of(entry.uuid), false,
+                String.valueOf(entry.fromMs), options, allowOthers);
+    }
+
+    /** 解析逗号列表已经由命令层拆好的目标；重复目标去重。 */
+    private static List<TargetSpec> resolveTargets(MinecraftServer server, List<String> specs) {
+        Map<UUID, TargetSpec> resolved = new LinkedHashMap<>();
+        for (String raw : specs) {
+            if (raw == null || raw.isBlank()) {
+                continue;
+            }
+            TargetSpec spec = resolveTarget(server, raw.trim());
+            if (spec == null) {
+                throw new IllegalArgumentException("找不到玩家: " + raw
+                        + "（可用 /samsara debug fakeplayers 注入测试名单）");
+            }
+            resolved.putIfAbsent(spec.uuid(), spec);
+        }
+        return new ArrayList<>(resolved.values());
+    }
+
+    private static TargetSpec resolveTarget(MinecraftServer server, String spec) {
+        ServerPlayer onlineTarget = server.getPlayerList().getPlayerByName(spec);
+        UUID targetUuid = onlineTarget != null ? onlineTarget.getUUID() : resolvePlayerId(server, spec);
+        if (targetUuid == null) {
+            return null;
+        }
+        UUID canonical = com.shenqianye.samsara.identity.IdentityService.getInstance()
+                .identityOf(targetUuid);
+        if (canonical == null) {
+            canonical = targetUuid;
+        }
+        String name = onlineTarget != null ? onlineTarget.getScoreboardName()
+                : displayName(server, targetUuid, spec);
+        List<UUID> aliases = new ArrayList<>(com.shenqianye.samsara.identity.IdentityService
+                .getInstance().aliasesOf(targetUuid));
+        if (!aliases.contains(canonical)) {
+            aliases.add(canonical);
+        }
+        return new TargetSpec(canonical, name, List.copyOf(aliases));
+    }
+
+    /** 该时段有轨迹的全体玩家（按身份组合并多个账号入口）。 */
+    private List<TargetSpec> discoverTargets(MinecraftServer server, List<Path> roots,
+                                             int cycleId, long from, long to) {
+        List<ViewTrackReader.AvailablePlayer> found =
+                ViewTrackReader.availablePlayers(roots, cycleId, from, to);
+        Map<UUID, LinkedHashSet<UUID>> groups = new LinkedHashMap<>();
+        for (ViewTrackReader.AvailablePlayer player : found) {
+            UUID canonical = com.shenqianye.samsara.identity.IdentityService.getInstance()
+                    .identityOf(player.uuid());
+            if (canonical == null) {
+                canonical = player.uuid();
+            }
+            groups.computeIfAbsent(canonical, id -> new LinkedHashSet<>()).add(player.uuid());
+        }
+        List<TargetSpec> out = new ArrayList<>();
+        for (Map.Entry<UUID, LinkedHashSet<UUID>> entry : groups.entrySet()) {
+            UUID canonical = entry.getKey();
+            UUID displayId = entry.getValue().iterator().next();
+            String name = displayName(server, displayId, canonical.toString());
+            List<UUID> aliases = new ArrayList<>(entry.getValue());
+            aliases.addAll(com.shenqianye.samsara.identity.IdentityService.getInstance()
+                    .aliasesOf(canonical));
+            if (!aliases.contains(canonical)) {
+                aliases.add(canonical);
+            }
+            out.add(new TargetSpec(canonical, name, List.copyOf(new LinkedHashSet<>(aliases))));
+        }
+        return out;
+    }
+
+    /** 按 UUID / 名字在目标列表里查找（--follow）。 */
+    private static TargetSpec findTarget(List<TargetSpec> targets, String spec) {
+        for (TargetSpec target : targets) {
+            if (target.uuid().toString().equalsIgnoreCase(spec)
+                    || target.name().equalsIgnoreCase(spec)) {
+                return target;
+            }
+        }
+        return null;
     }
 
     // ---- 每 tick ----
@@ -249,31 +472,71 @@ public final class ViewManager {
                     restore(s, "播放完毕");
                     continue;
                 }
-                if (s.direction() < 0 && trackTime <= s.cursor.startMs()) {
+                if (s.direction() < 0 && trackTime <= s.timelineStartMs) {
                     restore(s, "倒放到起点");
                     continue;
                 }
-                if (!updateMannequin(server, s, trackTime)) {
-                    restore(s, "人偶所在维度不可用");
-                    continue;
+                List<ViewTarget> visible = new ArrayList<>();
+                for (ViewTarget target : s.targets) {
+                    if (updateTarget(server, s, target, trackTime, now)) {
+                        visible.add(target);
+                    }
                 }
-                if (s.options.follow() && !s.scrubbingThisTick) {
+                s.mannequin = s.primary == null ? null : s.primary.mannequin;
+                if (s.followActive && !s.scrubbingThisTick) {
                     follow(s, player, trackTime);
                 }
                 if (s.aimEnabled) {
-                    applyAim(s, player, trackTime);
+                    applyAim(s, player, trackTime, visible);
                 }
+                simulateChat(s, player, trackTime);
                 if (s.display != null) {
-                    s.display.update("[回看] " + s.targetName + " · "
-                                    + Math.round(s.progress(now) * 100) + "% · "
+                    s.display.update("[回看] " + s.displayName
+                                    + (s.group ? "（" + s.targets.size() + " 目标）" : "")
+                                    + " · " + Math.round(s.progress(now) * 100) + "% · "
                                     + String.format("%.1f", s.speed()) + "×"
-                                    + (s.aimEnabled ? " · 自瞄" : ""),
+                                    + (s.aimEnabled ? " · 自瞄" : "")
+                                    + (s.group ? " · 可见 " + visible.size() : ""),
                             s.progress(now));
                 }
             } else if (s.state == ViewSession.State.PAUSED && s.display != null) {
-                s.display.update("[回看] " + s.targetName + " · 已暂停 · "
+                s.display.update("[回看] " + s.displayName + " · 已暂停 · "
                         + Math.round(s.progress(now) * 100) + "%", s.progress(now));
             }
+        }
+    }
+
+    /**
+     * F-111：正放跨过发言时刻时向观看者输出“名字: 内容”；跳转/倒放不补发。
+     * 每个目标按自己的聊天游标独立触发。
+     */
+    private static void simulateChat(ViewSession s, ServerPlayer viewer, long trackTime) {
+        if (s.direction() < 0) {
+            for (ViewTarget target : s.targets) {
+                target.lastChatTrackMs = trackTime;
+            }
+            return;
+        }
+        for (ViewTarget target : s.targets) {
+            long last = target.lastChatTrackMs;
+            if (trackTime <= last) {
+                continue;
+            }
+            for (ChatLogStore.Entry entry : target.chats) {
+                if (target.cursor != null
+                        && (entry.timeMs() < target.cursor.startMs()
+                        || entry.timeMs() > target.cursor.endMs())) {
+                    continue;
+                }
+                if (entry.timeMs() > last && entry.timeMs() <= trackTime) {
+                    String line = "[回看] " + entry.name() + ": " + entry.message();
+                    viewer.sendSystemMessage(Component.literal(line));
+                    if (CommandConfig.getInstance().viewChatToConsole()) {
+                        Samsara.LOGGER.info(line);
+                    }
+                }
+            }
+            target.lastChatTrackMs = trackTime;
         }
     }
 
@@ -285,7 +548,7 @@ public final class ViewManager {
                 continue;
             }
             it.remove();
-            ViewTrackReader.LoadResult result;
+            GroupLoad result;
             try {
                 result = p.future.join();
             } catch (CompletionException ex) {
@@ -295,30 +558,111 @@ public final class ViewManager {
                 fail(server, p, "加载失败: " + ex.getMessage());
                 continue;
             }
-            if (result.totalSamples() > MAX_SAMPLES) {
-                fail(server, p, "样本 " + result.totalSamples() + " 超过 viewMaxSamples="
-                        + MAX_SAMPLES + "；请用 --to 或 --duration 缩小窗口");
+            int maxSamples = Math.max(10_000,
+                    CommandConfig.getInstance().viewGroupMaxSamples());
+            if (result.totalSamples() > maxSamples) {
+                fail(server, p, "样本 " + result.totalSamples() + " 超过 viewGroupMaxSamples="
+                        + maxSamples + "；请用 --to 或 --duration 缩小窗口");
                 continue;
             }
-            ViewCursor cursor;
-            try {
-                cursor = ViewCursor.build(result.segments(), p.session.windowFrom, p.session.windowTo,
-                        result.truncated(), result.cutoffApplied());
-            } catch (IllegalArgumentException ex) {
-                fail(server, p, ex.getMessage());
+            List<ViewTarget> loaded = new ArrayList<>();
+            List<String> skipped = new ArrayList<>();
+            for (TargetLoad load : result.targets()) {
+                ViewTarget target = findTarget(p.session, load.spec().uuid());
+                if (target == null) {
+                    continue;
+                }
+                if (load.result() == null) {
+                    target.status = "加载失败: " + load.error();
+                    skipped.add(target.name + "（" + load.error() + "）");
+                    continue;
+                }
+                ViewCursor cursor;
+                try {
+                    cursor = ViewCursor.build(load.result().segments(),
+                            p.session.windowFrom, p.session.windowTo,
+                            load.result().truncated(), load.result().cutoffApplied());
+                } catch (IllegalArgumentException ex) {
+                    target.status = ex.getMessage();
+                    skipped.add(target.name + "（" + ex.getMessage() + "）");
+                    continue;
+                }
+                target.cursor = cursor;
+                target.truncated = load.result().truncated();
+                target.cutoffApplied = load.result().cutoffApplied();
+                target.events = new TrackEventCursor(load.result().events(), server.registryAccess());
+                target.eventsTruncated = load.result().eventsTruncated();
+                target.legacyEquipment = !target.events.hasEquipment();
+                target.eventsJumpPending = true;
+                target.chats = load.chats() == null ? List.of() : List.copyOf(load.chats());
+                loaded.add(target);
+            }
+            if (loaded.isEmpty()) {
+                fail(server, p, skipped.isEmpty() ? "所选时间窗口内没有可用轨迹样本"
+                        : "没有可用目标：" + String.join("；", skipped));
                 continue;
             }
-            p.session.cursor = cursor;
-            p.session.truncated = result.truncated();
-            p.session.cutoffApplied = result.cutoffApplied();
-            p.session.events = new TrackEventCursor(result.events(), server.registryAccess());
-            p.session.eventsTruncated = result.eventsTruncated();
-            p.session.legacyEquipment = !p.session.events.hasEquipment();
-            p.session.eventsJumpPending = true;
-            p.session.sourceSummary = summarize(result.files(), p.session.cycleId)
-                    + " · " + ViewTime.format(cursor.startMs()) + " → " + ViewTime.format(cursor.endMs());
+            if (!p.session.group && !skipped.isEmpty()) {
+                fail(server, p, skipped.get(0));
+                continue;
+            }
+            p.session.targets.removeIf(target -> !loaded.contains(target));
+            p.session.primary = loaded.get(0);
+            p.session.cursor = p.session.primary.cursor;
+            p.session.events = p.session.primary.events;
+            p.session.eventsTruncated = p.session.primary.eventsTruncated;
+            p.session.legacyEquipment = p.session.primary.legacyEquipment;
+            p.session.truncated = p.session.primary.truncated;
+            p.session.cutoffApplied = p.session.primary.cutoffApplied;
+            p.session.timelineStartMs = loaded.stream()
+                    .mapToLong(target -> target.cursor.startMs()).min().orElse(0L);
+            p.session.endTrackMs = loaded.stream()
+                    .mapToLong(target -> target.cursor.endMs()).max().orElse(0L);
+            p.session.displayName = loaded.size() == 1 ? loaded.get(0).name
+                    : (loaded.size() <= 4
+                    ? String.join(", ", loaded.stream().map(target -> target.name).toList())
+                    : loaded.size() + " 个目标");
+            p.session.group = loaded.size() > 1;
+            if (!p.session.group && !p.session.options.followExplicit()) {
+                p.session.followActive = p.session.options.follow();
+                p.session.followTarget = p.session.followActive ? loaded.get(0).uuid : null;
+            } else if (p.session.followActive
+                    && findTarget(p.session, p.session.followTarget) == null) {
+                p.session.followTarget = loaded.get(0).uuid;
+            }
+            p.session.chatCount = loaded.stream().mapToInt(target -> target.chats.size()).sum();
+            p.session.sourceSummary = summarizeTargets(loaded, p.session.cycleId)
+                    + " · " + ViewTime.format(p.session.timelineStartMs) + " → "
+                    + ViewTime.format(p.session.endTrackMs);
+            if (!skipped.isEmpty()) {
+                Samsara.LOGGER.info("[回看] {}/{} 个目标在窗口内无样本，已跳过: {}",
+                        skipped.size(), p.session.targets.size() + skipped.size(),
+                        String.join("；", skipped));
+            }
             apply(server, p);
         }
+    }
+
+    private static ViewTarget findTarget(ViewSession session, UUID uuid) {
+        for (ViewTarget target : session.targets) {
+            if (target.uuid.equals(uuid)) {
+                return target;
+            }
+        }
+        return null;
+    }
+
+    private static String followName(ViewSession session) {
+        ViewTarget target = findTarget(session, session.followTarget);
+        return target == null ? session.followTarget.toString() : target.name;
+    }
+
+    private static String summarizeTargets(List<ViewTarget> targets, int cycleId) {
+        int files = 0;
+        for (ViewTarget target : targets) {
+            files += target.cursor.segmentCount();
+        }
+        return "cycle" + cycleId + " / " + targets.size() + " 个目标 / " + files + " 段";
     }
 
     private void apply(MinecraftServer server, Pending p) {
@@ -333,7 +677,11 @@ public final class ViewManager {
             Samsara.LOGGER.info("[回看] {} 的旧会话已被停止，取消本次加载", s.viewerName);
             return;
         }
-        if (TrackReplay.isReplaying(s.targetUuid)) {
+        if (s.primary == null || s.primary.cursor == null) {
+            fail(server, p, "没有可用目标");
+            return;
+        }
+        if (TrackReplay.isReplaying(s.primary.uuid)) {
             fail(server, p, "目标已有捕捉式回放在进行中（F-92）");
             return;
         }
@@ -342,49 +690,33 @@ public final class ViewManager {
             return;
         }
 
-        ViewCursor.Point first = s.cursor.pointAt(s.cursor.startMs());
-        ServerLevel level = findLevel(server, first.dimension());
+        String dimension = s.options.dimension();
+        if (dimension == null || dimension.isBlank()) {
+            for (ViewTarget target : s.targets) {
+                if (target.cursor == null) {
+                    continue;
+                }
+                long t = Math.max(s.timelineStartMs, target.cursor.startMs());
+                dimension = target.cursor.pointAt(t).dimension();
+                break;
+            }
+        }
+        if (dimension == null || dimension.isBlank()) {
+            fail(server, p, "无法确定回放维度");
+            return;
+        }
+        ServerLevel level = findLevel(server, dimension);
         if (level == null) {
-            fail(server, p, "轨迹维度不存在: " + first.dimension());
+            fail(server, p, "轨迹维度不存在: " + dimension);
             return;
         }
-
-        // 1) 人偶与临时 ticket（失败时观看者仍未被修改）
-        moveTicket(s, level, BlockPos.containing(first.x(), first.y(), first.z()));
-        ViewMannequin entity = new ViewMannequin(level, s.targetUuid, s.targetName,
-                s.options.glow(), s.options.nameTag());
-        GameProfile profile = resolveProfile(server, s.targetUuid, s.targetName);
-        s.profile = profile;
-        entity.applyProfile(profile);
-        entity.snapTo(first.x(), first.y(), first.z(), first.yaw(), first.pitch());
-        entity.setYHeadRot(first.yaw());
-        entity.setYBodyRot(first.yaw());
-        entity.yHeadRotO = first.yaw();
-        entity.yBodyRotO = first.yaw();
-        entity.walkAnimation.stop();
-        s.prevMannequinX = first.x();
-        s.prevMannequinY = first.y();
-        s.prevMannequinZ = first.z();
-        s.hasPrevMannequin = true;
-        if (!level.addFreshEntity(entity)) {
-            entity.discard();
-            releaseTickets(s);
-            fail(server, p, "人偶生成失败（区块未加载）");
-            return;
+        if (!dimension.startsWith("minecraft:")) {
+            // 兼容 --dim world 之类的简写：findLevel 已解析成功即可
+            dimension = level.dimension().identifier().toString();
         }
-        // 加入世界后再应用：受伤闪烁需要广播给已追踪该实体的玩家
-        entity.applyTrackFlags(first.flags());
-        CommandConfig cfg0 = CommandConfig.getInstance();
-        s.equipmentDrop = s.options.equipmentDrop() != null
-                ? s.options.equipmentDrop() : cfg0.viewAllowEquipmentDrop();
-        entity.setEquipmentDropAllowed(s.equipmentDrop);
-        if (s.events != null) {
-            TrackEventApplier.applySnapshot(entity, s.events, first.timeMs());
-            s.lastEventTrackMs = first.timeMs();
-            s.eventsJumpPending = false;
-        }
+        s.activeDimension = dimension;
 
-        // 2) 旧会话先结束（同观看者替换，不叠加实体）
+        // 旧会话先结束（同观看者替换，不叠加实体）
         if (p.old != null) {
             restore(p.old, "被新的回看替换");
         }
@@ -393,8 +725,7 @@ public final class ViewManager {
             s.snapshot = ViewSnapshot.capture(viewer);
             s.playerRef = viewer;
             s.vehicleId = viewer.getVehicle() == null ? null : viewer.getVehicle().getUUID();
-            s.mannequin = entity;
-            s.display = new ViewDisplay(viewer, s.targetName, s.cycleId);
+            s.display = new ViewDisplay(viewer, s.displayName, s.cycleId);
             // 回看期间始终旁观：无碰撞、无伤害，可自由飞行
             viewer.setGameMode(GameType.SPECTATOR);
             // 观察者本身不是被录制对象：关闭当前段，结束回看后再重新开段
@@ -404,9 +735,9 @@ public final class ViewManager {
             s.lastWriteX = viewer.getX();
             s.lastWriteY = viewer.getY();
             s.lastWriteZ = viewer.getZ();
-            s.startWallMs = System.currentTimeMillis();
-            s.startTrackMs = s.cursor.startMs();
-            s.endTrackMs = s.cursor.endMs();
+            long now = System.currentTimeMillis();
+            s.startWallMs = now;
+            s.startTrackMs = s.timelineStartMs;
             s.state = ViewSession.State.PLAYING;
             CommandConfig cfg = CommandConfig.getInstance();
             s.scrubMode = s.options.scrub() != null ? s.options.scrub() : cfg.viewScrubEnabled();
@@ -422,41 +753,72 @@ public final class ViewManager {
             s.aimSnapAccumSec = 1.0;
             s.aimTracker = new ViewAim.Tracker(
                     new ViewAim.Params(s.aimDeadzone, s.aimEdge, s.aimSpeed, s.aimPitch));
-            s.lastAimAtMs = System.currentTimeMillis();
-            sessions.put(s.viewer, s);
-            if (s.options.follow()) {
-                follow(s, viewer, s.startTrackMs);
+            s.lastAimAtMs = now;
+            s.equipmentDrop = s.options.equipmentDrop() != null
+                    ? s.options.equipmentDrop() : cfg.viewAllowEquipmentDrop();
+            for (ViewTarget target : s.targets) {
+                target.lastChatTrackMs = Math.max(s.startTrackMs,
+                        target.cursor == null ? s.startTrackMs : target.cursor.startMs());
+                target.eventsJumpPending = true;
+                target.profile = resolveProfile(server, target.uuid, target.name);
+                updateTarget(server, s, target, s.startTrackMs, now);
             }
-            updateMannequin(server, s, s.startTrackMs);
-            s.display.update("[回看] " + s.targetName + " · 0%", 0f);
+            s.primary = s.targets.get(0);
+            s.cursor = s.primary.cursor;
+            s.mannequin = s.primary.mannequin;
+            s.events = s.primary.events;
+            s.eventsTruncated = s.primary.eventsTruncated;
+            s.legacyEquipment = s.primary.legacyEquipment;
+            s.truncated = s.primary.truncated;
+            s.cutoffApplied = s.primary.cutoffApplied;
+            sessions.put(s.viewer, s);
+            if (s.followActive) {
+                follow(s, viewer, s.startTrackMs);
+            } else if (s.group) {
+                snapToScene(s, viewer, s.startTrackMs);
+            }
+            s.display.update("[回看] " + s.displayName + " · 0%", 0f);
 
-            String msg = "开始回看 " + s.targetName + "（周目 " + s.cycleId + " · "
+            String msg = "开始回看 " + s.displayName + "（周目 " + s.cycleId + " · "
                     + s.sourceSummary + " · " + s.speed() + "× · 样本 "
-                    + s.cursor.sampleCount() + " 点"
-                    + (s.options.follow() ? " · 跟随" : "")
+                    + sampleCount(s) + " 点"
+                    + (s.group ? " · 群组 " + s.targets.size() + " 个目标" : "")
+                    + (s.followActive ? " · 跟随" : "")
                     + (s.options.spectator() ? " · 旁观" : "")
                     + (s.aimEnabled ? " · 自瞄" : "") + "）"
+                    + (s.chatCount > 0 ? " · 聊天 " + s.chatCount + " 条" : "")
                     + (s.cutoffApplied ? " · 已按捕捉截断" : "")
                     + (s.truncated ? " · 文件尾部已截断" : "")
                     + (s.legacyEquipment ? " · 该段录制于装备事件之前（空手）" : "")
                     + (s.eventsTruncated ? " · 事件尾部已截断" : "")
+                    + (s.group && !s.followActive ? "\n多目标默认不跟随，可用 --follow <玩家> 指定；"
+                    + "对齐：/samsara track view align" : "")
                     + "\n停止：/samsara track view stop";
-            Samsara.LOGGER.info("[回看] 开始: viewer={} target={} cycle={} window={} → {} speed={} samples={} cutoff={} truncated={}",
-                    s.viewerName, s.targetName, s.cycleId, ViewTime.format(s.startTrackMs),
-                    ViewTime.format(s.endTrackMs), s.speed(), s.cursor.sampleCount(),
-                    s.cutoffApplied, s.truncated);
+            Samsara.LOGGER.info("[回看] 开始: viewer={} targets={} cycle={} window={} → {} speed={} samples={}",
+                    s.viewerName, s.displayName, s.cycleId, ViewTime.format(s.startTrackMs),
+                    ViewTime.format(s.endTrackMs), s.speed(), sampleCount(s));
             viewer.sendSystemMessage(Component.literal("[回看] " + msg));
             // 控制条只在会话开始时发一次（不每 tick 刷屏）
             sendControls(s, viewer);
             if (!s.targetUuid.equals(s.viewer)) {
-                ViewAudit.append(s.viewerName, s.targetName, s.cycleId, s.windowFrom,
-                        s.windowTo, s.speed(), "STARTED");
+                ViewAudit.append(s.viewerName, s.displayName, s.cycleId, s.windowFrom,
+                        s.windowTo, s.speed(), "STARTED"
+                                + (s.chatCount > 0 ? " (chat=" + s.chatCount + ")" : ""));
             }
         } catch (Exception e) {
             Samsara.LOGGER.warn("[回看] 应用会话失败，回滚观看者状态: {}", e.getMessage());
-            s.mannequin = entity;
             restore(s, "启动异常: " + e.getMessage());
         }
+    }
+
+    private static int sampleCount(ViewSession s) {
+        int total = 0;
+        for (ViewTarget target : s.targets) {
+            if (target.cursor != null) {
+                total += target.cursor.sampleCount();
+            }
+        }
+        return total;
     }
 
     private void fail(MinecraftServer server, Pending p, String reason) {
@@ -467,8 +829,8 @@ public final class ViewManager {
                 ViewTime.format(s.windowTo), s.speed(), reason);
         ServerPlayer viewer = server.getPlayerList().getPlayer(s.viewer);
         if (viewer != null) {
-            viewer.sendSystemMessage(Component.literal("[回看] 无法开始：" + reason
-                    + "（可用时段：/samsara track list " + s.targetName + "）"));
+            String listHint = s.group ? "" : "（可用时段：/samsara track list " + s.targetName + "）";
+            viewer.sendSystemMessage(Component.literal("[回看] 无法开始：" + reason + listHint));
         }
         if (!s.targetUuid.equals(s.viewer)) {
             ViewAudit.append(s.viewerName, s.targetName, s.cycleId, s.windowFrom,
@@ -478,49 +840,113 @@ public final class ViewManager {
 
     // ---- 人偶推进 ----
 
-    private boolean updateMannequin(MinecraftServer server, ViewSession s, long trackTime) {
-        ViewCursor.Point point = s.cursor.pointAt(trackTime);
-        ServerLevel level = findLevel(server, point.dimension());
-        if (level == null) {
+    /**
+     * 推进一个目标：可见性、共享人偶、ticket、位置/朝向、事件与载具。
+     *
+     * @return 该目标本 tick 是否可见
+     */
+    private boolean updateTarget(MinecraftServer server, ViewSession s, ViewTarget target,
+                                 long trackTime, long now) {
+        if (target.cursor == null) {
+            target.visible = false;
             return false;
         }
-        moveTicket(s, level, BlockPos.containing(point.x(), point.y(), point.z()));
-        ViewMannequin m = s.mannequin;
-        if (m == null || m.isRemoved()) {
-            m = new ViewMannequin(level, s.targetUuid, s.targetName,
-                    s.options.glow(), s.options.nameTag());
-            m.applyProfile(s.profile);
-            if (!level.addFreshEntity(m)) {
-                return false;
-            }
-            s.mannequin = m;
-        } else if (m.level() != level) {
-            releaseCamera(server, s, m);
-            m.discard();
-            m = new ViewMannequin(level, s.targetUuid, s.targetName,
-                    s.options.glow(), s.options.nameTag());
-            m.applyProfile(s.profile);
-            if (!level.addFreshEntity(m)) {
-                return false;
-            }
-            s.mannequin = m;
+        if (trackTime < target.cursor.startMs() || trackTime > target.cursor.endMs()) {
+            hideTarget(server, s, target, "已离开该目标的轨迹区间");
+            return false;
         }
+        if (s.group && !target.cursor.covers(trackTime)) {
+            hideTarget(server, s, target, "跨段空隙，暂时隐藏");
+            return false;
+        }
+        ViewCursor.Point point = target.cursor.pointAt(trackTime);
+        if (s.activeDimension != null && !point.dimension().equals(s.activeDimension)) {
+            hideTarget(server, s, target, "其他维度，已跳过");
+            return false;
+        }
+        ServerLevel level = findLevel(server, point.dimension());
+        if (level == null) {
+            hideTarget(server, s, target, "维度不可用: " + point.dimension());
+            return false;
+        }
+        long window = Math.max(0, CommandConfig.getInstance().viewDedupeWindowMs());
+
+        // 已是借用者：宿主仍有效且时间相近则继续借用，否则分裂出自己的实体。
+        if (target.hasMannequin() && !target.ownsMannequin) {
+            SharedViewMannequin.Host host = target.sharedHost;
+            boolean valid = host != null && host.entity == target.mannequin
+                    && !host.entity.isRemoved() && host.session != s && !host.session.closed()
+                    && Math.abs(host.session.trackTime(now) - trackTime) <= window;
+            if (!valid) {
+                SharedViewMannequin.unborrow(target);
+                target.mannequin = null;
+            } else {
+                target.visible = true;
+                target.status = "共享人偶（与 " + host.session.viewerName + " 对齐）";
+                target.teleported = false;
+                return true;
+            }
+        }
+
+        if (!target.hasOwnMannequin()) {
+            if (target.mannequin != null && target.ownsMannequin) {
+                SharedViewMannequin.release(target);
+                target.mannequin = null;
+            }
+            SharedViewMannequin.Host host = SharedViewMannequin.find(
+                    s, target, point.dimension(), trackTime, now, window);
+            if (host != null) {
+                target.mannequin = host.entity;
+                SharedViewMannequin.borrow(target, host);
+                target.visible = true;
+                target.status = "共享人偶（与 " + host.session.viewerName + " 对齐）";
+                target.teleported = false;
+                return true;
+            }
+        }
+
+        ViewMannequin m = target.mannequin;
+        if (m == null || m.isRemoved() || !target.ownsMannequin || m.level() != level) {
+            if (m != null && target.ownsMannequin) {
+                releaseCamera(server, s, m);
+                boolean keep = SharedViewMannequin.release(target);
+                if (!keep) {
+                    m.discard();
+                }
+            }
+            m = createMannequin(server, s, target, level, point);
+            if (m == null) {
+                target.mannequin = null;
+                target.ownsMannequin = false;
+                target.visible = false;
+                target.status = "人偶生成失败（区块未加载）";
+                return false;
+            }
+            target.mannequin = m;
+            target.ownsMannequin = true;
+            target.hasPrev = false;
+            SharedViewMannequin.register(s, target, point.dimension());
+        } else {
+            SharedViewMannequin.updateKey(s, target, point.dimension());
+        }
+
+        moveTicket(s, target, level, BlockPos.containing(point.x(), point.y(), point.z()));
         m.snapTo(point.x(), point.y(), point.z(), point.yaw(), point.pitch());
         m.setYHeadRot(point.yaw());
         m.setYBodyRot(point.yaw());
         m.yHeadRotO = point.yaw();
         m.yBodyRotO = point.yaw();
         m.setDeltaMovement(Vec3.ZERO);
-        applyTrackEvents(s, m, trackTime);
+        applyTrackEvents(target, m, trackTime);
         m.applyTrackFlags(point.flags());
-        updateFakeVehicle(s, m);
-        if (s.hasPrevMannequin) {
-            double jx = point.x() - s.prevMannequinX;
-            double jy = point.y() - s.prevMannequinY;
-            double jz = point.z() - s.prevMannequinZ;
-            s.mannequinTeleported = jx * jx + jy * jy + jz * jz > 16.0 * 16.0;
-            double dx = point.x() - s.prevMannequinX;
-            double dz = point.z() - s.prevMannequinZ;
+        updateFakeVehicle(target, m);
+        if (target.hasPrev) {
+            double jx = point.x() - target.prevX;
+            double jy = point.y() - target.prevY;
+            double jz = point.z() - target.prevZ;
+            target.teleported = jx * jx + jy * jy + jz * jz > 16.0 * 16.0;
+            double dx = point.x() - target.prevX;
+            double dz = point.z() - target.prevZ;
             float walk = (float) Math.min(1.5, Math.hypot(dx, dz) * 4.0);
             if (walk > 0.02f) {
                 m.walkAnimation.setSpeed(walk);
@@ -528,52 +954,108 @@ public final class ViewManager {
                 m.walkAnimation.stop();
             }
         } else {
-            s.mannequinTeleported = true;
+            target.teleported = true;
         }
-        s.prevMannequinX = point.x();
-        s.prevMannequinY = point.y();
-        s.prevMannequinZ = point.z();
-        s.hasPrevMannequin = true;
+        target.prevX = point.x();
+        target.prevY = point.y();
+        target.prevZ = point.z();
+        target.hasPrev = true;
+        target.visible = true;
+        target.status = "可见";
         return true;
     }
 
+    /** 刷新所有目标；返回是否至少有一个可见。 */
+    private boolean refreshTargets(MinecraftServer server, ViewSession s, long trackTime, long now) {
+        boolean any = false;
+        for (ViewTarget target : s.targets) {
+            any |= updateTarget(server, s, target, trackTime, now);
+        }
+        s.mannequin = s.primary == null ? null : s.primary.mannequin;
+        return any;
+    }
+
+    private ViewMannequin createMannequin(MinecraftServer server, ViewSession s,
+                                          ViewTarget target, ServerLevel level,
+                                          ViewCursor.Point point) {
+        ViewMannequin m = new ViewMannequin(level, target.uuid, target.name,
+                s.options.glow(), s.options.nameTag());
+        if (target.profile == null) {
+            target.profile = resolveProfile(server, target.uuid, target.name);
+        }
+        m.applyProfile(target.profile);
+        m.snapTo(point.x(), point.y(), point.z(), point.yaw(), point.pitch());
+        m.setYHeadRot(point.yaw());
+        m.setYBodyRot(point.yaw());
+        m.yHeadRotO = point.yaw();
+        m.yBodyRotO = point.yaw();
+        m.walkAnimation.stop();
+        if (!level.addFreshEntity(m)) {
+            return null;
+        }
+        // 加入世界后再应用：受伤闪烁需要广播给已追踪该实体的玩家
+        m.applyTrackFlags(point.flags());
+        m.setEquipmentDropAllowed(s.equipmentDrop);
+        return m;
+    }
+
+    /** 目标离开区间/换维度/跨段空隙：隐藏而不是冻结在最后位置。 */
+    private void hideTarget(MinecraftServer server, ViewSession s, ViewTarget target, String reason) {
+        if (target.mannequin != null) {
+            if (target.ownsMannequin) {
+                releaseCamera(server, s, target.mannequin);
+                boolean keep = SharedViewMannequin.release(target);
+                if (!keep) {
+                    target.mannequin.discard();
+                }
+            } else {
+                SharedViewMannequin.unborrow(target);
+            }
+        }
+        target.mannequin = null;
+        target.ownsMannequin = false;
+        target.visible = false;
+        target.hasPrev = false;
+        target.status = reason;
+        releaseTickets(target);
+    }
+
     /**
-     * 客户端假载具：按人偶当前 VEHICLE 类型向附近观看者发假实体包。
+     * 客户端假载具：按目标当前 VEHICLE 类型向附近观看者发假实体包。
      * 未知类型不创建实体，人偶回退蹲姿。
      */
-    private static void updateFakeVehicle(ViewSession s, TrackMannequin mannequin) {
+    private static void updateFakeVehicle(ViewTarget target, TrackMannequin mannequin) {
         if (mannequin.vehicleType().isBlank()) {
-            if (s.vehicle != null) {
-                s.vehicle.setType("");
-                s.vehicle = null;
+            if (target.vehicle != null) {
+                target.vehicle.setType("");
+                target.vehicle = null;
             }
             return;
         }
-        if (s.vehicle == null) {
-            s.vehicle = new FakeVehicle();
+        if (target.vehicle == null) {
+            target.vehicle = new FakeVehicle();
         }
-        s.vehicle.setType(mannequin.vehicleType());
+        target.vehicle.setType(mannequin.vehicleType());
         if (mannequin.level() instanceof ServerLevel level) {
-            s.vehicle.tick(level, mannequin);
+            target.vehicle.tick(level, mannequin);
         }
     }
 
     /**
      * 事件应用：正放跨越 SWING/USE；跳转、倒放、拖动只按快照重建并清空动作。
      */
-    private static void applyTrackEvents(ViewSession s, ViewMannequin mannequin, long trackTime) {
-        if (s.events == null || s.events.isEmpty() || mannequin == null) {
+    private static void applyTrackEvents(ViewTarget target, ViewMannequin mannequin, long trackTime) {
+        if (target.events == null || target.events.isEmpty() || mannequin == null) {
             return;
         }
-        boolean jump = s.eventsJumpPending || s.direction() < 0
-                || trackTime < s.lastEventTrackMs;
+        boolean jump = target.eventsJumpPending || trackTime < target.lastEventTrackMs;
         if (jump) {
-            TrackEventApplier.resetTo(mannequin, s.events, trackTime);
-        } else if (trackTime > s.lastEventTrackMs) {
-            TrackEventApplier.advance(mannequin, s.events, s.lastEventTrackMs, trackTime);
+            TrackEventApplier.resetTo(mannequin, target.events, trackTime);
+        } else if (trackTime > target.lastEventTrackMs) {
+            TrackEventApplier.advance(mannequin, target.events, target.lastEventTrackMs, trackTime);
         }
-        s.lastEventTrackMs = trackTime;
-        s.eventsJumpPending = false;
+        target.lastEventTrackMs = trackTime;
+        target.eventsJumpPending = false;
     }
 
     /** 跟随观察点：人偶身后 4.5 格、上方 2 格，并面向人偶（不是贴在人偶身体里）。 */
@@ -586,7 +1068,11 @@ public final class ViewManager {
      * 超出范围、人偶瞬移或换维度时才重新贴近。
      */
     private void follow(ViewSession s, ServerPlayer player, long trackTime) {
-        ViewCursor.Point point = s.cursor.pointAt(trackTime);
+        ViewTarget target = followTargetOf(s, null);
+        if (target == null || !target.visible || target.cursor == null) {
+            return;
+        }
+        ViewCursor.Point point = target.cursor.pointAt(trackTime);
         ServerLevel level = findLevel(player.level().getServer(), point.dimension());
         if (level == null) {
             return;
@@ -595,22 +1081,109 @@ public final class ViewManager {
         boolean dimensionChanged = !point.dimension().equals(s.lastFollowDim);
         boolean tooFar = player.distanceToSqr(point.x(), point.y(), point.z())
                 > (double) radius * radius;
-        if (s.followInitialized && !dimensionChanged && !s.mannequinTeleported && !tooFar) {
+        if (s.followInitialized && !dimensionChanged && !target.teleported && !tooFar) {
             return; // 自由活动范围内：不打断观看者
         }
         snapToObservation(s, player, level, point);
+        target.teleported = false;
     }
 
     /**
-     * 一键对齐（F-96）：一次性贴到理想观察点并面向人偶；不改变 follow 开关。
+     * 一键对齐（F-96）：单目标贴到理想观察点；多目标贴到场景中心；
+     * 有 --follow 时按该目标。不改变 follow 开关。
      */
     private void align(ViewSession s, ServerPlayer player, long trackTime) {
-        ViewCursor.Point point = s.cursor.pointAt(trackTime);
-        ServerLevel level = findLevel(player.level().getServer(), point.dimension());
+        ViewTarget target = followTargetOf(s, null);
+        if (target != null && target.cursor != null) {
+            ViewCursor.Point point = target.cursor.pointAt(trackTime);
+            ServerLevel level = findLevel(player.level().getServer(), point.dimension());
+            if (level != null) {
+                snapToObservation(s, player, level, point);
+                target.teleported = false;
+                return;
+            }
+        }
+        if (s.group) {
+            snapToScene(s, player, trackTime);
+        }
+    }
+
+    /** 有 --follow 目标优先；否则单目标取 primary，多目标返回 null（走场景中心）。 */
+    private static ViewTarget followTargetOf(ViewSession s, List<ViewTarget> visible) {
+        if (s.followTarget != null) {
+            for (ViewTarget target : s.targets) {
+                if (target.uuid.equals(s.followTarget)
+                        && (visible == null || visible.contains(target))) {
+                    return target;
+                }
+            }
+            return null;
+        }
+        if (!s.group) {
+            return s.primary;
+        }
+        return null;
+    }
+
+    /** 多目标一键对齐：场景中心上方/后方，面向质心。 */
+    private void snapToScene(ViewSession s, ServerPlayer player, long trackTime) {
+        double cx = 0;
+        double cy = 0;
+        double cz = 0;
+        int count = 0;
+        for (ViewTarget target : s.targets) {
+            if (!target.visible || target.cursor == null) {
+                continue;
+            }
+            ViewCursor.Point point = target.cursor.pointAt(trackTime);
+            if (s.activeDimension != null && !point.dimension().equals(s.activeDimension)) {
+                continue;
+            }
+            cx += point.x();
+            cy += point.y();
+            cz += point.z();
+            count++;
+        }
+        if (count == 0) {
+            if (s.primary != null && s.primary.cursor != null) {
+                ViewCursor.Point point = s.primary.cursor.pointAt(trackTime);
+                ServerLevel level = findLevel(player.level().getServer(), point.dimension());
+                if (level != null) {
+                    snapToObservation(s, player, level, point);
+                }
+            }
+            return;
+        }
+        cx /= count;
+        cy /= count;
+        cz /= count;
+        ServerLevel level = findLevel(player.level().getServer(), s.activeDimension);
         if (level == null) {
             return;
         }
-        snapToObservation(s, player, level, point);
+        double vx = cx;
+        double vy = cy + 10.0;
+        double vz = cz + 12.0;
+        double dx = cx - vx;
+        double dz = cz - vz;
+        double dy = (cy + 1.2) - (vy + 1.62);
+        float lookYaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
+        float lookPitch = (float) -Math.toDegrees(Math.atan2(dy, Math.hypot(dx, dz)));
+        player.teleportTo(level, vx, vy, vz, Set.of(), lookYaw, lookPitch, false);
+        player.setDeltaMovement(Vec3.ZERO);
+        player.fallDistance = 0;
+        s.followInitialized = true;
+        s.mannequinTeleported = false;
+        s.lastFollowDim = s.activeDimension;
+        s.lastWriteDim = s.activeDimension;
+        s.lastWriteX = vx;
+        s.lastWriteY = vy;
+        s.lastWriteZ = vz;
+        s.lastWriteAtMs = System.currentTimeMillis();
+        s.lastAimAtMs = System.currentTimeMillis();
+        if (s.aimTracker != null) {
+            s.aimTracker.reset();
+        }
     }
 
     private void snapToObservation(ViewSession s, ServerPlayer player,
@@ -643,13 +1216,18 @@ public final class ViewManager {
 
     /**
      * 自动瞄准（F-100）：只发旋转增量，不改位置/速度。
-     * 相机已经接管到人偶时不再修正。
+     * 单目标瞄该目标；群组瞄 --follow 目标，否则瞄视线中心最近且在 edge 内的人偶。
      */
-    private void applyAim(ViewSession s, ServerPlayer player, long trackTime) {
+    private void applyAim(ViewSession s, ServerPlayer player, long trackTime,
+                          List<ViewTarget> visible) {
         if (player.getCamera() != player) {
             return;
         }
-        ViewCursor.Point point = s.cursor.pointAt(trackTime);
+        ViewTarget chosen = aimTargetOf(s, player, trackTime, visible);
+        if (chosen == null || chosen.cursor == null) {
+            return;
+        }
+        ViewCursor.Point point = chosen.cursor.pointAt(trackTime);
         if (!point.dimension().equals(player.level().dimension().identifier().toString())) {
             return;
         }
@@ -706,6 +1284,47 @@ public final class ViewManager {
                 Relative.X, Relative.Y, Relative.Z,
                 Relative.DELTA_X, Relative.DELTA_Y, Relative.DELTA_Z,
                 Relative.Y_ROT, Relative.X_ROT));
+    }
+
+    private static ViewTarget aimTargetOf(ViewSession s, ServerPlayer player, long trackTime,
+                                          List<ViewTarget> visible) {
+        ViewTarget follow = followTargetOf(s, visible);
+        if (follow != null) {
+            return follow;
+        }
+        ViewTarget best = null;
+        double bestAngle = Double.MAX_VALUE;
+        for (ViewTarget target : visible) {
+            if (!target.visible || target.cursor == null) {
+                continue;
+            }
+            ViewCursor.Point point = target.cursor.pointAt(trackTime);
+            if (!point.dimension().equals(player.level().dimension().identifier().toString())) {
+                continue;
+            }
+            double angle = viewAngleTo(player, point.x(), point.y() + 1.5, point.z());
+            if (angle > s.aimEdge) {
+                continue;
+            }
+            if (angle < bestAngle) {
+                bestAngle = angle;
+                best = target;
+            }
+        }
+        return best;
+    }
+
+    /** 粗略视角角误差（度），用于在群组里挑选离视线中心最近的人偶。 */
+    private static double viewAngleTo(ServerPlayer player, double x, double y, double z) {
+        double dx = x - player.getX();
+        double dy = y - player.getEyeY();
+        double dz = z - player.getZ();
+        double horizontal = Math.hypot(dx, dz);
+        double targetYaw = Math.toDegrees(Math.atan2(-dx, dz));
+        double targetPitch = -Math.toDegrees(Math.atan2(dy, horizontal));
+        double dyaw = ((targetYaw - player.getYRot() + 540) % 360) - 180;
+        double dpitch = targetPitch - player.getXRot();
+        return Math.hypot(dyaw, dpitch);
     }
 
     /** 长按方向键多久后自动加速到 4×。 */
@@ -782,18 +1401,21 @@ public final class ViewManager {
         double dt = Math.min(0.25, (now - s.lastScrubAtMs) / 1000.0);
         s.lastScrubAtMs = now;
         long current = s.trackTime(now);
-        long target = ViewScrub.target(current, s.cursor.startMs(), s.endTrackMs,
+        long target = ViewScrub.target(current, s.timelineStartMs, s.endTrackMs,
                 back, forward, fast, dt);
         if (target != current) {
             s.seekTo(target);
-            s.eventsJumpPending = true;
-            if (!updateMannequin(server, s, target)) {
+            for (ViewTarget viewTarget : s.targets) {
+                viewTarget.eventsJumpPending = true;
+            }
+            s.resetChatCursors(target);
+            if (!refreshTargets(server, s, target, now)) {
                 restore(s, "拖动到不可用维度");
                 return;
             }
             if (s.display != null) {
                 float progress = s.progress(now);
-                s.display.update("[回看] " + s.targetName + " · "
+                s.display.update("[回看] " + s.displayName + " · "
                                 + Math.round(progress * 100) + "% · 拖动"
                                 + (fast ? " 4×" : "")
                                 + (s.state == ViewSession.State.PAUSED ? "（暂停）" : ""),
@@ -944,40 +1566,48 @@ public final class ViewManager {
 
     // ---- 临时 chunk ticket ----
 
-    private void moveTicket(ViewSession s, ServerLevel level, BlockPos pos) {
+    private void moveTicket(ViewSession s, ViewTarget target, ServerLevel level, BlockPos pos) {
         ChunkPos chunk = ChunkPos.containing(pos);
         long key = chunk.pack();
-        if (s.ticketLevel != level) {
-            releaseTickets(s);
-            s.ticketLevel = level;
+        if (target.ticketLevel != level) {
+            releaseTickets(target);
+            target.ticketLevel = level;
         }
-        if (s.tickets.contains(key)) {
+        if (target.tickets.contains(key)) {
             return;
         }
         if (!level.getChunkSource().hasChunk(chunk.x(), chunk.z())) {
             level.getChunk(chunk.x(), chunk.z()); // 临时 ticket + 同步读取，不使用 setChunkForced
         }
-        for (Iterator<Long> it = s.tickets.iterator(); it.hasNext(); ) {
+        for (Iterator<Long> it = target.tickets.iterator(); it.hasNext(); ) {
             long old = it.next();
             if (old != key) {
                 level.getChunkSource().removeTicketWithRadius(VIEW_TICKET, ChunkPos.unpack(old), 1);
                 it.remove();
             }
         }
-        if (s.tickets.add(key)) {
+        if (target.tickets.add(key)) {
             level.getChunkSource().addTicketWithRadius(VIEW_TICKET, chunk, 1);
         }
     }
 
-    private void releaseTickets(ViewSession s) {
-        ServerLevel level = s.ticketLevel;
-        if (level == null && s.mannequin != null && s.mannequin.level() instanceof ServerLevel sl) {
+    private void releaseTickets(ViewTarget target) {
+        ServerLevel level = target.ticketLevel;
+        if (level == null && target.mannequin != null && target.mannequin.level() instanceof ServerLevel sl) {
             level = sl;
         }
         if (level != null) {
-            for (long key : new ArrayList<>(s.tickets)) {
+            for (long key : new ArrayList<>(target.tickets)) {
                 level.getChunkSource().removeTicketWithRadius(VIEW_TICKET, ChunkPos.unpack(key), 1);
             }
+        }
+        target.tickets.clear();
+        target.ticketLevel = null;
+    }
+
+    private void releaseAllTickets(ViewSession s) {
+        for (ViewTarget target : s.targets) {
+            releaseTickets(target);
         }
         s.tickets.clear();
         s.ticketLevel = null;
@@ -1000,7 +1630,7 @@ public final class ViewManager {
                 return "你当前没有进行中的回看";
             }
             restore(s, "手动停止");
-            return "已停止回看 " + s.targetName;
+            return "已停止回看 " + s.displayName;
         }
         if ("all".equalsIgnoreCase(target)) {
             if (actor != null && !allowOthers) {
@@ -1066,16 +1696,33 @@ public final class ViewManager {
             viewer = server.getPlayerList().getPlayer(s.viewer);
         }
         // 相机接管在人偶身上时先归还，再移除实体，避免黑屏/相机悬空
-        releaseCamera(server, s, s.mannequin);
+        for (ViewTarget target : s.targets) {
+            if (target.vehicle != null) {
+                target.vehicle.remove();
+                target.vehicle = null;
+            }
+            releaseCamera(server, s, target.mannequin);
+            if (target.mannequin != null && target.ownsMannequin) {
+                boolean keep = SharedViewMannequin.release(target);
+                if (!keep) {
+                    target.mannequin.discard();
+                }
+            } else if (target.sharedHost != null) {
+                SharedViewMannequin.unborrow(target);
+            }
+            target.mannequin = null;
+            target.ownsMannequin = false;
+            releaseTickets(target);
+        }
         if (s.vehicle != null) {
             s.vehicle.remove();
             s.vehicle = null;
         }
-        if (s.mannequin != null) {
+        if (s.mannequin != null && s.targets.isEmpty()) {
             s.mannequin.discard();
-            s.mannequin = null;
         }
-        releaseTickets(s);
+        s.mannequin = null;
+        releaseAllTickets(s);
         if (s.display != null) {
             s.display.release();
             s.display = null;
@@ -1107,7 +1754,7 @@ public final class ViewManager {
                         "[回看] 检测到游戏模式已被外部修改，未覆盖当前模式"));
             }
             viewer.sendSystemMessage(Component.literal("[回看] 已结束：" + reason
-                    + (s.targetName == null ? "" : "（" + s.targetName + "）")));
+                    + (s.displayName == null ? "" : "（" + s.displayName + "）")));
         }
 
         sessions.remove(s.viewer, s);
@@ -1117,9 +1764,9 @@ public final class ViewManager {
             TrackRecorder.getInstance().resumePlayer(viewer);
         }
         Samsara.LOGGER.info("[回看] 结束: viewer={} target={} cycle={} reason={} skippedPosition={} skippedMode={}",
-                s.viewerName, s.targetName, s.cycleId, reason, skippedPosition, skippedMode);
+                s.viewerName, s.displayName, s.cycleId, reason, skippedPosition, skippedMode);
         if (server != null && !s.targetUuid.equals(s.viewer)) {
-            ViewAudit.append(s.viewerName, s.targetName, s.cycleId, s.windowFrom,
+            ViewAudit.append(s.viewerName, s.displayName, s.cycleId, s.windowFrom,
                     s.windowTo, s.speed(), "STOPPED: " + reason);
         }
     }
@@ -1142,7 +1789,7 @@ public final class ViewManager {
             return "当前状态不能暂停: " + s.state;
         }
         s.pause();
-        return "已暂停回看 " + s.targetName + "（" + Math.round(s.progress(System.currentTimeMillis()) * 100) + "%）";
+        return "已暂停回看 " + s.displayName + "（" + Math.round(s.progress(System.currentTimeMillis()) * 100) + "%）";
     }
 
     public synchronized String resume(MinecraftServer server, ServerPlayer actor, String target, boolean allowOthers) {
@@ -1158,7 +1805,7 @@ public final class ViewManager {
             return "当前状态不是暂停: " + s.state;
         }
         s.resume();
-        return "已继续回看 " + s.targetName;
+        return "已继续回看 " + s.displayName;
     }
 
     /** 点击控制面板：调整倍速 */
@@ -1201,7 +1848,7 @@ public final class ViewManager {
             viewer.setCamera(viewer);
         }
         align(s, viewer, s.trackTime(System.currentTimeMillis()));
-        return "已对齐到 " + s.targetName + " 的观察点";
+        return "已对齐到 " + (s.group ? "场景中心" : s.displayName) + " 的观察点";
     }
 
     /** 进度跳转（F-101）：绝对时间 / 相对时间 / 百分比，钳到游标窗口。 */
@@ -1225,27 +1872,30 @@ public final class ViewManager {
         long current = s.trackTime(now);
         long targetMs;
         try {
-            targetMs = ViewSeek.target(spec, current, s.cursor.startMs(), s.endTrackMs);
+            targetMs = ViewSeek.target(spec, current, s.timelineStartMs, s.endTrackMs);
         } catch (IllegalArgumentException e) {
             return e.getMessage();
         }
         s.seekTo(targetMs);
-        s.eventsJumpPending = true;
+        for (ViewTarget viewTarget : s.targets) {
+            viewTarget.eventsJumpPending = true;
+        }
+        s.resetChatCursors(targetMs);
         if (s.aimTracker != null) {
             s.aimTracker.reset();
         }
-        if (!updateMannequin(server, s, targetMs)) {
-            return "跳转后的人偶维度不可用: " + s.targetName;
+        if (!refreshTargets(server, s, targetMs, now)) {
+            return "跳转后没有可见目标（可能全部在其他维度/区间外）";
         }
-        if (s.options.follow()) {
+        if (s.followActive) {
             ServerPlayer viewer = server.getPlayerList().getPlayer(s.viewer);
             if (viewer != null) {
-                align(s, viewer, targetMs);
+                follow(s, viewer, targetMs);
             }
         }
         float progress = s.progress(System.currentTimeMillis());
         if (s.display != null) {
-            s.display.update("[回看] " + s.targetName + " · "
+            s.display.update("[回看] " + s.displayName + " · "
                     + Math.round(progress * 100) + "% · "
                     + String.format("%.1f", s.speed()) + "×"
                     + (s.aimEnabled ? " · 自瞄" : ""), progress);
@@ -1319,7 +1969,17 @@ public final class ViewManager {
             return;
         }
         ViewSession s = sessions.get(viewer.getUUID());
-        if (s == null || s.closed() || s.mannequin != mannequin) {
+        if (s == null || s.closed()) {
+            return;
+        }
+        ViewTarget target = null;
+        for (ViewTarget candidate : s.targets) {
+            if (candidate.mannequin == mannequin) {
+                target = candidate;
+                break;
+            }
+        }
+        if (target == null) {
             return;
         }
         if (viewer.distanceToSqr(mannequin) > 64.0 * 64.0) {
@@ -1331,7 +1991,7 @@ public final class ViewManager {
             return;
         }
         int next = now - s.lastInspectAtMs <= 1_500L ? s.inspectPage + 1 : 1;
-        InspectResult result = inspectSession(s, next);
+        InspectResult result = inspectSession(s, target, next);
         if (result.page() > 0) {
             s.inspectPage = result.page();
             s.lastInspectAtMs = now;
@@ -1341,22 +2001,26 @@ public final class ViewManager {
             text += "\n右键人偶：翻到下一页";
         }
         Samsara.LOGGER.info("[回看] 右键查看背包: viewer={} target={} page={}/{}",
-                s.viewerName, s.targetName, result.page(), result.pages());
+                s.viewerName, target.name, result.page(), result.pages());
         viewer.sendSystemMessage(Component.literal(text));
     }
 
     private InspectResult inspectSession(ViewSession s, int page) {
-        if (s.cursor == null || s.events == null) {
+        return inspectSession(s, s.primary, page);
+    }
+
+    private InspectResult inspectSession(ViewSession s, ViewTarget target, int page) {
+        if (s.cursor == null || target == null || target.cursor == null || target.events == null) {
             return new InspectResult("回看仍在加载或该段没有事件数据", 0, 0);
         }
         try {
             long time = s.trackTime(System.currentTimeMillis());
             TrackEventStore.InventorySnapshot snapshot;
             try {
-                snapshot = s.events.inventoryAt(time);
+                snapshot = target.events.inventoryAt(time);
             } catch (RuntimeException e) {
                 Samsara.LOGGER.warn("[回看] 背包快照读取失败 viewer={} target={}: {}",
-                        s.viewerName, s.targetName, e.getMessage());
+                        s.viewerName, target.name, e.getMessage());
                 return new InspectResult("背包快照读取失败（事件可能仍在写入）：" + e.getMessage(), 0, 0);
             }
             if (snapshot == null) {
@@ -1368,7 +2032,7 @@ public final class ViewManager {
             int pageSize = 10;
             int pages = Math.max(1, (items.size() + pageSize - 1) / pageSize);
             int current = Math.max(1, Math.min(pages, page));
-            StringBuilder sb = new StringBuilder("[回看] ").append(s.targetName)
+            StringBuilder sb = new StringBuilder("[回看] ").append(target.name)
                     .append(" 的只读背包快照（").append(ViewTime.format(time)).append("）")
                     .append(" · 第 ").append(current).append("/").append(pages).append(" 页")
                     .append(" · 共 ").append(items.size()).append(" 件（只读，不会生成物品）");
@@ -1390,7 +2054,7 @@ public final class ViewManager {
             return new InspectResult(sb.toString(), current, pages);
         } catch (RuntimeException e) {
             Samsara.LOGGER.warn("[回看] 背包快照读取失败 viewer={} target={}: {}",
-                    s.viewerName, s.targetName, e.toString(), e);
+                    s.viewerName, target.name, e.toString(), e);
             return new InspectResult("背包快照读取失败（事件可能仍在写入）：" + e.getClass().getSimpleName()
                     + (e.getMessage() == null ? "" : " " + e.getMessage()), 0, 0);
         }
@@ -1464,7 +2128,10 @@ public final class ViewManager {
             return "当前状态不能倒放: " + s.state;
         }
         s.toggleDirection();
-        s.eventsJumpPending = true;
+        for (ViewTarget viewTarget : s.targets) {
+            viewTarget.eventsJumpPending = true;
+        }
+        s.resetChatCursors(s.trackTime(System.currentTimeMillis()));
         return s.direction() < 0 ? "已切换为倒放（已清空动作状态）" : "已切换为正放（按快照重建动作状态）";
     }
 
@@ -1514,7 +2181,8 @@ public final class ViewManager {
                     : "该玩家没有进行中的回看: " + target;
         }
         long now = System.currentTimeMillis();
-        StringBuilder sb = new StringBuilder("回看中 · 目标 ").append(s.targetName)
+        StringBuilder sb = new StringBuilder("回看中 · 目标 ").append(s.displayName)
+                .append(s.group ? "（" + s.targets.size() + " 个）" : "")
                 .append(" · 周目 ").append(s.cycleId)
                 .append(" · ").append(s.speed()).append("×")
                 .append(s.direction() < 0 ? " 倒放" : " 正放")
@@ -1524,13 +2192,24 @@ public final class ViewManager {
                 .append(" · 轨迹时间 ").append(ViewTime.format(s.trackTime(now)))
                 .append(s.direction() < 0 ? " · 距起点 " : " · 剩余 ")
                 .append(com.shenqianye.samsara.season.DurationUtil.formatMs(s.remainingMs(now)));
-        sb.append("\n参数: follow=").append(s.options.follow() ? "on" : "off")
+        sb.append("\n参数: follow=").append(s.followActive ? "on" : "off")
+                .append(s.followTarget != null && s.followActive ? "（" + followName(s) + "）" : "")
                 .append(" · spectator=on")
                 .append(" · aim=").append(s.aimEnabled
                         ? String.format("on（%.0f°/%.0f° · %.0f°/s）",
                         s.aimDeadzone, s.aimEdge, s.aimSpeed)
                         : "off")
-                .append(" · 拖动=").append(s.scrubMode ? "on" : "off");
+                .append(" · 拖动=").append(s.scrubMode ? "on" : "off")
+                .append(" · 聊天=").append(s.chatCount);
+        if (s.group || s.targets.stream().anyMatch(t -> t.sharedHost != null)) {
+            sb.append("\n目标:");
+            for (ViewTarget viewTarget : s.targets) {
+                sb.append("\n  ▸ ").append(viewTarget.name)
+                        .append(" · ").append(viewTarget.visible ? "可见" : "隐藏")
+                        .append(viewTarget.status == null || viewTarget.status.isBlank()
+                                ? "" : "（" + viewTarget.status + "）");
+            }
+        }
         if (s.cutoffApplied) {
             sb.append("\n⚠ 该段被捕捉截断（截断之后不播）");
         }
@@ -1720,6 +2399,7 @@ public final class ViewManager {
             restore(s, "服务器停止");
         }
         sessions.clear();
+        SharedViewMannequin.clear();
         cleanupOrphans(server);
         currentServer = null;
     }
@@ -1729,6 +2409,7 @@ public final class ViewManager {
         if (server == null) {
             return;
         }
+        SharedViewMannequin.clear();
         for (ServerLevel level : server.getAllLevels()) {
             List<ViewMannequin> leftovers = new ArrayList<>();
             for (Entity entity : level.getAllEntities()) {
@@ -1849,7 +2530,9 @@ public final class ViewManager {
             return null;
         }
         for (var key : server.levelKeys()) {
-            if (key.identifier().toString().equals(dimension)) {
+            String id = key.identifier().toString();
+            if (id.equals(dimension) || key.identifier().getPath().equals(dimension)
+                    || id.equals("minecraft:" + dimension)) {
                 return server.getLevel(key);
             }
         }

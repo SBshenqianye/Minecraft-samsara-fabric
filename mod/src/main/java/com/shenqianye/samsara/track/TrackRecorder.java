@@ -73,6 +73,8 @@ public final class TrackRecorder {
     private volatile TrackCuts cuts;
     /** 每个栈根自己的 cutoffs（旧栈的捕捉截断不再写到栈顶） */
     private final Map<Path, TrackCuts> cutsByRoot = new ConcurrentHashMap<>();
+    /** 每个栈根自己的收藏表（{@code clips.json}） */
+    private final Map<Path, TrackClips> clipsByRoot = new ConcurrentHashMap<>();
     private final Map<UUID, State> states = new ConcurrentHashMap<>();
     /** 正在被在线玩家追加的文件：保留扫描不要碰 */
     private final java.util.Set<Path> openFiles = ConcurrentHashMap.newKeySet();
@@ -145,6 +147,8 @@ public final class TrackRecorder {
         this.cuts.load();
         this.cutsByRoot.clear();
         this.cutsByRoot.put(root, this.cuts);
+        this.clipsByRoot.clear();
+        this.clipsByRoot.put(root, new TrackClips(root.resolve("clips.json")));
         this.worldRoot = root;
     }
 
@@ -191,6 +195,7 @@ public final class TrackRecorder {
         ServerMessageEvents.CHAT_MESSAGE.register((message, sender, params) -> {
             String text = message.decoratedContent().getString();
             r.recordChat(sender, text);
+            ChatLogStore.record(sender, text);
             com.shenqianye.samsara.web.MapLiveService.recordChat(sender, text);
         });
         // 玩法层系统提示（加入/离开/死亡/进度）；命令反馈不进入实时层。
@@ -236,6 +241,8 @@ public final class TrackRecorder {
         cutsByRoot.clear();
         cuts = cutsForTrackRoot(root);
         cuts.load();
+        clipsByRoot.clear();
+        clipsForTrackRoot(root);
     }
 
     /** 栈层 track 根对应的 cutoffs（每个根一份，互不覆盖）。 */
@@ -246,6 +253,17 @@ public final class TrackRecorder {
             c.load();
             return c;
         });
+    }
+
+    /** 栈层 track 根对应的片段收藏表（每个根一份）。 */
+    public TrackClips clipsForTrackRoot(Path trackRoot) {
+        Path rootKey = trackRoot.toAbsolutePath().normalize();
+        return clipsByRoot.computeIfAbsent(rootKey, r -> new TrackClips(r.resolve("clips.json")));
+    }
+
+    /** 当前栈顶的收藏表；目录未初始化时返回 null。 */
+    public TrackClips clips() {
+        return root == null ? null : clipsForTrackRoot(root);
     }
 
     /** track 根 → 栈层 worldKey（栈顶 world / 旧层 stack_<n>）。 */
@@ -890,6 +908,7 @@ public final class TrackRecorder {
     private void sweep() {
         try {
             TrackRetention.Settings retention = CommandConfig.getInstance().trackRetention();
+            ChatLogStore.purgeExpired(CommandConfig.getInstance().trackChatRetentionDays());
             int skeleton = Math.max(1, retention.skeletonPerDay());
             Map<UUID, Long> before = trackBytesByPlayer();
             Map<UUID, TrackRetention.Mode> modes = new java.util.HashMap<>();
@@ -912,16 +931,18 @@ public final class TrackRecorder {
                     continue;
                 }
                 try (var top = Files.list(trackRoot)) {
+                    TrackClips clips = clipsForTrackRoot(trackRoot);
+                    String world = worldKeyOfTrackRoot(trackRoot);
                     for (Path child : (Iterable<Path>) top::iterator) {
                         if (!Files.isDirectory(child)) {
                             continue;
                         }
                         // 更早的无世界层布局：track/<日期>/
                         if (TrackLayout.isDateDir(child.getFileName().toString())) {
-                            sweepDay(child, today, retention, modes);
+                            sweepDay(child, today, retention, modes, clips, world, 0);
                             continue;
                         }
-                        sweepWorldLevel(child, today, retention, modes);
+                        sweepWorldLevel(child, today, retention, modes, clips, world);
                     }
                 }
             }
@@ -1046,16 +1067,20 @@ public final class TrackRecorder {
     /** 一个世界目录：子项可能是 cycle&lt;id&gt; 目录，也可能是尚未迁移的日期目录 */
     private void sweepWorldLevel(Path worldDir, LocalDate today,
                                  TrackRetention.Settings retention,
-                                 Map<UUID, TrackRetention.Mode> modes) throws IOException {
+                                 Map<UUID, TrackRetention.Mode> modes,
+                                 TrackClips clips, String world) throws IOException {
         try (var children = Files.list(worldDir)) {
             for (Path child : (Iterable<Path>) children::iterator) {
                 if (!Files.isDirectory(child)) {
                     continue;
                 }
                 if (TrackLayout.isDateDir(child.getFileName().toString())) {
-                    sweepDay(child, today, retention, modes);
-                } else if (TrackLayout.cycleIdOf(child.getFileName().toString()) >= 0) {
-                    sweepCycle(child, today, retention, modes);
+                    sweepDay(child, today, retention, modes, clips, world, 0);
+                } else {
+                    int cycle = TrackLayout.cycleIdOf(child.getFileName().toString());
+                    if (cycle >= 0) {
+                        sweepCycle(child, today, retention, modes, clips, world, cycle);
+                    }
                 }
             }
         }
@@ -1063,12 +1088,13 @@ public final class TrackRecorder {
 
     private void sweepCycle(Path cycleDir, LocalDate today,
                             TrackRetention.Settings retention,
-                            Map<UUID, TrackRetention.Mode> modes) throws IOException {
+                            Map<UUID, TrackRetention.Mode> modes,
+                            TrackClips clips, String world, int cycleId) throws IOException {
         try (var days = Files.list(cycleDir)) {
             for (Path dayDir : (Iterable<Path>) days::iterator) {
                 if (Files.isDirectory(dayDir)
                         && TrackLayout.isDateDir(dayDir.getFileName().toString())) {
-                    sweepDay(dayDir, today, retention, modes);
+                    sweepDay(dayDir, today, retention, modes, clips, world, cycleId);
                 }
             }
         }
@@ -1077,7 +1103,8 @@ public final class TrackRecorder {
     /** 对一个日期目录做降采样（世界 + 周目 + 日期口径）；只处理 .bin，不碰 .evt。 */
     private void sweepDay(Path dayDir, LocalDate today,
                           TrackRetention.Settings retention,
-                          Map<UUID, TrackRetention.Mode> modes) throws IOException {
+                          Map<UUID, TrackRetention.Mode> modes,
+                          TrackClips clips, String world, int cycleId) throws IOException {
         LocalDate date;
         try {
             date = LocalDate.parse(dayDir.getFileName().toString());
@@ -1109,9 +1136,12 @@ public final class TrackRecorder {
                 continue;
             }
             try {
-                if (TrackStore.decimate(f, targetHz, retention.skeletonPerDay())) {
-                    Samsara.LOGGER.info("[周目管理 samsara] 轨迹降采样: {} → {}Hz（{} 天前 · {}）",
-                            f.getFileName(), targetHz, age, mode.id());
+                List<TrackClips.Range> keepFull = owner == null || clips == null
+                        ? List.of() : clips.protectedRanges(world, cycleId, owner);
+                if (TrackStore.decimate(f, targetHz, retention.skeletonPerDay(), keepFull)) {
+                    Samsara.LOGGER.info("[周目管理 samsara] 轨迹降采样: {} → {}Hz（{} 天前 · {}）{}",
+                            f.getFileName(), targetHz, age, mode.id(),
+                            keepFull.isEmpty() ? "" : " · 收藏保护 " + keepFull.size() + " 段");
                 }
             } catch (IOException e) {
                 Samsara.LOGGER.warn("[周目管理 samsara] 轨迹降采样失败 {}: {}", f, e.getMessage());

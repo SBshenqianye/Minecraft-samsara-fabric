@@ -16,6 +16,9 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.permissions.Permissions;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * 回看命令（设计 5.7.6 / F-79、F-80、F-90、F-91）。
  * <pre>
@@ -44,7 +47,8 @@ public final class TrackViewCommand {
         return Commands.literal("track")
                 .requires(PermissionRequirements.path("track"))
                 .then(viewNode("track"))
-                .then(listNode("track"));
+                .then(listNode("track"))
+                .then(TrackClipCommand.clipNode());
     }
 
     /** 供 {@code /samsara debug track view} 复用（调用方已要求 OWNER）。 */
@@ -166,38 +170,96 @@ public final class TrackViewCommand {
                                         .executes(ctx -> inspect(ctx,
                                                 StringArgumentType.getString(ctx, "player"),
                                                 IntegerArgumentType.getInteger(ctx, "page"))))))
-                .then(Commands.argument("player", StringArgumentType.word())
-                        .suggests(SuggestionProviders.knownPlayersProvider("监控目标"))
-                        .then(Commands.argument("input", StringArgumentType.greedyString())
-                                .suggests(SuggestionProviders.viewGreedyProvider())
-                                .executes(TrackViewCommand::startGreedy)));
+                .then(Commands.literal("clip")
+                        .requires(PermissionRequirements.path(path + " clip"))
+                        .then(Commands.argument("id", StringArgumentType.word())
+                                .suggests(SuggestionProviders.clipIdProvider())
+                                .executes(TrackViewCommand::startClip)))
+                .then(Commands.argument("input", StringArgumentType.greedyString())
+                        .suggests(SuggestionProviders.viewGreedyProvider())
+                        .executes(TrackViewCommand::startGreedyAll));
     }
 
-    private static int startGreedy(CommandContext<CommandSourceStack> ctx) {
+    /** 新语法：view [目标列表|all] <开始时间> [选项...]，第一个参数整体自解析。 */
+    private static int startGreedyAll(CommandContext<CommandSourceStack> ctx) {
         String raw = StringArgumentType.getString(ctx, "input").trim();
         if (raw.isEmpty()) {
-            return reply(ctx.getSource(), "缺少开始时间");
+            return reply(ctx.getSource(), "缺少开始时间或目标");
         }
-        int split = 0;
-        while (split < raw.length() && !Character.isWhitespace(raw.charAt(split))) {
-            split++;
+        String[] tokens = raw.split("\\s+");
+        List<String> targets = new ArrayList<>();
+        boolean all = false;
+        int index;
+        String start;
+        String first = tokens[0];
+        if ("all".equalsIgnoreCase(first)) {
+            all = true;
+            if (tokens.length < 2) {
+                return reply(ctx.getSource(), "all 后需要开始时间");
+            }
+            start = tokens[1];
+            index = 2;
+        } else if (isTime(first)) {
+            all = true;
+            start = first;
+            index = 1;
+        } else {
+            for (String part : first.split(",")) {
+                if (!part.isBlank()) {
+                    targets.add(part.trim());
+                }
+            }
+            if (targets.isEmpty()) {
+                return reply(ctx.getSource(), "缺少回看目标");
+            }
+            if (tokens.length < 2) {
+                return reply(ctx.getSource(), "目标后需要开始时间");
+            }
+            start = tokens[1];
+            index = 2;
         }
-        String start = raw.substring(0, split);
-        String options = split >= raw.length() ? "" : raw.substring(split).trim();
-        return start(ctx, start, options);
+        StringBuilder options = new StringBuilder();
+        for (int i = index; i < tokens.length; i++) {
+            if (!options.isEmpty()) {
+                options.append(' ');
+            }
+            options.append(tokens[i]);
+        }
+        return start(ctx, targets, all, start, options.toString());
     }
 
-    private static int start(CommandContext<CommandSourceStack> ctx, String start, String options) {
+    private static boolean isTime(String token) {
+        try {
+            com.shenqianye.samsara.track.view.ViewTime.parseAbsolute(token);
+            return true;
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    private static int startClip(CommandContext<CommandSourceStack> ctx) {
         ServerPlayer viewer;
         try {
             viewer = ctx.getSource().getPlayerOrException();
         } catch (Exception e) {
             return reply(ctx.getSource(), "回看需要以玩家身份执行");
         }
-        String target = StringArgumentType.getString(ctx, "player");
+        String msg = ViewManager.getInstance().startFromClip(ctx.getSource().getServer(), viewer,
+                StringArgumentType.getString(ctx, "id"), isAdmin(ctx.getSource()));
+        return reply(ctx.getSource(), msg);
+    }
+
+    private static int start(CommandContext<CommandSourceStack> ctx, List<String> targets,
+                             boolean all, String start, String options) {
+        ServerPlayer viewer;
+        try {
+            viewer = ctx.getSource().getPlayerOrException();
+        } catch (Exception e) {
+            return reply(ctx.getSource(), "回看需要以玩家身份执行");
+        }
         boolean allowOthers = isAdmin(ctx.getSource());
         String msg = ViewManager.getInstance().start(ctx.getSource().getServer(), viewer,
-                target, start, options, allowOthers);
+                targets, all, start, options, allowOthers);
         return reply(ctx.getSource(), msg);
     }
 

@@ -19,8 +19,9 @@ public final class SuggestionCatalog {
     /** 回看可选参数（与 {@code ViewOptions.parse} 支持的键一致） */
     private static final List<String> VIEW_OPTIONS = List.of(
             "--speed", "--duration", "--cycle", "--follow", "--spectator",
-            "--to", "--glow", "--no-glow", "--no-name-tag",
-            "--aim", "--aim-deadzone", "--aim-edge", "--aim-speed", "--aim-pitch");
+            "--to", "--glow", "--no-glow", "--no-name-tag", "--players", "--dim",
+            "--aim", "--aim-deadzone", "--aim-edge", "--aim-speed", "--aim-pitch",
+            "--equipment-drop", "--scrub");
 
     private static final List<String> DURATIONS = List.of(
             "30s", "1m", "5m", "10m", "30m", "1h", "2h", "6h", "12h", "1d");
@@ -39,7 +40,11 @@ public final class SuggestionCatalog {
             Map.entry("--duration", "从开始时间起播放多久，例如 --duration 30m"),
             Map.entry("--to", "显式结束时间，例如 --to 22:00（与 --duration 二选一）"),
             Map.entry("--cycle", "指定周目，例如 --cycle cycle3；跨周目窗口必须显式指定"),
-            Map.entry("--follow", "观看者跟随人偶（默认开，可写 --follow=off）"),
+            Map.entry("--follow", "跟随人偶：单目标默认开；多目标默认关，--follow <玩家> 只跟指定目标"),
+            Map.entry("--players", "显式指定目标列表，例如 --players Alice,Bob（覆盖命令里的目标）"),
+            Map.entry("--dim", "指定回放维度，例如 --dim minecraft:the_nether"),
+            Map.entry("--equipment-drop", "单次回看的装备掉落覆盖（回看人偶永不掉落）"),
+            Map.entry("--scrub", "拖动模式默认开关，例如 --scrub=off"),
             Map.entry("--spectator", "回看期间保持旁观（默认就是旁观，可显式写出）"),
             Map.entry("--aim", "自动瞄准：默认关闭，--aim=on 开启；可即时用 /track view aim 切换"),
             Map.entry("--aim-deadzone", "自瞄内圈（度），默认 6；圈内不修正"),

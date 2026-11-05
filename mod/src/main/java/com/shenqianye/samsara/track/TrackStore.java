@@ -332,6 +332,19 @@ public final class TrackStore {
      * {@code targetHz}。样本总数低于骨架下限时不动。返回是否改写。
      */
     public static boolean decimate(Path file, double targetHz, int skeletonPerDay) throws IOException {
+        return decimate(file, targetHz, skeletonPerDay, List.of());
+    }
+
+    /**
+     * 带收藏保护区的降采样（F-104）：
+     * <ul>
+     *   <li>命中 {@code keepFull} 的样本全部保留，不参与 RDP；</li>
+     *   <li>保护/非保护边界拆段，保护段保留原采样率，非保护段写目标采样率；</li>
+     *   <li>只删除样本，不改 {@code timeMs}、不重排样本、不读写 {@code diff/}。</li>
+     * </ul>
+     */
+    public static boolean decimate(Path file, double targetHz, int skeletonPerDay,
+                                   List<TrackClips.Range> keepFull) throws IOException {
         List<Segment> segments = read(file);
         int total = 0;
         for (Segment s : segments) {
@@ -340,25 +353,88 @@ public final class TrackStore {
         if (total <= skeletonPerDay) {
             return false;
         }
+        List<TrackClips.Range> ranges = keepFull == null ? List.of() : keepFull;
         boolean changed = false;
+        List<Segment> rewritten = new ArrayList<>(segments.size());
         for (Segment s : segments) {
             if (s.samples.size() <= 2 || s.hz <= targetHz + 0.01) {
+                rewritten.add(s);
                 continue;
             }
-            List<Sample> simplified = simplify(s.samples, SIMPLIFY_TOLERANCE);
-            // 骨架下限：几何简化不能把一天抽到 skeleton 点以下（设计文档 §5.5 的"下限"）
-            int floor = Math.min(skeletonPerDay, s.samples.size());
-            if (simplified.size() < floor) {
-                simplified = keepAtLeast(s.samples, floor);
+            if (!hasProtected(ranges, s.samples)) {
+                List<Sample> simplified = simplify(s.samples, SIMPLIFY_TOLERANCE);
+                int floor = Math.min(skeletonPerDay, s.samples.size());
+                if (simplified.size() < floor) {
+                    simplified = keepAtLeast(s.samples, floor);
+                }
+                if (simplified.size() != s.samples.size() || s.hz > targetHz + 0.01) {
+                    s.samples = simplified;
+                    s.hz = Math.min(s.hz, targetHz);
+                    changed = true;
+                }
+                rewritten.add(s);
+                continue;
             }
-            s.samples = simplified;
-            s.hz = Math.min(s.hz, targetHz);
-            changed = true;
+            // 保护段与普通段分别成段，段头采样率保持各自语义。
+            int from = 0;
+            while (from < s.samples.size()) {
+                boolean protect = inRanges(ranges, s.samples.get(from).timeMs());
+                int to = from + 1;
+                while (to < s.samples.size()
+                        && inRanges(ranges, s.samples.get(to).timeMs()) == protect) {
+                    to++;
+                }
+                List<Sample> run = new ArrayList<>(s.samples.subList(from, to));
+                if (!protect) {
+                    List<Sample> simplified = simplify(run, SIMPLIFY_TOLERANCE);
+                    int floor = Math.min(skeletonPerDay, run.size());
+                    if (simplified.size() < floor) {
+                        simplified = keepAtLeast(run, floor);
+                    }
+                    run = simplified;
+                }
+                Segment part = new Segment(s.uuid, s.dimension, run.get(0).timeMs(),
+                        protect ? s.hz : Math.min(s.hz, targetHz));
+                part.samples = run;
+                rewritten.add(part);
+                if (run.size() != to - from) {
+                    changed = true;
+                }
+                if (to - from > 0 && protect) {
+                    // 拆段本身不改变数据，但段头 hz 语义需要保护段保持原值
+                    changed = changed || from > 0;
+                }
+                from = to;
+            }
+            if (!rewritten.isEmpty() && rewritten.get(rewritten.size() - 1) != s) {
+                changed = true;
+            }
         }
         if (changed) {
-            write(file, segments);
+            write(file, rewritten);
         }
         return changed;
+    }
+
+    private static boolean hasProtected(List<TrackClips.Range> ranges, List<Sample> samples) {
+        if (ranges.isEmpty()) {
+            return false;
+        }
+        for (Sample sample : samples) {
+            if (inRanges(ranges, sample.timeMs())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean inRanges(List<TrackClips.Range> ranges, long timeMs) {
+        for (TrackClips.Range range : ranges) {
+            if (range != null && timeMs >= range.fromMs() && timeMs <= range.toMs()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Ramer–Douglas–Peucker（3D 位置；保留转弯，不级联丢弃） */
