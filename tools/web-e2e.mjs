@@ -255,6 +255,16 @@ async function main() {
     check('Web 版本号独立于模组版本', Boolean(webVersion.web)
         && webVersion.header === 'v' + webVersion.web, JSON.stringify(webVersion));
 
+    const pageKit = await evaluate(`(() => {
+      const result = window.SamsaraPageKit.selfTest();
+      result.cleaned = !window.SamsaraPageKit.has('__pagekit_self_test__');
+      return result;
+    })()`);
+    check('页面生命周期基础设施可用', pageKit.mounted === 1 && pageKit.unmounted === 1
+        && pageKit.disposed === true && pageKit.pending === 0
+        && pageKit.listenerRemoved === 1 && pageKit.cleaned === true,
+        JSON.stringify(pageKit));
+
     const server = await evaluate(`(() => ({
       nav: document.querySelector('#global-nav .nav-title')?.textContent.trim() || '',
       tabs: [...document.querySelectorAll('#server-tabs .tab')].map((tab) => tab.textContent.replace(/\\s+/g, ' ').trim()),
@@ -1768,7 +1778,7 @@ async function main() {
       [...document.querySelectorAll('.top-tab')].find((tab) => tab.dataset.section === 'server')?.click();
       await new Promise((resolve) => setTimeout(resolve, 300));
       document.querySelector('.tab[data-server-panel="server-audit-panel"]')?.click();
-      await new Promise((resolve) => setTimeout(resolve, 4000));
+      await new Promise((resolve) => setTimeout(resolve, 3000));
       const rows = [...document.querySelectorAll('#server-audit-list .server-audit-item')];
       const first = rows[0];
       const loadMessage = document.getElementById('server-audit-message')?.textContent || '';

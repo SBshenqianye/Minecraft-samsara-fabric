@@ -25,6 +25,7 @@ class WebSecurityTest {
     void staticPathsAreWhitelisted() {
         assertEquals("/web/index.html", WebSecurity.staticResource("/"));
         assertEquals("/web/app.js", WebSecurity.staticResource("/app.js"));
+        assertEquals("/web/page-kit.js", WebSecurity.staticResource("/page-kit.js"));
         assertEquals("/web/config-editor.js", WebSecurity.staticResource("/config-editor.js"));
         assertEquals("/web/chat-text.js", WebSecurity.staticResource("/chat-text.js"));
         assertEquals("/web/announcements.js", WebSecurity.staticResource("/announcements.js"));

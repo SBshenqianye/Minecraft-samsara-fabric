@@ -15,7 +15,12 @@ const state = {
   scrollPositions: { config: 0, 'config-editor': 0, identity: 0, 'claim-range': 0, output: 0, permissions: 0, map: 0, announcements: 0, 'world-stack': 0, lottery: 0 },
   navScrollPositions: { config: 0, 'config-editor': 0, identity: 0, 'claim-range': 0, output: 0, permissions: 0, map: 0, announcements: 0, 'world-stack': 0, lottery: 0 },
   claimPreview: null,
+  activePage: null,
+  activePageContext: null,
+  pageToken: 0,
 };
+
+const pageKit = window.SamsaraPageKit || null;
 
 const connectHooks = [];
 const connectedHooks = [];
@@ -3290,6 +3295,73 @@ function clearNav() {
   watchNav([]);
 }
 
+function clearPageSurfaces() {
+  // 跨页浮窗不属于任何 panel；切页时统一关闭，避免上一页的 dialog 残留在屏幕上。
+  for (const dialog of document.querySelectorAll('dialog[open]')) {
+    if (dialog.id === 'token-dialog') continue;
+    try {
+      dialog.close();
+    } catch (error) {
+      dialog.removeAttribute('open');
+    }
+  }
+}
+
+function leavePage(name) {
+  if (!name) return;
+  const definition = pageKit && pageKit.get(name);
+  const context = state.activePageContext;
+  if (definition) {
+    try {
+      definition.unmount?.(context);
+    } catch (error) {
+      console.warn('[page] unmount failed:', name, error);
+    }
+    try {
+      definition.destroy?.(context);
+    } catch (error) {
+      console.warn('[page] destroy failed:', name, error);
+    }
+  }
+  if (state.activePageContext?.scope) {
+    try {
+      state.activePageContext.scope.dispose();
+    } catch (error) {
+      console.warn('[page] scope dispose failed:', name, error);
+    }
+  }
+  state.activePage = null;
+  state.activePageContext = null;
+}
+
+function enterPage(name) {
+  if (!pageKit) return false;
+  const definition = pageKit.get(name);
+  if (!definition) return false;
+  state.pageToken += 1;
+  const scope = pageKit.createScope(name);
+  const context = {
+    name,
+    root: document.getElementById('panel-' + name),
+    scope,
+    token: state.pageToken,
+    ui: window.SamsaraUI,
+  };
+  state.activePage = name;
+  state.activePageContext = context;
+  try {
+    definition.mount?.(context);
+    definition.buildNav?.(context);
+  } catch (error) {
+    console.warn('[page] mount failed:', name, error);
+    scope.dispose();
+    state.activePage = null;
+    state.activePageContext = null;
+    return false;
+  }
+  return true;
+}
+
 function buildNav(title, items, targets, options) {
   const nav = $('global-nav');
   if (!nav) return;
@@ -3398,6 +3470,7 @@ function setActiveTab(name) {
     const nav = $('global-nav');
     state.navScrollPositions[previous] = nav ? nav.scrollTop : 0;
   }
+  leavePage(previous);
   state.tab = name;
   for (const panel of panelIds) {
     const el = document.getElementById(panel);
@@ -3410,7 +3483,11 @@ function setActiveTab(name) {
   updateTabActions(name);
   // 导航是跨页共享的 DOM；先清空，页面自己调用 buildNav 时再显示。
   clearNav();
-  if (name === 'config') {
+  clearPageSurfaces();
+  const pageHandled = enterPage(name);
+  if (pageHandled) {
+    // 已注册页面由 mount/buildNav 接管。
+  } else if (name === 'config') {
     render();
   } else if (name === 'config-editor') {
     window.SamsaraConfigEditor?.activate();
@@ -3641,6 +3718,11 @@ window.SamsaraUI = {
   setConnection,
   setActiveTab,
   isActiveTab: (name) => state.tab === name,
+  registerPage: (name, definition) => pageKit?.register(name, definition),
+  unregisterPage: (name) => pageKit?.unregister(name),
+  activePage: () => state.activePage,
+  pageScope: () => state.activePageContext?.scope || null,
+  pageToken: () => state.pageToken,
   buildNav,
   setNavActive,
   watchNav,

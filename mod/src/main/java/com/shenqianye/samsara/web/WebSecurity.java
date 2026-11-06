@@ -57,6 +57,7 @@ public final class WebSecurity {
             case "/item-ui.js" -> "/web/item-ui.js";
             case "/value-table.js" -> "/web/value-table.js";
             case "/app.js" -> "/web/app.js";
+            case "/page-kit.js" -> "/web/page-kit.js";
             case "/config-editor.js" -> "/web/config-editor.js";
             case "/chat-text.js" -> "/web/chat-text.js";
             case "/announcements.js" -> "/web/announcements.js";
