@@ -74,7 +74,16 @@ public final class WebSecurity {
             case "/world-stack.js" -> "/web/world-stack.js";
             case "/server.js" -> "/web/server.js";
             case "/style.css" -> "/web/style.css";
-            default -> path.matches("^/items/[a-z0-9_]+\\.png$") ? "/web" + path : null;
+            default -> {
+                if (path.matches("^/items/[a-z0-9_]+\\.png$")) {
+                    yield "/web" + path;
+                }
+                if (path.startsWith("/vue/") && path.matches("^/vue/[A-Za-z0-9_./-]+$")
+                        && !path.contains("..")) {
+                    yield "/web" + path;
+                }
+                yield null;
+            }
         };
     }
 
@@ -141,6 +150,11 @@ public final class WebSecurity {
                 || "/api/lottery".equals(path)
                 || "/api/lottery/draw".equals(path)
                 || "/api/lottery/cancel".equals(path)
+                || "/api/containers".equals(path)
+                || "/api/containers/read".equals(path)
+                || "/api/containers/write".equals(path)
+                || "/api/containers/scan".equals(path)
+                || "/api/containers/offline".equals(path)
                 || "/api/audit".equals(path)
                 || "/api/audit/preview".equals(path)
                 || "/api/audit/rollback".equals(path);

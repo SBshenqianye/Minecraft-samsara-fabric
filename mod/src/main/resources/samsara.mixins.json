@@ -14,7 +14,8 @@
     "TamableAnimalMixin",
     "ServerboundPunchMixin",
     "LivingEntitySwingMixin",
-    "ViewInteractMixin"
+    "ViewInteractMixin",
+    "ContainerBlockEntityMixin"
   ],
   "injectors": {
     "defaultRequire": 1

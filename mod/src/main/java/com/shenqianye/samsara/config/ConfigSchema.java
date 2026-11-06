@@ -331,6 +331,12 @@ public final class ConfigSchema {
                         "是否允许堆叠物品投保（默认只保单件，防部分理赔复制）"),
                 ConfigEntry.integer("scanRadius", 128, 16, 512, "理赔",
                         "理赔前扫描周围已加载容器/掉落物的半径（格）"),
+                ConfigEntry.bool("scanOfflinePlayers", true, "理赔",
+                        "理赔前只读扫描离线玩家 .dat 的背包/末影箱"),
+                ConfigEntry.bool("scanOtherDimensions", true, "理赔",
+                        "理赔前扫描其他维度的已加载容器/掉落物与容器索引缓存"),
+                ConfigEntry.bool("useContainerIndex", true, "理赔",
+                        "理赔前查询共享容器索引（未加载区块的缓存内容）"),
                 ConfigEntry.bool("entities.enabled", false, "生物",
                         "是否启用生物/宠物保险（本版暂未实现，保留开关）")
         ));

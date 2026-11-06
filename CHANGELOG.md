@@ -3,6 +3,22 @@
 > 面向玩家与服主的功能变化；实现细节、未达标项与证据见[《实现状态》](docs/实现状态.md)。
 > 每个版本按「新增 / 修复 / 优化 / 变更 / 重构 / 文档」分组，只写功能口径。
 
+## v0.46.16（2026-11-07）· 共享容器索引与离线/多维度保险校验
+
+### 新增
+
+- **共享容器索引**：新增 `container/ContainerIndexService`，按「维度 + 方块坐标」记录容器类型、槽位数、非空槽位物品编码（复用 `LotteryItemCodec`，保留附魔/组件）、`revision` 与 `updatedAt`；已加载区块优先读实时 `Container`，未加载区块读缓存；磁盘按「维度 + region」分片到 `world/samsara/containers/`，启动加载、停服保存。
+- **低开销刷新**：区块加载只入队，主线程每 tick 最多处理 2 个区块；容器 `setItem/removeItem/clearContent` 通过最小 mixin 只标记单个容器 dirty，每 tick 最多刷新 24 个容器；区块卸载在数据消失前同步快照、异步序列化。
+- **离线玩家只读扫描**：新增 `container/OfflinePlayerInventoryService`，只读 `playerdata/<uuid>.dat` 的 `Inventory`/`EnderItems`，按 mtime + size 缓存物品编码集合；玩家登录/退出失效，绝不写回玩家文件。
+- **保险理赔扩展校验**：理赔前新增离线玩家背包/末影箱、其他维度已加载容器/掉落物、未加载容器索引缓存检查；任一位置命中即拒绝。新增 `insurance.scanOfflinePlayers`、`insurance.scanOtherDimensions`、`insurance.useContainerIndex`（默认均 `true`）。
+- **容器 API（P1 基础）**：`GET /api/containers` 列表、`GET /api/containers/read` 读取、`POST /api/containers/scan` 手动扫描（3 秒限流）；均要求管理端 Bearer token。
+- **测试**：新增容器索引序列化/命中查询、离线玩家 NBT 解析、保险扫描配置默认值单测；Web E2E 新增扫描/列表/读取断言。
+
+### 说明
+
+- 空容器保留在内存（槽位数/类型/位置），但只持久化非空容器；重启后随区块加载恢复。
+- 理赔不会同步加载大量未加载区块，只查索引缓存；管理员手动扫描也只处理已加载区块。
+
 ## v0.46.15（2026-11-06）· 页面生命周期基础设施
 
 ### 新增

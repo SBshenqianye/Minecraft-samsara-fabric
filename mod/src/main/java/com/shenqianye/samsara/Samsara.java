@@ -131,6 +131,7 @@ public class Samsara implements DedicatedServerModInitializer {
             com.shenqianye.samsara.season.WorldChainTeleport.tick(server);
             com.shenqianye.samsara.lottery.LotteryService.getInstance().tick(server);
             com.shenqianye.samsara.insurance.InsuranceService.getInstance().tick(server);
+            com.shenqianye.samsara.container.ContainerIndexService.getInstance().tick(server);
             com.shenqianye.samsara.command.DebugCommand.onTick();
             if (++unloadFlushCounter[0] >= 20) {
                 unloadFlushCounter[0] = 0;
@@ -149,6 +150,8 @@ public class Samsara implements DedicatedServerModInitializer {
             com.shenqianye.samsara.storage.StoragePaths.init(server);
             com.shenqianye.samsara.lottery.LotteryService.getInstance().init(server);
             com.shenqianye.samsara.insurance.InsuranceService.getInstance().init(server);
+            com.shenqianye.samsara.container.ContainerIndexService.getInstance().init(server);
+            com.shenqianye.samsara.container.OfflinePlayerInventoryService.getInstance().init(server);
             com.shenqianye.samsara.identity.IdentityService.getInstance().init(server);
             SeasonManager.getInstance();
             DiffRecorder.init(com.shenqianye.samsara.storage.StoragePaths.get().worldDataRoot());
@@ -173,8 +176,14 @@ public class Samsara implements DedicatedServerModInitializer {
         });
 
         // 待删队列：区块卸载即删（不再等停服）；停服窗口兜底清空 + 归档/保留判定
-        ServerChunkEvents.CHUNK_UNLOAD.register((level, chunk) ->
-                RewindEngine.getInstance().onChunkUnload(level, chunk));
+        ServerChunkEvents.CHUNK_LOAD.register((level, chunk, generated) ->
+                com.shenqianye.samsara.container.ContainerIndexService.getInstance()
+                        .onChunkLoad(level, chunk));
+        ServerChunkEvents.CHUNK_UNLOAD.register((level, chunk) -> {
+            RewindEngine.getInstance().onChunkUnload(level, chunk);
+            com.shenqianye.samsara.container.ContainerIndexService.getInstance()
+                    .onChunkUnload(level, chunk);
+        });
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
             com.shenqianye.samsara.track.view.ViewManager.getInstance().shutdown(server);
             com.shenqianye.samsara.rewind.DiffViewService.getInstance().shutdown(server);
@@ -185,6 +194,13 @@ public class Samsara implements DedicatedServerModInitializer {
             scheduleExitAfterStop(server);
         });
 
+        // 容器索引：玩家登录/退出时让离线背包缓存失效，保存后由 mtime 自动失效
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
+                com.shenqianye.samsara.container.OfflinePlayerInventoryService.getInstance()
+                        .invalidate(handler.getPlayer().getUUID()));
+        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) ->
+                com.shenqianye.samsara.container.OfflinePlayerInventoryService.getInstance()
+                        .invalidate(handler.getPlayer().getUUID()));
         // 身份：账号切换同步先应用玩家数据，再让分组/待传送把玩家放到本周目位置
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
                 com.shenqianye.samsara.identity.IdentityService.getInstance()
@@ -228,6 +244,8 @@ public class Samsara implements DedicatedServerModInitializer {
             DiffRecorder.clearEditContext();
             com.shenqianye.samsara.lottery.LotteryService.getInstance().onServerStopping(server);
             com.shenqianye.samsara.insurance.InsuranceService.getInstance().onServerStopping();
+            com.shenqianye.samsara.container.ContainerIndexService.getInstance().onServerStopping();
+            com.shenqianye.samsara.container.OfflinePlayerInventoryService.getInstance().onServerStopping();
             com.shenqianye.samsara.claim.ClaimParticles.shutdown();
             // 最后断开玩家：connection.disconnect 会把玩家从在线列表移除并保存其数据
             com.shenqianye.samsara.shutdown.ShutdownAnnouncer.onStopping(server);

@@ -3,6 +3,8 @@ package com.shenqianye.samsara.insurance;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.shenqianye.samsara.Samsara;
+import com.shenqianye.samsara.container.ContainerIndexService;
+import com.shenqianye.samsara.container.OfflinePlayerInventoryService;
 import com.shenqianye.samsara.lottery.ItemValueService;
 import com.shenqianye.samsara.lottery.LotteryItemCodec;
 import com.shenqianye.samsara.lottery.LotteryService;
@@ -534,6 +536,8 @@ public final class InsuranceService {
     private boolean existsAnywhere(ServerPlayer player, ItemStack original) {
         String encoded = LotteryItemCodec.encode(original, registries);
         if (encoded.isBlank()) return true;
+        InsuranceConfig config = InsuranceConfig.getInstance();
+        // 1) 本人与所有在线玩家的背包/末影箱
         if (contains(player.getInventory(), encoded)) return true;
         if (contains(player.getEnderChestInventory(), encoded)) return true;
         if (server == null) return false;
@@ -541,12 +545,38 @@ public final class InsuranceService {
             if (contains(other.getInventory(), encoded)) return true;
             if (contains(other.getEnderChestInventory(), encoded)) return true;
         }
-        if (!(player.level() instanceof ServerLevel level)) return false;
-        int radius = InsuranceConfig.getInstance().scanRadius();
-        AABB box = new AABB(player.blockPosition()).inflate(radius);
-        for (ItemEntity entity : level.getEntitiesOfClass(ItemEntity.class, box)) {
-            if (encoded.equals(LotteryItemCodec.encode(entity.getItem(), registries))) return true;
+        // 2) 离线玩家 .dat（只读；按 mtime 缓存）
+        if (config.scanOfflinePlayers()
+                && OfflinePlayerInventoryService.getInstance().containsEncoded(encoded)) {
+            return true;
         }
+        // 3) 掉落物：全维度时枚举所有已加载实体，否则只查当前维度半径
+        if (config.scanOtherDimensions()) {
+            for (ServerLevel level : server.getAllLevels()) {
+                for (Entity entity : level.getAllEntities()) {
+                    if (entity instanceof ItemEntity item
+                            && encoded.equals(LotteryItemCodec.encode(item.getItem(), registries))) {
+                        return true;
+                    }
+                }
+            }
+        } else if (player.level() instanceof ServerLevel level) {
+            AABB box = new AABB(player.blockPosition()).inflate(config.scanRadius());
+            for (ItemEntity entity : level.getEntitiesOfClass(ItemEntity.class, box)) {
+                if (encoded.equals(LotteryItemCodec.encode(entity.getItem(), registries))) return true;
+            }
+        }
+        // 4) 容器索引：未加载区块读缓存；已加载区块由 setItem/setChanged 钩子保持最新
+        if (config.useContainerIndex()) {
+            String dimension = player.level().dimension().identifier().toString();
+            if (ContainerIndexService.getInstance().containsEncoded(encoded,
+                    config.scanOtherDimensions(), dimension)) {
+                return true;
+            }
+        }
+        // 5) 当前维度已加载容器（直接读实时 Container，兜住索引刷新前的一 tick）
+        if (!(player.level() instanceof ServerLevel level)) return false;
+        int radius = config.scanRadius();
         int minChunkX = (player.blockPosition().getX() - radius) >> 4;
         int maxChunkX = (player.blockPosition().getX() + radius) >> 4;
         int minChunkZ = (player.blockPosition().getZ() - radius) >> 4;

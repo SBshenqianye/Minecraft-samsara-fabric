@@ -43,7 +43,8 @@ public final class WebLifecycle {
                 new WorldStackWebService(), new ServerWebService(minecraftServer),
                 new ChunkDiffWebService(minecraftServer),
                 new WebUserService(mapService, minecraftServer),
-                new LotteryWebService(minecraftServer), token, port);
+                new LotteryWebService(minecraftServer),
+                new ContainerWebService(minecraftServer), token, port);
         if (!candidate.start()) {
             return; // 端口占用：WARN 已记录，不阻塞服务器
         }

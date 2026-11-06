@@ -1759,6 +1759,39 @@ async function main() {
         && ['confirm', 'cancel', 'now'].every((text) => betComplete.texts.includes(text)),
         JSON.stringify(betComplete));
 
+    // ---- 容器索引 API（P1）：创建测试箱子、扫描、列表、读取 ----
+    const runConsole = (command) => fetch(base + '/api/server/console', {
+      method: 'POST', headers: authHeaders,
+      body: JSON.stringify({ command }),
+    });
+    await runConsole('forceload add 0 0');
+    await runConsole('setblock 8 100 8 minecraft:chest');
+    await runConsole('item replace block 8 100 8 container.0 with minecraft:diamond 3');
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    const scanResult = await fetch(base + '/api/containers/scan', {
+      method: 'POST', headers: authHeaders,
+      body: JSON.stringify({ dimension: 'minecraft:overworld', x: 8, z: 8, radius: 16 }),
+    }).then((response) => response.json());
+    check('容器索引扫描接口可用', scanResult.ok === true && scanResult.indexSize >= 1,
+        JSON.stringify(scanResult));
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    const containerList = await fetch(base
+        + '/api/containers?dimension=minecraft:overworld&x=8&z=8&radius=16',
+        { headers: authHeaders }).then((response) => response.json());
+    const chest = (containerList.containers || []).find((row) =>
+        row.x === 8 && row.y === 100 && row.z === 8);
+    check('容器索引列出测试箱子', containerList.ok === true && !!chest
+        && chest.type === 'minecraft:chest' && chest.nonEmpty >= 1,
+        JSON.stringify(containerList));
+    const containerRead = await fetch(base
+        + '/api/containers/read?dimension=minecraft:overworld&x=8&y=100&z=8',
+        { headers: authHeaders }).then((response) => response.json());
+    check('容器读取返回完整槽位', containerRead.ok === true
+        && containerRead.container && containerRead.container.slots.length === 27
+        && containerRead.container.slots[0].length > 0,
+        JSON.stringify(containerRead));
+    await runConsole('setblock 8 100 8 minecraft:air');
+
     // ---- 一级分栏：切到“本体”后经济业务标签不能残留 ----
     const sectionSwitch = await evaluate(`(async () => {
       const lottery = document.getElementById('panel-lottery');

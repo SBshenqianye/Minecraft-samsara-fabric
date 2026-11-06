@@ -14,6 +14,9 @@ public final class InsuranceConfig {
     private double largeClaimValue = 512.0;
     private boolean allowStackable;
     private int scanRadius = 128;
+    private boolean scanOfflinePlayers = true;
+    private boolean scanOtherDimensions = true;
+    private boolean useContainerIndex = true;
     private boolean entitiesEnabled;
 
     private InsuranceConfig() {
@@ -36,6 +39,9 @@ public final class InsuranceConfig {
         largeClaimValue = Math.max(0.0, c.decimal(id, "largeClaimValue"));
         allowStackable = c.bool(id, "allowStackable");
         scanRadius = Math.max(16, c.integer(id, "scanRadius"));
+        scanOfflinePlayers = c.bool(id, "scanOfflinePlayers");
+        scanOtherDimensions = c.bool(id, "scanOtherDimensions");
+        useContainerIndex = c.bool(id, "useContainerIndex");
         entitiesEnabled = c.bool(id, "entities.enabled");
         return "保险配置已重载：" + (enabled ? "启用" : "禁用");
     }
@@ -48,5 +54,8 @@ public final class InsuranceConfig {
     public double largeClaimValue() { return largeClaimValue; }
     public boolean allowStackable() { return allowStackable; }
     public int scanRadius() { return scanRadius; }
+    public boolean scanOfflinePlayers() { return scanOfflinePlayers; }
+    public boolean scanOtherDimensions() { return scanOtherDimensions; }
+    public boolean useContainerIndex() { return useContainerIndex; }
     public boolean entitiesEnabled() { return entitiesEnabled; }
 }

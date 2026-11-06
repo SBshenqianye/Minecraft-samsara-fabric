@@ -123,6 +123,36 @@ public final class WebAuditService {
         }
     }
 
+    /**
+     * 容器编辑审计：不复制配置文件，只保存编辑前的容器槽位快照。
+     * 该记录不可自动回滚（容器属于世界数据），但可在 Web 审计里查看编辑前内容。
+     */
+    public synchronized void captureContainer(String action, String actor, String detail,
+                                              String snapshotJson) {
+        try {
+            String id = "wa-" + System.currentTimeMillis() + "-" + SEQ.incrementAndGet();
+            Path dir = root.resolve(id);
+            Files.createDirectories(dir);
+            String body = snapshotJson == null ? "{}" : snapshotJson;
+            Files.writeString(dir.resolve("container.json"), body, StandardCharsets.UTF_8);
+            Entry entry = new Entry();
+            entry.id = id;
+            entry.createdAt = System.currentTimeMillis();
+            entry.actor = actor == null || actor.isBlank() ? "admin" : actor;
+            entry.action = action == null || action.isBlank() ? "/api/containers/write" : action;
+            entry.target = entry.action;
+            entry.status = "captured";
+            entry.rollbackable = false;
+            entry.note = "容器编辑审计（不可自动回滚）：" + (detail == null ? "" : detail);
+            entry.fileCount = 0;
+            entry.bytes = body.getBytes(StandardCharsets.UTF_8).length;
+            entry.files = new ArrayList<>();
+            writeManifest(dir, entry);
+        } catch (Throwable t) {
+            Samsara.LOGGER.debug("[web] 容器审计写入失败: {}", t.getMessage());
+        }
+    }
+
     public List<Map<String, Object>> list(int limit) {
         int max = Math.max(1, Math.min(limit, 200));
         List<Entry> entries = new ArrayList<>();
@@ -151,6 +181,22 @@ public final class WebAuditService {
         out.put("ok", true);
         out.put("entry", entry.toMap());
         out.put("restorable", entry.rollbackable);
+        if (entry.files.isEmpty()) {
+            Path container = root.resolve(entry.id).resolve("container.json");
+            String snapshot = "";
+            if (Files.isRegularFile(container)) {
+                try {
+                    snapshot = Files.readString(container, StandardCharsets.UTF_8);
+                } catch (IOException ignored) {
+                }
+            }
+            out.put("changes", List.of());
+            out.put("diffs", List.of());
+            out.put("diff", snapshot);
+            out.put("changedCount", 0);
+            out.put("containerSnapshot", snapshot);
+            return out;
+        }
         try {
             DiffResult diff = diff(entry);
             out.put("changes", diff.changes);
@@ -479,7 +525,9 @@ public final class WebAuditService {
                 || path.equals("/api/reload") || path.endsWith("/reload")
                 || path.endsWith("/identity/audit") || path.endsWith("/identity/resolve")
                 || path.endsWith("/map") || path.endsWith("/map/players")
-                || path.endsWith("/map/live") || path.endsWith("/map/tile");
+                || path.endsWith("/map/live") || path.endsWith("/map/tile")
+                // 容器写入使用专用审计快照（container.json），不再复制整套配置文件
+                || path.equals("/api/containers/write");
     }
 
     private boolean rollbackable(String path) {

@@ -1,6 +1,6 @@
 # samsara · Web API 接口文档
 
-> 状态：v0.45.0（2026-11-04）
+> 状态：v0.46.16（2026-11-07）
 > 适用：本地管理端 `/`、用户端只读页 `/user`、以及未来接入的脚本/面板。
 > 代码入口：`mod/src/main/java/com/shenqianye/samsara/web/LocalWebServer.java`
 > 安全边界：`WebSecurity.java`、`WebUserService.java`
@@ -299,6 +299,40 @@
 | POST | `/api/audit/rollback` | `{id,confirm}` 回滚配置类快照；回滚前自动保存当前状态 |
 
 审计快照范围：`config/samsara/`、`server.properties`、`eula.txt`、`whitelist.json`、`ops.json`、`banned-players.json`、`banned-ips.json`、栈层图标与 `pending-*.json`。世界栈归档/导入/提升仍由世界栈时间线回滚，本体存档仍由本体备份回滚；RCON 任意命令只审计命令请求，不承诺世界回滚。请求需 Bearer token。
+
+### 3.10 容器索引与编辑
+
+容器索引记录所有 `Container` 方块实体（箱子、桶、潜影盒、熔炉等）的维度、坐标、类型、槽位数、非空槽位物品编码与 `revision`。已加载区块优先读实时容器；未加载区块读 `world/samsara/containers/` 的磁盘缓存。物品编码复用乐透的 `LotteryItemCodec`，完整保留附魔、名字、耐久与数据组件。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/containers?dimension=&x=&z=&radius=&type=` | 列出索引中的容器；返回位置、类型、槽位数、非空数、`revision`、`updatedAt`、`source`（`loaded`/`cache`）；最多 500 条 |
+| GET | `/api/containers/read?dimension=&x=&y=&z=` | 读取完整槽位；已加载读实时容器，未加载读缓存；缓存不存在返回 `404` 与明确错误 |
+| POST | `/api/containers/scan` | 手动刷新指定维度/坐标半径内**已加载**区块；body `{dimension?,x?,z?,radius?}`；3 秒限流，超限返回 `429` + `retryAfterMs` |
+| POST | `/api/containers/write` | 写入容器槽位（P2）；body `{dimension,x,y,z,revision,slots:[...]}`；`revision` 冲突返回 `409`；写入前保存容器审计快照，写入后 `setChanged` 并广播方块更新 |
+| GET | `/api/containers/offline?uuid=` | 只读返回离线玩家 `.dat` 中背包/末影箱的物品编码集合 |
+
+响应示例：
+
+```json
+{
+  "ok": true,
+  "dimension": "minecraft:overworld",
+  "radius": 16,
+  "type": "",
+  "total": 1,
+  "containers": [
+    { "dimension": "minecraft:overworld", "x": 8, "y": 100, "z": 8,
+      "type": "minecraft:chest", "size": 27, "nonEmpty": 1, "empty": false,
+      "revision": 3, "updatedAt": 1793986978755, "source": "loaded" }
+  ],
+  "indexSize": 4
+}
+```
+
+`GET /api/containers/read` 的 `container.slots` 是与容器格数等长的字符串数组，空槽为 `""`，非空槽为 Base64(NBT)；调用方必须原样回传未修改的编码，不能只传 item id。写入时槽位数必须与容器格数一致，数量不能超过该物品的最大堆叠数。
+
+> 容器写入只允许管理端 token（`ops` scope）；每次写入创建独立的容器审计记录（`container.json`，不可自动回滚）。扫描不会强制加载未加载区块；未加载区块只读索引缓存。`source=cache` 的条目在区块重新加载后会自动刷新。
 
 ## 4. 静态资源白名单
 

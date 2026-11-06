@@ -54,6 +54,7 @@ public final class LocalWebServer {
     private final ChunkDiffWebService diffService;
     private final WebUserService userService;
     private final LotteryWebService lotteryService;
+    private final ContainerWebService containerService;
     private final String token;
     private final int port;
     private HttpServer server;
@@ -140,6 +141,22 @@ public final class LocalWebServer {
                           WebUserService userService,
                           LotteryWebService lotteryService,
                           String token, int port) {
+        this(service, identityService, outputService, permissionService, mapService,
+                worldStackService, serverService, diffService, userService, lotteryService,
+                null, token, port);
+    }
+
+    public LocalWebServer(ConfigService service, IdentityWebService identityService,
+                          OutputWebService outputService,
+                          PermissionWebService permissionService,
+                          WebMapService mapService,
+                          WorldStackWebService worldStackService,
+                          ServerWebService serverService,
+                          ChunkDiffWebService diffService,
+                          WebUserService userService,
+                          LotteryWebService lotteryService,
+                          ContainerWebService containerService,
+                          String token, int port) {
         this.service = service;
         this.identityService = identityService;
         this.outputService = outputService;
@@ -150,6 +167,7 @@ public final class LocalWebServer {
         this.diffService = diffService;
         this.userService = userService;
         this.lotteryService = lotteryService;
+        this.containerService = containerService;
         this.token = token == null ? "" : token;
         this.port = port;
     }
@@ -203,6 +221,9 @@ public final class LocalWebServer {
         }
         if (lotteryService != null) {
             server.createContext("/api/lottery", this::handleLottery);
+        }
+        if (containerService != null) {
+            server.createContext("/api/containers", this::handleContainers);
         }
         server.createContext("/api/audit", this::handleAudit);
         executor = Executors.newFixedThreadPool(4, runnable -> {
@@ -1410,6 +1431,80 @@ public final class LocalWebServer {
             }
             status = 404;
             json(exchange, status, Map.of("error", "未知的乐透接口"));
+        } finally {
+            log(exchange, status, start);
+        }
+    }
+
+    private void handleContainers(HttpExchange exchange) throws IOException {
+        long start = System.currentTimeMillis();
+        int status = 200;
+        try {
+            int auth = authorize(exchange);
+            if (auth != 0) {
+                status = auth;
+                return;
+            }
+            String path = exchange.getRequestURI().getPath();
+            String method = exchange.getRequestMethod();
+            Map<String, String> query = parseQuery(exchange.getRequestURI().getRawQuery());
+            if ("GET".equals(method) && "/api/containers".equals(path)) {
+                Map<String, Object> result = containerService.list(query);
+                json(exchange, 200, result);
+                return;
+            }
+            if ("GET".equals(method) && "/api/containers/read".equals(path)) {
+                Map<String, Object> result = containerService.read(query);
+                int code = result.get("ok") == Boolean.TRUE ? 200 : 404;
+                status = code;
+                json(exchange, code, result);
+                return;
+            }
+            if ("GET".equals(method) && "/api/containers/offline".equals(path)) {
+                Map<String, Object> result = containerService.offline(query);
+                status = result.get("ok") == Boolean.TRUE ? 200 : 400;
+                json(exchange, status, result);
+                return;
+            }
+            if ("POST".equals(method) && "/api/containers/scan".equals(path)) {
+                String body;
+                try {
+                    body = readBody(exchange);
+                } catch (BodyTooLarge e) {
+                    status = 413;
+                    json(exchange, status, Map.of("error", "请求体过大"));
+                    return;
+                }
+                Map<String, Object> result = containerService.scan(body);
+                Object requested = result.get("status");
+                status = requested instanceof Number number ? number.intValue() : 200;
+                json(exchange, status, result);
+                return;
+            }
+            if ("POST".equals(method) && "/api/containers/write".equals(path)) {
+                String body;
+                try {
+                    body = readBody(exchange);
+                } catch (BodyTooLarge e) {
+                    status = 413;
+                    json(exchange, status, Map.of("error", "请求体过大"));
+                    return;
+                }
+                AgentAuthService.AuthContext context = AgentAuthService.getInstance()
+                        .context(exchange);
+                String actor = context == null ? "admin" : context.actor();
+                Map<String, Object> result = containerService.write(body, actor);
+                Object requested = result.get("status");
+                status = requested instanceof Number number ? number.intValue() : 200;
+                json(exchange, status, result);
+                return;
+            }
+            status = 404;
+            json(exchange, status, Map.of("error", "未知的容器接口"));
+        } catch (RuntimeException e) {
+            status = 500;
+            json(exchange, status, Map.of("error", errorDetail(e)));
+            LOG.warn("[web] 处理 {} 失败: {}", exchange.getRequestURI().getPath(), e.getMessage());
         } finally {
             log(exchange, status, start);
         }
