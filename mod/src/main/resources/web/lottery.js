@@ -89,7 +89,7 @@
     root.replaceChildren(
       stat('开关', model.enabled ? '启用' : '关闭'),
       stat('模式', model.mode === 'real' ? '现实日' : '游戏日'),
-      stat('国际金价', goldPrice + ' USD/oz'),
+      stat('国际金价', gold.enabled ? goldPrice + ' USD/oz' : '未启用'),
       stat('金块估值', vp(gold.blockValue)),
       stat('统计中', dayText(counting.day)),
       stat('实时死亡', String(counting.deathCount ?? 0)),

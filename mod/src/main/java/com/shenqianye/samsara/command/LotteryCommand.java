@@ -314,11 +314,16 @@ public final class LotteryCommand {
         ItemValueService values = ItemValueService.getInstance();
         double price = GoldPriceService.getInstance().currentUsdPerOunce();
         long updatedAt = GoldPriceService.getInstance().updatedAt();
-        return reply(source, "国际金价：" + String.format(java.util.Locale.ROOT, "%.2f", price)
-                + " USD/oz" + (updatedAt > 0 ? "（" + java.time.Instant.ofEpochMilli(updatedAt) + "）" : "（基准值）")
+        boolean enabled = LotteryConfig.getInstance().goldSyncEnabled();
+        return reply(source, "国际金价：" + (enabled
+                ? String.format(java.util.Locale.ROOT, "%.2f", price) + " USD/oz"
+                + (updatedAt > 0 ? "（" + java.time.Instant.ofEpochMilli(updatedAt) + "）" : "（基准值）")
+                : "未启用（使用静态金价）")
                 + "\n金块 " + values.format(values.unitValue("minecraft:gold_block")) + " VP"
                 + " · 金锭 " + values.format(values.unitValue("minecraft:gold_ingot")) + " VP"
-                + " · 金粒 " + values.format(values.unitValue("minecraft:gold_nugget")) + " VP");
+                + " · 金粒 " + values.format(values.unitValue("minecraft:gold_nugget")) + " VP"
+                + " · 金压力板 " + values.format(
+                        values.unitValue("minecraft:light_weighted_pressure_plate")) + " VP");
     }
 
     private static int goldSet(CommandSourceStack source, double price) {
@@ -418,7 +423,6 @@ public final class LotteryCommand {
         com.shenqianye.samsara.config.ConfigManager.getInstance()
                 .reload(com.shenqianye.samsara.config.ConfigSchema.LOTTERY);
         String result = LotteryConfig.getInstance().reload();
-        ItemValueService.setGoldCraftedLinkEnabled(LotteryConfig.getInstance().goldCraftLink());
         return reply(source, result);
     }
 

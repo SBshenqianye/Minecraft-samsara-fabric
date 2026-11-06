@@ -13,6 +13,7 @@ class ItemValueServiceTest {
     void anchorsAreStable() {
         assertEquals(1.0, values.unitValue("minecraft:iron_ingot"), 1e-6);
         assertEquals(4.0, values.unitValue("minecraft:gold_ingot"), 1e-6);
+        assertEquals(8.0, values.unitValue("minecraft:light_weighted_pressure_plate"), 1e-6);
         assertEquals(32.0, values.unitValue("minecraft:diamond"), 1e-6);
         assertEquals(64.0, values.unitValue("minecraft:emerald"), 1e-6);
         assertEquals(128.0, values.unitValue("minecraft:netherite_ingot"), 1e-6);
@@ -53,15 +54,11 @@ class ItemValueServiceTest {
             assertEquals(90.0, values.unitValue("minecraft:gold_block"), 1e-6);
             assertEquals(10.0, values.unitValue("minecraft:gold_ingot"), 1e-6);
             assertEquals(90.0 / 81.0, values.unitValue("minecraft:gold_nugget"), 1e-6);
-            // 纯金合成物默认不联动
+            assertEquals(20.0, values.unitValue("minecraft:light_weighted_pressure_plate"), 1e-6);
+            // 含非金材料的合成物不走国际金价
             assertEquals(8.0, values.unitValue("minecraft:golden_apple"), 1e-6);
-            ItemValueService.setGoldCraftedLinkEnabled(true);
-            assertEquals(8.0 * 10.0 + 0.5, values.unitValue("minecraft:golden_apple"), 1e-6);
-            assertEquals(3.0 * 10.0 + 0.125, values.unitValue("minecraft:golden_pickaxe"), 1e-6);
-            assertEquals(8.0 * (90.0 / 81.0) + 0.125,
-                    values.unitValue("minecraft:golden_carrot"), 1e-6);
+            assertEquals(3.0 * 4.0 + 0.125, values.unitValue("minecraft:golden_pickaxe"), 1e-6);
         } finally {
-            ItemValueService.setGoldCraftedLinkEnabled(false);
             ItemValueService.setGoldValueProvider(null);
         }
     }

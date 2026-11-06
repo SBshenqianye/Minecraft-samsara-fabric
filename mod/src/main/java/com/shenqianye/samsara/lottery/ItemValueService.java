@@ -56,6 +56,7 @@ public final class ItemValueService {
         put("minecraft:iron_nugget", 1.0 / 9.0);
         put("minecraft:gold_ingot", 4.0);
         put("minecraft:gold_nugget", 4.0 / 9.0);
+        put("minecraft:light_weighted_pressure_plate", 8.0);
         put("minecraft:copper_ingot", 0.5);
         put("minecraft:netherite_ingot", 128.0);
         put("minecraft:netherite_scrap", 28.0);
@@ -231,17 +232,12 @@ public final class ItemValueService {
     }
 
     private static volatile GoldValueProvider goldProvider;
-    private static volatile boolean goldCraftedLinkEnabled;
 
     public static void setGoldValueProvider(GoldValueProvider provider) {
         goldProvider = provider;
     }
 
-    public static void setGoldCraftedLinkEnabled(boolean enabled) {
-        goldCraftedLinkEnabled = enabled;
-    }
-
-    /** 金粒/金锭/金块及纯金合成物按国际金价指数缩放；未启用返回 -1。 */
+    /** 国际金价开关：只联动纯金物品（金粒/金锭/金块/金压力板）。 */
     private double goldUnitValue(String itemId) {
         GoldValueProvider provider = goldProvider;
         if (provider == null) {
@@ -249,9 +245,9 @@ public final class ItemValueService {
         }
         String path = itemId.startsWith("minecraft:")
                 ? itemId.substring("minecraft:".length()) : itemId;
-        boolean rawGold = path.equals("gold_block") || path.equals("gold_ingot")
-                || path.equals("gold_nugget");
-        if (!rawGold && !goldCraftedLinkEnabled) {
+        if (!path.equals("gold_block") && !path.equals("gold_ingot")
+                && !path.equals("gold_nugget")
+                && !path.equals("light_weighted_pressure_plate")) {
             return -1.0;
         }
         double block;
@@ -264,37 +260,12 @@ public final class ItemValueService {
             return -1.0;
         }
         double ingot = block / 9.0;
-        double nugget = block / 81.0;
-        if (path.equals("gold_block")) {
-            return block;
-        }
-        if (path.equals("gold_ingot")) {
-            return ingot;
-        }
-        if (path.equals("gold_nugget")) {
-            return nugget;
-        }
-        if (!goldCraftedLinkEnabled) {
-            return -1.0;
-        }
-        // 纯金合成物：按配方递归到金锭/金粒，再叠加少量非金材料。
         return switch (path) {
-            case "golden_apple" -> 8.0 * ingot + 0.5;
-            case "golden_carrot" -> 8.0 * nugget + 0.125;
-            case "glistering_melon_slice" -> 8.0 * nugget + 0.125;
-            case "golden_sword" -> 2.0 * ingot + 0.0625;
-            case "golden_pickaxe", "golden_axe" -> 3.0 * ingot + 0.125;
-            case "golden_shovel" -> ingot + 0.125;
-            case "golden_hoe" -> 2.0 * ingot + 0.125;
-            case "golden_helmet" -> 5.0 * ingot;
-            case "golden_chestplate" -> 8.0 * ingot;
-            case "golden_leggings" -> 7.0 * ingot;
-            case "golden_boots" -> 4.0 * ingot;
-            case "clock" -> 4.0 * ingot + 0.25;
-            case "powered_rail" -> 6.0 * ingot + 0.0625 + 0.25;
-            case "raw_gold" -> ingot;
-            case "gold_ore", "deepslate_gold_ore" -> ingot * 1.2 + 0.05;
-            case "nether_gold_ore" -> 4.0 * nugget;
+            case "gold_block" -> block;
+            case "gold_ingot" -> ingot;
+            case "gold_nugget" -> block / 81.0;
+            // 金压力板 = 2 金锭，纯金合成
+            case "light_weighted_pressure_plate" -> 2.0 * ingot;
             default -> -1.0;
         };
     }

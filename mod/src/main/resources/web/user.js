@@ -190,7 +190,8 @@
     }
     if (data.gold) {
       root.append(
-        chip('国际金价', Number(data.gold.price || 0).toFixed(2) + ' USD/oz'),
+        chip('国际金价', data.gold.enabled
+          ? Number(data.gold.price || 0).toFixed(2) + ' USD/oz' : '未启用'),
         chip('金块估值', vp(data.gold.blockValue)),
       );
     }

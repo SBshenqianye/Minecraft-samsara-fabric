@@ -86,7 +86,6 @@ public final class LotteryService {
         loadClaims();
         GoldPriceService.getInstance().init();
         ItemValueService.setGoldValueProvider(() -> GoldPriceService.getInstance().blockValue());
-        ItemValueService.setGoldCraftedLinkEnabled(LotteryConfig.getInstance().goldCraftLink());
         Samsara.LOGGER.info("[lottery] 已加载 · 模式 {} · 数据 {}", dayMode(), root);
     }
 
@@ -695,6 +694,7 @@ public final class LotteryService {
         fund.put("items", publicItems);
         out.put("fund", fund);
         Map<String, Object> gold = new LinkedHashMap<>();
+        gold.put("enabled", LotteryConfig.getInstance().goldSyncEnabled());
         gold.put("price", GoldPriceService.getInstance().currentUsdPerOunce());
         gold.put("updatedAt", GoldPriceService.getInstance().updatedAt());
         gold.put("blockValue", ItemValueService.getInstance().unitValue("minecraft:gold_block"));
