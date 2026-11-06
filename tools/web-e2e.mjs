@@ -888,6 +888,10 @@ async function main() {
           .every((key) => key in data),
         claims: Array.isArray(data.claims),
         countingOwnPot: typeof data.countingDay?.ownPot === 'number',
+        seed: typeof data.countingDay?.seedValue === 'number',
+        gold: Boolean(data.gold && typeof data.gold.price === 'number'
+          && typeof data.gold.blockValue === 'number'),
+        userGold: Boolean(user.gold && typeof user.gold.blockValue === 'number'),
         userActive: Boolean(user.active && 'pot' in user.active
           && Array.isArray(user.active.items)),
         userRoundItems: Array.isArray(user.round?.items),
@@ -896,6 +900,9 @@ async function main() {
     check('乐透奖池暴露待开奖/下注轮/待领取', lotteryPools.adminFields
         && lotteryPools.claims && lotteryPools.countingOwnPot && lotteryPools.userActive
         && lotteryPools.userRoundItems, JSON.stringify(lotteryPools));
+    check('乐透种子与金价信息可用', lotteryPools.seed && lotteryPools.gold
+        && lotteryPools.userGold, JSON.stringify({
+          seed: lotteryPools.seed, gold: lotteryPools.gold, userGold: lotteryPools.userGold }));
 
     const lotteryNav = await evaluate(`(async () => {
       window.SamsaraUI.setActiveTab('lottery');
@@ -1711,6 +1718,17 @@ async function main() {
     check('RCON 控制台 Tab 补全与预览', !consoleComplete.hidden
         && consoleComplete.items > 0 && consoleComplete.preview.includes('将补全为')
         && consoleComplete.first.length > 0, JSON.stringify(consoleComplete));
+
+    const betComplete = await evaluate(`(async () => {
+      const data = await window.SamsaraUI.api('/api/server/console/complete', {
+        method: 'POST',
+        body: JSON.stringify({ command: 'samsara lottery bet ', cursor: 20 }),
+      });
+      return { ok: data.ok, texts: (data.suggestions || []).map((item) => item.text) };
+    })()`);
+    check('乐透下注命令提供确认/取消/快速通道', betComplete.ok
+        && ['confirm', 'cancel', 'now'].every((text) => betComplete.texts.includes(text)),
+        JSON.stringify(betComplete));
 
     // ---- 一级分栏：切到“本体”后经济业务标签不能残留 ----
     const sectionSwitch = await evaluate(`(async () => {

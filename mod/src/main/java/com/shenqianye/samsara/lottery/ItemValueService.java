@@ -216,7 +216,54 @@ public final class ItemValueService {
         if (itemId == null || itemId.isBlank()) {
             return 0.0;
         }
+        double gold = goldUnitValue(itemId);
+        if (gold >= 0.0) {
+            return Math.max(0.0, gold);
+        }
         return Math.max(0.0, BASE.getOrDefault(itemId, derive(itemId)));
+    }
+
+    /** 由乐透模块注入的金价提供器；单元测试未注入时使用静态锚点。 */
+    @FunctionalInterface
+    public interface GoldValueProvider {
+        /** 返回金块 VP；返回负数表示不使用动态金价。 */
+        double blockValue();
+    }
+
+    private static volatile GoldValueProvider goldProvider;
+
+    public static void setGoldValueProvider(GoldValueProvider provider) {
+        goldProvider = provider;
+    }
+
+    /** 金粒/金锭/金块按国际金价指数缩放；未启用返回 -1。 */
+    private double goldUnitValue(String itemId) {
+        GoldValueProvider provider = goldProvider;
+        if (provider == null) {
+            return -1.0;
+        }
+        String path = itemId.startsWith("minecraft:")
+                ? itemId.substring("minecraft:".length()) : itemId;
+        if (!path.equals("gold_block") && !path.equals("gold_ingot")
+                && !path.equals("gold_nugget")) {
+            return -1.0;
+        }
+        double block;
+        try {
+            block = provider.blockValue();
+        } catch (RuntimeException e) {
+            return -1.0;
+        }
+        if (block < 0.0) {
+            return -1.0;
+        }
+        if (path.equals("gold_block")) {
+            return block;
+        }
+        if (path.equals("gold_ingot")) {
+            return block / 9.0;
+        }
+        return block / 81.0;
     }
 
     /** 单件物品价值（不含数量），容器会递归计入内容物。 */

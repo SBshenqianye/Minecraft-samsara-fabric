@@ -1,10 +1,13 @@
 package com.shenqianye.samsara.command;
 
+import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.shenqianye.samsara.command.ui.ChatUi;
+import com.shenqianye.samsara.insurance.InsuranceService;
+import com.shenqianye.samsara.lottery.GoldPriceService;
 import com.shenqianye.samsara.lottery.ItemValueService;
 import com.shenqianye.samsara.lottery.LotteryConfig;
 import com.shenqianye.samsara.lottery.LotteryService;
@@ -40,12 +43,27 @@ public final class LotteryCommand {
                         .executes(ctx -> help(ctx.getSource())))
                 .then(Commands.literal("bet")
                         .requires(PermissionRequirements.path("lottery bet"))
+                        .then(Commands.literal("confirm")
+                                .executes(ctx -> confirm(ctx.getSource())))
+                        .then(Commands.literal("cancel")
+                                .executes(ctx -> cancelQuote(ctx.getSource())))
+                        .then(Commands.literal("now")
+                                .then(Commands.argument("guess", IntegerArgumentType.integer(0, 4096))
+                                        .executes(ctx -> betNow(ctx, 1, false))
+                                        .then(Commands.argument("tickets", IntegerArgumentType.integer(1, 100))
+                                                .executes(ctx -> betNow(ctx,
+                                                        IntegerArgumentType.getInteger(ctx, "tickets"), false))
+                                                .then(Commands.literal("--exact")
+                                                        .executes(ctx -> betNow(ctx,
+                                                                IntegerArgumentType.getInteger(ctx, "tickets"),
+                                                                true))))))
                         .then(Commands.argument("guess", IntegerArgumentType.integer(0, 4096))
-                                .executes(ctx -> bet(ctx, 1, false))
+                                .executes(ctx -> quote(ctx, 1, false))
                                 .then(Commands.argument("tickets", IntegerArgumentType.integer(1, 100))
-                                        .executes(ctx -> bet(ctx, IntegerArgumentType.getInteger(ctx, "tickets"), false))
+                                        .executes(ctx -> quote(ctx,
+                                                IntegerArgumentType.getInteger(ctx, "tickets"), false))
                                         .then(Commands.literal("--exact")
-                                                .executes(ctx -> bet(ctx,
+                                                .executes(ctx -> quote(ctx,
                                                         IntegerArgumentType.getInteger(ctx, "tickets"), true))))))
                 .then(Commands.literal("collect")
                         .requires(PermissionRequirements.path("lottery collect"))
@@ -61,6 +79,14 @@ public final class LotteryCommand {
                         .then(Commands.argument("item", StringArgumentType.greedyString())
                                 .executes(ctx -> value(ctx.getSource(),
                                         StringArgumentType.getString(ctx, "item")))))
+                .then(Commands.literal("gold")
+                        .requires(PermissionRequirements.path("lottery gold"))
+                        .executes(ctx -> goldStatus(ctx.getSource()))
+                        .then(Commands.literal("set")
+                                .requires(PermissionRequirements.path("lottery gold set"))
+                                .then(Commands.argument("price", DoubleArgumentType.doubleArg(0.01))
+                                        .executes(ctx -> goldSet(ctx.getSource(),
+                                                DoubleArgumentType.getDouble(ctx, "price"))))))
                 .then(Commands.literal("insure")
                         .requires(PermissionRequirements.path("lottery insure"))
                         .executes(ctx -> insure(ctx.getSource()))
@@ -131,16 +157,75 @@ public final class LotteryCommand {
         return 1;
     }
 
-    private static int bet(CommandContext<CommandSourceStack> ctx, int tickets, boolean exact) {
+    private static int quote(CommandContext<CommandSourceStack> ctx, int tickets, boolean exact) {
         ServerPlayer player = ctx.getSource().getPlayer();
         if (player == null) {
             return error(ctx.getSource(), "下注需要玩家身份。");
         }
         int guess = IntegerArgumentType.getInteger(ctx, "guess");
-        LotteryService.BetOutcome outcome = LotteryService.getInstance()
-                .bet(player, guess, tickets, exact);
+        LotteryService.QuoteOutcome outcome = LotteryService.getInstance()
+                .quote(player, guess, tickets, exact);
         if (!outcome.ok()) {
             return error(ctx.getSource(), outcome.error());
+        }
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("dayLabel", outcome.dayId());
+        values.put("guess", String.valueOf(outcome.guess()));
+        values.put("tickets", String.valueOf(outcome.tickets()));
+        values.put("affordable", String.valueOf(outcome.affordable()));
+        values.put("itemLine", outcome.itemName() + " × " + outcome.handCount());
+        values.put("unitLine", ItemValueService.getInstance().format(outcome.unit()) + " VP");
+        values.put("availableLine", ItemValueService.getInstance().format(outcome.available()) + " VP");
+        values.put("costLine", ItemValueService.getInstance().format(outcome.required()) + " VP");
+        values.put("consumeLine", outcome.take() + " × " + outcome.itemName());
+        values.put("overpayLine", outcome.overpay() > 0.001
+                ? "超额 " + ItemValueService.getInstance().format(outcome.overpay())
+                  + " VP 将进入奖池（不找零）。"
+                : "无超额。");
+        values.put("potLine", ItemValueService.getInstance().format(outcome.pot()) + " VP");
+        values.put("drawTime", LotteryConfig.getInstance().drawTime());
+        values.put("cutoffTime", LotteryConfig.getInstance().cutoffTime());
+        ChatUi.send(ctx.getSource(), OutputRenderer.render("lottery.quote", values, ctx.getSource(), null));
+        return 1;
+    }
+
+    private static int confirm(CommandSourceStack source) {
+        ServerPlayer player = source.getPlayer();
+        if (player == null) {
+            return error(source, "确认下注需要玩家身份。");
+        }
+        return sendBetResult(source, LotteryService.getInstance().confirm(player));
+    }
+
+    private static int betNow(CommandContext<CommandSourceStack> ctx, int tickets, boolean exact) {
+        ServerPlayer player = ctx.getSource().getPlayer();
+        if (player == null) {
+            return error(ctx.getSource(), "下注需要玩家身份。");
+        }
+        int guess = IntegerArgumentType.getInteger(ctx, "guess");
+        return sendBetResult(ctx.getSource(), LotteryService.getInstance()
+                .betNow(player, guess, tickets, exact));
+    }
+
+    private static int cancelQuote(CommandSourceStack source) {
+        ServerPlayer player = source.getPlayer();
+        if (player == null) {
+            return error(source, "取消下注需要玩家身份。");
+        }
+        return LotteryService.getInstance().cancelQuote(player)
+                ? reply(source, "已取消本次下注报价，未扣除物品。")
+                : reply(source, "当前没有待确认的下注报价。");
+    }
+
+    private static int sendBetResult(CommandSourceStack source, LotteryService.BetOutcome outcome) {
+        if (!outcome.ok()) {
+            return error(source, outcome.error());
+        }
+        ServerPlayer player = source.getPlayer();
+        if (player != null && outcome.paidEncoded() != null && !outcome.paidEncoded().isBlank()) {
+            // 在 LotteryService 锁之外调用，避免与保险理赔形成锁顺序反转。
+            InsuranceService.getInstance().onItemUsedAsBet(outcome.paidEncoded(),
+                    player.getUUID().toString());
         }
         Map<String, Object> values = new LinkedHashMap<>();
         values.put("dayLabel", outcome.dayId());
@@ -150,14 +235,14 @@ public final class LotteryCommand {
         values.put("potLine", ItemValueService.getInstance().format(outcome.pot()) + " VP");
         values.put("drawTime", LotteryConfig.getInstance().drawTime());
         values.put("cutoffTime", LotteryConfig.getInstance().cutoffTime());
-        ChatUi.send(ctx.getSource(), OutputRenderer.render("lottery.bet", values, ctx.getSource(), null));
+        ChatUi.send(source, OutputRenderer.render("lottery.bet", values, source, null));
         if (outcome.overpay() > 0.001) {
-            ChatUi.send(ctx.getSource(), OutputRenderer.render("lottery.reply", Map.of(
+            ChatUi.send(source, OutputRenderer.render("lottery.reply", Map.of(
                     "message", "本次投入 " + ItemValueService.getInstance().format(outcome.paid())
                             + " VP，票价 " + ItemValueService.getInstance().format(
                             LotteryConfig.getInstance().ticketPrice() * outcome.tickets())
                             + " VP，多余 " + ItemValueService.getInstance().format(outcome.overpay())
-                            + " VP 进入奖池。"), ctx.getSource(), null));
+                            + " VP 进入奖池。"), source, null));
         }
         return 1;
     }
@@ -221,6 +306,22 @@ public final class LotteryCommand {
         }
         return reply(source, key + " = " + ItemValueService.getInstance().format(unit)
                 + " VP / 个" + (stack.isDamageableItem() ? "（含耐久/附魔系数）" : ""));
+    }
+
+    private static int goldStatus(CommandSourceStack source) {
+        ItemValueService values = ItemValueService.getInstance();
+        double price = GoldPriceService.getInstance().currentUsdPerOunce();
+        long updatedAt = GoldPriceService.getInstance().updatedAt();
+        return reply(source, "国际金价：" + String.format(java.util.Locale.ROOT, "%.2f", price)
+                + " USD/oz" + (updatedAt > 0 ? "（" + java.time.Instant.ofEpochMilli(updatedAt) + "）" : "（基准值）")
+                + "\n金块 " + values.format(values.unitValue("minecraft:gold_block")) + " VP"
+                + " · 金锭 " + values.format(values.unitValue("minecraft:gold_ingot")) + " VP"
+                + " · 金粒 " + values.format(values.unitValue("minecraft:gold_nugget")) + " VP");
+    }
+
+    private static int goldSet(CommandSourceStack source, double price) {
+        GoldPriceService.getInstance().setManualPrice(price, "manual");
+        return goldStatus(source);
     }
 
     private static int insure(CommandSourceStack source) {

@@ -34,4 +34,22 @@ class LotteryTicketCountTest {
         day.bets.add(legacy);
         assertEquals(1, LotteryService.totalTickets(day));
     }
+
+    @Test
+    void affordableTicketsRespectsValueAndLimits() {
+        assertEquals(3, LotteryService.affordableTickets(37.39, 8.0, 3, 128));
+        assertEquals(2, LotteryService.affordableTickets(16.0, 8.0, 3, 128));
+        assertEquals(0, LotteryService.affordableTickets(7.99, 8.0, 3, 128));
+        assertEquals(2, LotteryService.affordableTickets(80.0, 8.0, 3, 2));
+        assertEquals(1, LotteryService.affordableTickets(80.0, 8.0, 1, 128));
+        assertEquals(0, LotteryService.affordableTickets(80.0, 0.0, 3, 128));
+    }
+
+    @Test
+    void seedTargetRespectsPercentCapAndMinimum() {
+        assertEquals(50.0, LotteryService.seedTarget(500.0, 10.0, 512.0, 0.0), 1e-6);
+        assertEquals(100.0, LotteryService.seedTarget(2000.0, 10.0, 100.0, 0.0), 1e-6);
+        assertEquals(0.0, LotteryService.seedTarget(50.0, 10.0, 512.0, 100.0), 1e-6);
+        assertEquals(0.0, LotteryService.seedTarget(0.0, 10.0, 512.0, 0.0), 1e-6);
+    }
 }

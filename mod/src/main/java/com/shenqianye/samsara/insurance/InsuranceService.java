@@ -5,6 +5,7 @@ import com.google.gson.GsonBuilder;
 import com.shenqianye.samsara.Samsara;
 import com.shenqianye.samsara.lottery.ItemValueService;
 import com.shenqianye.samsara.lottery.LotteryItemCodec;
+import com.shenqianye.samsara.lottery.LotteryService;
 import com.shenqianye.samsara.storage.StoragePaths;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.RegistryAccess;
@@ -394,6 +395,10 @@ public final class InsuranceService {
         if (original.isEmpty()) {
             return Result.error("保单快照损坏，请联系管理员。");
         }
+        String encoded = LotteryItemCodec.encode(original, registries);
+        if (LotteryService.getInstance().holdsEncodedItem(encoded)) {
+            return Result.error("该物品仍在乐透下注池/滚存/基金/待领取中，不能按丢失理赔。");
+        }
         if (existsAnywhere(player, original)) {
             return Result.error("原物仍然存在（背包/末影箱/在线玩家/周围容器或掉落物），不能理赔。");
         }
@@ -402,7 +407,9 @@ public final class InsuranceService {
             save();
             return Result.pending(policy, "大额理赔已提交审核：" + policy.id);
         }
-        give(player, original);
+        if (!give(player, original)) {
+            return Result.error("背包空间不足，物品未发放；腾出空间后再试。");
+        }
         policy.status = "CLAIMED";
         policy.claimedAt = now;
         addClaim(policy, now);
@@ -418,7 +425,9 @@ public final class InsuranceService {
         ItemStack original = LotteryItemCodec.decode(policy.item, registries);
         if (original.isEmpty()) return Result.error("保单快照损坏。");
         if (owner != null) {
-            give(owner, original);
+            if (!give(owner, original)) {
+                return Result.error("背包空间不足，物品未发放；腾出空间后再试。");
+            }
         } else {
             ClaimData claim = new ClaimData();
             claim.ownerUuid = policy.ownerUuid;
@@ -433,6 +442,34 @@ public final class InsuranceService {
         addClaim(policy, policy.claimedAt);
         save();
         return Result.ok(policy, "已审核通过：" + policy.id);
+    }
+
+    /**
+     * 乐透下注消耗物品时调用：命中的有效保单立即作废，之后不能再按“意外丢失”理赔。
+     */
+    public synchronized boolean onItemUsedAsBet(String encoded, String ownerUuid) {
+        if (encoded == null || encoded.isBlank() || ownerUuid == null) {
+            return false;
+        }
+        boolean changed = false;
+        long now = System.currentTimeMillis();
+        for (PolicyData p : policies) {
+            if (!p.ownerUuid.equals(ownerUuid)
+                    || (!"ACTIVE".equals(p.status) && !"PENDING".equals(p.status))) {
+                continue;
+            }
+            if (!encoded.equals(p.item)) {
+                continue;
+            }
+            p.status = "VOID";
+            p.voidReason = "已用于乐透下注";
+            p.voidedAt = now;
+            changed = true;
+        }
+        if (changed) {
+            save();
+        }
+        return changed;
     }
 
     /** 公开聚合：只给保单总数与状态计数，不暴露主人、ID、价值。 */
@@ -469,6 +506,8 @@ public final class InsuranceService {
             row.put("premium", p.premium);
             row.put("status", p.status);
             row.put("expiresAt", p.expiresAt);
+            row.put("voidReason", p.voidReason);
+            row.put("voidedAt", p.voidedAt);
             rows.add(row);
         }
         out.put("policies", rows);
@@ -552,11 +591,12 @@ public final class InsuranceService {
         }
     }
 
-    private void give(ServerPlayer player, ItemStack stack) {
-        if (!player.getInventory().add(stack.copy())) {
-            player.drop(stack.copy(), false, net.minecraft.util.Prediction.SERVER_ONLY);
-        }
+    private boolean give(ServerPlayer player, ItemStack stack) {
+        ItemStack copy = stack.copy();
+        player.getInventory().add(copy);
         player.containerMenu.broadcastChanges();
+        // 放不下的部分由调用方保留保单/待审核，不丢到地上。
+        return copy.isEmpty();
     }
 
     private void addClaim(PolicyData policy, long at) {
@@ -639,7 +679,9 @@ public final class InsuranceService {
         public long lastDeathAt;
         public long claimedAt;
         public long reviveAt;
+        public long voidedAt;
         public String status = "ACTIVE";
+        public String voidReason = "";
     }
 
     public static final class ClaimData {

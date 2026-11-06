@@ -35,6 +35,17 @@ public final class LotteryConfig {
     private String splitMode = "ticket";
     private String noWinner = "rollover";
     private int maxPotValue = 4096;
+    private boolean seedEnabled = true;
+    private double seedPercent = 10.0;
+    private double seedMaxValue = 512.0;
+    private double seedMinFundValue = 0.0;
+    private boolean goldSyncEnabled = true;
+    private String goldSourceUrl = "https://api.gold-api.com/price/XAU";
+    private double goldBaseBlockValue = 36.0;
+    private double goldReferenceUsdPerOunce = 4000.0;
+    private double goldMinFactor = 0.5;
+    private double goldMaxFactor = 2.0;
+    private int goldSyncIntervalMinutes = 360;
     private boolean audit = true;
     private boolean publicVisible = true;
 
@@ -73,6 +84,18 @@ public final class LotteryConfig {
         splitMode = c.string(id, "settlement.split");
         noWinner = c.string(id, "settlement.noWinner");
         maxPotValue = Math.max(1, c.integer(id, "settlement.maxPotValue"));
+        seedEnabled = c.bool(id, "seed.enabled");
+        seedPercent = Math.max(0.0, Math.min(100.0, c.decimal(id, "seed.percent")));
+        seedMaxValue = Math.max(0.0, c.decimal(id, "seed.maxValue"));
+        seedMinFundValue = Math.max(0.0, c.decimal(id, "seed.minFundValue"));
+        goldSyncEnabled = c.bool(id, "gold.syncEnabled");
+        goldSourceUrl = c.string(id, "gold.sourceUrl");
+        goldBaseBlockValue = Math.max(0.0, c.decimal(id, "gold.baseBlockValue"));
+        goldReferenceUsdPerOunce = Math.max(0.01, c.decimal(id, "gold.referenceUsdPerOunce"));
+        goldMinFactor = Math.max(0.01, Math.min(100.0, c.decimal(id, "gold.minFactor")));
+        goldMaxFactor = Math.max(goldMinFactor,
+                Math.min(100.0, c.decimal(id, "gold.maxFactor")));
+        goldSyncIntervalMinutes = Math.max(1, c.integer(id, "gold.syncIntervalMinutes"));
         audit = c.bool(id, "audit.enabled");
         publicVisible = c.bool(id, "web.publicVisible");
         return "乐透配置已重载：" + (enabled ? "启用" : "禁用")
@@ -169,6 +192,50 @@ public final class LotteryConfig {
 
     public int maxPotValue() {
         return maxPotValue;
+    }
+
+    public boolean seedEnabled() {
+        return seedEnabled;
+    }
+
+    public double seedPercent() {
+        return seedPercent;
+    }
+
+    public double seedMaxValue() {
+        return seedMaxValue;
+    }
+
+    public double seedMinFundValue() {
+        return seedMinFundValue;
+    }
+
+    public boolean goldSyncEnabled() {
+        return goldSyncEnabled;
+    }
+
+    public String goldSourceUrl() {
+        return goldSourceUrl;
+    }
+
+    public double goldBaseBlockValue() {
+        return goldBaseBlockValue;
+    }
+
+    public double goldReferenceUsdPerOunce() {
+        return goldReferenceUsdPerOunce;
+    }
+
+    public double goldMinFactor() {
+        return goldMinFactor;
+    }
+
+    public double goldMaxFactor() {
+        return goldMaxFactor;
+    }
+
+    public int goldSyncIntervalMinutes() {
+        return goldSyncIntervalMinutes;
     }
 
     public boolean audit() {

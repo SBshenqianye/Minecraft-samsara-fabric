@@ -356,7 +356,7 @@
 | GET | `/api/lottery/values` | 物品价值表（分页 + 服务端搜索）：`q` 中文/英文/ID/拼音、`category` 分类、`sort`（`value-desc`/`value-asc`/`name`）、`offset`/`limit`（默认 100，最大 200）；返回全部注册物品（含 0 VP） |
 | POST | `/api/lottery/draw` | 手动开奖（服务器线程执行，5 秒超时） |
 | POST | `/api/lottery/cancel` | 取消当前统计日并退款 |
-| | | `GET /api/lottery` 额外返回 `activePot`（当前统计轮下注 + 滚存）、`bettingPot`（下注轮已入池）、`activePotItems` / `bettingPotItems`（物品卡片模型）、`rollover` / `rolloverItems`、`claims`（待领取：owner/reason/at/items），以及 `countingDay.ownPot`。`GET /api/user/lottery` 返回 `active`（待开奖轮）与 `round`（可下注轮），各自带 `pot`、`tickets`、`items`。 |
+| | | `GET /api/lottery` 额外返回 `activePot`（当前统计轮下注 + 种子 + 滚存）、`bettingPot`（下注轮已入池）、`activePotItems` / `bettingPotItems`（物品卡片模型）、`rollover` / `rolloverItems`、`claims`（待领取：owner/reason/at/items）、`gold`（国际金价、金块/金锭/金粒估值）以及 `countingDay.ownPot/seedValue/seedItems`。`GET /api/user/lottery` 返回 `active`（待开奖轮，含 `seedValue`）与 `round`（可下注轮），各自带 `pot`、`tickets`、`items`，并返回公开的 `gold` 摘要。 |
 
 响应示例（节选）：
 

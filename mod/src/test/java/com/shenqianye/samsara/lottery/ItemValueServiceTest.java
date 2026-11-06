@@ -45,4 +45,16 @@ class ItemValueServiceTest {
         assertEquals(0.0, values.unitValue("minecraft:barrier"), 1e-6);
         assertTrue(values.unitValue("minecraft:iron_ingot") > 0.0);
     }
+
+    @Test
+    void goldProviderOverridesGoldRatios() {
+        try {
+            ItemValueService.setGoldValueProvider(() -> 90.0);
+            assertEquals(90.0, values.unitValue("minecraft:gold_block"), 1e-6);
+            assertEquals(10.0, values.unitValue("minecraft:gold_ingot"), 1e-6);
+            assertEquals(90.0 / 81.0, values.unitValue("minecraft:gold_nugget"), 1e-6);
+        } finally {
+            ItemValueService.setGoldValueProvider(null);
+        }
+    }
 }

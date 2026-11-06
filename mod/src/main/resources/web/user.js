@@ -171,6 +171,7 @@
     const active = data.active || {};
     root.append(
       chip('待开奖轮', active.day || '—'),
+      chip('本轮种子', String(active.seedValue ?? 0) + ' VP'),
       chip('待开奖奖池', String(active.pot ?? 0) + ' VP'),
       chip('待开奖票数', String(active.tickets ?? 0) + ' 张 / '
         + String(active.players ?? 0) + ' 人'),
@@ -186,6 +187,12 @@
     if (data.fund) {
       root.append(chip('服务器基金', String(data.fund.value ?? 0) + ' VP · '
         + String(data.fund.count ?? 0) + ' 项'));
+    }
+    if (data.gold) {
+      root.append(
+        chip('国际金价', Number(data.gold.price || 0).toFixed(2) + ' USD/oz'),
+        chip('金块估值', vp(data.gold.blockValue)),
+      );
     }
     if (data.insurance && data.insurance.enabled) {
       root.append(chip('保险', '保单 ' + (data.insurance.total ?? 0)

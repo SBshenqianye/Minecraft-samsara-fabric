@@ -45,6 +45,7 @@ import java.util.UUID;
 public final class LotteryService {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final String SCHEMA = "1";
+    private static final long QUOTE_TTL_MS = 60_000L;
 
     private static LotteryService instance;
 
@@ -55,6 +56,7 @@ public final class LotteryService {
     private List<String> fund = new ArrayList<>();
     private List<ClaimData> claims = new ArrayList<>();
     private final Map<String, DayData> dayCache = new LinkedHashMap<>();
+    private final Map<UUID, PendingQuote> pendingQuotes = new LinkedHashMap<>();
     private int tickCounter;
 
     private LotteryService() {
@@ -82,6 +84,8 @@ public final class LotteryService {
         loadState();
         loadFund();
         loadClaims();
+        GoldPriceService.getInstance().init();
+        ItemValueService.setGoldValueProvider(() -> GoldPriceService.getInstance().blockValue());
         Samsara.LOGGER.info("[lottery] 已加载 · 模式 {} · 数据 {}", dayMode(), root);
     }
 
@@ -98,6 +102,8 @@ public final class LotteryService {
         }
         tickCounter = 0;
         markCovered(todayId());
+        ensureSeed(todayId());
+        GoldPriceService.getInstance().tick();
         catchUp();
         if (System.currentTimeMillis() - state.lastHeartbeat > 60_000L) {
             state.lastHeartbeat = System.currentTimeMillis();
@@ -177,19 +183,71 @@ public final class LotteryService {
 
     // ---- 下注 ----
 
-    public synchronized BetOutcome bet(ServerPlayer player, int guess, int tickets, boolean exact) {
-        LotteryConfig config = LotteryConfig.getInstance();
-        if (!config.enabled()) {
-            return BetOutcome.error("死人乐透未启用。");
+    /**
+     * 默认下注流程：只估值，不扣物品。玩家确认后调用 {@link #confirm(ServerPlayer)}。
+     */
+    public synchronized QuoteOutcome quote(ServerPlayer player, int guess, int tickets, boolean exact) {
+        PrepareResult result = prepare(player, guess, tickets, exact);
+        if (result.error() != null) {
+            return QuoteOutcome.error(result.error());
         }
+        Prepared prepared = result.prepared();
+        pendingQuotes.put(player.getUUID(), new PendingQuote(prepared, System.currentTimeMillis()));
+        return QuoteOutcome.ok(prepared);
+    }
+
+    /**
+     * 确认最近一次估值；确认前重新校验主手物品，防止报价后换物品/数量。
+     */
+    public synchronized BetOutcome confirm(ServerPlayer player) {
         if (player == null) {
             return BetOutcome.error("需要玩家身份。");
         }
+        PendingQuote pending = pendingQuotes.remove(player.getUUID());
+        if (pending == null) {
+            return BetOutcome.error("没有待确认的下注报价；请先执行 /samsara lottery bet <猜测> [张数]。");
+        }
+        if (System.currentTimeMillis() - pending.at() > QUOTE_TTL_MS) {
+            return BetOutcome.error("下注报价已过期，请重新估值。");
+        }
+        Prepared old = pending.prepared();
+        PrepareResult now = prepare(player, old.guess(), old.tickets(), old.exact());
+        if (now.error() != null) {
+            return BetOutcome.error(now.error());
+        }
+        Prepared prepared = now.prepared();
+        if (!prepared.paidEncoded().equals(old.paidEncoded())) {
+            return BetOutcome.error("主手物品或数量已变化，请重新估值后再确认。");
+        }
+        return consume(player, prepared);
+    }
+
+    /** 快速通道：跳过估值，直接按当前主手扣物品。 */
+    public synchronized BetOutcome betNow(ServerPlayer player, int guess, int tickets, boolean exact) {
+        PrepareResult result = prepare(player, guess, tickets, exact);
+        if (result.error() != null) {
+            return BetOutcome.error(result.error());
+        }
+        return consume(player, result.prepared());
+    }
+
+    public synchronized boolean cancelQuote(ServerPlayer player) {
+        return player != null && pendingQuotes.remove(player.getUUID()) != null;
+    }
+
+    private PrepareResult prepare(ServerPlayer player, int guess, int tickets, boolean exact) {
+        LotteryConfig config = LotteryConfig.getInstance();
+        if (!config.enabled()) {
+            return PrepareResult.error("死人乐透未启用。");
+        }
+        if (player == null) {
+            return PrepareResult.error("需要玩家身份。");
+        }
         if (guess < 0 || guess > 4096) {
-            return BetOutcome.error("猜测数字应在 0~4096 之间。");
+            return PrepareResult.error("猜测数字应在 0~4096 之间。");
         }
         if (tickets < 1 || tickets > config.maxTicketsPerPlayer()) {
-            return BetOutcome.error("单次可买 1~" + config.maxTicketsPerPlayer() + " 张。");
+            return PrepareResult.error("单次可买 1~" + config.maxTicketsPerPlayer() + " 张。");
         }
         String dayId = bettingDayId();
         DayData day = loadOrCreateDay(dayId);
@@ -200,61 +258,88 @@ public final class LotteryService {
             }
         }
         if (mine + tickets > config.maxTicketsPerPlayer()) {
-            return BetOutcome.error("本轮你最多 " + config.maxTicketsPerPlayer()
+            return PrepareResult.error("本轮你最多 " + config.maxTicketsPerPlayer()
                     + " 张，已买 " + mine + " 张。");
         }
-        if (totalTickets(day) + tickets > config.maxTicketsPerRound()) {
-            return BetOutcome.error("本轮票数已满（" + config.maxTicketsPerRound() + " 张）。");
+        int roundTickets = totalTickets(day);
+        if (roundTickets + tickets > config.maxTicketsPerRound()) {
+            return PrepareResult.error("本轮票数已满（" + config.maxTicketsPerRound() + " 张）。");
         }
 
         int slot = player.getInventory().getSelectedSlot();
         ItemStack hand = player.getInventory().getItem(slot);
         double unit = ItemValueService.getInstance().unitValue(hand);
         if (unit <= 0.0) {
-            return BetOutcome.error("主手物品没有价值；请手持可估值的物品（铁锭/钻石等）。");
+            return PrepareResult.error("主手物品没有价值；请手持可估值的物品（铁锭/钻石等）。");
         }
         double required = config.ticketPrice() * tickets;
         double available = unit * hand.getCount();
+        int byPlayer = config.maxTicketsPerPlayer() - mine;
+        int byRound = config.maxTicketsPerRound() - roundTickets;
+        int affordable = affordableTickets(available, config.ticketPrice(), byPlayer, byRound);
         if (available + 0.0001 < required) {
-            return BetOutcome.error("主手价值不足：需要 " + ItemValueService.getInstance().format(required)
-                    + " VP，当前 " + ItemValueService.getInstance().format(available) + " VP。");
+            return PrepareResult.error("主手价值不足：需要 " + ItemValueService.getInstance().format(required)
+                    + " VP，当前 " + ItemValueService.getInstance().format(available)
+                    + " VP；最多可买 " + affordable + " 张。");
+        }
+        if (tickets > affordable) {
+            return PrepareResult.error("当前最多可买 " + affordable + " 张（受物品价值/每人/单轮上限限制），本次请求 "
+                    + tickets + " 张。");
         }
         if (exact && available > required + 0.0001) {
-            return BetOutcome.error("--exact 要求不超额：需要 " + ItemValueService.getInstance().format(required)
+            return PrepareResult.error("--exact 要求不超额：需要 " + ItemValueService.getInstance().format(required)
                     + " VP，当前 " + ItemValueService.getInstance().format(available) + " VP。");
         }
-        if (totalTickets(day) + tickets > 0) {
-            double potValue = potValue(day) + valueOfEncoded(state.rollover);
-            if (potValue + required > config.maxPotValue()) {
-                return BetOutcome.error("本轮奖池已达上限 " + config.maxPotValue() + " VP。");
-            }
+        double potBefore = potValue(day) + valueOfEncoded(state.rollover);
+        if (potBefore + required > config.maxPotValue()) {
+            return PrepareResult.error("本轮奖池已达上限 " + config.maxPotValue() + " VP。");
         }
 
         int take = (int) Math.ceil(required / unit);
         take = Math.max(1, Math.min(take, hand.getCount()));
         double actual = unit * take;
         if (actual + 0.0001 < required) {
-            return BetOutcome.error("主手物品不足以支付票价。");
+            return PrepareResult.error("主手物品不足以支付票价。");
         }
         ItemStack paid = hand.copyWithCount(take);
-        hand.shrink(take);
-        player.getInventory().setItem(slot, hand.isEmpty() ? ItemStack.EMPTY : hand);
+        String paidEncoded = LotteryItemCodec.encode(paid, registries);
+        if (paidEncoded.isBlank()) {
+            return PrepareResult.error("主手物品快照失败，请换一件物品再试。");
+        }
+        double overpay = Math.max(0.0, actual - required);
+        return PrepareResult.ok(new Prepared(dayId, guess, tickets, exact, slot,
+                paidEncoded, hand.getHoverName().getString(), hand.getCount(), unit,
+                available, required, take, actual, overpay, potBefore + actual, affordable));
+    }
+
+    private BetOutcome consume(ServerPlayer player, Prepared prepared) {
+        DayData day = loadOrCreateDay(prepared.dayId());
+        ItemStack hand = player.getInventory().getItem(prepared.slot());
+        if (hand.isEmpty() || hand.getCount() < prepared.take()) {
+            return BetOutcome.error("主手物品已变化，请重新估值。");
+        }
+        ItemStack paid = hand.copyWithCount(prepared.take());
+        if (!prepared.paidEncoded().equals(LotteryItemCodec.encode(paid, registries))) {
+            return BetOutcome.error("主手物品已变化，请重新估值。");
+        }
+        hand.shrink(prepared.take());
+        player.getInventory().setItem(prepared.slot(), hand.isEmpty() ? ItemStack.EMPTY : hand);
         player.containerMenu.broadcastChanges();
 
         BetData bet = new BetData();
         bet.ownerUuid = player.getUUID().toString();
         bet.ownerName = player.getGameProfile().name();
         bet.dataUuid = player.getUUID().toString();
-        bet.guess = guess;
-        bet.tickets = tickets;
-        bet.value = actual;
+        bet.guess = prepared.guess();
+        bet.tickets = prepared.tickets();
+        bet.value = prepared.actual();
         bet.items = LotteryItemCodec.encodeAll(List.of(paid), registries);
         bet.at = System.currentTimeMillis();
         day.bets.add(bet);
         saveDay(day);
 
-        double over = Math.max(0.0, actual - required);
-        return BetOutcome.ok(dayId, guess, tickets, actual, over, potValue(day) + valueOfEncoded(state.rollover));
+        return BetOutcome.ok(prepared.dayId(), prepared.guess(), prepared.tickets(),
+                prepared.actual(), prepared.overpay(), prepared.pot(), prepared.paidEncoded());
     }
 
     public synchronized CollectOutcome collect(ServerPlayer player) {
@@ -351,6 +436,7 @@ public final class LotteryService {
             return "该结算日已经结束：" + dayId;
         }
         refundAll(day, "管理员取消");
+        returnSeedToFund(day);
         day.state = "CANCELLED";
         day.result = new ResultData();
         day.result.deathCount = day.deathCount;
@@ -405,9 +491,12 @@ public final class LotteryService {
         return out;
     }
 
-    /** 某一期自己的下注物品（不含滚存），用于“下注轮已入池”。 */
+    /** 某一期自己的下注物品（含基金种子，不含滚存），用于“下注轮已入池”。 */
     private List<ItemStack> dayPotItems(DayData day) {
         List<ItemStack> pot = new ArrayList<>();
+        if (day.seed != null) {
+            pot.addAll(LotteryItemCodec.decodeAll(day.seed, registries));
+        }
         for (BetData bet : day.bets) {
             pot.addAll(LotteryItemCodec.decodeAll(bet.items, registries));
         }
@@ -444,6 +533,45 @@ public final class LotteryService {
         return out;
     }
 
+    /** 保险理赔前检查：该物品是否仍由乐透系统持有（下注/滚存/基金/待领取）。 */
+    public synchronized boolean holdsEncodedItem(String encoded) {
+        if (encoded == null || encoded.isBlank()) {
+            return false;
+        }
+        if (state.rollover != null && state.rollover.contains(encoded)) {
+            return true;
+        }
+        if (fund.contains(encoded)) {
+            return true;
+        }
+        for (ClaimData claim : claims) {
+            if (!claim.claimed && claim.items != null && claim.items.contains(encoded)) {
+                return true;
+            }
+        }
+        if (server == null) {
+            return false;
+        }
+        for (String dayId : List.of(bettingDayId(), todayId())) {
+            DayData day = loadDay(dayId);
+            if (day == null) {
+                continue;
+            }
+            if (day.seed != null && day.seed.contains(encoded)) {
+                return true;
+            }
+            if (day.bets == null) {
+                continue;
+            }
+            for (BetData bet : day.bets) {
+                if (bet.items != null && bet.items.contains(encoded)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     public synchronized String withdrawFund(ServerPlayer player, int index) {
         if (player == null) {
             return "需要玩家身份；控制台不能领取基金物品。";
@@ -470,6 +598,22 @@ public final class LotteryService {
                 : "；背包空间不足，" + delivery.remainder().get(0).getCount() + " 个仍在基金");
     }
 
+    private Map<String, Object> goldModel() {
+        LotteryConfig config = LotteryConfig.getInstance();
+        ItemValueService values = ItemValueService.getInstance();
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("enabled", config.goldSyncEnabled());
+        out.put("price", GoldPriceService.getInstance().currentUsdPerOunce());
+        out.put("updatedAt", GoldPriceService.getInstance().updatedAt());
+        out.put("source", GoldPriceService.getInstance().source());
+        out.put("baseBlockValue", config.goldBaseBlockValue());
+        out.put("reference", config.goldReferenceUsdPerOunce());
+        out.put("blockValue", values.unitValue("minecraft:gold_block"));
+        out.put("ingotValue", values.unitValue("minecraft:gold_ingot"));
+        out.put("nuggetValue", values.unitValue("minecraft:gold_nugget"));
+        return out;
+    }
+
     public synchronized Map<String, Object> adminModel() {
         String betting = bettingDayId();
         DayData day = loadOrCreateDay(betting);
@@ -488,6 +632,7 @@ public final class LotteryService {
         out.put("bettingPot", potValue(day));
         out.put("bettingPotItems", itemModels(dayPotItems(day)));
         out.put("claims", claimModels());
+        out.put("gold", goldModel());
         out.put("fund", fundModel());
         out.put("history", historyModel(1, 10));
         out.put("configPath", LotteryConfig.getInstance().configPath());
@@ -511,6 +656,7 @@ public final class LotteryService {
         round.put("drawTime", drawLabel(betting));
         round.put("cutoff", cutoffLabel(betting));
         round.put("ownPot", potValue(day));
+        round.put("seedValue", valueOfEncoded(day.seed == null ? List.of() : day.seed));
         round.put("pot", potValue(day) + rolloverValue);
         round.put("tickets", totalTickets(day));
         round.put("players", distinctPlayers(day));
@@ -520,6 +666,7 @@ public final class LotteryService {
         active.put("day", counting.dayId);
         active.put("drawTime", drawLabel(counting.dayId));
         active.put("cutoff", cutoffLabel(counting.dayId));
+        active.put("seedValue", valueOfEncoded(counting.seed == null ? List.of() : counting.seed));
         active.put("pot", potValue(counting) + rolloverValue);
         active.put("tickets", totalTickets(counting));
         active.put("players", distinctPlayers(counting));
@@ -546,6 +693,11 @@ public final class LotteryService {
         fund.put("count", publicItems.size());
         fund.put("items", publicItems);
         out.put("fund", fund);
+        Map<String, Object> gold = new LinkedHashMap<>();
+        gold.put("price", GoldPriceService.getInstance().currentUsdPerOunce());
+        gold.put("updatedAt", GoldPriceService.getInstance().updatedAt());
+        gold.put("blockValue", ItemValueService.getInstance().unitValue("minecraft:gold_block"));
+        out.put("gold", gold);
         return out;
     }
 
@@ -591,6 +743,76 @@ public final class LotteryService {
         }
     }
 
+    /** 每轮开始时从服务器基金注入初始奖池；每轮只处理一次。 */
+    private void ensureSeed(String dayId) {
+        LotteryConfig config = LotteryConfig.getInstance();
+        DayData day = loadOrCreateDay(dayId);
+        if (day.seeded) {
+            return;
+        }
+        day.seeded = true;
+        if ("SETTLED".equals(day.state) || "CANCELLED".equals(day.state)) {
+            saveDay(day);
+            return;
+        }
+        if (!config.seedEnabled()) {
+            saveDay(day);
+            return;
+        }
+        double fundValue = valueOfEncoded(fund == null ? List.of() : fund);
+        double target = seedTarget(fundValue, config.seedPercent(),
+                config.seedMaxValue(), config.seedMinFundValue());
+        if (target <= 0.0001) {
+            saveDay(day);
+            return;
+        }
+        List<ItemStack> seed = takeFromFund(target);
+        day.seed = LotteryItemCodec.encodeAll(seed, registries);
+        saveDay(day);
+    }
+
+    /**
+     * 从基金取出不超过 target 价值的物品。单件高价值物品不会被强行抽走。
+     */
+    private List<ItemStack> takeFromFund(double target) {
+        List<ItemStack> items = LotteryItemCodec.decodeAll(fund == null ? List.of() : fund, registries);
+        items.sort(Comparator.comparingDouble(
+                stack -> ItemValueService.getInstance().unitValue(stack)));
+        List<ItemStack> taken = new ArrayList<>();
+        double takenValue = 0.0;
+        for (int i = 0; i < items.size() && takenValue < target; ) {
+            ItemStack stack = items.get(i);
+            double unit = ItemValueService.getInstance().unitValue(stack);
+            if (unit <= 0.0 || unit > target - takenValue + 0.0001) {
+                i++;
+                continue;
+            }
+            int need = (int) Math.floor((target - takenValue) / unit);
+            int take = Math.max(1, Math.min(stack.getCount(), need));
+            taken.add(stack.copyWithCount(take));
+            stack.shrink(take);
+            takenValue += unit * take;
+            if (stack.isEmpty()) {
+                items.remove(i);
+            } else {
+                i++;
+            }
+        }
+        fund = LotteryItemCodec.encodeAll(items, registries);
+        saveFund();
+        return taken;
+    }
+
+    /** 取消/流局时把未使用的基金种子退回基金。 */
+    private void returnSeedToFund(DayData day) {
+        if (day.seed == null || day.seed.isEmpty()) {
+            return;
+        }
+        fund.addAll(day.seed);
+        day.seed = new ArrayList<>();
+        saveFund();
+    }
+
     private boolean drawReached(String dayId) {
         DayData day = loadOrCreateDay(dayId);
         if (LotteryConfig.getInstance().realDay()) {
@@ -612,8 +834,10 @@ public final class LotteryService {
         }
         if (!day.covered && !day.bets.isEmpty()) {
             refundAll(day, "统计不完整（服务器离线）");
+            returnSeedToFund(day);
         } else if (day.bets.isEmpty()) {
-            // 没有票，只记录死亡数
+            // 没有票，只记录死亡数；本轮未用掉的种子退回基金
+            returnSeedToFund(day);
         } else {
             settleWithBets(day);
         }
@@ -634,6 +858,9 @@ public final class LotteryService {
     private void settleWithBets(DayData day) {
         potTaken.clear();
         List<ItemStack> pot = new ArrayList<>();
+        if (day.seed != null) {
+            pot.addAll(LotteryItemCodec.decodeAll(day.seed, registries));
+        }
         for (BetData bet : day.bets) {
             pot.addAll(LotteryItemCodec.decodeAll(bet.items, registries));
         }
@@ -663,6 +890,7 @@ public final class LotteryService {
             state.rollover = LotteryItemCodec.encodeAll(pot, registries);
             result.rollover = true;
             day.result = result;
+            day.seed = new ArrayList<>();
             saveState();
             return;
         }
@@ -703,6 +931,7 @@ public final class LotteryService {
             state.rollover = LotteryItemCodec.encodeAll(pot, registries);
         }
         day.result = result;
+        day.seed = new ArrayList<>();
         saveState();
         saveClaims();
     }
@@ -1213,7 +1442,7 @@ public final class LotteryService {
     }
 
     private double potValue(DayData day) {
-        double total = 0.0;
+        double total = valueOfEncoded(day.seed == null ? List.of() : day.seed);
         for (BetData bet : day.bets) {
             total += bet.value;
         }
@@ -1222,6 +1451,29 @@ public final class LotteryService {
 
     static int ticketsOf(BetData bet) {
         return bet == null || bet.tickets < 1 ? 1 : bet.tickets;
+    }
+
+    /** 当前主手价值最多够买几张票，同时受每人/单轮剩余票数限制。 */
+    static int affordableTickets(double available, double unitPrice, int playerRemaining,
+                                 int roundRemaining) {
+        if (unitPrice <= 0.0 || available <= 0.0) {
+            return 0;
+        }
+        int byValue = (int) Math.floor((available + 0.0001) / unitPrice);
+        return Math.max(0, Math.min(byValue, Math.min(playerRemaining, roundRemaining)));
+    }
+
+    /** 本轮从基金抽取的种子价值。 */
+    static double seedTarget(double fundValue, double percent, double maxValue,
+                             double minFundValue) {
+        if (fundValue <= 0.0 || fundValue + 0.0001 < minFundValue) {
+            return 0.0;
+        }
+        double target = fundValue * Math.max(0.0, Math.min(100.0, percent)) / 100.0;
+        if (maxValue > 0.0) {
+            target = Math.min(target, maxValue);
+        }
+        return Math.max(0.0, target);
     }
 
     static int totalTickets(DayData day) {
@@ -1304,6 +1556,10 @@ public final class LotteryService {
         out.put("villagerDeaths", day.villagerDeaths);
         out.put("namedMobDeaths", day.namedMobDeaths);
         out.put("tickets", totalTickets(day));
+        out.put("seeded", day.seeded);
+        out.put("seedValue", valueOfEncoded(day.seed == null ? List.of() : day.seed));
+        out.put("seedItems", itemModels(day.seed == null ? List.of()
+                : LotteryItemCodec.decodeAll(day.seed, registries)));
         out.put("ownPot", potValue(day));
         out.put("pot", potValue(day) + valueOfEncoded(state.rollover));
         out.put("potItems", itemModels(dayPotItems(day)));
@@ -1407,6 +1663,10 @@ public final class LotteryService {
         public int namedMobDeaths;
         public List<BetData> bets = new ArrayList<>();
         public Set<String> victims = new LinkedHashSet<>();
+        /** 本轮从服务器基金注入的初始奖池物品。 */
+        public List<String> seed = new ArrayList<>();
+        /** 是否已经处理过种子注入（基金当时为空也不会重复尝试）。 */
+        public boolean seeded;
         public ResultData result;
     }
 
@@ -1473,15 +1733,52 @@ public final class LotteryService {
         }
     }
 
+    public record QuoteOutcome(boolean ok, String error, String dayId, int guess, int tickets,
+                               int affordable, String itemName, int handCount, double unit,
+                               double available, double required, int take, double actual,
+                               double overpay, double pot) {
+        static QuoteOutcome error(String message) {
+            return new QuoteOutcome(false, message, "", 0, 0, 0, "", 0, 0,
+                    0, 0, 0, 0, 0, 0);
+        }
+
+        static QuoteOutcome ok(Prepared prepared) {
+            return new QuoteOutcome(true, "", prepared.dayId(), prepared.guess(),
+                    prepared.tickets(), prepared.affordable(), prepared.itemName(),
+                    prepared.handCount(), prepared.unit(), prepared.available(),
+                    prepared.required(), prepared.take(), prepared.actual(),
+                    prepared.overpay(), prepared.pot());
+        }
+    }
+
+    private record Prepared(String dayId, int guess, int tickets, boolean exact, int slot,
+                            String paidEncoded, String itemName, int handCount, double unit,
+                            double available, double required, int take, double actual,
+                            double overpay, double pot, int affordable) {
+    }
+
+    private record PrepareResult(Prepared prepared, String error) {
+        static PrepareResult ok(Prepared prepared) {
+            return new PrepareResult(prepared, null);
+        }
+
+        static PrepareResult error(String message) {
+            return new PrepareResult(null, message);
+        }
+    }
+
+    private record PendingQuote(Prepared prepared, long at) {
+    }
+
     public record BetOutcome(boolean ok, String error, String dayId, int guess, int tickets,
-                             double paid, double overpay, double pot) {
+                             double paid, double overpay, double pot, String paidEncoded) {
         static BetOutcome error(String message) {
-            return new BetOutcome(false, message, "", 0, 0, 0, 0, 0);
+            return new BetOutcome(false, message, "", 0, 0, 0, 0, 0, "");
         }
 
         static BetOutcome ok(String dayId, int guess, int tickets, double paid,
-                             double overpay, double pot) {
-            return new BetOutcome(true, "", dayId, guess, tickets, paid, overpay, pot);
+                             double overpay, double pot, String paidEncoded) {
+            return new BetOutcome(true, "", dayId, guess, tickets, paid, overpay, pot, paidEncoded);
         }
     }
 

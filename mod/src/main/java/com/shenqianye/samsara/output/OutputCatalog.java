@@ -49,6 +49,7 @@ public final class OutputCatalog {
         register(tpaRequestHint());
         register(lotteryStatus());
         register(lotteryBet());
+        register(lotteryQuote());
         register(lotteryResult());
         register(lotteryWin());
         register(lotteryCollect());
@@ -518,6 +519,51 @@ public final class OutputCatalog {
                 ));
     }
 
+    private static OutputTemplate lotteryQuote() {
+        List<OutputVariable> variables = new ArrayList<>(List.of(
+                text("dayLabel", "结算日", "2026-11-05", true),
+                number("guess", "猜测数字", "7"),
+                number("tickets", "张数", "1"),
+                number("affordable", "最多可买", "3"),
+                text("itemLine", "主手物品", "附魔钻石镐 × 1", true),
+                text("unitLine", "单价", "37.39 VP", true),
+                text("availableLine", "总价值", "37.39 VP", true),
+                text("costLine", "票价", "8 VP", true),
+                text("consumeLine", "将消耗", "1 × 附魔钻石镐", true),
+                text("overpayLine", "超额", "超额 29.39 VP 将进入奖池（不找零）。", true),
+                text("potLine", "下注后奖池", "37.39 VP", true),
+                text("drawTime", "开奖时间", "07:00", true),
+                text("cutoffTime", "截止时间", "00:00", true)
+        ));
+        variables.add(prefix());
+        return new OutputTemplate("lottery.quote", "乐透", "下注估值（/samsara lottery bet）",
+                variables,
+                List.of(
+                        new OutputButton("confirm", "确认下注", "/samsara lottery bet confirm",
+                                "确认后才会扣除物品", "run", "lottery bet", false),
+                        new OutputButton("cancel", "取消", "/samsara lottery bet cancel",
+                                "放弃本次报价", "run", "lottery bet", false),
+                        new OutputButton("status", "看奖池", "/samsara lottery status",
+                                "查看当前奖池", "run", "lottery status", false)),
+                List.of(
+                        new PrefixPart(PREFIX_LOTTERY),
+                        new TextPart("下注估值（未扣物品）\n"),
+                        new TextPart("主手："), new VariablePart("itemLine"),
+                        new TextPart(" · 单价 "), new VariablePart("unitLine"),
+                        new TextPart(" · 总价值 "), new VariablePart("availableLine"),
+                        new TextPart("\n当前最多可买 "), new VariablePart("affordable"),
+                        new TextPart(" 张；本次 "), new VariablePart("tickets"),
+                        new TextPart(" 张，票价 "), new VariablePart("costLine"),
+                        new TextPart("\n将消耗："), new VariablePart("consumeLine"),
+                        new TextPart("\n"), new VariablePart("overpayLine"),
+                        new TextPart("\n下注后奖池："), new VariablePart("potLine"),
+                        new TextPart("\n开奖 "), new VariablePart("drawTime"),
+                        new TextPart("，截止 "), new VariablePart("cutoffTime"),
+                        new TextPart("。\n60 秒内点击「确认下注」才会扣除物品；"
+                                + "快速下注用 /samsara lottery bet now <猜测> [张数]。")
+                ));
+    }
+
     private static OutputTemplate lotteryResult() {
         List<OutputVariable> variables = new ArrayList<>(List.of(
                 text("periodLabel", "周期", "昨天", true),
@@ -638,10 +684,13 @@ public final class OutputCatalog {
                         new PrefixPart(PREFIX_LOTTERY),
                         new TextPart("早死早超生，晚死有奖池。\n"),
                         new TextPart("/samsara lottery status — 奖池与开奖时间\n"),
-                        new TextPart("/samsara lottery bet <人数> [张数] — 猜下一轮死亡人数\n"),
+                        new TextPart("/samsara lottery bet <人数> [张数] — 估值；确认后才扣物品\n"),
+                        new TextPart("/samsara lottery bet confirm / cancel — 确认 / 取消报价\n"),
+                        new TextPart("/samsara lottery bet now <人数> [张数] — 跳过估值直接买票\n"),
                         new TextPart("/samsara lottery collect — 领取奖金\n"),
                         new TextPart("/samsara lottery list [页] — 历史开奖\n"),
-                        new TextPart("/samsara lottery value <物品> — 查询物品价值")
+                        new TextPart("/samsara lottery value <物品> — 查询物品价值\n"),
+                        new TextPart("/samsara lottery gold [set <USD/oz>] — 查看/设置国际金价")
                 ));
     }
 

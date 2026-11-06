@@ -98,6 +98,10 @@ class OutputDefaultsTest {
                 .contains("奖池"));
         assertTrue(plain("lottery.bet", OutputCatalog.sampleValues("lottery.bet"))
                 .contains("号票已登记"));
+        String quote = plain("lottery.quote", OutputCatalog.sampleValues("lottery.quote"));
+        assertTrue(quote.contains("下注估值"));
+        assertTrue(quote.contains("当前最多可买"));
+        assertTrue(quote.contains("确认下注"));
     }
 
     private static String plain(String key, Map<String, Object> values) {
