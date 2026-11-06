@@ -1,6 +1,6 @@
 # samsara · Web API 接口文档
 
-> 状态：v0.46.16（2026-11-07）
+> 状态：v0.47.0（2026-11-07）
 > 适用：本地管理端 `/`、用户端只读页 `/user`、以及未来接入的脚本/面板。
 > 代码入口：`mod/src/main/java/com/shenqianye/samsara/web/LocalWebServer.java`
 > 安全边界：`WebSecurity.java`、`WebUserService.java`
@@ -310,6 +310,7 @@
 | GET | `/api/containers/read?dimension=&x=&y=&z=` | 读取完整槽位；已加载读实时容器，未加载读缓存；缓存不存在返回 `404` 与明确错误 |
 | POST | `/api/containers/scan` | 手动刷新指定维度/坐标半径内**已加载**区块；body `{dimension?,x?,z?,radius?}`；3 秒限流，超限返回 `429` + `retryAfterMs` |
 | POST | `/api/containers/write` | 写入容器槽位（P2）；body `{dimension,x,y,z,revision,slots:[...]}`；`revision` 冲突返回 `409`；写入前保存容器审计快照，写入后 `setChanged` 并广播方块更新 |
+| POST | `/api/containers/item` | 容器页辅助：body `{encoded?,id?,count}`；传 `encoded` 时只改数量并保留组件，传 `id` 时新建物品；返回写入所需的 Base64(NBT) |
 | GET | `/api/containers/offline?uuid=` | 只读返回离线玩家 `.dat` 中背包/末影箱的物品编码集合 |
 
 响应示例：
@@ -338,15 +339,17 @@
 
 | 路径 | 资源 |
 |---|---|
-| `/`、`/index.html` | 管理端页面 |
-| `/user`、`/user.html` | 用户端只读页面 |
+| `/`、`/index.html`、`/user`、`/containers` | Vue 应用入口（`/web/vue/index.html`） |
+| `/vue/*` | Vite 构建产物（JS/CSS/图片），只允许固定字符集且拒绝 `..` |
+| `/legacy.html` | 旧管理端页面壳（Vue 兼容层使用） |
+| `/legacy-user.html`、`/user.html` | 旧用户端页面壳（Vue 兼容层使用） |
 | `/style.css` | 两端共用样式 |
 | `/map.js` | 两端共用的地图逻辑 |
 | `/banners.js` | 两端共用旗帜贴图 |
 | `/user.js` | 用户端适配层 |
-| `/app.js`、`/structured.js`、`/form-kit.js`、`/particles.js`、`/output.js`、`/permissions.js`、`/world-stack.js`、`/server.js`、`/identity.js` | 管理端专用 |
+| `/app.js`、`/structured.js`、`/form-kit.js`、`/particles.js`、`/output.js`、`/permissions.js`、`/world-stack.js`、`/server.js`、`/identity.js` | 旧管理端脚本；Vue 兼容层按需加载，保留回退路径 |
 
-静态资源只按固定表返回，不拼接路径；不存在目录穿越。
+静态资源只按固定表返回，不拼接路径；不存在目录穿越。Vue 构建产物文件名带 hash，`/vue/*` 只接受 `[A-Za-z0-9_./-]` 且拒绝 `..`。
 
 ## 5. 安全边界与扩展约定
 
@@ -355,7 +358,7 @@
 - **管理端静态页壳可能公开，但不含数据**：`/`、`/app.js` 等静态资源本身不需要 token；没有 token 时所有管理 API（`/api/config`、`/api/status`、`/api/server`、`/api/world-stack`、`/api/permissions`、`/api/map` 等）返回 `401`。如果连页面壳都不希望公开，需要在反向代理层做路径过滤、加独立端口或额外登录页。
 - **默认只公开用户端**：推荐反向代理只转发 `/user`、`/user.js`、`/style.css`、`/map.js`、`/banners.js`、`/api/user/*`。要公开管理端时，至少强制 HTTPS，并在代理层加限流/IP 白名单；当前 Mod 自身没有登录锁定、速率限制或二次验证。
 - **公网名字混淆**：`WebUserService` 对玩家名、操作者、发言者做混淆显示（保留首字符、分隔符和末 3 位，其余 `*`，如 `xh_unpkire` → `x*_****ire`）；系统提示/聊天/自定义名中的已知玩家名也替换。完整名字只走管理端。不要把完整名字重新加回 `/api/user/*`。
-- **浏览器安全头**：所有响应带 `Content-Security-Policy`（仅同源脚本）、`X-Frame-Options: DENY`、`X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、`Cache-Control: no-store`；前端不使用 `innerHTML`/内联脚本，CSP 不需要放开脚本，也不允许任何页面被 iframe 嵌入。
+- **浏览器安全头**：所有响应带 `Content-Security-Policy`（仅同源脚本）、`X-Frame-Options: DENY`、`X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、`Cache-Control: no-store`；前端不使用 `innerHTML`/内联脚本，CSP 不需要放开脚本，也不允许任何页面被 iframe 嵌入。Vue 3 使用 SFC 预编译，CSP 继续禁止 `unsafe-eval`；`/vue/*` 只返回构建产物。
 - **token 不落日志**：启动日志只打印 token 前缀，完整值只在 `config/samsara/web.yml`；不要恢复完整 token 日志。
 - **用户端无 token**：只注册 `/api/user/*`，不注册任何管理端 handler。用户端服务类 `WebUserService` 只依赖地图只读服务，不持有配置/身份/权限/备份服务。
 - **不要直接把管理端 Map 透传**：新增用户端字段时必须显式白名单重建；尤其是 `worldRoot`、`metaPath`、`cache`、`ownerUUID`、`uuid`、`health`、`yaw`、备份路径、token。

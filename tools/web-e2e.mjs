@@ -1825,7 +1825,6 @@ async function main() {
         && containerAudit.rollbackable === false
         && (containerAudit.note || '').includes('8,100,8'),
         JSON.stringify(containerAudit));
-    await runConsole('setblock 8 100 8 minecraft:air');
 
     // ---- 一级分栏：切到“本体”后经济业务标签不能残留 ----
     const sectionSwitch = await evaluate(`(async () => {
@@ -1911,6 +1910,72 @@ async function main() {
     check('区块网格勾选刷新页面后保持', persistedGrid.checked
         && persistedGrid.legend.includes('开') && persistedGrid.stored === '1',
         JSON.stringify(persistedGrid));
+
+    // ---- 容器 Web UI（Vue）：路由、列表、槽位、改数量、保存 ----
+    await navigate(base + '/containers');
+    await until("document.querySelector('.container-page')", 20000, '容器页');
+    await until("document.querySelector('.container-row') || document.querySelector('.container-message.error')",
+        30000, '容器列表');
+    const containerUi = await evaluate(`(async () => {
+      window.__containerErrors = [];
+      window.addEventListener('error', (event) => window.__containerErrors.push(String(event.message)));
+      window.addEventListener('unhandledrejection', (event) => window.__containerErrors.push(String(event.reason)));
+      const rows = [...document.querySelectorAll('.container-row')];
+      const target = rows.find((row) => row.textContent.includes('8, 100, 8')) || rows[0];
+      if (!target) return { error: 'no row', text: document.body.innerText.slice(0, 200) };
+      target.click();
+      const deadline = Date.now() + 8000;
+      while (!document.querySelector('.slot-grid') && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      const slots = document.querySelectorAll('.slot').length;
+      const itemSlot = [...document.querySelectorAll('.slot')]
+        .find((slot) => slot.querySelector('.count'));
+      if (itemSlot) itemSlot.click();
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      const editorInput = document.querySelector('.slot-editor input[type="number"]');
+      if (editorInput) {
+        editorInput.value = '4';
+        editorInput.dispatchEvent(new Event('input', { bubbles: true }));
+        const update = [...document.querySelectorAll('.slot-editor button')]
+          .find((button) => button.textContent.trim() === '更新数量');
+        update?.click();
+        await new Promise((resolve) => setTimeout(resolve, 900));
+      }
+      const save = [...document.querySelectorAll('button')]
+        .find((button) => button.textContent.trim().startsWith('保存'));
+      save?.click();
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      const confirm = [...document.querySelectorAll('.modal-card button')]
+        .find((button) => button.textContent.trim() === '确认保存');
+      confirm?.click();
+      await new Promise((resolve) => setTimeout(resolve, 3500));
+      const messages = [...document.querySelectorAll('.container-message')]
+        .map((node) => ({ cls: node.className, text: node.textContent }));
+      return {
+        rows: rows.length,
+        slots,
+        hasItem: !!itemSlot,
+        message: document.querySelector('.container-message.ok')?.textContent || '',
+        messages,
+        modalStillOpen: !!document.querySelector('.modal-card'),
+        modalOpened: !!confirm,
+        page: !!document.querySelector('.container-page'),
+        errors: window.__containerErrors.slice(),
+      };
+    })()`);
+    check('容器页路由可打开并列出容器', containerUi.page === true && containerUi.rows >= 1,
+        JSON.stringify(containerUi));
+    check('容器页显示 27 格槽位与物品', containerUi.slots === 27 && containerUi.hasItem === true,
+        JSON.stringify(containerUi));
+    check('容器页改数量并保存成功', containerUi.modalOpened === true
+        && containerUi.message.includes('已保存'), JSON.stringify(containerUi));
+    check('容器页没有未捕获脚本错误', (containerUi.errors || []).length === 0,
+        (containerUi.errors || []).slice(0, 3).join(' | '));
+    await fetch(base + '/api/server/console', {
+      method: 'POST', headers: authHeaders,
+      body: JSON.stringify({ command: 'setblock 8 100 8 minecraft:air' }),
+    });
 
     // ---- 用户端只读页：无需 token，不加载管理端脚本，不调用管理端 API ----
     await navigate(base + '/user');
@@ -2023,6 +2088,20 @@ async function main() {
           adminCalls: userPage.adminCalls }));
     check('用户端没有未捕获脚本错误', userPage.errors.length === 0,
         userPage.errors.slice(0, 3).join(' | '));
+
+    // ---- 路由切回管理端：Vue 外壳与旧页面逻辑仍可用 ----
+    await navigate(base + '/');
+    await until("window.SamsaraUI && document.querySelector('.app-header')",
+        20000, '返回管理端');
+    const adminReturn = await evaluate(`(() => ({
+      header: !!document.querySelector('.app-header'),
+      nav: !!document.getElementById('mods-tabs'),
+      locked: document.body.classList.contains('locked'),
+      panel: !!document.getElementById('panel-config'),
+    }))()`);
+    check('路由切回管理端仍可用', adminReturn.header && adminReturn.nav
+        && adminReturn.panel, JSON.stringify(adminReturn));
+
     await fetch(base + '/api/server/console', {
       method: 'POST', headers: authHeaders,
       body: JSON.stringify({ command: 'kill @e[tag=samsara_e2e]' }),

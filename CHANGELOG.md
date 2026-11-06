@@ -3,6 +3,28 @@
 > 面向玩家与服主的功能变化；实现细节、未达标项与证据见[《实现状态》](docs/实现状态.md)。
 > 每个版本按「新增 / 修复 / 优化 / 变更 / 重构 / 文档」分组，只写功能口径。
 
+## v0.47.0（2026-11-07）· Vue 3 + Vite 全量入口与容器 Web UI
+
+### 新增
+
+- **Vue 3 + Vite 应用**：新增 `web-src/`，Vue 3 + Vue Router + Vite；构建输出到 `mod/src/main/resources/web/vue/`，`/`、`/user`、`/containers` 均由同一个 Vue 应用提供；Vite `base=/vue/`，静态资源由 Web 服务器按固定白名单返回。
+- **容器页面**：新增 `/containers`（管理端）——维度/坐标/半径/类型搜索、容器列表、9 列槽位网格、物品图标/名称/数量/组件/NBT 详情；支持改数量、移除、按物品 ID/中文/拼音搜索添加、保存前确认、revision 冲突提示与重新读取。
+- **物品编码辅助**：`POST /api/containers/item` 把 `id + count` 或已有 Base64(NBT) 转换成写入编码；传已有编码时只改数量，保留附魔/名字/耐久等组件。
+- **页面生命周期**：Vue 路由切换时卸载上一页；复杂页面（地图 canvas、世界栈、配置编辑器、权限树、RCON、身份组、经济业务）继续复用原命令式逻辑，由 Vue 组件挂载/卸载，不重写算法。
+- **兼容层**：`/legacy.html` 与 `/legacy-user.html` 保留旧页面壳，供 Vue 应用以 DOM API 挂载；`/app.js` 等旧静态路径继续可用，方便回退。旧页面不通过 `innerHTML` 注入。
+- **测试**：Web E2E 新增容器页路由、列表、槽位、改数量、保存确认、脚本错误与路由切回管理端断言。
+
+### 变更
+
+- Web 独立版本号 `WebVersion.VALUE = 0.47.0`；模组版本保持 `0.39.0`，jar 仍为 `samsara-0.39.0.jar`。
+- `/user` 继续是公开只读页，不显示 token/UUID/生命/权限；不加载管理端 API。
+- CSP 继续禁止 `unsafe-eval`；Vue 使用 SFC 预编译，不在浏览器内编译模板。
+
+### 说明
+
+- 旧管理端页面仍以命令式脚本运行，但入口、路由和容器页已 Vue 化；后续可逐页把复杂页面迁移成 SFC，不需要一次性重写。
+- 构建产物已提交，`gradle clean build` 不依赖 npm；开发时执行 `cd web-src && npm.cmd ci && npm.cmd run build`。
+
 ## v0.46.17（2026-11-07）· 容器 Web API 编辑与审计
 
 ### 新增

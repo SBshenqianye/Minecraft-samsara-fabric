@@ -1481,6 +1481,20 @@ public final class LocalWebServer {
                 json(exchange, status, result);
                 return;
             }
+            if ("POST".equals(method) && "/api/containers/item".equals(path)) {
+                String body;
+                try {
+                    body = readBody(exchange);
+                } catch (BodyTooLarge e) {
+                    status = 413;
+                    json(exchange, status, Map.of("error", "请求体过大"));
+                    return;
+                }
+                Map<String, Object> result = containerService.item(body);
+                status = result.get("ok") == Boolean.TRUE ? 200 : 400;
+                json(exchange, status, result);
+                return;
+            }
             if ("POST".equals(method) && "/api/containers/write".equals(path)) {
                 String body;
                 try {

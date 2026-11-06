@@ -1,6 +1,8 @@
 # Web 页面开发约定
 
-> 适用于 `mod/src/main/resources/web/` 下的管理端页面。目标是让页面可以逐步迁移、互不污染，减少长期维护成本。
+> 适用于 `web-src/` 的 Vue 页面与 `mod/src/main/resources/web/` 下的旧管理端页面。目标是让页面可以逐步迁移、互不污染，减少长期维护成本。
+>
+> **v0.47.0 起**：入口由 `web-src/`（Vue 3 + Vue Router + Vite）构建到 `mod/src/main/resources/web/vue/`；`/`、`/user`、`/containers` 是同一应用。复杂页面仍可复用旧命令式脚本，由 Vue 组件 `onMounted/onUnmounted` 挂载，不需要一次性重写算法。
 
 ## 1. 生命周期契约
 
@@ -74,7 +76,17 @@ mount(ctx) {
 5. 运行 `node tools/web-e2e.mjs`，确认切页、导航、无脚本错误
 6. 迁移完成后删除旧的 `window.SamsaraXxx.activate` 兼容分支（确认没有其他调用）
 
-## 6. 维护检查清单
+## 6. Vue 页面
+
+- 源目录 `web-src/`；构建命令 `cd web-src && npm.cmd ci && npm.cmd run build`。
+- Vite `base=/vue/`，输出 `mod/src/main/resources/web/vue/`；构建产物必须提交，保证 `gradle clean build` 不需要 npm。
+- 路由：`/` 管理端、`/user` 公开只读、`/containers` 容器页；复杂页面用 Vue 组件包一层旧逻辑。
+- 不在浏览器内编译模板：必须用 SFC 预编译；CSP 继续禁止 `unsafe-eval`。
+- Vue 页面文本使用插值/`textContent`，禁止 `innerHTML`；旧页面壳通过 DOM API `importNode/appendChild` 挂载。
+- 切页必须清理：定时器、事件监听、地图动画、WebSocket/轮询、dialog；Vue 组件卸载时调用对应旧页面的停止/清理入口。
+- 共享状态用 composables，不引入 Pinia/TypeScript/UI 框架。
+
+## 7. 维护检查清单
 
 - [ ] 新增页面已注册生命周期
 - [ ] 切页后没有上一页导航/浮窗/定时器残留

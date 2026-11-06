@@ -23,14 +23,19 @@ class WebSecurityTest {
 
     @Test
     void staticPathsAreWhitelisted() {
-        assertEquals("/web/index.html", WebSecurity.staticResource("/"));
+        assertEquals("/web/vue/index.html", WebSecurity.staticResource("/"));
+        assertEquals("/web/vue/index.html", WebSecurity.staticResource("/user"));
+        assertEquals("/web/vue/index.html", WebSecurity.staticResource("/containers"));
+        assertEquals("/web/index.html", WebSecurity.staticResource("/legacy.html"));
+        assertEquals("/web/user.html", WebSecurity.staticResource("/legacy-user.html"));
+        assertEquals("/web/vue/assets/index-abc.js", WebSecurity.staticResource("/vue/assets/index-abc.js"));
+        assertNull(WebSecurity.staticResource("/vue/../app.js"));
         assertEquals("/web/app.js", WebSecurity.staticResource("/app.js"));
         assertEquals("/web/page-kit.js", WebSecurity.staticResource("/page-kit.js"));
         assertEquals("/web/config-editor.js", WebSecurity.staticResource("/config-editor.js"));
         assertEquals("/web/chat-text.js", WebSecurity.staticResource("/chat-text.js"));
         assertEquals("/web/announcements.js", WebSecurity.staticResource("/announcements.js"));
         assertEquals("/web/openapi.json", WebSecurity.staticResource("/openapi.json"));
-        assertEquals("/web/user.html", WebSecurity.staticResource("/user"));
         assertEquals("/web/user.js", WebSecurity.staticResource("/user.js"));
         assertEquals("/web/lottery.html", WebSecurity.staticResource("/lottery"));
         assertEquals("/web/lottery.js", WebSecurity.staticResource("/lottery.js"));

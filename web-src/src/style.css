@@ -1,0 +1,235 @@
+/* Vue 应用外壳：保留现有 style.css 的变量与组件，只补少量容器页样式。 */
+.legacy-host {
+  display: contents;
+}
+
+.container-page {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 24px 20px 64px;
+}
+
+.container-page header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.container-page h1 {
+  font-size: 22px;
+  margin: 0;
+}
+
+.container-page .spacer {
+  flex: 1;
+}
+
+.container-card {
+  border: 1px solid var(--line, #d7dde5);
+  border-radius: 14px;
+  background: var(--panel, #fff);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.container-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.container-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted, #667085);
+}
+
+.container-filters input,
+.container-filters select {
+  min-width: 120px;
+  padding: 7px 9px;
+  border: 1px solid var(--line, #d7dde5);
+  border-radius: 8px;
+  background: #fff;
+  color: inherit;
+}
+
+.container-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.container-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--line, #d7dde5);
+  border-radius: 9px;
+  background: #fff;
+  cursor: pointer;
+  text-align: left;
+}
+
+.container-row.active {
+  border-color: #0d9488;
+  box-shadow: 0 0 0 1px #0d9488 inset;
+}
+
+.container-row .meta {
+  color: var(--muted, #667085);
+  font-size: 12px;
+}
+
+.slot-grid {
+  display: grid;
+  grid-template-columns: repeat(9, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.slot {
+  position: relative;
+  min-height: 62px;
+  border: 1px solid var(--line, #d7dde5);
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.slot.selected {
+  border-color: #0d9488;
+  background: #ecfdf5;
+}
+
+.slot img {
+  width: 32px;
+  height: 32px;
+  image-rendering: pixelated;
+}
+
+.slot .count {
+  position: absolute;
+  right: 3px;
+  bottom: 2px;
+  font-size: 11px;
+  font-weight: 700;
+  text-shadow: 0 0 3px #fff;
+}
+
+.slot .fallback {
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f766e;
+}
+
+.slot .empty-index {
+  font-size: 10px;
+  color: #94a3b8;
+}
+
+.slot-editor {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+  margin-top: 12px;
+}
+
+.slot-editor label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted, #667085);
+}
+
+.slot-editor input,
+.slot-editor select {
+  padding: 7px 9px;
+  border: 1px solid var(--line, #d7dde5);
+  border-radius: 8px;
+  background: #fff;
+  color: inherit;
+}
+
+.container-message {
+  margin: 10px 0;
+  padding: 9px 11px;
+  border-radius: 9px;
+  background: #f1f5f9;
+  color: #334155;
+  font-size: 13px;
+}
+
+.container-message.error {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.container-message.ok {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.container-detail {
+  font-size: 12px;
+  color: var(--muted, #667085);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 160px;
+  overflow: auto;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+
+.modal-card {
+  width: min(520px, calc(100vw - 32px));
+  background: #fff;
+  border-radius: 14px;
+  padding: 18px;
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.25);
+}
+
+.modal-card h3 {
+  margin: 0 0 8px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+@media (max-width: 720px) {
+  .slot-grid {
+    grid-template-columns: repeat(9, minmax(38px, 1fr));
+    overflow-x: auto;
+  }
+  .container-row {
+    grid-template-columns: 1fr;
+  }
+}

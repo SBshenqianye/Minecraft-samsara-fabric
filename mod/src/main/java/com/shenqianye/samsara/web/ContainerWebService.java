@@ -4,7 +4,13 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
 import com.shenqianye.samsara.container.ContainerIndexService;
+import com.shenqianye.samsara.lottery.LotteryItemCodec;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 
 import java.lang.reflect.Type;
 import java.util.ArrayList;
@@ -103,6 +109,51 @@ public final class ContainerWebService {
             if (!result.ok() && result.entry() != null) {
                 out.put("currentRevision", result.entry().revision);
             }
+            return out;
+        });
+    }
+
+    /**
+     * 容器页辅助：把 item id + count 或已有编码转换成写入所需的 Base64(NBT)。
+     * 传入 encoded 时只改数量，保留附魔/名字/耐久等组件。
+     */
+    public Map<String, Object> item(String body) {
+        Map<String, Object> request = parse(body);
+        if (request == null) {
+            return error(400, "请求体应为 JSON 对象");
+        }
+        String encoded = string(request, "encoded");
+        String id = string(request, "id");
+        int count = intOrNull(request.get("count")) == null ? 1 : intOrNull(request.get("count"));
+        if (count < 1) {
+            return error(400, "数量至少为 1");
+        }
+        return onServer(() -> {
+            if (server == null) return error(503, "服务器未启动");
+            ItemStack stack;
+            if (encoded != null && !encoded.isBlank()) {
+                stack = LotteryItemCodec.decode(encoded, server.registryAccess());
+                if (stack.isEmpty()) return error(400, "物品编码无效");
+                stack.setCount(count);
+            } else {
+                Identifier identifier = Identifier.tryParse(id);
+                if (identifier == null) return error(400, "物品 ID 格式不正确");
+                Item item = BuiltInRegistries.ITEM.getOptional(identifier).orElse(null);
+                if (item == null || item == Items.AIR) return error(400, "未知物品：" + id);
+                stack = new ItemStack(item, count);
+            }
+            if (stack.getCount() > stack.getMaxStackSize()) {
+                return error(400, "数量超过最大堆叠数 " + stack.getMaxStackSize());
+            }
+            String result = LotteryItemCodec.encode(stack, server.registryAccess());
+            if (result.isBlank()) return error(500, "物品编码失败");
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("ok", true);
+            out.put("encoded", result);
+            out.put("id", String.valueOf(BuiltInRegistries.ITEM.getKey(stack.getItem())));
+            out.put("name", stack.getHoverName().getString());
+            out.put("count", stack.getCount());
+            out.put("components", stack.getComponents().toString());
             return out;
         });
     }

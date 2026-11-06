@@ -679,7 +679,32 @@ public final class ContainerIndexService {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("ok", true);
         out.put("container", entry.toModel(true, source));
+        out.put("items", itemModels(entry));
         return out;
+    }
+
+    /** 读取接口附带物品元数据，供 Web 容器页显示图标/名称/数量/组件。 */
+    private List<Map<String, Object>> itemModels(ContainerEntry entry) {
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (int i = 0; i < entry.slots.size(); i++) {
+            String encoded = entry.slots.get(i);
+            if (encoded == null || encoded.isBlank()) continue;
+            ItemStack stack = LotteryItemCodec.decode(encoded, registries);
+            if (stack.isEmpty()) continue;
+            String id = String.valueOf(BuiltInRegistries.ITEM.getKey(stack.getItem()));
+            int colon = id.indexOf(':');
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("slot", i);
+            row.put("id", id);
+            row.put("icon", colon >= 0 ? id.substring(colon + 1) : id);
+            row.put("name", stack.getHoverName().getString());
+            row.put("count", stack.getCount());
+            row.put("maxStack", stack.getMaxStackSize());
+            row.put("encoded", encoded);
+            row.put("components", stack.getComponents().toString());
+            rows.add(row);
+        }
+        return rows;
     }
 
     private static Map<String, Object> error(String message) {

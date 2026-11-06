@@ -40,6 +40,10 @@ desktop.ini
 # Python
 __pycache__/
 
+# Node / Vue build tooling
+web-src/node_modules/
+web-src/dist/
+
 # DSH
 .dsh/
 .dsh-trash/

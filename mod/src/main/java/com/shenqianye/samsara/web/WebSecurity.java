@@ -49,8 +49,10 @@ public final class WebSecurity {
     /** 静态资源路径白名单（固定路径，不做任何路径拼接）。 */
     public static String staticResource(String path) {
         return switch (path) {
-            case "/", "/index.html" -> "/web/index.html";
-            case "/user", "/user.html" -> "/web/user.html";
+            case "/", "/index.html", "/user", "/containers" -> "/web/vue/index.html";
+            case "/legacy.html" -> "/web/index.html";
+            case "/legacy-user.html" -> "/web/user.html";
+            case "/user.html" -> "/web/user.html";
             case "/user.js" -> "/web/user.js";
             case "/lottery", "/lottery.html" -> "/web/lottery.html";
             case "/lottery.js" -> "/web/lottery.js";
@@ -153,6 +155,7 @@ public final class WebSecurity {
                 || "/api/containers".equals(path)
                 || "/api/containers/read".equals(path)
                 || "/api/containers/write".equals(path)
+                || "/api/containers/item".equals(path)
                 || "/api/containers/scan".equals(path)
                 || "/api/containers/offline".equals(path)
                 || "/api/audit".equals(path)
