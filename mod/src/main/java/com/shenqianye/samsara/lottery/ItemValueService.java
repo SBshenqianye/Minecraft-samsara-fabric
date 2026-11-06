@@ -231,12 +231,17 @@ public final class ItemValueService {
     }
 
     private static volatile GoldValueProvider goldProvider;
+    private static volatile boolean goldCraftedLinkEnabled;
 
     public static void setGoldValueProvider(GoldValueProvider provider) {
         goldProvider = provider;
     }
 
-    /** 金粒/金锭/金块按国际金价指数缩放；未启用返回 -1。 */
+    public static void setGoldCraftedLinkEnabled(boolean enabled) {
+        goldCraftedLinkEnabled = enabled;
+    }
+
+    /** 金粒/金锭/金块及纯金合成物按国际金价指数缩放；未启用返回 -1。 */
     private double goldUnitValue(String itemId) {
         GoldValueProvider provider = goldProvider;
         if (provider == null) {
@@ -244,8 +249,9 @@ public final class ItemValueService {
         }
         String path = itemId.startsWith("minecraft:")
                 ? itemId.substring("minecraft:".length()) : itemId;
-        if (!path.equals("gold_block") && !path.equals("gold_ingot")
-                && !path.equals("gold_nugget")) {
+        boolean rawGold = path.equals("gold_block") || path.equals("gold_ingot")
+                || path.equals("gold_nugget");
+        if (!rawGold && !goldCraftedLinkEnabled) {
             return -1.0;
         }
         double block;
@@ -257,13 +263,45 @@ public final class ItemValueService {
         if (block < 0.0) {
             return -1.0;
         }
+        double ingot = block / 9.0;
+        double nugget = block / 81.0;
         if (path.equals("gold_block")) {
             return block;
         }
         if (path.equals("gold_ingot")) {
-            return block / 9.0;
+            return ingot;
         }
-        return block / 81.0;
+        if (path.equals("gold_nugget")) {
+            return nugget;
+        }
+        if (!goldCraftedLinkEnabled) {
+            return -1.0;
+        }
+        // 纯金合成物：按配方递归到金锭/金粒，再叠加少量非金材料。
+        return switch (path) {
+            case "golden_apple" -> 8.0 * ingot + 0.5;
+            case "golden_carrot" -> 8.0 * nugget + 0.125;
+            case "glistering_melon_slice" -> 8.0 * nugget + 0.125;
+            case "golden_sword" -> 2.0 * ingot + 0.0625;
+            case "golden_pickaxe", "golden_axe" -> 3.0 * ingot + 0.125;
+            case "golden_shovel" -> ingot + 0.125;
+            case "golden_hoe" -> 2.0 * ingot + 0.125;
+            case "golden_helmet" -> 5.0 * ingot;
+            case "golden_chestplate" -> 8.0 * ingot;
+            case "golden_leggings" -> 7.0 * ingot;
+            case "golden_boots" -> 4.0 * ingot;
+            case "clock" -> 4.0 * ingot + 0.25;
+            case "powered_rail" -> 6.0 * ingot + 0.0625 + 0.25;
+            case "raw_gold" -> ingot;
+            case "gold_ore", "deepslate_gold_ore" -> ingot * 1.2 + 0.05;
+            case "nether_gold_ore" -> 4.0 * nugget;
+            default -> -1.0;
+        };
+    }
+
+    /** 该物品是否随国际金价联动（供 Web 价值表标记）。 */
+    public boolean isGoldLinked(String itemId) {
+        return itemId != null && goldUnitValue(itemId) >= 0.0;
     }
 
     /** 单件物品价值（不含数量），容器会递归计入内容物。 */
@@ -348,6 +386,7 @@ public final class ItemValueService {
             row.put("icon", iconName(id));
             row.put("value", value);
             row.put("acceptable", value > 0.0);
+            row.put("goldLinked", isGoldLinked(id));
             row.put("category", categoryOf(id));
             applyLang(row, id);
             rows.add(row);

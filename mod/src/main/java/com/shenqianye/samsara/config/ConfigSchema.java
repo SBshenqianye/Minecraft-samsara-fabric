@@ -308,6 +308,8 @@ public final class ConfigSchema {
                         "金价缩放上限（防暴涨导致经济异常）"),
                 ConfigEntry.integer("gold.syncIntervalMinutes", 360, 1, 10080, "金价",
                         "自动拉取金价的间隔（分钟）"),
+                ConfigEntry.bool("gold.craftLink", false, "金价",
+                        "是否让纯金合成物（金苹果、金胡萝卜、金工具/护甲等）按金价递归估值；默认关闭"),
                 ConfigEntry.bool("audit.enabled", true, "审计",
                         "是否记录乐透审计日志"),
                 ConfigEntry.bool("web.publicVisible", true, "Web",

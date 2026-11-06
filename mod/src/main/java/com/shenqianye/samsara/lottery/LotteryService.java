@@ -86,6 +86,7 @@ public final class LotteryService {
         loadClaims();
         GoldPriceService.getInstance().init();
         ItemValueService.setGoldValueProvider(() -> GoldPriceService.getInstance().blockValue());
+        ItemValueService.setGoldCraftedLinkEnabled(LotteryConfig.getInstance().goldCraftLink());
         Samsara.LOGGER.info("[lottery] 已加载 · 模式 {} · 数据 {}", dayMode(), root);
     }
 

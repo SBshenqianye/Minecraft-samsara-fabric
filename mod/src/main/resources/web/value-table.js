@@ -60,6 +60,9 @@
         item.append(make('span', 'lottery-value-name', zh || row.name || row.id));
         item.append(make('span', 'lottery-value-id',
           zh ? (row.name || '') + ' · ' + row.id : row.id));
+        if (row.goldLinked) {
+          item.append(make('span', 'lottery-value-gold', '金价'));
+        }
         line.append(item, make('span', 'lottery-value-cat', row.category || '其他'));
         line.append(make('strong', 'num', valueText(row)));
         root.append(line);

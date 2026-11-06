@@ -46,6 +46,7 @@ public final class LotteryConfig {
     private double goldMinFactor = 0.5;
     private double goldMaxFactor = 2.0;
     private int goldSyncIntervalMinutes = 360;
+    private boolean goldCraftLink;
     private boolean audit = true;
     private boolean publicVisible = true;
 
@@ -96,6 +97,7 @@ public final class LotteryConfig {
         goldMaxFactor = Math.max(goldMinFactor,
                 Math.min(100.0, c.decimal(id, "gold.maxFactor")));
         goldSyncIntervalMinutes = Math.max(1, c.integer(id, "gold.syncIntervalMinutes"));
+        goldCraftLink = c.bool(id, "gold.craftLink");
         audit = c.bool(id, "audit.enabled");
         publicVisible = c.bool(id, "web.publicVisible");
         return "乐透配置已重载：" + (enabled ? "启用" : "禁用")
@@ -236,6 +238,10 @@ public final class LotteryConfig {
 
     public int goldSyncIntervalMinutes() {
         return goldSyncIntervalMinutes;
+    }
+
+    public boolean goldCraftLink() {
+        return goldCraftLink;
     }
 
     public boolean audit() {

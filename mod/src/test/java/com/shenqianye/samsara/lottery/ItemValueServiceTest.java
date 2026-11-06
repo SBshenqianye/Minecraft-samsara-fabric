@@ -53,7 +53,15 @@ class ItemValueServiceTest {
             assertEquals(90.0, values.unitValue("minecraft:gold_block"), 1e-6);
             assertEquals(10.0, values.unitValue("minecraft:gold_ingot"), 1e-6);
             assertEquals(90.0 / 81.0, values.unitValue("minecraft:gold_nugget"), 1e-6);
+            // 纯金合成物默认不联动
+            assertEquals(8.0, values.unitValue("minecraft:golden_apple"), 1e-6);
+            ItemValueService.setGoldCraftedLinkEnabled(true);
+            assertEquals(8.0 * 10.0 + 0.5, values.unitValue("minecraft:golden_apple"), 1e-6);
+            assertEquals(3.0 * 10.0 + 0.125, values.unitValue("minecraft:golden_pickaxe"), 1e-6);
+            assertEquals(8.0 * (90.0 / 81.0) + 0.125,
+                    values.unitValue("minecraft:golden_carrot"), 1e-6);
         } finally {
+            ItemValueService.setGoldCraftedLinkEnabled(false);
             ItemValueService.setGoldValueProvider(null);
         }
     }

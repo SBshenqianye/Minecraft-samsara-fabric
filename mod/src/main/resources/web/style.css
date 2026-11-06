@@ -1511,6 +1511,10 @@ img.glint { filter: drop-shadow(0 0 3px #b26cff) saturate(1.2); }
   color: var(--muted); font-family: var(--mono); font-size: 10px;
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.lottery-value-gold {
+  flex: 0 0 auto; padding: 1px 5px; border: 1px solid color-mix(in srgb, #d4a017 55%, var(--line));
+  border-radius: 999px; color: #d4a017; font-size: 9px; line-height: 1.4;
+}
 .lottery-value-cat { color: var(--muted); font-size: 10px; }
 .lottery-value-row .num {
   text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; font-weight: 600;

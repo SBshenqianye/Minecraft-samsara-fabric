@@ -304,8 +304,10 @@ public final class LotteryCommand {
         if (unit <= 0.0) {
             return reply(source, "未定价：" + key + "（价值 0，不收）");
         }
+        String tags = (stack.isDamageableItem() ? "（含耐久/附魔系数）" : "")
+                + (ItemValueService.getInstance().isGoldLinked(key.toString()) ? "（随国际金价）" : "");
         return reply(source, key + " = " + ItemValueService.getInstance().format(unit)
-                + " VP / 个" + (stack.isDamageableItem() ? "（含耐久/附魔系数）" : ""));
+                + " VP / 个" + tags);
     }
 
     private static int goldStatus(CommandSourceStack source) {
@@ -415,7 +417,9 @@ public final class LotteryCommand {
     private static int reload(CommandSourceStack source) {
         com.shenqianye.samsara.config.ConfigManager.getInstance()
                 .reload(com.shenqianye.samsara.config.ConfigSchema.LOTTERY);
-        return reply(source, LotteryConfig.getInstance().reload());
+        String result = LotteryConfig.getInstance().reload();
+        ItemValueService.setGoldCraftedLinkEnabled(LotteryConfig.getInstance().goldCraftLink());
+        return reply(source, result);
     }
 
     private static int fundList(CommandSourceStack source) {
