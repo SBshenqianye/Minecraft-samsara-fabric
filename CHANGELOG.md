@@ -10,6 +10,8 @@
 - **页面生命周期契约**：新增 `page-kit.js`，页面可注册 `mount/unmount/buildNav/destroy`；`setActiveTab` 切换时先 `unmount/destroy` 上一页、清空共享导航与浮窗，再挂载下一页。
 - **页面作用域**：`SamsaraPageKit.createScope` 统一管理 `setTimeout/setInterval/listener/cleanup`，页面卸载时自动清理，减少定时器和事件监听泄漏。
 - **兼容旧页面**：未注册的页面继续走原有 `activate()` 逻辑，业务代码不需要一次性迁移。
+- **公告页试点**：公告页已注册为 `mount/unmount/buildNav` 页面，作为后续迁移参考。
+- **开发约定**：新增 `docs/Web 页面开发约定.md`，记录生命周期、scope、导航规则、迁移步骤和维护检查清单。
 - **审计列表限流渲染**：Web 审计只渲染最近 100 条记录，避免快照很多时切换页面卡顿；更早记录仍在备份目录。
 
 ## v0.46.14（2026-11-06）· Web 版本号与导航清理

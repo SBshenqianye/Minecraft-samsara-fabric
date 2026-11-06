@@ -863,15 +863,19 @@ async function main() {
         summary: document.getElementById('announcements-summary')?.textContent || '',
         navHidden: document.getElementById('global-nav')?.hidden === true,
         navItems: document.querySelectorAll('#global-nav .nav-item').length,
-        noNav: document.querySelector('main.app-shell')?.classList.contains('no-nav') === true };
+        noNav: document.querySelector('main.app-shell')?.classList.contains('no-nav') === true,
+        activePage: window.SamsaraUI.activePage?.(),
+        hasScope: Boolean(window.SamsaraUI.pageScope?.()) };
     })()`);
     check('公告页加载列表与编辑表单', announcements.items >= 1
         && announcements.fields >= 5, JSON.stringify({ items: announcements.items,
           fields: announcements.fields }));
     check('公告页不残留上一页导航', announcements.navHidden
-        && announcements.navItems === 0 && announcements.noNav,
+        && announcements.navItems === 0 && announcements.noNav
+        && announcements.activePage === 'announcements' && announcements.hasScope,
         JSON.stringify({ hidden: announcements.navHidden, items: announcements.navItems,
-          noNav: announcements.noNav }));
+          noNav: announcements.noNav, page: announcements.activePage,
+          scope: announcements.hasScope }));
     check('公告预览显示变量替换结果', announcements.previewText.includes('预览')
         && announcements.previewText.includes('聊天'), JSON.stringify({
           preview: announcements.previewText.slice(0, 160) }));

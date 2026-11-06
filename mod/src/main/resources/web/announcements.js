@@ -411,4 +411,12 @@
     preview,
     send,
   };
+  // 生命周期契约试点：公告页没有全局导航，mount 时只加载数据；切页由 router 清理共享导航/浮窗。
+  if (UI.registerPage) {
+    UI.registerPage('announcements', {
+      mount: activate,
+      unmount: () => {},
+      buildNav: () => {},
+    });
+  }
 })();
