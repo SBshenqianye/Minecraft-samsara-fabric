@@ -170,8 +170,10 @@ function renderStatus() {
   const status = state.status;
   if (!status) return;
   const version = $('app-version');
-  if (version && status.version) version.textContent = 'v' + status.version;
+  if (version && status.webVersion) version.textContent = 'v' + status.webVersion;
+  else if (version && status.version) version.textContent = 'v' + status.version;
   const rows = [
+    ['Web 版本', status.webVersion || '—'],
     ['模组版本', status.version],
     ['Minecraft', status.minecraft],
     ['配置根', status.configRoot],
@@ -3277,9 +3279,23 @@ function scrollToTarget(id) {
   }, 460);
 }
 
+function clearNav() {
+  const nav = $('global-nav');
+  if (nav) {
+    nav.replaceChildren();
+    nav.hidden = true;
+  }
+  const shell = document.querySelector('main.app-shell');
+  if (shell) shell.classList.add('no-nav');
+  watchNav([]);
+}
+
 function buildNav(title, items, targets, options) {
   const nav = $('global-nav');
   if (!nav) return;
+  nav.hidden = false;
+  const shell = document.querySelector('main.app-shell');
+  if (shell) shell.classList.remove('no-nav');
   nav.replaceChildren();
   const opts = options || {};
   const heading = document.createElement('div');
@@ -3392,6 +3408,8 @@ function setActiveTab(name) {
   }
   try { history.replaceState(null, '', '#' + name); } catch (e) { /* file:// 等场景忽略 */ }
   updateTabActions(name);
+  // 导航是跨页共享的 DOM；先清空，页面自己调用 buildNav 时再显示。
+  clearNav();
   if (name === 'config') {
     render();
   } else if (name === 'config-editor') {

@@ -247,6 +247,14 @@ async function main() {
     }
     await until("document.querySelectorAll('#server-config-files > details.file-block').length >= 6", 25000, '本体配置文件');
 
+    const webVersion = await evaluate(`(async () => {
+      const status = await window.SamsaraUI.api('/api/status');
+      return { header: document.getElementById('app-version')?.textContent || '',
+        web: status.webVersion, mod: status.version };
+    })()`);
+    check('Web 版本号独立于模组版本', Boolean(webVersion.web)
+        && webVersion.header === 'v' + webVersion.web, JSON.stringify(webVersion));
+
     const server = await evaluate(`(() => ({
       nav: document.querySelector('#global-nav .nav-title')?.textContent.trim() || '',
       tabs: [...document.querySelectorAll('#server-tabs .tab')].map((tab) => tab.textContent.replace(/\\s+/g, ' ').trim()),
@@ -842,11 +850,18 @@ async function main() {
         previewText = document.querySelector('#announcement-preview')?.textContent || '';
       }
       return { items, fields, previewText,
-        summary: document.getElementById('announcements-summary')?.textContent || '' };
+        summary: document.getElementById('announcements-summary')?.textContent || '',
+        navHidden: document.getElementById('global-nav')?.hidden === true,
+        navItems: document.querySelectorAll('#global-nav .nav-item').length,
+        noNav: document.querySelector('main.app-shell')?.classList.contains('no-nav') === true };
     })()`);
     check('公告页加载列表与编辑表单', announcements.items >= 1
         && announcements.fields >= 5, JSON.stringify({ items: announcements.items,
           fields: announcements.fields }));
+    check('公告页不残留上一页导航', announcements.navHidden
+        && announcements.navItems === 0 && announcements.noNav,
+        JSON.stringify({ hidden: announcements.navHidden, items: announcements.navItems,
+          noNav: announcements.noNav }));
     check('公告预览显示变量替换结果', announcements.previewText.includes('预览')
         && announcements.previewText.includes('聊天'), JSON.stringify({
           preview: announcements.previewText.slice(0, 160) }));
@@ -1753,7 +1768,7 @@ async function main() {
       [...document.querySelectorAll('.top-tab')].find((tab) => tab.dataset.section === 'server')?.click();
       await new Promise((resolve) => setTimeout(resolve, 300));
       document.querySelector('.tab[data-server-panel="server-audit-panel"]')?.click();
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, 4000));
       const rows = [...document.querySelectorAll('#server-audit-list .server-audit-item')];
       const first = rows[0];
       const loadMessage = document.getElementById('server-audit-message')?.textContent || '';

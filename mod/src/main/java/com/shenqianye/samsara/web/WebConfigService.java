@@ -44,6 +44,7 @@ public final class WebConfigService implements ConfigService {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("version", FabricLoader.getInstance().getModContainer("samsara")
                 .map(c -> c.getMetadata().getVersion().getFriendlyString()).orElse("unknown"));
+        out.put("webVersion", WebVersion.VALUE);
         out.put("minecraft", SharedConstants.getCurrentVersion().name());
         out.put("configRoot", paths == null ? StoragePaths.configRoot().toString()
                 : paths.configRootPath().toString());

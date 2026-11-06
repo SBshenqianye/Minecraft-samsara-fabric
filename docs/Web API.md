@@ -181,7 +181,7 @@
 | POST | `/api/config/preview` | 预览配置变更；请求体 `{"file":"samsara:commands","values":{...}}`，返回字段级错误、变更清单、diff、revision |
 | PUT | `/api/config` | 保存配置；旧格式 `{"file":"commands","values":{...}}`；PageSpec 页面使用 `{"file":"samsara:commands","source":"samsara","values":{...},"revision":"...","confirm":true}`（第三方/服务器配置必须 `confirm`） |
 | POST | `/api/reload` | 热重载 samsara 配置（第三方/服务器页面刷新会重新读取文件） |
-| GET | `/api/status` | 管理端运行状态、警告、配置路径等 |
+| GET | `/api/status` | 管理端运行状态、警告、配置路径等；返回 `version`（模组版本）与 `webVersion`（Web 独立版本） |
 | GET | `/api/config/retention-estimate` | 轨迹保留容量预估；查询参数 `curve`（JSON 数组）、`keepAll` |
 | GET | `/api/announcements` | 公告模型：列表、变量、枚举、发送历史 |
 | PUT | `/api/announcements` | 保存公告列表；请求体 `{"announcements":[...]}`，字段级校验，写前 `.bak` |
