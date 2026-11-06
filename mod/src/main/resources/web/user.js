@@ -137,6 +137,28 @@
     }
   }
 
+  function renderLotteryItems(rootId, items, emptyText) {
+    const root = $(rootId);
+    if (!root) return;
+    root.replaceChildren();
+    const list = Array.isArray(items) ? items : [];
+    if (!list.length) {
+      root.append(makeEl('div', 'lottery-empty', emptyText));
+      return;
+    }
+    for (const item of list) {
+      const card = makeEl('div', 'lottery-item-card');
+      card.append(window.SamsaraItem.icon(item, { size: 'md' }));
+      const body = makeEl('div', 'lottery-item-body');
+      body.append(
+        makeEl('span', 'lottery-item-name', item.zh || item.name || item.item || '—'),
+        makeEl('span', 'lottery-item-meta', (item.count || 0) + ' 个 · ' + vp(item.value)),
+      );
+      card.append(body);
+      root.append(card);
+    }
+  }
+
   function renderLottery(data) {
     const root = $('user-lottery');
     if (!root) return;
@@ -146,13 +168,21 @@
       return;
     }
     const round = data.round || {};
+    const active = data.active || {};
     root.append(
-      chip('结算日', round.day || '—'),
-      chip('奖池', String(round.pot ?? 0) + ' VP'),
-      chip('已售', String(round.tickets ?? 0) + ' 张 / ' + String(round.players ?? 0) + ' 人'),
-      chip('开奖', round.drawTime || '—'),
+      chip('待开奖轮', active.day || '—'),
+      chip('待开奖奖池', String(active.pot ?? 0) + ' VP'),
+      chip('待开奖票数', String(active.tickets ?? 0) + ' 张 / '
+        + String(active.players ?? 0) + ' 人'),
+      chip('开奖', active.drawTime || '—'),
+      chip('可下注轮', round.day || '—'),
+      chip('下注轮已入池', String(round.ownPot ?? round.pot ?? 0) + ' VP'),
+      chip('已售', String(round.tickets ?? 0) + ' 张'),
       chip('截止', round.cutoff || '—'),
+      chip('滚存', String(data.rollover ?? 0) + ' VP'),
     );
+    renderLotteryItems('user-pool', active.items, '待开奖奖池为空。');
+    renderLotteryItems('user-betting-pool', round.items, '下注轮还没有人投入物品。');
     if (data.fund) {
       root.append(chip('服务器基金', String(data.fund.value ?? 0) + ' VP · '
         + String(data.fund.count ?? 0) + ' 项'));

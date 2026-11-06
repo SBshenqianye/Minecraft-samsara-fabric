@@ -734,6 +734,9 @@ async function main() {
         stats: document.querySelectorAll('#lottery-stats .stat').length,
         values: document.querySelectorAll('#lottery-values .lottery-value-row').length,
         history: document.querySelectorAll('#lottery-history .lottery-row').length,
+        poolHeads: document.querySelectorAll('#panel-lottery .lottery-pool-head').length,
+        pool: Boolean(document.getElementById('lottery-pool')),
+        bettingPool: Boolean(document.getElementById('lottery-betting-pool')),
         tab: lotteryTab ? lotteryTab.textContent.replace(/\\s+/g, ' ').trim() : '',
       };
       window.SamsaraUI.setActiveTab('config');
@@ -870,9 +873,26 @@ async function main() {
         JSON.stringify(idempotency));
 
     check('经济业务标签为原生面板', mods.lottery && mods.lottery.hidden === false
-        && mods.lottery.iframe === false && mods.lottery.stats >= 8
-        && mods.lottery.values >= 1
+        && mods.lottery.iframe === false && mods.lottery.stats >= 10
+        && mods.lottery.values >= 1 && mods.lottery.poolHeads >= 2
+        && mods.lottery.pool && mods.lottery.bettingPool
         && mods.lottery.tab.includes('经济业务'), JSON.stringify(mods.lottery || {}));
+
+    const lotteryPools = await evaluate(`(async () => {
+      const data = await window.SamsaraUI.api('/api/lottery');
+      const user = await fetch('/api/user/lottery').then((response) => response.json());
+      return {
+        adminFields: ['activePot', 'bettingPot', 'activePotItems', 'bettingPotItems']
+          .every((key) => key in data),
+        countingOwnPot: typeof data.countingDay?.ownPot === 'number',
+        userActive: Boolean(user.active && 'pot' in user.active
+          && Array.isArray(user.active.items)),
+        userRoundItems: Array.isArray(user.round?.items),
+      };
+    })()`);
+    check('乐透奖池暴露待开奖/下注轮与物品列表', lotteryPools.adminFields
+        && lotteryPools.countingOwnPot && lotteryPools.userActive
+        && lotteryPools.userRoundItems, JSON.stringify(lotteryPools));
 
     const lotteryNav = await evaluate(`(async () => {
       window.SamsaraUI.setActiveTab('lottery');
@@ -1711,7 +1731,7 @@ async function main() {
       [...document.querySelectorAll('.top-tab')].find((tab) => tab.dataset.section === 'server')?.click();
       await new Promise((resolve) => setTimeout(resolve, 300));
       document.querySelector('.tab[data-server-panel="server-audit-panel"]')?.click();
-      await new Promise((resolve) => setTimeout(resolve, 800));
+      await new Promise((resolve) => setTimeout(resolve, 2000));
       const rows = [...document.querySelectorAll('#server-audit-list .server-audit-item')];
       const first = rows[0];
       const loadMessage = document.getElementById('server-audit-message')?.textContent || '';

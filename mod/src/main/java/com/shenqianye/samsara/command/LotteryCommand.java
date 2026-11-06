@@ -171,12 +171,17 @@ public final class LotteryCommand {
         if (!outcome.ok()) {
             return error(source, outcome.error());
         }
-        if (outcome.claims() == 0) {
+        if (outcome.items().isEmpty() && !outcome.remaining()) {
             return reply(source, "没有待领取的奖金。");
+        }
+        if (outcome.items().isEmpty() && outcome.remaining()) {
+            return reply(source, "背包空间不足，物品仍保留在待领取；腾出空间后再执行 /samsara lottery collect。");
         }
         Map<String, Object> values = new LinkedHashMap<>();
         values.put("itemsLine", summarize(outcome.items()));
-        values.put("remainingLine", "");
+        values.put("remainingLine", outcome.remaining()
+                ? "背包空间不足，剩余物品仍保留在待领取；腾出空间后再执行 /samsara lottery collect。"
+                : "");
         ChatUi.send(source, OutputRenderer.render("lottery.collect", values, source, null));
         return 1;
     }

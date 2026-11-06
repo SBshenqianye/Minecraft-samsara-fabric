@@ -267,18 +267,26 @@ public final class LotteryService {
             }
         }
         if (mine.isEmpty()) {
-            return CollectOutcome.ok(List.of(), 0);
+            return CollectOutcome.ok(List.of(), 0, false);
         }
         List<ItemStack> given = new ArrayList<>();
+        int completed = 0;
+        boolean remaining = false;
         for (ClaimData claim : mine) {
-            for (ItemStack stack : LotteryItemCodec.decodeAll(claim.items, registries)) {
-                give(player, stack);
-                given.add(stack);
+            List<ItemStack> items = LotteryItemCodec.decodeAll(claim.items, registries);
+            Delivery delivery = addToInventory(player, items);
+            given.addAll(delivery.given());
+            if (delivery.remainder().isEmpty()) {
+                claim.claimed = true;
+                completed++;
+            } else {
+                // 背包放不下的部分留在待领取，不丢到地上（避免岩浆/虚空等危险位置）。
+                claim.items = LotteryItemCodec.encodeAll(delivery.remainder(), registries);
+                remaining = true;
             }
-            claim.claimed = true;
         }
         saveClaims();
-        return CollectOutcome.ok(given, mine.size());
+        return CollectOutcome.ok(given, completed, remaining);
     }
 
     // ---- 状态 / 历史 ----
@@ -359,6 +367,12 @@ public final class LotteryService {
         List<ItemStack> items = LotteryItemCodec.decodeAll(fund, registries);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("value", ItemValueService.getInstance().valueOf(items));
+        out.put("items", itemModels(items));
+        return out;
+    }
+
+    /** 把实物列表转成 Web 通用物品模型，供基金 / 奖池共用。 */
+    private List<Map<String, Object>> itemModels(List<ItemStack> items) {
         List<Map<String, Object>> list = new ArrayList<>();
         for (int i = 0; i < items.size(); i++) {
             ItemStack stack = items.get(i);
@@ -368,14 +382,44 @@ public final class LotteryService {
             item.put("id", itemId);
             item.put("item", itemId);
             item.put("name", stack.getHoverName().getString());
-            item.put("icon", iconName(ItemValueService.getInstance().idOf(stack.getItem())));
+            item.put("icon", iconName(itemId));
             item.put("count", stack.getCount());
             item.put("value", ItemValueService.getInstance().valueOf(stack));
-            ItemValueService.getInstance().applyLang(item, ItemValueService.getInstance().idOf(stack.getItem()));
+            ItemValueService.getInstance().applyLang(item, itemId);
             list.add(item);
         }
-        out.put("items", list);
+        return list;
+    }
+
+    /** 公开端物品模型：去掉内部序号，只保留展示字段。 */
+    private List<Map<String, Object>> publicItemModels(List<Map<String, Object>> models) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Map<String, Object> raw : models) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            for (String key : List.of("id", "item", "name", "zh", "icon", "count", "value")) {
+                if (raw.containsKey(key)) item.put(key, raw.get(key));
+            }
+            out.add(item);
+        }
         return out;
+    }
+
+    /** 某一期自己的下注物品（不含滚存），用于“下注轮已入池”。 */
+    private List<ItemStack> dayPotItems(DayData day) {
+        List<ItemStack> pot = new ArrayList<>();
+        for (BetData bet : day.bets) {
+            pot.addAll(LotteryItemCodec.decodeAll(bet.items, registries));
+        }
+        return pot;
+    }
+
+    /** 当前统计轮实际待开奖物品：本期下注 + 历史滚存。 */
+    private List<ItemStack> activePotItems(DayData counting) {
+        List<ItemStack> pot = dayPotItems(counting);
+        if (state.rollover != null) {
+            pot.addAll(LotteryItemCodec.decodeAll(state.rollover, registries));
+        }
+        return pot;
     }
 
     public synchronized String withdrawFund(ServerPlayer player, int index) {
@@ -386,11 +430,22 @@ public final class LotteryService {
         if (index < 0 || index >= items.size()) {
             return "基金序号无效：" + index;
         }
-        ItemStack stack = items.remove(index);
+        ItemStack stack = items.get(index);
+        Delivery delivery = addToInventory(player, List.of(stack));
+        if (delivery.given().isEmpty()) {
+            return "背包空间不足，物品仍在基金。";
+        }
+        ItemStack given = delivery.given().get(0);
+        if (delivery.remainder().isEmpty()) {
+            items.remove(index);
+        } else {
+            items.set(index, delivery.remainder().get(0));
+        }
         fund = LotteryItemCodec.encodeAll(items, registries);
         saveFund();
-        give(player, stack);
-        return "已从基金取出：" + stack.getCount() + " × " + stack.getHoverName().getString();
+        return "已从基金取出：" + given.getCount() + " × " + given.getHoverName().getString()
+                + (delivery.remainder().isEmpty() ? ""
+                : "；背包空间不足，" + delivery.remainder().get(0).getCount() + " 个仍在基金");
     }
 
     public synchronized Map<String, Object> adminModel() {
@@ -402,6 +457,14 @@ public final class LotteryService {
         out.put("mode", dayMode());
         out.put("bettingDay", dayModel(day));
         out.put("countingDay", dayModel(counting));
+        double rolloverValue = valueOfEncoded(state.rollover == null ? List.of() : state.rollover);
+        out.put("rollover", rolloverValue);
+        out.put("rolloverItems", itemModels(LotteryItemCodec.decodeAll(
+                state.rollover == null ? List.of() : state.rollover, registries)));
+        out.put("activePot", potValue(counting) + rolloverValue);
+        out.put("activePotItems", itemModels(activePotItems(counting)));
+        out.put("bettingPot", potValue(day));
+        out.put("bettingPotItems", itemModels(dayPotItems(day)));
         out.put("fund", fundModel());
         out.put("history", historyModel(1, 10));
         out.put("configPath", LotteryConfig.getInstance().configPath());
@@ -418,14 +481,28 @@ public final class LotteryService {
         }
         String betting = bettingDayId();
         DayData day = loadOrCreateDay(betting);
+        DayData counting = loadOrCreateDay(todayId());
+        double rolloverValue = valueOfEncoded(state.rollover == null ? List.of() : state.rollover);
         Map<String, Object> round = new LinkedHashMap<>();
         round.put("day", betting);
         round.put("drawTime", drawLabel(betting));
         round.put("cutoff", cutoffLabel(betting));
-        round.put("pot", potValue(day) + valueOfEncoded(state.rollover));
+        round.put("ownPot", potValue(day));
+        round.put("pot", potValue(day) + rolloverValue);
         round.put("tickets", day.bets.size());
         round.put("players", distinctPlayers(day));
+        round.put("items", publicItemModels(itemModels(dayPotItems(day))));
         out.put("round", round);
+        Map<String, Object> active = new LinkedHashMap<>();
+        active.put("day", counting.dayId);
+        active.put("drawTime", drawLabel(counting.dayId));
+        active.put("cutoff", cutoffLabel(counting.dayId));
+        active.put("pot", potValue(counting) + rolloverValue);
+        active.put("tickets", counting.bets.size());
+        active.put("players", distinctPlayers(counting));
+        active.put("items", publicItemModels(itemModels(activePotItems(counting))));
+        out.put("active", active);
+        out.put("rollover", rolloverValue);
         DayData last = lastSettled();
         out.put("last", last == null ? null : publicResult(last));
         Map<String, Object> fundModel = fundModel();
@@ -434,12 +511,13 @@ public final class LotteryService {
         List<Map<String, Object>> publicItems = new ArrayList<>();
         if (fundModel.get("items") instanceof List<?> list) {
             for (Object entry : list) {
-                if (!(entry instanceof Map<?, ?> raw)) continue;
-                Map<String, Object> item = new LinkedHashMap<>();
-                for (String key : List.of("id", "item", "name", "zh", "icon", "count", "value")) {
-                    if (raw.containsKey(key)) item.put(key, raw.get(key));
+                if (entry instanceof Map<?, ?> raw) {
+                    Map<String, Object> item = new LinkedHashMap<>();
+                    for (String key : List.of("id", "item", "name", "zh", "icon", "count", "value")) {
+                        if (raw.containsKey(key)) item.put(key, raw.get(key));
+                    }
+                    publicItems.add(item);
                 }
-                publicItems.add(item);
             }
         }
         fund.put("count", publicItems.size());
@@ -678,46 +756,42 @@ public final class LotteryService {
 
     private void deliver(Payee payee, int deathCount) {
         ServerPlayer online = online(payee.ownerUuid);
+        List<ItemStack> remaining = payee.items;
         if (online != null) {
-            for (ItemStack stack : payee.items) {
-                give(online, stack);
-            }
+            Delivery delivery = addToInventory(online, payee.items);
+            remaining = delivery.remainder();
+            String claimLine = remaining.isEmpty()
+                    ? "奖金已放入背包。"
+                    : "背包空间不足，剩余 " + summarize(remaining)
+                    + " 已存入待领取；腾出空间后执行 /samsara lottery collect 领取。";
             online.sendSystemMessage(OutputRenderer.render("lottery.win",
                     Map.of("deathCount", String.valueOf(deathCount),
                             "guess", "?",
                             "shareLine", summarize(payee.items),
-                            "claimLine", "奖金已放入背包。"), null, null));
-            return;
+                            "claimLine", claimLine), null, null));
         }
-        ClaimData claim = new ClaimData();
-        claim.ownerUuid = payee.ownerUuid;
-        claim.ownerName = payee.name;
-        claim.dataUuid = payee.ownerUuid;
-        claim.reason = "中奖";
-        claim.items = LotteryItemCodec.encodeAll(payee.items, registries);
-        claim.at = System.currentTimeMillis();
-        claim.claimed = false;
-        claims.add(claim);
+        if (!remaining.isEmpty()) {
+            addClaim(payee.ownerUuid, payee.name, payee.dataUuid, "中奖", remaining);
+        }
     }
 
     private void refundAll(DayData day, String reason) {
         for (BetData bet : day.bets) {
             List<ItemStack> items = LotteryItemCodec.decodeAll(bet.items, registries);
             ServerPlayer online = online(bet.ownerUuid);
+            List<ItemStack> remaining = items;
             if (online != null) {
-                for (ItemStack stack : items) {
-                    give(online, stack);
+                Delivery delivery = addToInventory(online, items);
+                remaining = delivery.remainder();
+                if (!remaining.isEmpty()) {
+                    online.sendSystemMessage(OutputRenderer.render("lottery.reply", Map.of(
+                            "message", "背包空间不足，剩余 " + summarize(remaining)
+                            + " 已存入待领取；腾出空间后执行 /samsara lottery collect 领取。"),
+                            null, null));
                 }
-            } else {
-                ClaimData claim = new ClaimData();
-                claim.ownerUuid = bet.ownerUuid;
-                claim.ownerName = bet.ownerName;
-                claim.dataUuid = bet.dataUuid;
-                claim.reason = reason;
-                claim.items = bet.items;
-                claim.at = System.currentTimeMillis();
-                claim.claimed = false;
-                claims.add(claim);
+            }
+            if (!remaining.isEmpty()) {
+                addClaim(bet.ownerUuid, bet.ownerName, bet.dataUuid, reason, remaining);
             }
         }
         day.bets.clear();
@@ -1057,14 +1131,46 @@ public final class LotteryService {
         }
     }
 
-    private void give(ServerPlayer player, ItemStack stack) {
-        if (stack == null || stack.isEmpty()) {
-            return;
-        }
-        if (!player.getInventory().add(stack.copy())) {
-            player.drop(stack.copy(), false, net.minecraft.util.Prediction.SERVER_ONLY);
+    /**
+     * 只放进背包；放不下的部分原样返回，绝不丢到地上。
+     * 这样退款/中奖即使发生在岩浆、虚空或背包满时也不会丢失物品。
+     */
+    private Delivery addToInventory(ServerPlayer player, List<ItemStack> items) {
+        List<ItemStack> given = new ArrayList<>();
+        List<ItemStack> remainder = new ArrayList<>();
+        for (ItemStack stack : items) {
+            if (stack == null || stack.isEmpty()) {
+                continue;
+            }
+            ItemStack copy = stack.copy();
+            int before = copy.getCount();
+            player.getInventory().add(copy);
+            int left = copy.getCount();
+            if (left < before) {
+                given.add(stack.copyWithCount(before - left));
+            }
+            if (left > 0) {
+                remainder.add(copy.copyWithCount(left));
+            }
         }
         player.containerMenu.broadcastChanges();
+        return new Delivery(given, remainder);
+    }
+
+    private void addClaim(String ownerUuid, String ownerName, String dataUuid,
+                          String reason, List<ItemStack> items) {
+        ClaimData claim = new ClaimData();
+        claim.ownerUuid = ownerUuid;
+        claim.ownerName = ownerName;
+        claim.dataUuid = dataUuid;
+        claim.reason = reason;
+        claim.items = LotteryItemCodec.encodeAll(items, registries);
+        claim.at = System.currentTimeMillis();
+        claim.claimed = false;
+        claims.add(claim);
+    }
+
+    private record Delivery(List<ItemStack> given, List<ItemStack> remainder) {
     }
 
     private double potValue(DayData day) {
@@ -1146,7 +1252,9 @@ public final class LotteryService {
         out.put("villagerDeaths", day.villagerDeaths);
         out.put("namedMobDeaths", day.namedMobDeaths);
         out.put("tickets", day.bets.size());
+        out.put("ownPot", potValue(day));
         out.put("pot", potValue(day) + valueOfEncoded(state.rollover));
+        out.put("potItems", itemModels(dayPotItems(day)));
         out.put("drawTime", drawLabel(day.dayId));
         out.put("cutoff", cutoffLabel(day.dayId));
         List<Map<String, Object>> bets = new ArrayList<>();
@@ -1322,13 +1430,14 @@ public final class LotteryService {
         }
     }
 
-    public record CollectOutcome(boolean ok, String error, List<ItemStack> items, int claims) {
+    public record CollectOutcome(boolean ok, String error, List<ItemStack> items, int claims,
+                                 boolean remaining) {
         static CollectOutcome error(String message) {
-            return new CollectOutcome(false, message, List.of(), 0);
+            return new CollectOutcome(false, message, List.of(), 0, false);
         }
 
-        static CollectOutcome ok(List<ItemStack> items, int claims) {
-            return new CollectOutcome(true, "", List.copyOf(items), claims);
+        static CollectOutcome ok(List<ItemStack> items, int claims, boolean remaining) {
+            return new CollectOutcome(true, "", List.copyOf(items), claims, remaining);
         }
     }
 }

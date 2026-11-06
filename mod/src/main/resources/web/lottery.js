@@ -87,71 +87,84 @@
     root.replaceChildren(
       stat('开关', model.enabled ? '启用' : '关闭'),
       stat('模式', model.mode === 'real' ? '现实日' : '游戏日'),
-      stat('可下注日', dayText(betting.day)),
       stat('统计中', dayText(counting.day)),
       stat('实时死亡', String(counting.deathCount ?? 0)),
-      stat('本轮票数', String(betting.tickets ?? 0)),
-      stat('本轮奖池', vp(betting.pot)),
+      stat('待开奖奖池', vp(model.activePot ?? counting.pot)),
+      stat('待开奖票数', String(counting.tickets ?? 0)),
+      stat('可下注日', dayText(betting.day)),
+      stat('下注轮已入池', vp(model.bettingPot ?? betting.ownPot ?? betting.pot)),
+      stat('滚存', vp(model.rollover)),
       stat('服务器基金', vp(fund.value)),
     );
     const badge = $('lottery-count');
-    if (badge) badge.textContent = String(betting.tickets ?? 0);
+    if (badge) badge.textContent = String(counting.tickets ?? 0);
   }
 
   function renderRound(model) {
     const round = $('lottery-round');
     const badge = $('lottery-round-badge');
     const betting = model.bettingDay || {};
+    const counting = model.countingDay || {};
     if (badge) {
-      const state = betting.state || '';
+      const state = counting.state || '';
       const tone = state === 'BETTING' ? 'ok' : state === 'CANCELLED' ? 'danger' : 'warn';
       badge.className = 'lottery-pill' + (tone ? ' ' + tone : '');
-      badge.textContent = state === 'BETTING' ? '可下注'
+      badge.textContent = state === 'BETTING' ? '统计中'
         : state === 'SETTLED' ? '已结算'
           : state === 'CANCELLED' ? '已取消' : (state || '—');
     }
     if (round) {
       round.replaceChildren(
+        stat('统计日', dayText(counting.day)),
+        stat('实时死亡', String(counting.deathCount ?? 0)),
+        stat('待开奖奖池', vp(model.activePot ?? counting.pot)),
+        stat('待开奖票数', String(counting.tickets ?? 0) + ' 张'),
+        stat('可下注日', dayText(betting.day)),
+        stat('下注轮已入池', vp(model.bettingPot ?? betting.ownPot)),
+        stat('已售', String(betting.tickets ?? 0) + ' 张'),
         stat('截止', betting.cutoff || '—'),
         stat('开奖', betting.drawTime || '—'),
-        stat('奖池', vp(betting.pot)),
-        stat('已售', String(betting.tickets ?? 0) + ' 张'),
-        stat('参与', String((betting.bets || []).length) + ' 人'),
       );
     }
     const bets = $('lottery-bets');
     if (!bets) return;
     bets.replaceChildren();
-    const rows = Array.isArray(betting.bets) ? betting.bets : [];
-    if (!rows.length) {
-      bets.append(empty('本期还没有人下注。'));
-      return;
-    }
-    for (const bet of rows) {
-      const row = make('div', 'lottery-row');
-      const main = make('div', 'lottery-row-main');
-      main.append(
-        make('span', 'lottery-row-title', bet.name || '—'),
-        make('span', 'lottery-row-meta', '猜 ' + (bet.guess ?? '—') + ' 人 · 投入 ' + vp(bet.value)),
-      );
-      row.append(main);
-      bets.append(row);
+    const sections = [
+      { title: '待开奖 · ' + dayText(counting.day), rows: counting.bets,
+        empty: '待开奖轮还没有人下注。' },
+      { title: '下注中 · ' + dayText(betting.day), rows: betting.bets,
+        empty: '下注轮还没有人下注。' },
+    ];
+    for (const section of sections) {
+      bets.append(make('div', 'lottery-section-title', section.title));
+      const rows = Array.isArray(section.rows) ? section.rows : [];
+      if (!rows.length) {
+        bets.append(empty(section.empty));
+        continue;
+      }
+      for (const bet of rows) {
+        const row = make('div', 'lottery-row');
+        const main = make('div', 'lottery-row-main');
+        main.append(
+          make('span', 'lottery-row-title', bet.name || '—'),
+          make('span', 'lottery-row-meta', '猜 ' + (bet.guess ?? '—') + ' 人 · 投入 ' + vp(bet.value)),
+        );
+        row.append(main);
+        bets.append(row);
+      }
     }
   }
 
-  function renderFund(model) {
-    const root = $('lottery-fund');
-    const total = $('lottery-fund-total');
-    const fund = model.fund || {};
-    if (total) total.textContent = vp(fund.value);
+  function renderItemCards(rootId, items, emptyText) {
+    const root = $(rootId);
     if (!root) return;
     root.replaceChildren();
-    const items = Array.isArray(fund.items) ? fund.items : [];
-    if (!items.length) {
-      root.append(empty('基金为空。'));
+    const list = Array.isArray(items) ? items : [];
+    if (!list.length) {
+      root.append(empty(emptyText));
       return;
     }
-    for (const item of items) {
+    for (const item of list) {
       const card = make('div', 'lottery-item-card');
       card.append(window.SamsaraItem.icon(item, { size: 'md' }));
       const body = make('div', 'lottery-item-body');
@@ -162,6 +175,18 @@
       card.append(body);
       root.append(card);
     }
+  }
+
+  function renderPool(model) {
+    renderItemCards('lottery-pool', model.activePotItems, '待开奖奖池为空。');
+    renderItemCards('lottery-betting-pool', model.bettingPotItems, '下注轮还没有人投入物品。');
+  }
+
+  function renderFund(model) {
+    const total = $('lottery-fund-total');
+    const fund = model.fund || {};
+    if (total) total.textContent = vp(fund.value);
+    renderItemCards('lottery-fund', fund.items, '基金为空。');
   }
 
   const STATUS = {
@@ -239,6 +264,7 @@
   function render(model) {
     renderStats(model);
     renderRound(model);
+    renderPool(model);
     renderFund(model);
     renderInsurance(model);
     renderHistory(model);
