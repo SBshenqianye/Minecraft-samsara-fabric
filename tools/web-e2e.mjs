@@ -737,6 +737,7 @@ async function main() {
         poolHeads: document.querySelectorAll('#panel-lottery .lottery-pool-head').length,
         pool: Boolean(document.getElementById('lottery-pool')),
         bettingPool: Boolean(document.getElementById('lottery-betting-pool')),
+        claimsPanel: Boolean(document.getElementById('lottery-claims-panel')),
         tab: lotteryTab ? lotteryTab.textContent.replace(/\\s+/g, ' ').trim() : '',
       };
       window.SamsaraUI.setActiveTab('config');
@@ -876,6 +877,7 @@ async function main() {
         && mods.lottery.iframe === false && mods.lottery.stats >= 10
         && mods.lottery.values >= 1 && mods.lottery.poolHeads >= 2
         && mods.lottery.pool && mods.lottery.bettingPool
+        && mods.lottery.claimsPanel
         && mods.lottery.tab.includes('经济业务'), JSON.stringify(mods.lottery || {}));
 
     const lotteryPools = await evaluate(`(async () => {
@@ -884,14 +886,15 @@ async function main() {
       return {
         adminFields: ['activePot', 'bettingPot', 'activePotItems', 'bettingPotItems']
           .every((key) => key in data),
+        claims: Array.isArray(data.claims),
         countingOwnPot: typeof data.countingDay?.ownPot === 'number',
         userActive: Boolean(user.active && 'pot' in user.active
           && Array.isArray(user.active.items)),
         userRoundItems: Array.isArray(user.round?.items),
       };
     })()`);
-    check('乐透奖池暴露待开奖/下注轮与物品列表', lotteryPools.adminFields
-        && lotteryPools.countingOwnPot && lotteryPools.userActive
+    check('乐透奖池暴露待开奖/下注轮/待领取', lotteryPools.adminFields
+        && lotteryPools.claims && lotteryPools.countingOwnPot && lotteryPools.userActive
         && lotteryPools.userRoundItems, JSON.stringify(lotteryPools));
 
     const lotteryNav = await evaluate(`(async () => {
@@ -906,8 +909,9 @@ async function main() {
       };
     })()`);
     check('经济业务使用通用左侧导航', lotteryNav.title.includes('经济业务')
-        && lotteryNav.items.length >= 6 && lotteryNav.items.includes('当前轮次')
-        && lotteryNav.items.includes('物品价值表') && lotteryNav.saveHidden === true,
+        && lotteryNav.items.length >= 7 && lotteryNav.items.includes('当前轮次')
+        && lotteryNav.items.includes('物品价值表') && lotteryNav.items.includes('待领取')
+        && lotteryNav.saveHidden === true,
         JSON.stringify(lotteryNav));
 
     // ---- 权限分段控件：保存 deny → 回显 → 恢复原等级 ----

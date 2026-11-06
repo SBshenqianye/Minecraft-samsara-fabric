@@ -196,14 +196,14 @@ public final class LotteryService {
         int mine = 0;
         for (BetData bet : day.bets) {
             if (bet.ownerUuid.equals(player.getUUID().toString())) {
-                mine++;
+                mine += ticketsOf(bet);
             }
         }
         if (mine + tickets > config.maxTicketsPerPlayer()) {
             return BetOutcome.error("本轮你最多 " + config.maxTicketsPerPlayer()
                     + " 张，已买 " + mine + " 张。");
         }
-        if (day.bets.size() + tickets > config.maxTicketsPerRound()) {
+        if (totalTickets(day) + tickets > config.maxTicketsPerRound()) {
             return BetOutcome.error("本轮票数已满（" + config.maxTicketsPerRound() + " 张）。");
         }
 
@@ -223,7 +223,7 @@ public final class LotteryService {
             return BetOutcome.error("--exact 要求不超额：需要 " + ItemValueService.getInstance().format(required)
                     + " VP，当前 " + ItemValueService.getInstance().format(available) + " VP。");
         }
-        if (day.bets.size() + tickets > 0) {
+        if (totalTickets(day) + tickets > 0) {
             double potValue = potValue(day) + valueOfEncoded(state.rollover);
             if (potValue + required > config.maxPotValue()) {
                 return BetOutcome.error("本轮奖池已达上限 " + config.maxPotValue() + " VP。");
@@ -246,6 +246,7 @@ public final class LotteryService {
         bet.ownerName = player.getGameProfile().name();
         bet.dataUuid = player.getUUID().toString();
         bet.guess = guess;
+        bet.tickets = tickets;
         bet.value = actual;
         bet.items = LotteryItemCodec.encodeAll(List.of(paid), registries);
         bet.at = System.currentTimeMillis();
@@ -301,7 +302,7 @@ public final class LotteryService {
         out.put("drawTime", drawLabel(betting));
         out.put("cutoff", cutoffLabel(betting));
         out.put("pot", potValue(day) + valueOfEncoded(state.rollover));
-        out.put("tickets", day.bets.size());
+        out.put("tickets", totalTickets(day));
         out.put("players", distinctPlayers(day));
         out.put("myTickets", myTickets(day, player));
         out.put("last", last == null ? null : resultModel(last));
@@ -422,6 +423,27 @@ public final class LotteryService {
         return pot;
     }
 
+    /** 管理端待领取列表：退款/中奖因背包满或离线而暂存的实物。 */
+    public synchronized List<Map<String, Object>> claimModels() {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (ClaimData claim : claims) {
+            if (claim.claimed) {
+                continue;
+            }
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("owner", claim.ownerName);
+            row.put("dataUuid", claim.dataUuid);
+            row.put("reason", claim.reason);
+            row.put("at", claim.at);
+            row.put("items", itemModels(LotteryItemCodec.decodeAll(claim.items, registries)));
+            out.add(row);
+        }
+        out.sort((a, b) -> Long.compare(
+                ((Number) b.getOrDefault("at", 0L)).longValue(),
+                ((Number) a.getOrDefault("at", 0L)).longValue()));
+        return out;
+    }
+
     public synchronized String withdrawFund(ServerPlayer player, int index) {
         if (player == null) {
             return "需要玩家身份；控制台不能领取基金物品。";
@@ -465,6 +487,7 @@ public final class LotteryService {
         out.put("activePotItems", itemModels(activePotItems(counting)));
         out.put("bettingPot", potValue(day));
         out.put("bettingPotItems", itemModels(dayPotItems(day)));
+        out.put("claims", claimModels());
         out.put("fund", fundModel());
         out.put("history", historyModel(1, 10));
         out.put("configPath", LotteryConfig.getInstance().configPath());
@@ -489,7 +512,7 @@ public final class LotteryService {
         round.put("cutoff", cutoffLabel(betting));
         round.put("ownPot", potValue(day));
         round.put("pot", potValue(day) + rolloverValue);
-        round.put("tickets", day.bets.size());
+        round.put("tickets", totalTickets(day));
         round.put("players", distinctPlayers(day));
         round.put("items", publicItemModels(itemModels(dayPotItems(day))));
         out.put("round", round);
@@ -498,7 +521,7 @@ public final class LotteryService {
         active.put("drawTime", drawLabel(counting.dayId));
         active.put("cutoff", cutoffLabel(counting.dayId));
         active.put("pot", potValue(counting) + rolloverValue);
-        active.put("tickets", counting.bets.size());
+        active.put("tickets", totalTickets(counting));
         active.put("players", distinctPlayers(counting));
         active.put("items", publicItemModels(itemModels(activePotItems(counting))));
         out.put("active", active);
@@ -626,7 +649,11 @@ public final class LotteryService {
         ResultData result = new ResultData();
         result.deathCount = day.deathCount;
         result.potValue = ItemValueService.getInstance().valueOf(pot);
-        result.winningTickets = winners.size();
+        int winningTickets = 0;
+        for (BetData bet : winners) {
+            winningTickets += ticketsOf(bet);
+        }
+        result.winningTickets = winningTickets;
         result.winnerNames = new ArrayList<>();
         result.at = System.currentTimeMillis();
         result.nextDay = nextDayId(day.dayId);
@@ -658,7 +685,16 @@ public final class LotteryService {
 
         List<Payee> payees = payees(winners);
         distribute(pot, payees);
+        // 同一玩家可能持有多张中奖票；合并后只发一次消息/待领取。
+        Map<String, Payee> merged = new LinkedHashMap<>();
         for (Payee payee : payees) {
+            Payee group = merged.computeIfAbsent(payee.ownerUuid,
+                    key -> new Payee(payee.ownerUuid, payee.name));
+            group.items.addAll(payee.items);
+            group.value += payee.value;
+            group.tickets += payee.tickets;
+        }
+        for (Payee payee : merged.values()) {
             result.winnerNames.add(payee.name);
             deliver(payee, result.deathCount);
         }
@@ -707,15 +743,18 @@ public final class LotteryService {
             for (BetData bet : winners) {
                 Payee payee = map.computeIfAbsent(bet.dataUuid,
                         key -> new Payee(bet.ownerUuid, bet.ownerName));
-                payee.tickets++;
+                payee.tickets += ticketsOf(bet);
             }
             return new ArrayList<>(map.values());
         }
         List<Payee> out = new ArrayList<>();
         for (BetData bet : winners) {
-            Payee payee = new Payee(bet.ownerUuid, bet.ownerName);
-            payee.tickets = 1;
-            out.add(payee);
+            int tickets = ticketsOf(bet);
+            for (int i = 0; i < tickets; i++) {
+                Payee payee = new Payee(bet.ownerUuid, bet.ownerName);
+                payee.tickets = 1;
+                out.add(payee);
+            }
         }
         return out;
     }
@@ -1181,6 +1220,18 @@ public final class LotteryService {
         return total;
     }
 
+    static int ticketsOf(BetData bet) {
+        return bet == null || bet.tickets < 1 ? 1 : bet.tickets;
+    }
+
+    static int totalTickets(DayData day) {
+        int total = 0;
+        for (BetData bet : day.bets) {
+            total += ticketsOf(bet);
+        }
+        return total;
+    }
+
     private double valueOfEncoded(List<String> encoded) {
         return ItemValueService.getInstance().valueOf(LotteryItemCodec.decodeAll(encoded, registries));
     }
@@ -1200,7 +1251,8 @@ public final class LotteryService {
         List<String> parts = new ArrayList<>();
         for (BetData bet : day.bets) {
             if (bet.ownerUuid.equals(player.getUUID().toString())) {
-                parts.add(bet.guess + " 号");
+                int tickets = ticketsOf(bet);
+                parts.add(bet.guess + " 号" + (tickets > 1 ? " × " + tickets : ""));
             }
         }
         return parts.isEmpty() ? "暂无" : String.join("、", parts);
@@ -1251,7 +1303,7 @@ public final class LotteryService {
         out.put("playerDeaths", day.playerDeaths);
         out.put("villagerDeaths", day.villagerDeaths);
         out.put("namedMobDeaths", day.namedMobDeaths);
-        out.put("tickets", day.bets.size());
+        out.put("tickets", totalTickets(day));
         out.put("ownPot", potValue(day));
         out.put("pot", potValue(day) + valueOfEncoded(state.rollover));
         out.put("potItems", itemModels(dayPotItems(day)));
@@ -1262,6 +1314,7 @@ public final class LotteryService {
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("name", bet.ownerName);
             item.put("guess", bet.guess);
+            item.put("tickets", ticketsOf(bet));
             item.put("value", bet.value);
             bets.add(item);
         }
@@ -1362,6 +1415,8 @@ public final class LotteryService {
         public String ownerName = "";
         public String dataUuid = "";
         public int guess;
+        /** 本注包含的票数；旧数据没有该字段时按 1 张处理。 */
+        public int tickets = 1;
         public double value;
         public List<String> items = new ArrayList<>();
         public long at;

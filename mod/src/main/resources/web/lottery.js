@@ -147,7 +147,8 @@
         const main = make('div', 'lottery-row-main');
         main.append(
           make('span', 'lottery-row-title', bet.name || '—'),
-          make('span', 'lottery-row-meta', '猜 ' + (bet.guess ?? '—') + ' 人 · 投入 ' + vp(bet.value)),
+          make('span', 'lottery-row-meta', '猜 ' + (bet.guess ?? '—') + ' 人 · '
+            + (bet.tickets ?? 1) + ' 张 · 投入 ' + vp(bet.value)),
         );
         row.append(main);
         bets.append(row);
@@ -155,8 +156,7 @@
     }
   }
 
-  function renderItemCards(rootId, items, emptyText) {
-    const root = $(rootId);
+  function fillItemCards(root, items, emptyText) {
     if (!root) return;
     root.replaceChildren();
     const list = Array.isArray(items) ? items : [];
@@ -173,6 +173,36 @@
         make('span', 'lottery-item-meta', (item.count || 0) + ' 个 · ' + vp(item.value)),
       );
       card.append(body);
+      root.append(card);
+    }
+  }
+
+  function renderItemCards(rootId, items, emptyText) {
+    fillItemCards($(rootId), items, emptyText);
+  }
+
+  function renderClaims(model) {
+    const root = $('lottery-claims');
+    const badge = $('lottery-claims-count');
+    const claims = Array.isArray(model.claims) ? model.claims : [];
+    if (badge) badge.textContent = claims.length + ' 笔';
+    if (!root) return;
+    root.replaceChildren();
+    if (!claims.length) {
+      root.append(empty('没有待领取物品。'));
+      return;
+    }
+    for (const claim of claims) {
+      const card = make('div', 'lottery-claim');
+      const head = make('div', 'lottery-row-main');
+      head.append(
+        make('span', 'lottery-row-title', claim.owner || '—'),
+        make('span', 'lottery-row-meta',
+          (claim.reason || '待领取') + ' · ' + timeText(claim.at)),
+      );
+      const items = make('div', 'lottery-items');
+      fillItemCards(items, claim.items, '没有物品。');
+      card.append(head, items);
       root.append(card);
     }
   }
@@ -265,6 +295,7 @@
     renderStats(model);
     renderRound(model);
     renderPool(model);
+    renderClaims(model);
     renderFund(model);
     renderInsurance(model);
     renderHistory(model);
@@ -358,6 +389,7 @@
       ['lottery-round-panel', '当前轮次'],
       ['lottery-values-panel', '物品价值表'],
       ['lottery-fund-panel', '服务器基金'],
+      ['lottery-claims-panel', '待领取'],
       ['lottery-insurance-panel', '保险'],
       ['lottery-history-panel', '历史开奖'],
     ];
