@@ -1790,6 +1790,41 @@ async function main() {
         && containerRead.container && containerRead.container.slots.length === 27
         && containerRead.container.slots[0].length > 0,
         JSON.stringify(containerRead));
+    const beforeWrite = containerRead.container;
+    const movedSlots = beforeWrite.slots.slice();
+    movedSlots[1] = movedSlots[0];
+    movedSlots[0] = '';
+    const writeResponse = await fetch(base + '/api/containers/write', {
+      method: 'POST', headers: authHeaders,
+      body: JSON.stringify({
+        dimension: 'minecraft:overworld', x: 8, y: 100, z: 8,
+        revision: beforeWrite.revision, slots: movedSlots,
+      }),
+    });
+    const writeBody = await writeResponse.json();
+    check('容器写入成功并提升 revision', writeResponse.status === 200
+        && writeBody.ok === true && writeBody.container
+        && writeBody.container.revision > beforeWrite.revision,
+        JSON.stringify({ status: writeResponse.status, body: writeBody }));
+    const conflictResponse = await fetch(base + '/api/containers/write', {
+      method: 'POST', headers: authHeaders,
+      body: JSON.stringify({
+        dimension: 'minecraft:overworld', x: 8, y: 100, z: 8,
+        revision: beforeWrite.revision, slots: movedSlots,
+      }),
+    });
+    const conflictBody = await conflictResponse.json();
+    check('容器写入 revision 冲突返回 409', conflictResponse.status === 409
+        && conflictBody.ok === false && conflictBody.currentRevision >= beforeWrite.revision,
+        JSON.stringify({ status: conflictResponse.status, body: conflictBody }));
+    const auditAfterContainer = await fetch(base + '/api/audit', { headers: authHeaders })
+        .then((response) => response.json());
+    const containerAudit = (auditAfterContainer.entries || []).find((entry) =>
+        entry.action === '/api/containers/write');
+    check('容器写入产生 Web 审计快照', !!containerAudit
+        && containerAudit.rollbackable === false
+        && (containerAudit.note || '').includes('8,100,8'),
+        JSON.stringify(containerAudit));
     await runConsole('setblock 8 100 8 minecraft:air');
 
     // ---- 一级分栏：切到“本体”后经济业务标签不能残留 ----
