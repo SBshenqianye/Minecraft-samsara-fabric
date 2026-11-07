@@ -56,6 +56,7 @@ public final class LocalWebServer {
     private final LotteryWebService lotteryService;
     private final ContainerWebService containerService;
     private final InventoryWebService inventoryService;
+    private final TrackWebService trackService;
     private final String token;
     private final int port;
     private HttpServer server;
@@ -175,6 +176,24 @@ public final class LocalWebServer {
                           ContainerWebService containerService,
                           InventoryWebService inventoryService,
                           String token, int port) {
+        this(service, identityService, outputService, permissionService, mapService,
+                worldStackService, serverService, diffService, userService, lotteryService,
+                containerService, inventoryService, null, token, port);
+    }
+
+    public LocalWebServer(ConfigService service, IdentityWebService identityService,
+                          OutputWebService outputService,
+                          PermissionWebService permissionService,
+                          WebMapService mapService,
+                          WorldStackWebService worldStackService,
+                          ServerWebService serverService,
+                          ChunkDiffWebService diffService,
+                          WebUserService userService,
+                          LotteryWebService lotteryService,
+                          ContainerWebService containerService,
+                          InventoryWebService inventoryService,
+                          TrackWebService trackService,
+                          String token, int port) {
         this.service = service;
         this.identityService = identityService;
         this.outputService = outputService;
@@ -187,6 +206,7 @@ public final class LocalWebServer {
         this.lotteryService = lotteryService;
         this.containerService = containerService;
         this.inventoryService = inventoryService;
+        this.trackService = trackService;
         this.token = token == null ? "" : token;
         this.port = port;
     }
@@ -246,6 +266,9 @@ public final class LocalWebServer {
         }
         if (inventoryService != null) {
             server.createContext("/api/inventory", this::handleInventory);
+        }
+        if (trackService != null) {
+            server.createContext("/api/track", this::handleTrack);
         }
         server.createContext("/api/audit", this::handleAudit);
         executor = Executors.newFixedThreadPool(4, runnable -> {
@@ -1541,6 +1564,41 @@ public final class LocalWebServer {
             status = 500;
             json(exchange, status, Map.of("error", errorDetail(e)));
             LOG.warn("[web] 处理 {} 失败: {}", exchange.getRequestURI().getPath(), e.getMessage());
+        } finally {
+            log(exchange, status, start);
+        }
+    }
+
+    private void handleTrack(HttpExchange exchange) throws IOException {
+        long start = System.currentTimeMillis();
+        int status = 200;
+        try {
+            int auth = authorize(exchange);
+            if (auth != 0) {
+                status = auth;
+                return;
+            }
+            String path = exchange.getRequestURI().getPath();
+            if (!"GET".equals(exchange.getRequestMethod())) {
+                status = 405;
+                json(exchange, status, Map.of("error", "Method Not Allowed"));
+                return;
+            }
+            if ("/api/track".equals(path) || "/api/track/list".equals(path)) {
+                Map<String, Object> result = trackService.list(
+                        parseQuery(exchange.getRequestURI().getRawQuery()));
+                status = result.get("ok") == Boolean.TRUE ? 200
+                        : result.get("status") instanceof Number number ? number.intValue() : 400;
+                json(exchange, status, result);
+                return;
+            }
+            status = 404;
+            json(exchange, status, Map.of("error", "未知轨迹接口"));
+        } catch (RuntimeException e) {
+            status = 500;
+            json(exchange, status, Map.of("error", errorDetail(e)));
+            LOG.warn("[web] 轨迹读取 {} 失败: {}", exchange.getRequestURI().getPath(),
+                    e.getMessage());
         } finally {
             log(exchange, status, start);
         }

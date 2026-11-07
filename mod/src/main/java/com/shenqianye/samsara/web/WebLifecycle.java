@@ -45,7 +45,7 @@ public final class WebLifecycle {
                 new WebUserService(mapService, minecraftServer),
                 new LotteryWebService(minecraftServer),
                 new ContainerWebService(minecraftServer),
-                new InventoryWebService(), token, port);
+                new InventoryWebService(), new TrackWebService(minecraftServer), token, port);
         if (!candidate.start()) {
             return; // 端口占用：WARN 已记录，不阻塞服务器
         }

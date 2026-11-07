@@ -2294,6 +2294,44 @@ async function main() {
         && inventoryUi.players >= 1 && inventoryUi.scope === true
         && inventoryUi.section === '天网', JSON.stringify(inventoryUi));
 
+    // ---- 天网：轨迹回看与 Diff 回看入口 ----
+    const trackApi = await fetch(base + '/api/track?days=7&limit=5', { headers: authHeaders });
+    const trackBody = await trackApi.json();
+    check('轨迹回看只读 API 可列出最近轨迹', trackApi.status === 200
+        && trackBody.ok === true && Array.isArray(trackBody.tracks)
+        && trackBody.tracks.every((track) => String(track.command || '').startsWith('/samsara track view')),
+        JSON.stringify({ status: trackApi.status, count: trackBody.count,
+          first: trackBody.tracks?.[0]?.command }));
+    const diffStatusApi = await fetch(base + '/api/diff/view/status', { headers: authHeaders });
+    const diffStatusBody = await diffStatusApi.json();
+    check('Diff 回看状态 API 可用', diffStatusApi.status === 200 && diffStatusBody.ok === true,
+        JSON.stringify(diffStatusBody).slice(0, 200));
+
+    await navigate(base + '/samsara/sky/track');
+    await until("document.querySelector('[data-page=\"track\"] .track-filters')",
+        25000, '轨迹回看页');
+    const trackUi = await evaluate(`({
+      page: !!document.querySelector('[data-page="track"]'),
+      rows: document.querySelectorAll('[data-page="track"] .track-row').length,
+      links: document.querySelectorAll('[data-page="track"] a[href="/samsara/sky/diff"]').length
+        + document.querySelectorAll('[data-page="track"] a[href="/samsara/world/map"]').length,
+      section: document.querySelector('.section-tab.active')?.textContent.trim() || '',
+    })`);
+    check('轨迹回看页可打开并复用只读列表', trackUi.page && trackUi.rows >= 1
+        && trackUi.section === '天网', JSON.stringify(trackUi));
+
+    await navigate(base + '/samsara/sky/diff');
+    await until("document.querySelector('[data-page=\"diff\"] .diff-grid')",
+        25000, 'Diff 回看页');
+    const diffUi = await evaluate(`({
+      page: !!document.querySelector('[data-page="diff"]'),
+      stack: document.querySelectorAll('[data-page="diff"] .diff-grid label').length,
+      status: Boolean(document.querySelector('[data-page="diff"] .diff-status')),
+      section: document.querySelector('.section-tab.active')?.textContent.trim() || '',
+    })`);
+    check('Diff 回看页可打开并显示状态', diffUi.page && diffUi.stack >= 4
+        && diffUi.status && diffUi.section === '天网', JSON.stringify(diffUi));
+
     // ---- 用户端只读页：无需 token，不加载管理端脚本，不调用管理端 API ----
     await navigate(base + '/user');
     await until("window.SamsaraUI && document.querySelectorAll('#user-status .status-chip').length > 0",

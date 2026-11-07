@@ -184,6 +184,8 @@ public final class WebSecurity {
                 || "/api/inventory".equals(path)
                 || "/api/inventory/write".equals(path)
                 || "/api/inventory/item".equals(path)
+                || "/api/track".equals(path)
+                || "/api/track/list".equals(path)
                 || "/api/audit".equals(path)
                 || "/api/audit/preview".equals(path)
                 || "/api/audit/rollback".equals(path);
