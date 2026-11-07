@@ -1,1 +1,0 @@
-import{A as e,T as t,_ as n,p as r}from"./index-DRgLomGN.js";import{t as i}from"./TabShell-DazSNnfX.js";import{t as a}from"./LegacyPanel-Cgx9ledL.js";var o={__name:`ConfigEditorPage`,setup(o){return(o,s)=>(t(),r(i,{name:`config-editor`},{default:e(()=>[n(a,{"panel-id":`panel-config-editor`})]),_:1}))}};export{o as default};

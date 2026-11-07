@@ -1,1 +1,0 @@
-import{A as e,T as t,_ as n,p as r}from"./index-DRgLomGN.js";import{t as i}from"./TabShell-DazSNnfX.js";import{t as a}from"./LegacyPanel-Cgx9ledL.js";var o={__name:`MapPage`,setup(o){return(o,s)=>(t(),r(i,{name:`map`},{default:e(()=>[n(a,{"panel-id":`panel-map`})]),_:1}))}};export{o as default};

@@ -2113,13 +2113,31 @@ async function main() {
 
     await navigate(base + '/samsara/sky/containers');
     await until("document.querySelector('.container-page.embedded')", 25000, '天网容器页');
-    const skyContainer = await evaluate(`({
-      embedded: !!document.querySelector('.container-page.embedded'),
-      rows: document.querySelectorAll('.container-row').length,
-      section: document.querySelector('.section-tab.active')?.textContent.trim() || '',
-    })`);
+    await until("document.querySelector('.container-page.embedded .container-row')"
+        + " || document.querySelector('.container-page.embedded .container-message.error')",
+        30000, '天网容器列表');
+    const skyContainer = await evaluate(`(async () => {
+      const row = document.querySelector('.container-page.embedded .container-row');
+      if (row) {
+        row.click();
+        const deadline = Date.now() + 8000;
+        while (!document.querySelector('.container-page.embedded .slot-grid')
+            && Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+      }
+      return {
+        embedded: !!document.querySelector('.container-page.embedded'),
+        rows: document.querySelectorAll('.container-page.embedded .container-row').length,
+        slots: document.querySelectorAll('.container-page.embedded .slot').length,
+        grid: !!document.querySelector('.container-page.embedded .slot-grid'),
+        section: document.querySelector('.section-tab.active')?.textContent.trim() || '',
+      };
+    })()`);
     check('天网容器入口复用容器页', skyContainer.embedded
         && skyContainer.section === '天网', JSON.stringify(skyContainer));
+    check('天网容器槽位网格可读取', skyContainer.rows >= 1
+        && skyContainer.grid && skyContainer.slots === 27, JSON.stringify(skyContainer));
 
     await navigate(base + '/config');
     await until("document.getElementById('panel-config') && !document.getElementById('panel-config').hidden",

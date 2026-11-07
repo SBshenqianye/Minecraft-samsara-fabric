@@ -1,1 +1,0 @@
-import{T as e,_ as t,h as n}from"./index-DRgLomGN.js";import{t as r}from"./LegacyPanel-Cgx9ledL.js";var i={id:`panel-server`},a={__name:`ServerPage`,setup(a){return(a,o)=>(e(),n(`div`,i,[t(r,{"panel-id":`server-config-panel`}),t(r,{"panel-id":`server-backup-panel`}),t(r,{"panel-id":`server-console-panel`}),t(r,{"panel-id":`server-audit-panel`})]))}};export{a as default};

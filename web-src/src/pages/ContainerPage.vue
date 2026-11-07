@@ -99,28 +99,12 @@
           </button>
         </div>
 
-        <div class="slot-grid">
-          <button
-            v-for="(encoded, index) in slots"
-            :key="index"
-            class="slot"
-            :class="{ selected: selectedSlot === index }"
-            type="button"
-            @click="selectSlot(index)"
-          >
-            <template v-if="itemAt(index)">
-              <img
-                v-if="!failedIcons.has(index)"
-                :src="iconUrl(itemAt(index))"
-                :alt="itemAt(index).name"
-                @error="failedIcons.add(index)"
-              />
-              <span v-else class="fallback">{{ (itemAt(index).name || '?').slice(0, 1) }}</span>
-              <span class="count">{{ itemAt(index).count }}</span>
-            </template>
-            <span v-else class="empty-index">{{ index }}</span>
-          </button>
-        </div>
+        <ItemSlotGrid
+          :slots="slots"
+          :items="items"
+          :selected="selectedSlot"
+          @select="selectSlot"
+        />
 
         <div class="slot-editor">
           <template v-if="selectedSlot !== null">
@@ -195,6 +179,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue';
+import ItemSlotGrid from '../components/ItemSlotGrid.vue';
 
 const props = defineProps({
   embedded: { type: Boolean, default: false },
@@ -229,7 +214,6 @@ const searchResults = ref([]);
 const searchLoading = ref(false);
 const newItem = ref(null);
 const newItemCount = ref(1);
-const failedIcons = ref(new Set());
 const confirmOpen = ref(false);
 const dirty = ref(false);
 
@@ -380,7 +364,6 @@ async function openContainer(row) {
     revision.value = result.data.container.revision;
     selectedSlot.value = null;
     dirty.value = false;
-    failedIcons.value = new Set();
   } catch (e) {
     error.value = e.message || String(e);
   }
@@ -397,10 +380,6 @@ function samePos(a, b) {
 
 function itemAt(index) {
   return itemMap.value.get(index) || null;
-}
-
-function iconUrl(item) {
-  return '/items/' + (item.icon || 'stone') + '.png';
 }
 
 function selectSlot(index) {
