@@ -57,7 +57,7 @@ public final class AgentAuthService {
         if (context == null) {
             return false;
         }
-        int limit = limit(scope);
+        int limit = limitFor(context, scope);
         long now = System.currentTimeMillis();
         String key = context.actor() + "|" + scope.id();
         Deque<Long> window = windows.computeIfAbsent(key, k -> new ArrayDeque<>());
@@ -81,6 +81,23 @@ public final class AgentAuthService {
         };
     }
 
+    /**
+     * 管理员 token 是本地控制台会话，页面本身会频繁读取状态/地图/列表；
+     * 给它更高的窗口，避免正常浏览触发 Agent token 的限流。scoped token 仍用原限额。
+     */
+    private int limitFor(AuthContext context, AgentScope scope) {
+        if (context == null || !context.admin()) {
+            return limit(scope);
+        }
+        return switch (scope) {
+            case READ -> 1200;
+            case ANNOUNCE -> 120;
+            case CONFIG -> 120;
+            case OPS -> 60;
+            case RCON -> 40;
+        };
+    }
+
     public Map<String, Object> describe(AuthContext context) {
         Map<String, Object> out = new java.util.LinkedHashMap<>();
         out.put("ok", true);
@@ -88,11 +105,11 @@ public final class AgentAuthService {
         out.put("admin", context.admin());
         out.put("scopes", context.scopes().stream().map(AgentScope::id).sorted().toList());
         out.put("limits", Map.of(
-                "readPerMinute", limit(AgentScope.READ),
-                "announcePerMinute", limit(AgentScope.ANNOUNCE),
-                "configPerMinute", limit(AgentScope.CONFIG),
-                "opsPerMinute", limit(AgentScope.OPS),
-                "rconPerMinute", limit(AgentScope.RCON)));
+                "readPerMinute", limitFor(context, AgentScope.READ),
+                "announcePerMinute", limitFor(context, AgentScope.ANNOUNCE),
+                "configPerMinute", limitFor(context, AgentScope.CONFIG),
+                "opsPerMinute", limitFor(context, AgentScope.OPS),
+                "rconPerMinute", limitFor(context, AgentScope.RCON)));
         out.put("time", System.currentTimeMillis());
         return out;
     }
