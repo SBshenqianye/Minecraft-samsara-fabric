@@ -3,6 +3,22 @@
 > 面向玩家与服主的功能变化；实现细节、未达标项与证据见[《实现状态》](docs/实现状态.md)。
 > 每个版本按「新增 / 修复 / 优化 / 变更 / 重构 / 文档」分组，只写功能口径。
 
+## v0.47.1（2026-11-07）· 管理端逐 Tab Vue 化
+
+### 变更
+
+- **AdminLayout + 每 Tab 独立 page/view**：新增 `layouts/AdminLayout.vue` 统一 header、顶部 tab、操作栏、token 弹窗、`#global-nav` 与浮窗；新增 `components/TabPage.vue`、`components/LegacyPanel.vue`、`legacy/document.js`；管理端拆成 `/config`、`/config-editor`、`/claim-range`、`/identity`、`/output`、`/permissions`、`/map`、`/announcements`、`/world-stack`、`/lottery`、`/server/config|backup|console|audit` 等独立 Vue page。
+- **兼容复杂页面**：地图 canvas、世界栈、配置编辑器、权限树、RCON、身份组、经济业务继续复用原命令式逻辑，由各自的 Vue page 通过 `LegacyPanel` 挂载，不再使用单个 `AdminView` 整壳。
+- **history 路由**：`/config`、`/map`、`/server/*` 等路径由 Web 服务器统一回 `web/vue/index.html`；旧 hash（如 `#server`、`#map`）自动映射到新路径。
+- **管理员限流**：管理员 token 读取上限提高到 1200/分钟，写/RCON 等同步放宽；scoped Agent token 仍保持 300/60/60/30/20 的原限额。
+- **用户端启动时序**：`/user` 先注册 `user.js`、等 `map.js` 就绪后再启动，避免世界栈卡片缺少图标区。
+- **测试**：E2E 增加到 177 项，覆盖简单页/复杂页直接路由、画布/地图/配置渲染、容器页、`/user` 与路由切回管理端。
+
+### 说明
+
+- 旧 `legacy.html` / `legacy-user.html` 仍保留为回退壳；管理端入口不再直接使用它们。
+- `WebVersion.VALUE = 0.47.1`；模组版本保持 `0.39.0`，jar 仍为 `samsara-0.39.0.jar`。
+
 ## v0.47.0（2026-11-07）· Vue 3 + Vite 全量入口与容器 Web UI
 
 ### 新增

@@ -354,7 +354,7 @@
 ## 5. 安全边界与扩展约定
 
 - **管理端 token 等同管理员密码**：拿到管理员 token 就能读写全部配置、备份、权限和世界栈；不要把它发给普通玩家，不要放进 URL、日志、截图或公开仓库。token 轮换后需要重启 Web 服务才会生效（运行中的服务持有启动时的 token）。
-- **Agent token 按 scope 限权**：`/api/agent/tokens` 由管理员创建 read/announce/config/ops/rcon scope；服务端只存 SHA-256，明文只在创建时返回。token 管理接口本身仅管理员可用，Agent token 不能自我提权。写请求支持 `Idempotency-Key`，超限返回 `429` + `Retry-After: 60`。
+- **Agent token 按 scope 限权**：`/api/agent/tokens` 由管理员创建 read/announce/config/ops/rcon scope；服务端只存 SHA-256，明文只在创建时返回。token 管理接口本身仅管理员可用，Agent token 不能自我提权。写请求支持 `Idempotency-Key`，超限返回 `429` + `Retry-After: 60`。scoped token 限额为 read 300 / announce 60 / config 60 / ops 30 / rcon 20 每分钟；管理员 token（本地控制台）为 read 1200 / announce 120 / config 120 / ops 60 / rcon 40 每分钟，避免正常浏览触发 429。
 - **管理端静态页壳可能公开，但不含数据**：`/`、`/app.js` 等静态资源本身不需要 token；没有 token 时所有管理 API（`/api/config`、`/api/status`、`/api/server`、`/api/world-stack`、`/api/permissions`、`/api/map` 等）返回 `401`。如果连页面壳都不希望公开，需要在反向代理层做路径过滤、加独立端口或额外登录页。
 - **默认只公开用户端**：推荐反向代理只转发 `/user`、`/user.js`、`/style.css`、`/map.js`、`/banners.js`、`/api/user/*`。要公开管理端时，至少强制 HTTPS，并在代理层加限流/IP 白名单；当前 Mod 自身没有登录锁定、速率限制或二次验证。
 - **公网名字混淆**：`WebUserService` 对玩家名、操作者、发言者做混淆显示（保留首字符、分隔符和末 3 位，其余 `*`，如 `xh_unpkire` → `x*_****ire`）；系统提示/聊天/自定义名中的已知玩家名也替换。完整名字只走管理端。不要把完整名字重新加回 `/api/user/*`。

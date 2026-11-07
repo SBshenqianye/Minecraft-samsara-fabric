@@ -3,6 +3,8 @@
 > 适用于 `web-src/` 的 Vue 页面与 `mod/src/main/resources/web/` 下的旧管理端页面。目标是让页面可以逐步迁移、互不污染，减少长期维护成本。
 >
 > **v0.47.0 起**：入口由 `web-src/`（Vue 3 + Vue Router + Vite）构建到 `mod/src/main/resources/web/vue/`；`/`、`/user`、`/containers` 是同一应用。复杂页面仍可复用旧命令式脚本，由 Vue 组件 `onMounted/onUnmounted` 挂载，不需要一次性重写算法。
+>
+> **v0.47.1 起**：管理端使用 `layouts/AdminLayout.vue` + `components/TabPage.vue` + `components/LegacyPanel.vue`；每个 tab 对应 `pages/*.vue`，不再使用单个 `AdminView` 整壳。复杂页的旧逻辑仍通过 `LegacyPanel` 挂载，但生命周期、路由和可见性由各自的 Vue page 管理。
 
 ## 1. 生命周期契约
 
@@ -80,7 +82,9 @@ mount(ctx) {
 
 - 源目录 `web-src/`；构建命令 `cd web-src && npm.cmd ci && npm.cmd run build`。
 - Vite `base=/vue/`，输出 `mod/src/main/resources/web/vue/`；构建产物必须提交，保证 `gradle clean build` 不需要 npm。
-- 路由：`/` 管理端、`/user` 公开只读、`/containers` 容器页；复杂页面用 Vue 组件包一层旧逻辑。
+- 结构：`layouts/AdminLayout.vue` 管共享 header/tab/操作栏/token 弹窗/浮窗；`pages/*.vue` 每个 tab 一个页面；`components/TabPage.vue` 是可复用页面壳；`components/LegacyPanel.vue` 负责把旧 panel 挂到页面里。
+- 路由：`/config`、`/config-editor`、`/claim-range`、`/identity`、`/output`、`/permissions`、`/map`、`/announcements`、`/world-stack`、`/lottery`、`/server/config|backup|console|audit`；`/containers` 与 `/user` 是独立应用模式。
+- 新增 tab 时：先加 `pages/XxxPage.vue`（`TabPage` + `LegacyPanel`），再在 `router.js` 加路由与 `meta.tab`，最后在 `AdminLayout` 的页面栈里加 `v-show` 和 tab 映射。
 - 不在浏览器内编译模板：必须用 SFC 预编译；CSP 继续禁止 `unsafe-eval`。
 - Vue 页面文本使用插值/`textContent`，禁止 `innerHTML`；旧页面壳通过 DOM API `importNode/appendChild` 挂载。
 - 切页必须清理：定时器、事件监听、地图动画、WebSocket/轮询、dialog；Vue 组件卸载时调用对应旧页面的停止/清理入口。
