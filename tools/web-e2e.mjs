@@ -2049,6 +2049,10 @@ async function main() {
             + "return c && c.getBoundingClientRect().width > 0; })()",
             20000, '圈地画布');
       }
+      if (path === '/config') {
+        await until("document.querySelectorAll('#status-chips .status-chip').length > 0",
+            20000, '配置状态');
+      }
       const detail = await evaluate(probe);
       if (path === '/config') {
         check('复杂页 /config 渲染配置与状态', detail.files >= 1 && detail.chips >= 1,
@@ -2117,7 +2121,8 @@ async function main() {
         + " || document.querySelector('.container-page.embedded .container-message.error')",
         30000, '天网容器列表');
     const skyContainer = await evaluate(`(async () => {
-      const row = document.querySelector('.container-page.embedded .container-row');
+      const rows = [...document.querySelectorAll('.container-page.embedded .container-row')];
+      const row = rows.find((node) => node.textContent.includes('8, 100, 8')) || rows[0];
       if (row) {
         row.click();
         const deadline = Date.now() + 8000;
@@ -2128,7 +2133,7 @@ async function main() {
       }
       return {
         embedded: !!document.querySelector('.container-page.embedded'),
-        rows: document.querySelectorAll('.container-page.embedded .container-row').length,
+        rows: rows.length,
         slots: document.querySelectorAll('.container-page.embedded .slot').length,
         grid: !!document.querySelector('.container-page.embedded .slot-grid'),
         section: document.querySelector('.section-tab.active')?.textContent.trim() || '',
@@ -2148,6 +2153,146 @@ async function main() {
     })`);
     check('旧 /config 别名仍可用', legacyAlias.path === '/config' && legacyAlias.panel,
         JSON.stringify(legacyAlias));
+
+    // ---- 玩家背包：在线读写、revision 冲突、离线安全队列 ----
+    const invHeaders = authHeaders;
+    const invGet = async (player, scope = 'inventory') => {
+      const response = await fetch(base + '/api/inventory?player=' + encodeURIComponent(player)
+        + '&scope=' + scope, { headers: invHeaders });
+      return { status: response.status, body: await response.json() };
+    };
+    await fetch(base + '/api/server/console', {
+      method: 'POST', headers: invHeaders,
+      body: JSON.stringify({ command: 'player E2EInv spawn' }),
+    });
+    let invOnline = null;
+    for (let i = 0; i < 30; i++) {
+      await sleep(500);
+      const current = await invGet('E2EInv');
+      if (current.status === 200 && current.body.online) {
+        invOnline = current.body;
+        break;
+      }
+    }
+    check('在线玩家背包可读取', Boolean(invOnline) && invOnline.slots.length === 41
+        && invOnline.writable === true, JSON.stringify({ online: invOnline?.online,
+          slots: invOnline?.slots?.length, writable: invOnline?.writable }));
+    if (invOnline) {
+      const originalSlots = invOnline.slots.slice();
+      const diamond = await (await fetch(base + '/api/inventory/item', {
+        method: 'POST', headers: invHeaders,
+        body: JSON.stringify({ id: 'minecraft:diamond', count: 5 }),
+      })).json();
+      const changedSlots = [diamond.encoded, ...originalSlots.slice(1)];
+      const write = await fetch(base + '/api/inventory/write', {
+        method: 'POST', headers: invHeaders,
+        body: JSON.stringify({ player: 'E2EInv', scope: 'inventory',
+          revision: invOnline.revision, slots: changedSlots }),
+      });
+      const writeBody = await write.json();
+      check('在线玩家背包可写入并保留物品编码', write.status === 200
+          && writeBody.ok === true && writeBody.queued === false, JSON.stringify(writeBody).slice(0, 300));
+      const after = await invGet('E2EInv');
+      check('在线玩家背包写入后重新读取一致', after.status === 200
+          && after.body.slots[0] === diamond.encoded
+          && after.body.items.some((item) => item.id === 'minecraft:diamond'
+            && item.count === 5), JSON.stringify({ slot0: after.body.slots[0]?.length,
+              items: after.body.items?.length }));
+      const conflict = await fetch(base + '/api/inventory/write', {
+        method: 'POST', headers: invHeaders,
+        body: JSON.stringify({ player: 'E2EInv', scope: 'inventory',
+          revision: invOnline.revision, slots: originalSlots }),
+      });
+      check('在线玩家背包 revision 冲突返回 409', conflict.status === 409,
+          'status=' + conflict.status);
+      const restore = await fetch(base + '/api/inventory/write', {
+        method: 'POST', headers: invHeaders,
+        body: JSON.stringify({ player: 'E2EInv', scope: 'inventory',
+          revision: after.body.revision, slots: originalSlots }),
+      });
+      check('在线玩家背包测试写入可还原', restore.status === 200, 'status=' + restore.status);
+    }
+
+    await fetch(base + '/api/server/console', {
+      method: 'POST', headers: invHeaders,
+      body: JSON.stringify({ command: 'player E2EInv kill' }),
+    });
+    let invOffline = null;
+    for (let i = 0; i < 20; i++) {
+      await sleep(500);
+      const current = await invGet('E2EInv');
+      if (current.status === 200 && current.body.online === false) {
+        invOffline = current.body;
+        break;
+      }
+    }
+    check('离线玩家背包只读且可入队', Boolean(invOffline)
+        && invOffline.writable === false && invOffline.queueWritable === true,
+        JSON.stringify({ online: invOffline?.online, writable: invOffline?.writable }));
+    if (invOffline) {
+      const originalSlots = invOffline.slots.slice();
+      const emerald = await (await fetch(base + '/api/inventory/item', {
+        method: 'POST', headers: invHeaders,
+        body: JSON.stringify({ id: 'minecraft:emerald', count: 2 }),
+      })).json();
+      const queued = await fetch(base + '/api/inventory/write', {
+        method: 'POST', headers: invHeaders,
+        body: JSON.stringify({ player: 'E2EInv', scope: 'inventory',
+          revision: invOffline.revision, slots: [emerald.encoded, ...originalSlots.slice(1)] }),
+      });
+      const queuedBody = await queued.json();
+      check('离线玩家写入进入安全队列', queued.status === 200
+          && queuedBody.ok === true && queuedBody.queued === true, JSON.stringify(queuedBody).slice(0, 300));
+      const pending = await invGet('E2EInv');
+      check('离线队列内容可回读并标记 pending', pending.body.pendingWrite === true
+          && pending.body.slots[0] === emerald.encoded,
+          JSON.stringify({ pending: pending.body.pendingWrite }));
+
+      await fetch(base + '/api/server/console', {
+        method: 'POST', headers: invHeaders,
+        body: JSON.stringify({ command: 'player E2EInv spawn' }),
+      });
+      let applied = null;
+      for (let i = 0; i < 30; i++) {
+        await sleep(500);
+        const current = await invGet('E2EInv');
+        if (current.status === 200 && current.body.online
+            && current.body.slots[0] === emerald.encoded) {
+          applied = current.body;
+          break;
+        }
+      }
+      check('离线队列在玩家登录后应用', Boolean(applied)
+          && applied.pendingWrite === false
+          && applied.items.some((item) => item.id === 'minecraft:emerald'), 'applied=' + Boolean(applied));
+      if (applied) {
+        await fetch(base + '/api/inventory/write', {
+          method: 'POST', headers: invHeaders,
+          body: JSON.stringify({ player: 'E2EInv', scope: 'inventory',
+            revision: applied.revision, slots: originalSlots }),
+        });
+      }
+      await fetch(base + '/api/server/console', {
+        method: 'POST', headers: invHeaders,
+        body: JSON.stringify({ command: 'player E2EInv kill' }),
+      });
+    }
+
+    await navigate(base + '/samsara/sky/inventory');
+    await until("document.querySelector('.inventory-layout')", 25000, '玩家背包页');
+    await until("document.querySelectorAll('.inventory-main .slot').length === 41",
+        20000, '玩家背包槽位');
+    const inventoryUi = await evaluate(`(() => ({
+      page: !!document.querySelector('[data-page="inventory"]'),
+      slots: document.querySelectorAll('.inventory-main .slot').length,
+      players: document.querySelectorAll('.inventory-player').length,
+      scope: !!document.querySelector('.inventory-scope'),
+      section: document.querySelector('.section-tab.active')?.textContent.trim() || '',
+      errors: window.__e2eErrors?.length || 0,
+    }))()`);
+    check('天网玩家背包页可打开', inventoryUi.page && inventoryUi.slots === 41
+        && inventoryUi.players >= 1 && inventoryUi.scope === true
+        && inventoryUi.section === '天网', JSON.stringify(inventoryUi));
 
     // ---- 用户端只读页：无需 token，不加载管理端脚本，不调用管理端 API ----
     await navigate(base + '/user');

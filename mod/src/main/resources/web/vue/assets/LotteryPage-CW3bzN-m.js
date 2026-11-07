@@ -1,1 +1,0 @@
-import{A as e,T as t,_ as n,p as r}from"./index-C5XmwS5z.js";import{t as i}from"./TabShell-D-mEa6yE.js";import{t as a}from"./LegacyPanel-Dd3vWENQ.js";var o={__name:`LotteryPage`,setup(o){return(o,s)=>(t(),r(i,{name:`lottery`},{default:e(()=>[n(a,{"panel-id":`panel-lottery`})]),_:1}))}};export{o as default};

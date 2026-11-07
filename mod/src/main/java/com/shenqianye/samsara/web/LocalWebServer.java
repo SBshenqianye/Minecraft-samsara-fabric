@@ -55,6 +55,7 @@ public final class LocalWebServer {
     private final WebUserService userService;
     private final LotteryWebService lotteryService;
     private final ContainerWebService containerService;
+    private final InventoryWebService inventoryService;
     private final String token;
     private final int port;
     private HttpServer server;
@@ -157,6 +158,23 @@ public final class LocalWebServer {
                           LotteryWebService lotteryService,
                           ContainerWebService containerService,
                           String token, int port) {
+        this(service, identityService, outputService, permissionService, mapService,
+                worldStackService, serverService, diffService, userService, lotteryService,
+                containerService, null, token, port);
+    }
+
+    public LocalWebServer(ConfigService service, IdentityWebService identityService,
+                          OutputWebService outputService,
+                          PermissionWebService permissionService,
+                          WebMapService mapService,
+                          WorldStackWebService worldStackService,
+                          ServerWebService serverService,
+                          ChunkDiffWebService diffService,
+                          WebUserService userService,
+                          LotteryWebService lotteryService,
+                          ContainerWebService containerService,
+                          InventoryWebService inventoryService,
+                          String token, int port) {
         this.service = service;
         this.identityService = identityService;
         this.outputService = outputService;
@@ -168,6 +186,7 @@ public final class LocalWebServer {
         this.userService = userService;
         this.lotteryService = lotteryService;
         this.containerService = containerService;
+        this.inventoryService = inventoryService;
         this.token = token == null ? "" : token;
         this.port = port;
     }
@@ -224,6 +243,9 @@ public final class LocalWebServer {
         }
         if (containerService != null) {
             server.createContext("/api/containers", this::handleContainers);
+        }
+        if (inventoryService != null) {
+            server.createContext("/api/inventory", this::handleInventory);
         }
         server.createContext("/api/audit", this::handleAudit);
         executor = Executors.newFixedThreadPool(4, runnable -> {
@@ -1524,6 +1546,62 @@ public final class LocalWebServer {
         }
     }
 
+    private void handleInventory(HttpExchange exchange) throws IOException {
+        long start = System.currentTimeMillis();
+        int status = 200;
+        try {
+            int auth = authorize(exchange);
+            if (auth != 0) {
+                status = auth;
+                return;
+            }
+            String path = exchange.getRequestURI().getPath();
+            String method = exchange.getRequestMethod();
+            if ("GET".equals(method) && "/api/inventory".equals(path)) {
+                Map<String, Object> result = inventoryService.read(
+                        parseQuery(exchange.getRequestURI().getRawQuery()));
+                status = result.get("ok") == Boolean.TRUE ? 200
+                        : result.get("status") instanceof Number number ? number.intValue() : 400;
+                json(exchange, status, result);
+                return;
+            }
+            if ("POST".equals(method) && ("/api/inventory/write".equals(path)
+                    || "/api/inventory/item".equals(path))) {
+                String body;
+                try {
+                    body = readBody(exchange);
+                } catch (BodyTooLarge e) {
+                    status = 413;
+                    json(exchange, status, Map.of("error", "请求体过大"));
+                    return;
+                }
+                Map<String, Object> result;
+                if ("/api/inventory/item".equals(path)) {
+                    result = inventoryService.item(body);
+                } else {
+                    AgentAuthService.AuthContext context = AgentAuthService.getInstance()
+                            .context(exchange);
+                    String actor = context == null ? "admin" : context.actor();
+                    result = inventoryService.write(body, actor);
+                }
+                Object requested = result.get("status");
+                status = requested instanceof Number number ? number.intValue()
+                        : result.get("ok") == Boolean.TRUE ? 200 : 400;
+                json(exchange, status, result);
+                return;
+            }
+            status = 404;
+            json(exchange, status, Map.of("error", "未知背包接口"));
+        } catch (RuntimeException e) {
+            status = 500;
+            json(exchange, status, Map.of("error", errorDetail(e)));
+            LOG.warn("[web] 背包操作 {} 失败: {}", exchange.getRequestURI().getPath(),
+                    e.getMessage());
+        } finally {
+            log(exchange, status, start);
+        }
+    }
+
     private void handleStatus(HttpExchange exchange) throws IOException {        long start = System.currentTimeMillis();
         int status = 200;
         try {
@@ -1624,6 +1702,9 @@ public final class LocalWebServer {
         }
         if (path.startsWith("/api/audit")) {
             return path.equals("/api/audit/preview") ? AgentScope.READ : AgentScope.OPS;
+        }
+        if (path.startsWith("/api/inventory")) {
+            return "GET".equals(method) ? AgentScope.READ : AgentScope.INVENTORY;
         }
         if (path.startsWith("/api/diff")) {
             return path.equals("/api/diff/view") ? AgentScope.READ : AgentScope.OPS;

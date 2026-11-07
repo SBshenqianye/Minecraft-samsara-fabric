@@ -132,6 +132,7 @@ public class Samsara implements DedicatedServerModInitializer {
             com.shenqianye.samsara.lottery.LotteryService.getInstance().tick(server);
             com.shenqianye.samsara.insurance.InsuranceService.getInstance().tick(server);
             com.shenqianye.samsara.container.ContainerIndexService.getInstance().tick(server);
+            com.shenqianye.samsara.container.PlayerInventoryService.getInstance().tick(server);
             com.shenqianye.samsara.command.DebugCommand.onTick();
             if (++unloadFlushCounter[0] >= 20) {
                 unloadFlushCounter[0] = 0;
@@ -172,6 +173,7 @@ public class Samsara implements DedicatedServerModInitializer {
             com.shenqianye.samsara.track.view.ViewManager.getInstance().onServerStarted(server);
             com.shenqianye.samsara.permission.PermissionCommandPaths.capture(server);
             com.shenqianye.samsara.shutdown.ShutdownAnnouncer.onStarted();
+            com.shenqianye.samsara.container.PlayerInventoryService.getInstance().init(server);
             com.shenqianye.samsara.web.WebLifecycle.start(server);
         });
 
@@ -205,6 +207,10 @@ public class Samsara implements DedicatedServerModInitializer {
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
                 com.shenqianye.samsara.identity.IdentityService.getInstance()
                         .onJoin(handler.getPlayer()));
+        // 背包待写入队列：身份数据应用之后、正式传送/游玩前应用
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
+                com.shenqianye.samsara.container.PlayerInventoryService.getInstance()
+                        .onJoin(handler.getPlayer()));
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
                 com.shenqianye.samsara.opauth.OpAuthService.getInstance()
                         .onJoin(handler.getPlayer()));
@@ -235,6 +241,9 @@ public class Samsara implements DedicatedServerModInitializer {
         // 优雅停服：先停 Web、同步身份、恢复回看、刷盘，最后发退出界面提示
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
             com.shenqianye.samsara.web.WebLifecycle.stop(); // 先停 Web，避免请求在停服窗口写配置
+            // 背包待写入队列：在保存玩家数据、身份同步之前应用
+            com.shenqianye.samsara.container.PlayerInventoryService.getInstance()
+                    .onServerStopping(server);
             // 身份全状态同步必须在服务器保存玩家数据之前执行
             com.shenqianye.samsara.identity.IdentityService.getInstance().onServerStopping(server);
             com.shenqianye.samsara.track.view.ViewManager.getInstance().shutdown(server); // 先恢复观看者，再让服务器保存

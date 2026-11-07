@@ -44,7 +44,8 @@ public final class WebLifecycle {
                 new ChunkDiffWebService(minecraftServer),
                 new WebUserService(mapService, minecraftServer),
                 new LotteryWebService(minecraftServer),
-                new ContainerWebService(minecraftServer), token, port);
+                new ContainerWebService(minecraftServer),
+                new InventoryWebService(), token, port);
         if (!candidate.start()) {
             return; // 端口占用：WARN 已记录，不阻塞服务器
         }

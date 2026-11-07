@@ -9,7 +9,8 @@ public enum AgentScope {
     ANNOUNCE,
     CONFIG,
     OPS,
-    RCON;
+    RCON,
+    INVENTORY;
 
     public String id() {
         return name().toLowerCase(Locale.ROOT);
@@ -27,6 +28,6 @@ public enum AgentScope {
     }
 
     public static List<String> ids() {
-        return List.of("read", "announce", "config", "ops", "rcon");
+        return List.of("read", "announce", "config", "ops", "rcon", "inventory");
     }
 }

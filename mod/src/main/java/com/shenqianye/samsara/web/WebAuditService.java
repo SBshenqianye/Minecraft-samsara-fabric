@@ -129,27 +129,40 @@ public final class WebAuditService {
      */
     public synchronized void captureContainer(String action, String actor, String detail,
                                               String snapshotJson) {
+        captureSnapshotFile("container.json", action, actor, detail,
+                "容器编辑审计（不可自动回滚）：", snapshotJson);
+    }
+
+    /** 玩家背包/末影箱写入审计；与容器一样只保存编辑前快照，不自动回滚。 */
+    public synchronized void captureInventory(String action, String actor, String detail,
+                                              String snapshotJson) {
+        captureSnapshotFile("inventory.json", action, actor, detail,
+                "玩家背包编辑审计（不可自动回滚）：", snapshotJson);
+    }
+
+    private void captureSnapshotFile(String fileName, String action, String actor, String detail,
+                                     String notePrefix, String snapshotJson) {
         try {
             String id = "wa-" + System.currentTimeMillis() + "-" + SEQ.incrementAndGet();
             Path dir = root.resolve(id);
             Files.createDirectories(dir);
             String body = snapshotJson == null ? "{}" : snapshotJson;
-            Files.writeString(dir.resolve("container.json"), body, StandardCharsets.UTF_8);
+            Files.writeString(dir.resolve(fileName), body, StandardCharsets.UTF_8);
             Entry entry = new Entry();
             entry.id = id;
             entry.createdAt = System.currentTimeMillis();
             entry.actor = actor == null || actor.isBlank() ? "admin" : actor;
-            entry.action = action == null || action.isBlank() ? "/api/containers/write" : action;
+            entry.action = action == null || action.isBlank() ? "/api/inventory/write" : action;
             entry.target = entry.action;
             entry.status = "captured";
             entry.rollbackable = false;
-            entry.note = "容器编辑审计（不可自动回滚）：" + (detail == null ? "" : detail);
+            entry.note = notePrefix + (detail == null ? "" : detail);
             entry.fileCount = 0;
             entry.bytes = body.getBytes(StandardCharsets.UTF_8).length;
             entry.files = new ArrayList<>();
             writeManifest(dir, entry);
         } catch (Throwable t) {
-            Samsara.LOGGER.debug("[web] 容器审计写入失败: {}", t.getMessage());
+            Samsara.LOGGER.debug("[web] 背包审计写入失败: {}", t.getMessage());
         }
     }
 

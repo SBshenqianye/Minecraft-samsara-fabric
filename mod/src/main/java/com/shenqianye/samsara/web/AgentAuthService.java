@@ -78,6 +78,7 @@ public final class AgentAuthService {
             case CONFIG -> 60;
             case OPS -> 30;
             case RCON -> 20;
+            case INVENTORY -> 30;
         };
     }
 
@@ -95,6 +96,7 @@ public final class AgentAuthService {
             case CONFIG -> 120;
             case OPS -> 60;
             case RCON -> 40;
+            case INVENTORY -> 60;
         };
     }
 
@@ -109,7 +111,8 @@ public final class AgentAuthService {
                 "announcePerMinute", limitFor(context, AgentScope.ANNOUNCE),
                 "configPerMinute", limitFor(context, AgentScope.CONFIG),
                 "opsPerMinute", limitFor(context, AgentScope.OPS),
-                "rconPerMinute", limitFor(context, AgentScope.RCON)));
+                "rconPerMinute", limitFor(context, AgentScope.RCON),
+                "inventoryPerMinute", limitFor(context, AgentScope.INVENTORY)));
         out.put("time", System.currentTimeMillis());
         return out;
     }
