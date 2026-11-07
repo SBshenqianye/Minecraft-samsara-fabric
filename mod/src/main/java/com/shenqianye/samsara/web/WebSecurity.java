@@ -49,12 +49,16 @@ public final class WebSecurity {
     /** 静态资源路径白名单（固定路径，不做任何路径拼接）。 */
     public static String staticResource(String path) {
         return switch (path) {
-            case "/", "/index.html", "/user", "/containers" -> "/web/vue/index.html";
+            case "/", "/index.html", "/user", "/containers",
+                 "/config", "/config-editor", "/claim-range", "/identity", "/output",
+                 "/permissions", "/map", "/announcements", "/world-stack", "/lottery",
+                 "/server", "/server/config", "/server/backup", "/server/console",
+                 "/server/audit" -> "/web/vue/index.html";
             case "/legacy.html" -> "/web/index.html";
             case "/legacy-user.html" -> "/web/user.html";
             case "/user.html" -> "/web/user.html";
             case "/user.js" -> "/web/user.js";
-            case "/lottery", "/lottery.html" -> "/web/lottery.html";
+            case "/lottery.html" -> "/web/lottery.html";
             case "/lottery.js" -> "/web/lottery.js";
             case "/item-ui.js" -> "/web/item-ui.js";
             case "/value-table.js" -> "/web/value-table.js";
@@ -64,7 +68,7 @@ public final class WebSecurity {
             case "/chat-text.js" -> "/web/chat-text.js";
             case "/announcements.js" -> "/web/announcements.js";
             case "/openapi.json" -> "/web/openapi.json";
-            case "/identity", "/identity.html" -> "/web/identity.html";
+            case "/identity.html" -> "/web/identity.html";
             case "/identity.js" -> "/web/identity.js";
             case "/structured.js" -> "/web/structured.js";
             case "/form-kit.js" -> "/web/form-kit.js";

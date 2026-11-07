@@ -1985,6 +1985,40 @@ async function main() {
       body: JSON.stringify({ command: 'setblock 8 100 8 minecraft:air' }),
     });
 
+    // ---- 简单页逐路由验证（Vue page/view 直接打开） ----
+    const simpleRoutes = [
+      ['/config-editor', 'panel-config-editor'],
+      ['/announcements', 'panel-announcements'],
+      ['/output', 'panel-output'],
+      ['/permissions', 'panel-permissions'],
+      ['/identity', 'panel-identity'],
+      ['/world-stack', 'panel-world-stack'],
+      ['/lottery', 'panel-lottery'],
+      ['/server/config', 'server-config-panel'],
+      ['/server/backup', 'server-backup-panel'],
+      ['/server/console', 'server-console-panel'],
+      ['/server/audit', 'server-audit-panel'],
+    ];
+    for (const [path, panelId] of simpleRoutes) {
+      await navigate(base + path);
+      await until("window.SamsaraUI && (() => { const p = document.getElementById('"
+          + panelId + "'); return p && !p.hidden && getComputedStyle(p).display !== 'none'; })()",
+          20000, '路由 ' + path);
+      const routeState = await evaluate(`(() => {
+        const panel = document.getElementById(${JSON.stringify(panelId)});
+        return {
+          path: location.pathname,
+          panelVisible: panel ? !panel.hidden
+            && getComputedStyle(panel).display !== 'none' : false,
+          header: !!document.querySelector('.app-header'),
+          tokenDialog: document.getElementById('token-dialog')?.open === true,
+        };
+      })()`);
+      check('简单页路由 ' + path + ' 可打开', routeState.path === path
+          && routeState.panelVisible && routeState.header && !routeState.tokenDialog,
+          JSON.stringify(routeState));
+    }
+
     // ---- 用户端只读页：无需 token，不加载管理端脚本，不调用管理端 API ----
     await navigate(base + '/user');
     await until("window.SamsaraUI && document.querySelectorAll('#user-status .status-chip').length > 0",

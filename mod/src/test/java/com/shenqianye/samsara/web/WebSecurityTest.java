@@ -26,6 +26,9 @@ class WebSecurityTest {
         assertEquals("/web/vue/index.html", WebSecurity.staticResource("/"));
         assertEquals("/web/vue/index.html", WebSecurity.staticResource("/user"));
         assertEquals("/web/vue/index.html", WebSecurity.staticResource("/containers"));
+        assertEquals("/web/vue/index.html", WebSecurity.staticResource("/config-editor"));
+        assertEquals("/web/vue/index.html", WebSecurity.staticResource("/map"));
+        assertEquals("/web/vue/index.html", WebSecurity.staticResource("/server/console"));
         assertEquals("/web/index.html", WebSecurity.staticResource("/legacy.html"));
         assertEquals("/web/user.html", WebSecurity.staticResource("/legacy-user.html"));
         assertEquals("/web/vue/assets/index-abc.js", WebSecurity.staticResource("/vue/assets/index-abc.js"));
@@ -37,7 +40,8 @@ class WebSecurityTest {
         assertEquals("/web/announcements.js", WebSecurity.staticResource("/announcements.js"));
         assertEquals("/web/openapi.json", WebSecurity.staticResource("/openapi.json"));
         assertEquals("/web/user.js", WebSecurity.staticResource("/user.js"));
-        assertEquals("/web/lottery.html", WebSecurity.staticResource("/lottery"));
+        assertEquals("/web/vue/index.html", WebSecurity.staticResource("/lottery"));
+        assertEquals("/web/lottery.html", WebSecurity.staticResource("/lottery.html"));
         assertEquals("/web/lottery.js", WebSecurity.staticResource("/lottery.js"));
         assertEquals("/web/banners.js", WebSecurity.staticResource("/banners.js"));
         assertEquals("/web/map.js", WebSecurity.staticResource("/map.js"));
