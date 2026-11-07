@@ -1,0 +1,1 @@
+import{B as e,Q as t,T as n,y as r}from"./index-BSIlEPCC.js";import{t as i}from"./TabShell-0YJu2-g0.js";import{t as a}from"./LegacyPanel-4FpxhgB0.js";var o={__name:`PermissionsPage`,setup(o){return(o,s)=>(e(),r(i,{name:`permissions`},{default:t(()=>[n(a,{"panel-id":`panel-permissions`})]),_:1}))}};export{o as default};

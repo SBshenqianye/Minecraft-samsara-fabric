@@ -3,6 +3,9 @@ import App from './App.vue';
 import router from './router.js';
 import './style.css';
 import './ia.css';
+import './shell.css';
+
+window.SamsaraUseRouter = true;
 
 const LEGACY_HASH_ROUTES = {
   config: '/config',

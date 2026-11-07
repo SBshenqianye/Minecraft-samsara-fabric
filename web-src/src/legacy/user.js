@@ -8,9 +8,12 @@ export async function mountLegacyUser(host) {
   if (!response.ok) throw new Error('用户端页面壳加载失败：' + response.status);
   const html = await response.text();
   const doc = new DOMParser().parseFromString(html, 'text/html');
-  for (const node of Array.from(doc.body.childNodes)) {
-    if (node.nodeType === Node.ELEMENT_NODE && node.tagName === 'SCRIPT') continue;
-    host.appendChild(document.importNode(node, true));
+  const main = doc.querySelector('main.app-shell.user-shell') || doc.querySelector('main');
+  const content = main?.querySelector('.content') || main;
+  if (content) {
+    for (const child of Array.from(content.children)) {
+      host.appendChild(document.importNode(child, true));
+    }
   }
   if (started) return;
   started = true;

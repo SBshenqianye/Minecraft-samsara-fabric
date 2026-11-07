@@ -5,6 +5,8 @@
 > **v0.47.0 起**：入口由 `web-src/`（Vue 3 + Vue Router + Vite）构建到 `mod/src/main/resources/web/vue/`；`/`、`/user`、`/containers` 是同一应用。复杂页面仍可复用旧命令式脚本，由 Vue 组件 `onMounted/onUnmounted` 挂载，不需要一次性重写算法。
 >
 > **v0.48.0 起**：目录统一为 `layouts/`（`AdminLayout.vue`）、`pages/`（所有路由页面）、`components/`（`ItemSlotGrid.vue`、`FolderTree.vue`、`LegacyPanel.vue`、`TabShell.vue`），删除 `views/`。管理端为左侧顶级工作区 + 二级 Tab + 页内导航；Element Plus 按需引入（`unplugin-vue-components` + `ElementPlusResolver`），不全局导入完整样式。
+>
+> **v0.48.1 起**：管理端 header 由 `AdminLayout.vue` 自绘（品牌/版本/面包屑/连接/操作栏），旧 header 不再导入；`.top-tabs` / `#mods-tabs` / `#server-tabs` 仅保留隐藏 DOM 兼容旧脚本和 E2E。header 必须是 sticky 容器本身（不要再套等高层 wrapper）；二级 Tab 贴 header，`#global-nav` 在二级 Tab 下方。`/user` 使用独立的公开信息壳层。
 
 ## 1. 生命周期契约
 

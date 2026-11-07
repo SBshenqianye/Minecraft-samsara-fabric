@@ -1,0 +1,155 @@
+/* v0.48.1 管理端壳层重做：单层 sticky header + 明确的二级栏/页内导航偏移 */
+:root {
+  --ia-section-h: 56px;
+}
+
+.ia-layout .ia-legacy-tabs {
+  display: none !important;
+}
+
+.ia-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 10px 20px 0;
+}
+
+.ia-header-main {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto minmax(200px, 1fr);
+  align-items: center;
+  gap: 16px;
+  min-height: 52px;
+  padding-bottom: 8px;
+}
+
+.ia-brand {
+  min-width: 0;
+}
+
+.ia-brand .brand-text h1 {
+  font-size: 18px;
+}
+
+.ia-brand .brand-text p {
+  font-size: 11px;
+}
+
+.ia-header-context {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+  padding: 4px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel-soft);
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.ia-context-workspace {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.ia-context-sep {
+  color: var(--line-strong);
+}
+
+.ia-context-page {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--fg-soft);
+  font-weight: 600;
+}
+
+.ia-header .connection {
+  justify-content: flex-end;
+  padding-bottom: 0;
+}
+
+.ia-header .ia-actions {
+  padding: 7px 0 8px;
+  border-top: 1px solid var(--line);
+}
+
+.ia-header .tab-actions-title {
+  min-width: 0;
+}
+
+.ia-header .tab-actions-title span {
+  max-width: min(48vw, 680px);
+}
+
+.ia-main .side-nav {
+  top: calc(var(--header-h, 128px) + var(--ia-section-h) + 12px);
+  max-height: calc(100vh - var(--header-h, 128px) - var(--ia-section-h) - 24px);
+}
+
+.workspace-rail {
+  top: calc(var(--header-h, 128px) + 12px);
+  max-height: calc(100vh - var(--header-h, 128px) - 24px);
+}
+
+.section-tabs {
+  top: var(--header-h, 128px);
+}
+
+/* 页面壳已经有面包屑和二级 Tab；隐藏旧 panel 的第一层重复标题，保留说明与操作 */
+.ia-main .content .tab-shell .panel-stack > .panel:first-child > .panel-head h2 {
+  display: none;
+}
+
+.ia-main .content .tab-shell .panel-stack > .panel:first-child > .panel-head {
+  margin-bottom: 10px;
+}
+
+@media (max-width: 1120px) {
+  .ia-header-main {
+    grid-template-columns: minmax(190px, 1fr) auto;
+  }
+
+  .ia-header-context {
+    display: none;
+  }
+}
+
+@media (max-width: 980px) {
+  .ia-header {
+    padding: 8px 12px 0;
+  }
+
+  .ia-header-main {
+    grid-template-columns: minmax(0, 1fr) auto;
+    min-height: 48px;
+  }
+
+  .ia-header .ia-actions {
+    align-items: flex-start;
+  }
+
+  .ia-header .tab-actions-title {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+
+  .ia-header .tab-actions-title span {
+    max-width: 80vw;
+    white-space: normal;
+  }
+
+  .workspace-rail {
+    top: var(--header-h, 128px);
+  }
+
+  .ia-main .side-nav {
+    position: static;
+    max-height: none;
+  }
+}

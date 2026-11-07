@@ -1,0 +1,1 @@
+import{B as e,T as t,x as n}from"./index-BSIlEPCC.js";import{t as r}from"./LegacyPanel-4FpxhgB0.js";var i={id:`panel-server`},a={__name:`ServerPage`,setup(a){return(a,o)=>(e(),n(`div`,i,[t(r,{"panel-id":`server-config-panel`}),t(r,{"panel-id":`server-backup-panel`}),t(r,{"panel-id":`server-console-panel`}),t(r,{"panel-id":`server-audit-panel`})]))}};export{a as default};

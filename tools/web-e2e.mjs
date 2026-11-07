@@ -2105,6 +2105,53 @@ async function main() {
         JSON.stringify(iaSamsara.sections));
     check('samsara 工作区直接路由可用', iaSamsara.path === '/samsara/economy'
         && iaSamsara.crumb === '经济业务', JSON.stringify(iaSamsara));
+
+    await cdp.send('Input.dispatchMouseEvent', {
+      type: 'mouseWheel', x: 720, y: 520, deltaX: 0, deltaY: 520,
+    });
+    await sleep(700);
+    const stickyLayout = await evaluate(`(() => {
+      const box = (selector) => {
+        const node = document.querySelector(selector);
+        if (!node) return null;
+        const rect = node.getBoundingClientRect();
+        return { top: Math.round(rect.top), height: Math.round(rect.height) };
+      };
+      return {
+        y: Math.round(window.scrollY),
+        scrollHeight: document.documentElement.scrollHeight,
+        viewport: document.documentElement.clientHeight,
+        header: box('.ia-header'),
+        section: box('.section-tabs'),
+        rail: box('.workspace-rail'),
+        nav: box('#global-nav'),
+        overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 2,
+      };
+    })()`);
+    if (stickyLayout.y < 200) {
+      await evaluate("document.documentElement.scrollTop = 520; document.body.scrollTop = 520; true;");
+      await sleep(500);
+      Object.assign(stickyLayout, await evaluate(`(() => {
+        const box = (selector) => {
+          const node = document.querySelector(selector);
+          if (!node) return null;
+          const rect = node.getBoundingClientRect();
+          return { top: Math.round(rect.top), height: Math.round(rect.height) };
+        };
+        return { y: Math.round(window.scrollY), header: box('.ia-header'),
+          section: box('.section-tabs'), rail: box('.workspace-rail'), nav: box('#global-nav') };
+      })()`));
+    }
+    check('管理端滚动时 header / 二级栏 / 页内导航分层吸附',
+        stickyLayout.y > 0 && stickyLayout.header?.top === 0
+        && Math.abs(stickyLayout.section.top - stickyLayout.header.height) <= 2
+        && stickyLayout.nav.top >= stickyLayout.section.top + stickyLayout.section.height
+        && stickyLayout.nav.top <= stickyLayout.section.top + stickyLayout.section.height + 24
+        && stickyLayout.rail.top >= stickyLayout.header.height - 2
+        && !stickyLayout.overflow, JSON.stringify(stickyLayout));
+    await evaluate("window.scrollTo(0, 0); true;");
+    await sleep(200);
+
     await evaluate("document.querySelector('.section-tab[data-section=\"sky\"]').click(); true;");
     await until("location.pathname === '/samsara/sky/track'", 15000, '天网二级切换');
     const skyRoute = await evaluate(`({
@@ -2443,6 +2490,23 @@ async function main() {
         errors: window.__e2eErrors.slice(),
       };
     })()`);
+    const userShell = await evaluate(`({
+      topbar: document.querySelectorAll('.user-topbar.app-header').length,
+      nav: document.querySelectorAll('.user-nav .user-nav-item').length,
+      navLabels: [...document.querySelectorAll('.user-nav .user-nav-item')]
+        .map((node) => node.textContent.trim()),
+      title: document.title,
+      anchors: ['user-section-status', 'user-section-worlds', 'user-section-lottery',
+        'user-section-values', 'user-section-map']
+        .filter((id) => document.getElementById(id)).length,
+      overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 2,
+    })`);
+    check('用户端使用新的公开信息壳层与锚点导航', userShell.topbar === 1
+        && userShell.nav === 5 && userShell.anchors === 5
+        && userShell.title === 'samsara · 服务器公开信息'
+        && userShell.navLabels.includes('地图') && !userShell.overflow,
+        JSON.stringify(userShell));
+
     check('用户端无需 token 并走用户 API', userPage.apiBase === '/api/user/map'
         && userPage.publicToken === 'public' && userPage.userCalls >= 2,
         JSON.stringify({ base: userPage.apiBase, token: userPage.publicToken,

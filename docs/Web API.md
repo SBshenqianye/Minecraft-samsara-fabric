@@ -1,6 +1,6 @@
 # samsara · Web API 接口文档
 
-> 状态：v0.48.0（2026-11-07）
+> 状态：v0.48.1（2026-11-08）
 > 适用：本地管理端 `/`、用户端只读页 `/user`、以及未来接入的脚本/面板。
 > 代码入口：`mod/src/main/java/com/shenqianye/samsara/web/LocalWebServer.java`
 > 安全边界：`WebSecurity.java`、`WebUserService.java`

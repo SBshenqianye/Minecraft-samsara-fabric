@@ -3479,7 +3479,11 @@ function setActiveTab(name) {
   for (const tab of document.querySelectorAll('.tab[data-panel]')) {
     tab.classList.toggle('active', tab.dataset.panel === 'panel-' + name);
   }
-  try { history.replaceState(null, '', '#' + name); } catch (e) { /* file:// 等场景忽略 */ }
+  try {
+    history.replaceState(null, '', window.SamsaraUseRouter
+      ? (location.pathname + location.search)
+      : '#' + name);
+  } catch (e) { /* file:// 等场景忽略 */ }
   updateTabActions(name);
   // 导航是跨页共享的 DOM；先清空，页面自己调用 buildNav 时再显示。
   clearNav();

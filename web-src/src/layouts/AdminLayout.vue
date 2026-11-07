@@ -1,6 +1,79 @@
 <template>
   <div class="admin-layout ia-layout">
-    <div ref="headerHost" class="ia-header-host"></div>
+    <header class="app-header ia-header">
+      <div class="ia-header-main">
+        <div class="brand ia-brand">
+          <div class="brand-mark" aria-hidden="true">
+            <span></span><span></span><span></span>
+          </div>
+          <div class="brand-text">
+            <h1>samsara</h1>
+            <p>Web 控制台 <span id="app-version" class="version-pill">v—</span></p>
+          </div>
+        </div>
+
+        <div class="ia-header-context" aria-live="polite">
+          <span class="ia-context-workspace">{{ workspaceLabel }}</span>
+          <span class="ia-context-sep">/</span>
+          <span class="ia-context-page">{{ pageTitle }}</span>
+        </div>
+
+        <div class="connection">
+          <span id="connection-state" class="conn-state">未连接</span>
+          <a class="user-view-link" href="/user" target="_blank" rel="noopener"
+              title="公开只读信息，不需要 token">用户视图</a>
+        </div>
+      </div>
+
+      <div id="mods-actions" class="tab-actions ia-actions">
+        <div class="tab-actions-title">
+          <strong id="action-title">配置</strong>
+          <span id="action-hint" class="muted small"></span>
+        </div>
+        <div class="tab-actions-buttons">
+          <button id="action-default" class="ghost" type="button" hidden>恢复默认</button>
+          <button id="reload" class="ghost" type="button">重新读取</button>
+          <button id="save" class="primary" type="button">保存并重载</button>
+        </div>
+      </div>
+
+      <div id="server-actions" class="tab-actions ia-actions" hidden>
+        <div class="tab-actions-title">
+          <strong id="server-action-title">服务器配置</strong>
+          <span id="server-action-hint" class="muted small"></span>
+        </div>
+        <div class="tab-actions-buttons">
+          <button id="server-reload" class="ghost" type="button">重新读取</button>
+          <button id="server-save" class="primary" type="button">保存并重载</button>
+          <button id="server-backup-create" class="primary" type="button" hidden>创建备份</button>
+        </div>
+      </div>
+
+      <nav class="ia-legacy-tabs" aria-hidden="true">
+        <button class="top-tab active" type="button" data-section="mods">samsara</button>
+        <button class="top-tab" type="button" data-section="server">本体</button>
+      </nav>
+
+      <nav id="mods-tabs" class="ia-legacy-tabs" aria-hidden="true">
+        <button class="tab" type="button" data-panel="panel-config-editor">配置编辑器</button>
+        <button class="tab active" type="button" data-panel="panel-config">高级配置</button>
+        <button class="tab" type="button" data-panel="panel-claim-range">圈地范围</button>
+        <button class="tab" type="button" data-panel="panel-output">输出格式</button>
+        <button class="tab" type="button" data-panel="panel-permissions">权限</button>
+        <button class="tab" type="button" data-panel="panel-map">地图</button>
+        <button class="tab" type="button" data-panel="panel-announcements">公告</button>
+        <button class="tab" type="button" data-panel="panel-identity">身份组</button>
+        <button class="tab" type="button" data-panel="panel-world-stack">世界栈</button>
+        <button class="tab" type="button" data-panel="panel-lottery">经济业务</button>
+      </nav>
+
+      <nav id="server-tabs" class="ia-legacy-tabs" aria-hidden="true">
+        <button class="tab active" type="button" data-server-panel="server-config-panel">服务器配置</button>
+        <button class="tab" type="button" data-server-panel="server-backup-panel">存档备份</button>
+        <button class="tab" type="button" data-server-panel="server-console-panel">RCON 控制台</button>
+        <button class="tab" type="button" data-server-panel="server-audit-panel">Web 审计</button>
+      </nav>
+    </header>
     <div class="ia-body">
       <nav class="workspace-rail" aria-label="顶级工作区">
         <div class="rail-title">工作区</div>
@@ -109,7 +182,6 @@ import ModConfigPage from '../pages/ModConfigPage.vue';
 
 const route = useRoute();
 const router = useRouter();
-const headerHost = ref(null);
 const overlayHost = ref(null);
 const loadError = ref('');
 const mods = ref([]);
@@ -254,18 +326,13 @@ async function loadMods() {
 onMounted(async () => {
   try {
     const doc = await loadLegacyDocument();
-    const header = doc.querySelector('header.app-header');
-    if (header) {
-      const imported = document.importNode(header, true);
-      imported.classList.add('ia-legacy-header');
-      headerHost.value.appendChild(imported);
-    }
     for (const node of Array.from(doc.body.childNodes)) {
-      if (node === header) continue;
       if (node.nodeType === Node.ELEMENT_NODE
-          && (node.tagName === 'MAIN' || node.tagName === 'SCRIPT')) {
+          && (node.tagName === 'HEADER' || node.tagName === 'MAIN'
+            || node.tagName === 'SCRIPT')) {
         continue;
       }
+      if (node.nodeType === Node.ELEMENT_NODE && node.id === 'app-skeleton') continue;
       overlayHost.value.appendChild(document.importNode(node, true));
     }
     await waitForInitialPanel();
@@ -366,6 +433,8 @@ function applyLegacyPanel(name) {
   if (!name) return;
   const fn = originalSetActiveTab || window.SamsaraUI?.setActiveTab;
   if (typeof fn === 'function') fn(name);
+  const actions = document.getElementById('mods-actions');
+  if (actions) actions.hidden = false;
 }
 
 function hideLegacyChrome() {
