@@ -1,0 +1,1 @@
+import{Z as e,w as t,y as n,z as r}from"./index-D2ua_-Vz.js";import{t as i}from"./TabShell-C5SDzhF7.js";import{t as a}from"./LegacyPanel-whRlKuMX.js";var o={__name:`WorldStackPage`,setup(o){return(o,s)=>(r(),n(i,{name:`world-stack`},{default:e(()=>[t(a,{"panel-id":`panel-world-stack`})]),_:1}))}};export{o as default};

@@ -174,6 +174,7 @@ let started = false;
 let lastApplied = '';
 let navTimer = 0;
 let originalSetActiveTab = null;
+let modsRetry = 0;
 
 function navigate(path) {
   window.clearTimeout(navTimer);
@@ -238,8 +239,12 @@ async function loadMods() {
     mods.value = [...groups.entries()]
       .map(([id, pages]) => ({ id, pages }))
       .sort((a, b) => a.id.localeCompare(b.id));
+    modsRetry = 0;
   } catch {
-    // 未连接或接口不可用时保持空列表
+    // 未连接或接口不可用时保持空列表；连接完成后自动重试
+    if (modsRetry++ < 20) {
+      window.setTimeout(loadMods, 600);
+    }
   }
 }
 
@@ -335,6 +340,8 @@ async function applyRoute(force = false) {
       window.SamsaraServer?.showPanel?.(route.meta.serverPanel || 'server-config-panel');
     } else if (workspace.value === 'mods') {
       window.SamsaraServer?.leaveServer?.();
+      window.SamsaraConfigEditor?.setNavEnabled?.(false);
+      hideLegacyChrome();
     } else {
       window.SamsaraServer?.leaveServer?.();
       if (route.meta.panel) {

@@ -2310,6 +2310,9 @@ async function main() {
     await navigate(base + '/samsara/sky/track');
     await until("document.querySelector('[data-page=\"track\"] .track-filters')",
         25000, '轨迹回看页');
+    await until("document.querySelector('[data-page=\"track\"] .track-row')"
+        + " || document.querySelector('[data-page=\"track\"]')?.innerText.includes('没有可回看')",
+        20000, '轨迹回看列表');
     const trackUi = await evaluate(`({
       page: !!document.querySelector('[data-page="track"]'),
       rows: document.querySelectorAll('[data-page="track"] .track-row').length,
@@ -2331,6 +2334,47 @@ async function main() {
     })`);
     check('Diff 回看页可打开并显示状态', diffUi.page && diffUi.stack >= 4
         && diffUi.status && diffUi.section === '天网', JSON.stringify(diffUi));
+
+    // ---- 其他模组：工作区入口 + 文件夹树 + 文件 Tab ----
+    const pagesResp = await fetch(base + '/api/config/pages', { headers: authHeaders });
+    const pagesBody = await pagesResp.json();
+    const thirdPages = (pagesBody.pages || []).filter((page) => page.source === 'third-party');
+    if (thirdPages.length) {
+      const first = thirdPages[0];
+      const relative = String(first.fileName || '').replace(/\\/g, '/');
+      const modId = relative.includes('/') ? relative.split('/')[0] : relative;
+      await navigate(base + '/mods/' + encodeURIComponent(modId));
+      await until("document.querySelector('.mod-config-layout .mod-file-tab')"
+          + " && document.querySelectorAll('.file-node').length >= 1",
+          25000, '其他模组配置树');
+      await until("document.querySelectorAll('.mod-editor-host #config-editor-body .entry').length > 0",
+          25000, '其他模组配置字段');
+      await until("document.querySelector('.rail-item[data-mod-id=" + JSON.stringify(modId) + "]')",
+          20000, '其他模组工作区入口');
+      const modUi = await evaluate(`({
+        path: location.pathname,
+        rail: [...document.querySelectorAll('.rail-item[data-mod-id]')]
+          .map((node) => node.dataset.modId),
+        tree: document.querySelectorAll('.file-node').length,
+        tabs: [...document.querySelectorAll('.mod-file-tab')]
+          .map((node) => node.textContent.trim()),
+        fields: document.querySelectorAll('.mod-editor-host #config-editor-body .entry').length,
+        panelHead: (() => {
+          const head = document.querySelector('.mod-editor-host #panel-config-editor .panel-head');
+          return head ? getComputedStyle(head).display : 'missing';
+        })(),
+        section: document.querySelector('.section-tab.active')?.textContent.trim() || '',
+      })`);
+      check('其他模组工作区入口可见', modUi.rail.includes(modId),
+          JSON.stringify({ modId, rail: modUi.rail }));
+      check('其他模组文件夹树与文件 Tab 渲染', modUi.tree >= 1
+          && modUi.tabs.length >= 1 && modUi.fields > 0 && modUi.panelHead === 'none',
+          JSON.stringify(modUi));
+      check('其他模组文件页复用 PageSpec 编辑器', modUi.fields >= 5,
+          'fields=' + modUi.fields);
+    } else {
+      check('其他模组工作区入口可见', true, '当前测试服没有第三方配置');
+    }
 
     // ---- 用户端只读页：无需 token，不加载管理端脚本，不调用管理端 API ----
     await navigate(base + '/user');

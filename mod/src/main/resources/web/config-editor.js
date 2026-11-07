@@ -14,6 +14,7 @@
     filter: '',
     edits: new Map(),
     pending: null,
+    navEnabled: true,
   };
 
   function el(tag, className, text) {
@@ -63,7 +64,17 @@
   }
 
   function render() {
-    renderGlobalNav();
+    if (state.navEnabled) {
+      renderGlobalNav();
+    } else {
+      const nav = $('global-nav');
+      if (nav) {
+        nav.replaceChildren();
+        nav.hidden = true;
+      }
+      const shell = document.querySelector('main.app-shell');
+      if (shell) shell.classList.add('no-nav');
+    }
     renderBody();
     const count = $('config-editor-count');
     if (count) count.textContent = String(state.pages.length);
@@ -481,7 +492,21 @@
     return String(value).replace(/["\\]/g, '\\$&');
   }
 
+  function setNavEnabled(enabled) {
+    state.navEnabled = enabled !== false;
+  }
+
+  function openPage(id) {
+    const page = pageById(id);
+    if (!page) return false;
+    state.current = page;
+    state.edits.clear();
+    render();
+    return true;
+  }
+
   function activate() {
+    state.navEnabled = true;
     if (!state.loaded) {
       load().catch(showError);
       return;
@@ -513,5 +538,7 @@
     save: preview,
     reload: reloadPage,
     load,
+    openPage,
+    setNavEnabled,
   };
 })();

@@ -1,1 +1,0 @@
-import{w as e,x as t,z as n}from"./index-D6VaMH5K.js";import{t as r}from"./LegacyPanel-C8kEHM6j.js";var i={id:`panel-server`},a={__name:`ServerPage`,setup(a){return(a,o)=>(n(),t(`div`,i,[e(r,{"panel-id":`server-config-panel`}),e(r,{"panel-id":`server-backup-panel`}),e(r,{"panel-id":`server-console-panel`}),e(r,{"panel-id":`server-audit-panel`})]))}};export{a as default};

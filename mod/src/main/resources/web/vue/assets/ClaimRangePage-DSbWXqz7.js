@@ -1,1 +1,0 @@
-import{Z as e,w as t,y as n,z as r}from"./index-D6VaMH5K.js";import{t as i}from"./TabShell-DXMWlz-i.js";import{t as a}from"./LegacyPanel-C8kEHM6j.js";var o={__name:`ClaimRangePage`,setup(o){return(o,s)=>(r(),n(i,{name:`claim-range`},{default:e(()=>[t(a,{"panel-id":`panel-claim-range`})]),_:1}))}};export{o as default};
