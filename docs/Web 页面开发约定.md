@@ -4,7 +4,7 @@
 >
 > **v0.47.0 起**：入口由 `web-src/`（Vue 3 + Vue Router + Vite）构建到 `mod/src/main/resources/web/vue/`；`/`、`/user`、`/containers` 是同一应用。复杂页面仍可复用旧命令式脚本，由 Vue 组件 `onMounted/onUnmounted` 挂载，不需要一次性重写算法。
 >
-> **v0.47.1 起**：管理端使用 `layouts/AdminLayout.vue` + `components/TabPage.vue` + `components/LegacyPanel.vue`；每个 tab 对应 `pages/*.vue`，不再使用单个 `AdminView` 整壳。复杂页的旧逻辑仍通过 `LegacyPanel` 挂载，但生命周期、路由和可见性由各自的 Vue page 管理。
+> **v0.48.0 起**：目录统一为 `layouts/`（`AdminLayout.vue`）、`pages/`（所有路由页面）、`components/`（`ItemSlotGrid.vue`、`FolderTree.vue`、`LegacyPanel.vue`、`TabShell.vue`），删除 `views/`。管理端为左侧顶级工作区 + 二级 Tab + 页内导航；Element Plus 按需引入（`unplugin-vue-components` + `ElementPlusResolver`），不全局导入完整样式。
 
 ## 1. 生命周期契约
 
@@ -82,13 +82,15 @@ mount(ctx) {
 
 - 源目录 `web-src/`；构建命令 `cd web-src && npm.cmd ci && npm.cmd run build`。
 - Vite `base=/vue/`，输出 `mod/src/main/resources/web/vue/`；构建产物必须提交，保证 `gradle clean build` 不需要 npm。
-- 结构：`layouts/AdminLayout.vue` 管共享 header/tab/操作栏/token 弹窗/浮窗；`pages/*.vue` 每个 tab 一个页面；`components/TabPage.vue` 是可复用页面壳；`components/LegacyPanel.vue` 负责把旧 panel 挂到页面里。
-- 路由：`/config`、`/config-editor`、`/claim-range`、`/identity`、`/output`、`/permissions`、`/map`、`/announcements`、`/world-stack`、`/lottery`、`/server/config|backup|console|audit`；`/containers` 与 `/user` 是独立应用模式。
-- 新增 tab 时：先加 `pages/XxxPage.vue`（`TabPage` + `LegacyPanel`），再在 `router.js` 加路由与 `meta.tab`，最后在 `AdminLayout` 的页面栈里加 `v-show` 和 tab 映射。
+- 结构：`layouts/AdminLayout.vue` 管共享 header/工作区导航/二级 Tab/token 弹窗/浮窗；`pages/*.vue` 每个路由页面一个文件；`components/TabShell.vue` 是可复用页面壳；`components/LegacyPanel.vue` 负责把旧 panel 挂到页面里；`components/ItemSlotGrid.vue` 是容器/背包共用槽位网格；`components/FolderTree.vue` 是其他模组递归文件夹树。
+- 路由：`/vanilla/*`、`/samsara/economy|sky|config|world|community/*`、`/mods/<modId>/<file...>`；旧 `/config`、`/config-editor`、`/claim-range`、`/identity`、`/output`、`/permissions`、`/map`、`/announcements`、`/world-stack`、`/lottery`、`/containers`、`/server/*` 保留 alias 或独立页。
+- 新增二级页时：先在 `pages/XxxPage.vue` 写页面，再在 `router.js` 加路由与 `meta`（`workspace`、`section`、`page`、`panel`），最后在 `AdminLayout` 的页面栈里加 `v-show`/`v-if` 和 `sections` 映射。
+- Element Plus 按需引入：Vite 用 `unplugin-vue-components` + `ElementPlusResolver`；不要在 `main.js` 全局 `import 'element-plus/dist/index.css'`。`ElMessage` / `ElMessageBox` 等 API 显式 import，图标按需 import。
+- 第三层页面内导航继续用旧 `#global-nav`（`buildNav`）；其他模组页可调用 `SamsaraConfigEditor.setNavEnabled(false)` 隐藏全局导航，改用自己的文件夹树。
 - 不在浏览器内编译模板：必须用 SFC 预编译；CSP 继续禁止 `unsafe-eval`。
 - Vue 页面文本使用插值/`textContent`，禁止 `innerHTML`；旧页面壳通过 DOM API `importNode/appendChild` 挂载。
-- 切页必须清理：定时器、事件监听、地图动画、WebSocket/轮询、dialog；Vue 组件卸载时调用对应旧页面的停止/清理入口。
-- 共享状态用 composables，不引入 Pinia/TypeScript/UI 框架。
+- 切页必须清理：定时器、事件监听、地图动画、轮询、dialog；Vue 组件卸载时调用对应旧页面的停止/清理入口。
+- 共享状态用 composables，不引入 Pinia/TypeScript/第二套 UI 框架。
 
 ## 7. 维护检查清单
 

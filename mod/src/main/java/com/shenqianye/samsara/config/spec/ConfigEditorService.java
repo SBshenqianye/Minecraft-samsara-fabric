@@ -40,6 +40,7 @@ public final class ConfigEditorService {
     public static final String THIRD_PARTY = "third-party";
 
     private static final int MAX_THIRD_PARTY_FILES = 200;
+    private static final int MAX_THIRD_PARTY_DEPTH = 8;
     private static final long MAX_THIRD_PARTY_BYTES = 1024L * 1024L;
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
 
@@ -215,7 +216,7 @@ public final class ConfigEditorService {
             return List.of();
         }
         List<String> relatives = new ArrayList<>();
-        try (Stream<Path> stream = Files.walk(root, 2)) {
+        try (Stream<Path> stream = Files.walk(root, MAX_THIRD_PARTY_DEPTH)) {
             stream.filter(Files::isRegularFile)
                     .filter(file -> !ignoredThirdParty(root, file))
                     .forEach(file -> relatives.add(root.relativize(file).toString().replace('\\', '/')));

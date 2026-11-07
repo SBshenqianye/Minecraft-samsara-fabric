@@ -206,12 +206,20 @@ function navigateTo(page) {
 }
 
 function groupId(page) {
-  const relative = String(page.fileName || '').replace(/\\/g, '/');
+  const relative = relativeOf(page);
   return relative.includes('/') ? relative.split('/')[0] : relative;
 }
 
+function relativeOf(page) {
+  const id = String(page.id || '');
+  if (id.startsWith('third-party:')) {
+    return id.substring('third-party:'.length).replace(/\\/g, '/');
+  }
+  return String(page.fileName || '').replace(/\\/g, '/');
+}
+
 function pathWithin(page) {
-  const relative = String(page.fileName || '').replace(/\\/g, '/');
+  const relative = relativeOf(page);
   if (!relative.includes('/')) return '';
   if (relative === modId.value) return '';
   if (relative.startsWith(modId.value + '/')) {

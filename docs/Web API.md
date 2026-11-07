@@ -1,6 +1,6 @@
 # samsara · Web API 接口文档
 
-> 状态：v0.47.0（2026-11-07）
+> 状态：v0.48.0（2026-11-07）
 > 适用：本地管理端 `/`、用户端只读页 `/user`、以及未来接入的脚本/面板。
 > 代码入口：`mod/src/main/java/com/shenqianye/samsara/web/LocalWebServer.java`
 > 安全边界：`WebSecurity.java`、`WebUserService.java`
@@ -335,11 +335,36 @@
 
 > 容器写入只允许管理端 token（`ops` scope）；每次写入创建独立的容器审计记录（`container.json`，不可自动回滚）。扫描不会强制加载未加载区块；未加载区块只读索引缓存。`source=cache` 的条目在区块重新加载后会自动刷新。
 
+### 3.11 玩家背包 / 末影箱
+
+在线玩家在服务器线程直接读写内存 `Inventory`/`PlayerEnderChestContainer`；离线玩家只读 `playerdata/<uuid>.dat`，写入进入 `world/samsara/inventory-pending/<uuid>-<scope>.json` 安全队列，玩家 JOIN 后下一 tick 或服务器停服保存前应用。只编辑背包、盔甲、副手与末影箱，不编辑光标物品和合成网格。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/inventory?player=<uuid\|name>&scope=inventory\|ender\|armor` | 读取槽位与元数据；在线 `writable=true`，离线 `writable=false`、`queueWritable=true`；有待写入队列时 `pendingWrite=true` 并返回队列内容 |
+| POST | `/api/inventory/write` | body `{player,scope,revision,slots:[...]}`；在线直接写入，离线入队；`revision` 冲突返回 `409` + `currentRevision`；写入前创建 `inventory.json` 审计快照 |
+| POST | `/api/inventory/item` | 背包页辅助：body `{encoded?,id?,count}`，返回写入所需的 Base64(NBT) |
+
+`scope=inventory` 为 41 槽：0–35 主背包、36–39 盔甲、40 副手；`ender` 为 27 槽；`armor` 为 4 槽（映射到 36–39）。空槽为 `""`，非空槽为 Base64(NBT)；调用方必须原样回传未修改的编码。
+
+离线写入会校验玩家文件 `DataVersion` 与服务器 `SharedConstants.WORLD_VERSION`；不一致返回 `409` 并写审计。队列应用成功后删除队列文件；失败保留并记录原因。写入接口要求 `inventory` scope；读取要求 `read` scope；管理员 token 拥有全部权限。在线写入后调用 `setChanged`、`inventoryMenu.broadcastChanges()` 与 `containerMenu.broadcastChanges()`。
+
+### 3.12 轨迹回看只读列表
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/track?days=7&limit=200&player=<可选>` | 列出最近可回看的玩家/时段，返回 `cycleId`、`firstMs/lastMs`、`samples`、`command`（游戏内 `/samsara track view ...`）；只读，不启动回放、不删除/改写轨迹 |
+
+Diff 回看继续使用现有 `/api/diff/chunk`、`/api/diff/view`、`/api/diff/view/status`；Web 只做入口与状态展示，不重写算法。
+
 ## 4. 静态资源白名单
 
 | 路径 | 资源 |
 |---|---|
 | `/`、`/index.html`、`/user`、`/containers` | Vue 应用入口（`/web/vue/index.html`） |
+| `/vanilla/*` | 本体工作区路由回 Vue 入口（服务器配置/备份/RCON/审计） |
+| `/samsara/*` | samsara 工作区路由回 Vue 入口（经济业务/天网/配置/世界/社区） |
+| `/mods/<modId>/...` | 其他模组工作区路由回 Vue 入口；只允许安全字符并拒绝 `..` |
 | `/vue/*` | Vite 构建产物（JS/CSS/图片），只允许固定字符集且拒绝 `..` |
 | `/legacy.html` | 旧管理端页面壳（Vue 兼容层使用） |
 | `/legacy-user.html`、`/user.html` | 旧用户端页面壳（Vue 兼容层使用） |
@@ -354,7 +379,7 @@
 ## 5. 安全边界与扩展约定
 
 - **管理端 token 等同管理员密码**：拿到管理员 token 就能读写全部配置、备份、权限和世界栈；不要把它发给普通玩家，不要放进 URL、日志、截图或公开仓库。token 轮换后需要重启 Web 服务才会生效（运行中的服务持有启动时的 token）。
-- **Agent token 按 scope 限权**：`/api/agent/tokens` 由管理员创建 read/announce/config/ops/rcon scope；服务端只存 SHA-256，明文只在创建时返回。token 管理接口本身仅管理员可用，Agent token 不能自我提权。写请求支持 `Idempotency-Key`，超限返回 `429` + `Retry-After: 60`。scoped token 限额为 read 300 / announce 60 / config 60 / ops 30 / rcon 20 每分钟；管理员 token（本地控制台）为 read 1200 / announce 120 / config 120 / ops 60 / rcon 40 每分钟，避免正常浏览触发 429。
+- **Agent token 按 scope 限权**：`/api/agent/tokens` 由管理员创建 read/announce/config/ops/rcon/inventory scope；服务端只存 SHA-256，明文只在创建时返回。token 管理接口本身仅管理员可用，Agent token 不能自我提权。写请求支持 `Idempotency-Key`，超限返回 `429` + `Retry-After: 60`。scoped token 限额为 read 300 / announce 60 / config 60 / ops 30 / rcon 20 / inventory 30 每分钟；管理员 token（本地控制台）为 read 1200 / announce 120 / config 120 / ops 60 / rcon 40 / inventory 60 每分钟，避免正常浏览触发 429。
 - **管理端静态页壳可能公开，但不含数据**：`/`、`/app.js` 等静态资源本身不需要 token；没有 token 时所有管理 API（`/api/config`、`/api/status`、`/api/server`、`/api/world-stack`、`/api/permissions`、`/api/map` 等）返回 `401`。如果连页面壳都不希望公开，需要在反向代理层做路径过滤、加独立端口或额外登录页。
 - **默认只公开用户端**：推荐反向代理只转发 `/user`、`/user.js`、`/style.css`、`/map.js`、`/banners.js`、`/api/user/*`。要公开管理端时，至少强制 HTTPS，并在代理层加限流/IP 白名单；当前 Mod 自身没有登录锁定、速率限制或二次验证。
 - **公网名字混淆**：`WebUserService` 对玩家名、操作者、发言者做混淆显示（保留首字符、分隔符和末 3 位，其余 `*`，如 `xh_unpkire` → `x*_****ire`）；系统提示/聊天/自定义名中的已知玩家名也替换。完整名字只走管理端。不要把完整名字重新加回 `/api/user/*`。

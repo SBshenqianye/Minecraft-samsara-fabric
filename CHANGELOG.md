@@ -3,6 +3,42 @@
 > 面向玩家与服主的功能变化；实现细节、未达标项与证据见[《实现状态》](docs/实现状态.md)。
 > 每个版本按「新增 / 修复 / 优化 / 变更 / 重构 / 文档」分组，只写功能口径。
 
+## v0.48.0（2026-11-07）· 信息架构重构 / 天网 / 玩家背包 / 其他模组（模组 0.40.0）
+
+### 新增
+
+- **顶级工作区 + 二级 Tab**：管理端改为左侧工作区（本体 / samsara / 每个有配置的其他模组）+ 二级 Tab（samsara：经济业务 / 天网 / 配置 / 世界 / 社区；本体：服务器配置 / 存档备份 / RCON / Web 审计）+ 页内导航。二级页会记住上次位置，窄屏可横向滚动。
+- **天网导航**：新增容器、玩家背包、轨迹回看、Diff 回看。容器复用原浏览器页与写入/审计/revision；轨迹回看提供只读最近时段列表与游戏内 `/samsara track view` 命令；Diff 回看复用 `/api/diff/*`，不在 Web 重写算法。
+- **玩家背包 Web**：新增 `GET /api/inventory`、`POST /api/inventory/write`、`POST /api/inventory/item`。在线玩家直接读写主背包 36 + 盔甲 4 + 副手 1 与末影箱；离线玩家只读 `.dat`，写入进入 `world/samsara/inventory-pending/<uuid>-<scope>.json` 安全队列，玩家 JOIN 后下一 tick 或停服保存前应用；写入前 Web 审计、revision 冲突 409、`inventory` scope、限流、DataVersion 校验。
+- **其他模组配置**：左侧每个有第三方配置的模组一个入口；按配置路径递归显示文件夹树，当前文件夹下文件为 Tab；文件页继续复用 PageSpec/FormSpec 编辑器。
+- **Element Plus 按需**：接入 `element-plus` + `@element-plus/icons-vue`，Vite 使用 `unplugin-vue-components` + `ElementPlusResolver` 按需引入；不全局导入 `element-plus/dist/index.css`，`ElMessage`/`ElMessageBox` 显式 import。
+
+### 变更
+
+- **目录统一**：`views/ContainerView.vue` → `pages/ContainerPage.vue`，`views/UserView.vue` → `pages/UserPage.vue`，`components/TabPage.vue` → `components/TabShell.vue`；删除 `views/`。新增 `layouts/`、`pages/`、`components/FolderTree.vue`、`components/ItemSlotGrid.vue`。
+- **路由**：新增 `/vanilla/*`、`/samsara/economy|sky|config|world|community/*`、`/mods/<modId>/<file...>`；旧 `/lottery`、`/map`、`/world-stack`、`/announcements`、`/identity`、`/config-editor`、`/config`、`/claim-range`、`/output`、`/permissions`、`/containers`、`/server/*` 保留 alias 或独立页。
+- **版本**：`WebVersion.VALUE = 0.48.0`；`mod_version = 0.40.0`；jar 为 `samsara-0.40.0.jar`。
+
+### 安全
+
+- 新写接口继续要求管理端 Bearer token 或 scoped token；`inventory` scope 只授予背包写接口，读取仍走 `read`。
+- 离线写入不直接改运行中的 `.dat`；队列应用保留失败文件并记录原因；CSP 继续禁止 `unsafe-eval`，前端文本继续使用 textContent/插值转义。
+
+### 测试
+
+- 单测新增 `PlayerInventoryServiceTest`（槽位数量、revision、离线 NBT 解析、队列往返/损坏文件、scope 别名）。
+- Web E2E 新增新信息架构、天网容器、在线/离线背包读写与队列应用、轨迹/Diff 入口、其他模组文件夹树/文件 Tab，全部通过。
+- 最终 `gradle clean build`：526 项单测 0 失败；Web E2E 203/203；`samsara-0.40.0.jar` SHA-256 `8FA43186465E21A18BA42D2C8B12BB9646964A3331E45313BF541E7AF02783BE`。
+- 第三方配置发现深度提高到 8；用临时多级配置夹具验证递归文件夹树后移除夹具。
+
+### 部署
+
+- 测试服与生产服均已部署 `samsara-0.40.0.jar`；三处 jar 哈希一致。生产服旧 0.39.0 jar 备份到 `backups/samsara/mod-jars/`，`gold.syncEnabled=true` 保持不变。生产只读烟测通过，维护公告已写入控制台（停服时 0 人在线）。
+
+### 文档
+
+- 同步 README、CHANGELOG、实现状态、Web API、Web 使用文档、模组使用文档、Web 页面开发约定、维护手册与迁移进度。
+
 ## v0.47.1（2026-11-07）· 管理端逐 Tab Vue 化
 
 ### 变更

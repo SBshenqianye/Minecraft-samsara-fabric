@@ -230,8 +230,11 @@ async function loadMods() {
     const groups = new Map();
     for (const pageSpec of data.pages || []) {
       if (pageSpec.source !== 'third-party') continue;
-      const relative = String(pageSpec.fileName || '').replace(/\\/g, '/');
-      const first = relative.split('/')[0];
+      const relative = String(pageSpec.id || '').startsWith('third-party:')
+        ? String(pageSpec.id).substring('third-party:'.length)
+        : String(pageSpec.fileName || '');
+      const normalized = relative.replace(/\\/g, '/');
+      const first = normalized.split('/')[0];
       if (!first) continue;
       if (!groups.has(first)) groups.set(first, []);
       groups.get(first).push(pageSpec);
