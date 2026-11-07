@@ -1,10 +1,10 @@
 <template>
-  <TabPage name="output">
+  <TabShell name="output">
     <LegacyPanel panel-id="panel-output" />
-  </TabPage>
+  </TabShell>
 </template>
 
 <script setup>
-import TabPage from '../components/TabPage.vue';
+import TabShell from '../components/TabShell.vue';
 import LegacyPanel from '../components/LegacyPanel.vue';
 </script>

@@ -2062,6 +2062,75 @@ async function main() {
       }
     }
 
+    // ---- 新信息架构：左侧顶级工作区 + 二级 Tab ----
+    await navigate(base + '/vanilla/config');
+    await until("window.SamsaraUI && document.querySelector('.workspace-rail')",
+        20000, '新信息架构导航');
+    const iaVanilla = await evaluate(`(() => ({
+      workspaces: [...document.querySelectorAll('.workspace-rail .rail-item[data-workspace]')]
+        .map((node) => node.dataset.workspace),
+      sections: [...document.querySelectorAll('.section-tab')]
+        .map((node) => node.textContent.replace(/\\s+/g, ' ').trim()),
+      path: location.pathname,
+      panelVisible: (() => {
+        const panel = document.getElementById('server-config-panel');
+        return !!(panel && !panel.hidden && getComputedStyle(panel).display !== 'none');
+      })(),
+      crumb: document.querySelector('.ia-crumb-title')?.textContent.trim() || '',
+    }))()`);
+    check('顶级工作区包含本体与 samsara', iaVanilla.workspaces.includes('vanilla')
+        && iaVanilla.workspaces.includes('samsara'), JSON.stringify(iaVanilla.workspaces));
+    check('本体二级 Tab 为服务器配置/存档备份/RCON/审计',
+        iaVanilla.sections.join('|') === '服务器配置|存档备份|RCON|Web 审计',
+        JSON.stringify(iaVanilla.sections));
+    check('本体工作区直接路由可用', iaVanilla.path === '/vanilla/config'
+        && iaVanilla.panelVisible && iaVanilla.crumb === '服务器配置',
+        JSON.stringify(iaVanilla));
+
+    await navigate(base + '/samsara/economy');
+    await until("document.querySelector('.section-tab[data-section=\"sky\"]')",
+        20000, 'samsara 二级 Tab');
+    const iaSamsara = await evaluate(`(() => ({
+      sections: [...document.querySelectorAll('.section-tab')]
+        .map((node) => node.textContent.replace(/\\s+/g, ' ').trim()),
+      path: location.pathname,
+      crumb: document.querySelector('.ia-crumb-title')?.textContent.trim() || '',
+    }))()`);
+    check('samsara 二级 Tab 为经济业务/天网/配置/世界/社区',
+        iaSamsara.sections.join('|') === '经济业务|天网|配置|世界|社区',
+        JSON.stringify(iaSamsara.sections));
+    check('samsara 工作区直接路由可用', iaSamsara.path === '/samsara/economy'
+        && iaSamsara.crumb === '经济业务', JSON.stringify(iaSamsara));
+    await evaluate("document.querySelector('.section-tab[data-section=\"sky\"]').click(); true;");
+    await until("location.pathname === '/samsara/sky/track'", 15000, '天网二级切换');
+    const skyRoute = await evaluate(`({
+      path: location.pathname,
+      active: document.querySelector('.section-tab.active')?.textContent.trim() || '',
+      track: !!document.querySelector('[data-page="track"]'),
+    })`);
+    check('二级 Tab 切换会更新路由与页面', skyRoute.path === '/samsara/sky/track'
+        && skyRoute.active === '天网' && skyRoute.track === true, JSON.stringify(skyRoute));
+
+    await navigate(base + '/samsara/sky/containers');
+    await until("document.querySelector('.container-page.embedded')", 25000, '天网容器页');
+    const skyContainer = await evaluate(`({
+      embedded: !!document.querySelector('.container-page.embedded'),
+      rows: document.querySelectorAll('.container-row').length,
+      section: document.querySelector('.section-tab.active')?.textContent.trim() || '',
+    })`);
+    check('天网容器入口复用容器页', skyContainer.embedded
+        && skyContainer.section === '天网', JSON.stringify(skyContainer));
+
+    await navigate(base + '/config');
+    await until("document.getElementById('panel-config') && !document.getElementById('panel-config').hidden",
+        20000, '旧 /config 别名');
+    const legacyAlias = await evaluate(`({
+      path: location.pathname,
+      panel: !document.getElementById('panel-config').hidden,
+    })`);
+    check('旧 /config 别名仍可用', legacyAlias.path === '/config' && legacyAlias.panel,
+        JSON.stringify(legacyAlias));
+
     // ---- 用户端只读页：无需 token，不加载管理端脚本，不调用管理端 API ----
     await navigate(base + '/user');
     await until("window.SamsaraUI && document.querySelectorAll('#user-status .status-chip').length > 0",

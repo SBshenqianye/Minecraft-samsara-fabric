@@ -1,12 +1,17 @@
 import { defineConfig } from 'vite';
 import vue from '@vitejs/plugin-vue';
+import Components from 'unplugin-vue-components/vite';
+import { ElementPlusResolver } from 'unplugin-vue-components/resolvers';
 import { fileURLToPath, URL } from 'node:url';
 
 const outDir = fileURLToPath(new URL('../mod/src/main/resources/web/vue', import.meta.url));
 
 export default defineConfig({
   base: '/vue/',
-  plugins: [vue()],
+  plugins: [
+    vue(),
+    Components({ resolvers: [ElementPlusResolver()] }),
+  ],
   server: {
     fs: {
       allow: ['..'],

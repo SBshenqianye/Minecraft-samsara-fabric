@@ -53,7 +53,22 @@ public final class WebSecurity {
                  "/config", "/config-editor", "/claim-range", "/identity", "/output",
                  "/permissions", "/map", "/announcements", "/world-stack", "/lottery",
                  "/server", "/server/config", "/server/backup", "/server/console",
-                 "/server/audit" -> "/web/vue/index.html";
+                 "/server/audit",
+                 "/vanilla", "/vanilla/config", "/vanilla/backup", "/vanilla/console",
+                 "/vanilla/audit",
+                 "/samsara", "/samsara/economy", "/samsara/economy/overview",
+                 "/samsara/economy/current", "/samsara/economy/values",
+                 "/samsara/economy/fund", "/samsara/economy/insurance",
+                 "/samsara/economy/history",
+                 "/samsara/sky", "/samsara/sky/track", "/samsara/sky/diff",
+                 "/samsara/sky/containers", "/samsara/sky/inventory",
+                 "/samsara/config", "/samsara/config/editor", "/samsara/config/advanced",
+                 "/samsara/config/claim-range", "/samsara/config/output",
+                 "/samsara/config/permissions",
+                 "/samsara/world", "/samsara/world/map", "/samsara/world/stack",
+                 "/samsara/community", "/samsara/community/announcements",
+                 "/samsara/community/identity",
+                 "/track", "/diff", "/inventory" -> "/web/vue/index.html";
             case "/legacy.html" -> "/web/index.html";
             case "/legacy-user.html" -> "/web/user.html";
             case "/user.html" -> "/web/user.html";
@@ -81,6 +96,10 @@ public final class WebSecurity {
             case "/server.js" -> "/web/server.js";
             case "/style.css" -> "/web/style.css";
             default -> {
+                if (path.matches("^/mods/[A-Za-z0-9_.-]+(/[A-Za-z0-9_./-]+)?$")
+                        && !path.contains("..")) {
+                    yield "/web/vue/index.html";
+                }
                 if (path.matches("^/items/[a-z0-9_]+\\.png$")) {
                     yield "/web" + path;
                 }

@@ -1,10 +1,10 @@
 <template>
-  <TabPage name="permissions">
+  <TabShell name="permissions">
     <LegacyPanel panel-id="panel-permissions" />
-  </TabPage>
+  </TabShell>
 </template>
 
 <script setup>
-import TabPage from '../components/TabPage.vue';
+import TabShell from '../components/TabShell.vue';
 import LegacyPanel from '../components/LegacyPanel.vue';
 </script>

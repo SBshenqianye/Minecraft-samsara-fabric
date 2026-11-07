@@ -1,11 +1,11 @@
 /* Vue 应用外壳：保留现有 style.css 的变量与组件，只补少量容器页样式。 */
 .legacy-host,
 .legacy-panel-host,
-.tab-page {
+.tab-shell {
   display: contents;
 }
 
-.tab-page-head {
+.tab-shell-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -13,11 +13,11 @@
   margin-bottom: 12px;
 }
 
-.tab-page-head h2 {
+.tab-shell-head h2 {
   margin: 0 0 4px;
 }
 
-.tab-page-actions {
+.tab-shell-actions {
   display: flex;
   gap: 8px;
   align-items: center;

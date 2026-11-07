@@ -1,12 +1,17 @@
 <template>
-  <main class="container-page">
-    <header>
+  <div class="container-page" :class="{ embedded }">
+    <header v-if="!embedded">
       <h1>容器</h1>
       <span class="muted small">浏览/编辑箱子、桶、潜影盒等容器；写入前会保存审计快照</span>
       <span class="spacer"></span>
       <a class="user-view-link" href="/">返回管理端</a>
       <button v-if="connected" class="ghost" type="button" @click="logout">断开</button>
     </header>
+    <section v-if="embedded" class="container-context">
+      <span class="muted small">天网 · 容器 · 浏览/编辑箱子、桶、潜影盒；写入前会保存审计快照。</span>
+      <span class="spacer"></span>
+      <button v-if="connected" class="ghost" type="button" @click="logout">断开</button>
+    </section>
 
     <section v-if="!connected" class="container-card">
       <h2>连接管理端</h2>
@@ -185,12 +190,16 @@
         </div>
       </div>
     </div>
-  </main>
+  </div>
 </template>
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue';
 
+const props = defineProps({
+  embedded: { type: Boolean, default: false },
+});
+const embedded = computed(() => props.embedded);
 const token = ref(sessionStorage.getItem('samsara-token') || '');
 const tokenInput = ref(token.value);
 const connected = ref(false);

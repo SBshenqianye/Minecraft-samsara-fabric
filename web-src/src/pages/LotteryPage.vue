@@ -1,10 +1,10 @@
 <template>
-  <TabPage name="lottery">
+  <TabShell name="lottery">
     <LegacyPanel panel-id="panel-lottery" />
-  </TabPage>
+  </TabShell>
 </template>
 
 <script setup>
-import TabPage from '../components/TabPage.vue';
+import TabShell from '../components/TabShell.vue';
 import LegacyPanel from '../components/LegacyPanel.vue';
 </script>
