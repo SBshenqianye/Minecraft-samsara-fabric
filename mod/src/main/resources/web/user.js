@@ -283,7 +283,11 @@
     window.setInterval(loadSummary, 5000);
   }
 
-  if (document.readyState === 'loading') {
+  if (window.__samsaraUserStartDeferred) {
+    // Vue 用户端先加载 user.js、再加载 map.js，最后显式启动；
+    // 避免 start() 在 SamsaraStackIcon 就绪前渲染出没有图标区的卡片。
+    window.__samsaraUserStart = start;
+  } else if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => window.setTimeout(start, 0));
   } else {
     window.setTimeout(start, 0);

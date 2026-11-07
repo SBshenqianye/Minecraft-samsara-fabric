@@ -1,1 +1,0 @@
-import{b as e,f as t,g as n,w as r}from"./index-CpLyM-0M.js";import{t as i}from"./TabPage-CDVrW1wF.js";import{t as a}from"./LegacyPanel-ClSzOLtr.js";var o={__name:`AnnouncementsPage`,setup(o){return(o,s)=>(e(),t(i,{name:`announcements`},{default:r(()=>[n(a,{"panel-id":`panel-announcements`})]),_:1}))}};export{o as default};

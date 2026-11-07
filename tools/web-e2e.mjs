@@ -2019,6 +2019,49 @@ async function main() {
           JSON.stringify(routeState));
     }
 
+    // ---- 复杂页逐路由验证：配置、地图、圈地范围 ----
+    const complexRoutes = [
+      ['/config', 'panel-config', `(() => ({
+        files: document.querySelectorAll('#files details.file-block').length,
+        chips: document.querySelectorAll('#status-chips .status-chip').length,
+      }))()`],
+      ['/map', 'panel-map', `(() => ({
+        canvas: !!document.getElementById('map-canvas'),
+        stats: (document.getElementById('map-stats')?.textContent || '').trim().length,
+      }))()`],
+      ['/claim-range', 'panel-claim-range', `(() => {
+        const canvas = document.getElementById('claim-sim-canvas');
+        return { canvas: !!canvas, width: canvas ? canvas.getBoundingClientRect().width : 0 };
+      })()`],
+    ];
+    for (const [path, panelId, probe] of complexRoutes) {
+      await navigate(base + path);
+      await until("window.SamsaraUI && (() => { const p = document.getElementById('"
+          + panelId + "'); return p && !p.hidden && getComputedStyle(p).display !== 'none'; })()",
+          20000, '复杂页 ' + path);
+      if (path === '/map') {
+        await until("document.getElementById('map-stats') && "
+            + "document.getElementById('map-stats').textContent.trim().length > 0",
+            20000, '地图状态');
+      }
+      if (path === '/claim-range') {
+        await until("(() => { const c = document.getElementById('claim-sim-canvas'); "
+            + "return c && c.getBoundingClientRect().width > 0; })()",
+            20000, '圈地画布');
+      }
+      const detail = await evaluate(probe);
+      if (path === '/config') {
+        check('复杂页 /config 渲染配置与状态', detail.files >= 1 && detail.chips >= 1,
+            JSON.stringify(detail));
+      } else if (path === '/map') {
+        check('复杂页 /map 渲染地图', detail.canvas === true && detail.stats > 0,
+            JSON.stringify(detail));
+      } else {
+        check('复杂页 /claim-range 渲染画布', detail.canvas === true && detail.width > 0,
+            JSON.stringify(detail));
+      }
+    }
+
     // ---- 用户端只读页：无需 token，不加载管理端脚本，不调用管理端 API ----
     await navigate(base + '/user');
     await until("window.SamsaraUI && document.querySelectorAll('#user-status .status-chip').length > 0",

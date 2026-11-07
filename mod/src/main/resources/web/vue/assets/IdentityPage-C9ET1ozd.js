@@ -1,0 +1,1 @@
+import{b as e,f as t,g as n,w as r}from"./index-DhSswR1o.js";import{t as i}from"./TabPage-CuwLD5f1.js";import{t as a}from"./LegacyPanel-CnNIJUor.js";var o={__name:`IdentityPage`,setup(o){return(o,s)=>(e(),t(i,{name:`identity`},{default:r(()=>[n(a,{"panel-id":`panel-identity`})]),_:1}))}};export{o as default};

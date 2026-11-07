@@ -14,9 +14,14 @@ export async function mountLegacyUser(host) {
   }
   if (started) return;
   started = true;
+  // user.js 负责 SamsaraUI/公开 API 适配，map.js 提供 SamsaraStackIcon。
+  // 先让 user.js 注册但不启动，等 map.js 就绪后再统一 start。
+  window.__samsaraUserStartDeferred = true;
   await import('../../../mod/src/main/resources/web/banners.js');
   await import('../../../mod/src/main/resources/web/item-ui.js');
   await import('../../../mod/src/main/resources/web/value-table.js');
   await import('../../../mod/src/main/resources/web/user.js');
   await import('../../../mod/src/main/resources/web/map.js');
+  window.__samsaraUserStartDeferred = false;
+  window.__samsaraUserStart?.();
 }
