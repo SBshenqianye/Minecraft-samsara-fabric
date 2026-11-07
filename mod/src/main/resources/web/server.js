@@ -1985,6 +1985,24 @@
 
   window.SamsaraServer = {
     activate: () => setSection('server'),
+    showPanel: (id) => {
+      state.serverPanel = id;
+      setSection('server');
+      setServerPanel(id);
+    },
+    leaveServer: () => {
+      state.section = 'mods';
+      document.body.classList.remove('server-section');
+      for (const tab of document.querySelectorAll('.top-tab')) {
+        tab.classList.toggle('active', tab.dataset.section === 'mods');
+      }
+      const panel = $('panel-server');
+      if (panel) panel.hidden = true;
+      const serverTabs = $('server-tabs');
+      if (serverTabs) serverTabs.hidden = true;
+      const serverActions = $('server-actions');
+      if (serverActions) serverActions.hidden = true;
+    },
     reload: () => loadAll(),
     state,
   };

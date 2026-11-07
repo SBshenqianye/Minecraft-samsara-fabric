@@ -170,7 +170,15 @@ async function main() {
 
   let cdp = null;
   try {
-    for (let i = 0; i < 100 && !devtools; i++) await sleep(100);
+    // 新版 Edge 在部分环境不再把 DevTools 地址写到 stderr，直接探测 /json/version。
+    for (let i = 0; i < 100 && !devtools; i++) {
+      await sleep(100);
+      if (devtools) break;
+      try {
+        const info = await fetch('http://127.0.0.1:' + port + '/json/version').then((r) => r.json());
+        if (info && info.webSocketDebuggerUrl) devtools = info.webSocketDebuggerUrl;
+      } catch (e) { /* retry */ }
+    }
     if (!devtools) throw new Error('浏览器没有输出 DevTools 地址');
     let targets = [];
     for (let i = 0; i < 50; i++) {
