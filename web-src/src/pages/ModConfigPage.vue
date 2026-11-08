@@ -176,6 +176,7 @@ async function openCurrent() {
   try {
     const editor = await waitFor(() => window.SamsaraConfigEditor, 20000);
     if (!editor) throw new Error('配置编辑器尚未加载完成。');
+    editor.setSourceFilter?.('third-party');
     editor.setNavEnabled?.(false);
     hideLegacyChrome();
     await editor.load(page.id);

@@ -4,6 +4,19 @@
 // 圈地白名单/旗帜来自 claims.json。只读展示，不提供编辑入口。
 (function () {
   const STORE_CHUNKS = 'samsara.map.showChunks';
+  const STORE_DEFAULT_MIGRATION = 'samsara.map.defaults.v2';
+  // 新默认：圈地、区块网格、区块操作、出生点、高度明暗、玩家、实体、轨迹、
+  // 稀有名字、排斥半径全部开启。一次性迁移旧 localStorage 中关闭的区块网格。
+  (function migrateMapDefaults() {
+    try {
+      if (!window.localStorage.getItem(STORE_DEFAULT_MIGRATION)) {
+        window.localStorage.setItem(STORE_CHUNKS, '1');
+        window.localStorage.setItem(STORE_DEFAULT_MIGRATION, '1');
+      }
+    } catch (error) {
+      // 隐私模式下仍使用代码里的默认值。
+    }
+  }());
   // 管理端默认 /api/map；用户端只读页在加载 map.js 前把 base 设为 /api/user/map。
   const MAP_API_BASE = (window.SamsaraMapApiBase || '/api/map').replace(/\/+$/, '');
   // 在线玩家：位置每 250ms 取一次快照，独立图层在两次快照之间做线性插值。
@@ -50,7 +63,7 @@
     showTrails: true,
     showRareNames: true,
     entityHold: new Map(),
-    showSeparation: false,
+    showSeparation: true,
     playerMotion: new Map(),
     playerAvatars: new Map(),
     playerRaf: 0,
@@ -58,7 +71,7 @@
     showPlayers: true,
     selectedLive: null,
     hoverLive: null,
-    showChunks: storedFlag(STORE_CHUNKS, false),
+    showChunks: storedFlag(STORE_CHUNKS, true),
   };
 
   const DIRECTION_NAMES = [

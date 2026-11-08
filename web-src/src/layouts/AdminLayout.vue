@@ -13,9 +13,12 @@
         </div>
 
         <div class="ia-header-context" aria-live="polite">
-          <span class="ia-context-workspace">{{ workspaceLabel }}</span>
-          <span class="ia-context-sep">/</span>
-          <span class="ia-context-page">{{ pageTitle }}</span>
+          <template v-for="(crumb, index) in crumbs" :key="crumb + index">
+            <span v-if="index" class="ia-context-sep">/</span>
+            <span :class="index === crumbs.length - 1 ? 'ia-context-page' : 'ia-context-workspace'">
+              {{ crumb }}
+            </span>
+          </template>
         </div>
 
         <div class="connection">
@@ -75,8 +78,23 @@
       </nav>
     </header>
     <div class="ia-body">
-      <nav class="workspace-rail" aria-label="顶级工作区">
-        <div class="rail-title">工作区</div>
+      <nav
+        class="workspace-rail"
+        :class="{ collapsed: !railPinned && !railPeek, peek: railPeek, pinned: railPinned }"
+        aria-label="顶级工作区"
+        @mouseenter="railPeek = !railPinned"
+        @mouseleave="railPeek = false"
+      >
+        <div class="rail-head">
+          <span class="rail-title">工作区</span>
+          <button
+            class="rail-toggle"
+            type="button"
+            :aria-pressed="railPinned ? 'true' : 'false'"
+            :title="railPinned ? '收起工作区导航' : '固定工作区导航'"
+            @click="toggleRail"
+          >{{ railPinned ? '«' : '»' }}</button>
+        </div>
         <button
           v-for="workspace in baseWorkspaces"
           :key="workspace.id"
@@ -100,17 +118,20 @@
           :data-mod-id="mod.id"
           @click="goMod(mod)"
         >
-          <span class="rail-label">{{ mod.id }}</span>
-          <span class="rail-hint">{{ mod.pages.length }} 个配置文件</span>
+          <span class="rail-label">{{ mod.label }}</span>
+          <span class="rail-hint">{{ mod.hint }}</span>
         </button>
         <p v-if="!mods.length" class="rail-empty">连接后显示有配置的模组</p>
       </nav>
 
       <div class="ia-main">
-        <div class="ia-crumbs">
-          <el-tag size="small" effect="plain" type="info">{{ workspaceLabel }}</el-tag>
-          <span class="ia-crumb-sep">/</span>
-          <span class="ia-crumb-title">{{ pageTitle }}</span>
+        <div class="ia-crumbs" aria-label="面包屑">
+          <template v-for="(crumb, index) in crumbs" :key="'crumb-' + crumb + index">
+            <span v-if="index" class="ia-crumb-sep">/</span>
+            <span :class="index === crumbs.length - 1 ? 'ia-crumb-title' : 'ia-crumb-part'">
+              {{ crumb }}
+            </span>
+          </template>
         </div>
 
         <nav v-if="sections.length" class="section-tabs" aria-label="二级页面">
@@ -127,8 +148,24 @@
           </button>
         </nav>
 
-        <main class="app-shell">
-          <aside id="global-nav" class="side-nav" aria-label="页内导航"></aside>
+        <main class="app-shell" :class="{ 'has-subnav': subnavItems.length > 0 }">
+          <div class="ia-side">
+            <nav v-if="subnavItems.length" class="section-subnav" aria-label="三级页面">
+              <div class="subnav-title">{{ sectionLabel }}</div>
+              <button
+                v-for="item in subnavItems"
+                :key="item.id"
+                class="subnav-item"
+                :class="{ active: item.id === activeSubpage }"
+                type="button"
+                :data-subnav="item.id"
+                @click="navigate(item.target)"
+              >
+                {{ item.label }}
+              </button>
+            </nav>
+            <aside id="global-nav" class="side-nav" aria-label="页内导航"></aside>
+          </div>
           <div class="content">
             <LotteryPage v-show="page === 'lottery'" />
             <TrackPage v-if="page === 'track'" />
@@ -159,8 +196,9 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { SECTION_NAV } from '../router.js';
 import { loadLegacyDocument, waitForElement } from '../legacy/document.js';
 import { loadLegacyAdminScripts } from '../legacy/admin.js';
 import LotteryPage from '../pages/LotteryPage.vue';
@@ -185,10 +223,12 @@ const router = useRouter();
 const overlayHost = ref(null);
 const loadError = ref('');
 const mods = ref([]);
+const railPinned = ref(readRailPinned());
+const railPeek = ref(false);
 
 const baseWorkspaces = [
   { id: 'vanilla', label: '本体', hint: 'Minecraft / Vanilla' },
-  { id: 'samsara', label: 'samsara', hint: '周目管理' },
+  { id: 'samsara', label: '周目管理', hint: 'samsara' },
 ];
 
 const SECTIONS = {
@@ -200,10 +240,10 @@ const SECTIONS = {
     { id: 'community', label: '社区', target: '/samsara/community/announcements' },
   ],
   vanilla: [
-    { id: 'server-config-panel', label: '服务器配置', target: '/vanilla/config' },
-    { id: 'server-backup-panel', label: '存档备份', target: '/vanilla/backup' },
-    { id: 'server-console-panel', label: 'RCON', target: '/vanilla/console' },
-    { id: 'server-audit-panel', label: 'Web 审计', target: '/vanilla/audit' },
+    { id: 'config', label: '服务器配置', target: '/vanilla/config' },
+    { id: 'backup', label: '存档备份', target: '/vanilla/backup' },
+    { id: 'console', label: 'RCON', target: '/vanilla/console' },
+    { id: 'audit', label: 'Web 审计', target: '/vanilla/audit' },
   ],
 };
 
@@ -226,27 +266,97 @@ const activeWorkspace = computed(() => workspace.value);
 const activeModId = computed(() => String(route.params.modId || ''));
 const activeSection = computed(() => {
   if (workspace.value === 'mods') return 'files';
-  if (workspace.value === 'vanilla') return route.meta.serverPanel || 'server-config-panel';
-  return route.meta.section || 'economy';
+  return route.meta.section || (workspace.value === 'vanilla' ? 'config' : 'economy');
 });
 const sections = computed(() => {
   if (workspace.value === 'mods') return [];
   return SECTIONS[workspace.value] || [];
 });
-const workspaceLabel = computed(() => {
-  if (workspace.value === 'mods') return activeModId.value || '其他模组';
-  return workspace.value === 'vanilla' ? '本体' : 'samsara';
+const sectionLabel = computed(() => {
+  if (workspace.value === 'mods') return modDisplayName.value;
+  return sections.value.find((item) => item.id === activeSection.value)?.label
+    || String(route.meta.title || '');
 });
-const pageTitle = computed(() => {
-  if (workspace.value === 'mods') return page.value === 'mod-config' ? '配置树 / 文件' : '其他模组';
-  return route.meta.title || sections.value.find((item) => item.id === activeSection.value)?.label || '';
+const pageLabel = computed(() => {
+  if (workspace.value === 'mods') return String(route.meta.title || '配置文件');
+  const title = String(route.meta.title || '');
+  return title && title !== sectionLabel.value ? title : '';
 });
+const workspaceShort = computed(() => {
+  if (workspace.value === 'vanilla') return '本体';
+  if (workspace.value === 'mods') return '其他模组';
+  return 'samsara';
+});
+const crumbs = computed(() => {
+  const list = [workspaceShort.value];
+  if (workspace.value === 'mods') {
+    list.push(modDisplayName.value || activeModId.value || '其他模组');
+    list.push(pageLabel.value || '配置文件');
+  } else {
+    if (sectionLabel.value) list.push(sectionLabel.value);
+    if (pageLabel.value) list.push(pageLabel.value);
+  }
+  return list;
+});
+const subnavItems = computed(() => {
+  if (workspace.value !== 'samsara') return [];
+  return SECTION_NAV[activeSection.value] || [];
+});
+const activeSubpage = computed(() => {
+  const current = subnavItems.value.find((item) => item.target === route.path);
+  if (current) return current.id;
+  return String(route.meta.page || '');
+});
+const modDisplayName = computed(() => {
+  const mod = mods.value.find((item) => item.id === activeModId.value);
+  return mod ? mod.label : (activeModId.value || '其他模组');
+});
+const workspaceLabel = computed(() => workspaceShort.value);
+const pageTitle = computed(() => pageLabel.value || sectionLabel.value);
 
 let started = false;
 let lastApplied = '';
 let navTimer = 0;
 let originalSetActiveTab = null;
 let modsRetry = 0;
+let legacyNavGuard = 0;
+let railTimer = 0;
+
+function readRailPinned() {
+  try {
+    return localStorage.getItem('samsara.ia.rail') === 'pinned';
+  } catch {
+    return false;
+  }
+}
+
+function storeRailPinned() {
+  try {
+    localStorage.setItem('samsara.ia.rail', railPinned.value ? 'pinned' : 'collapsed');
+  } catch {
+    // localStorage 不可用时只保留本次状态
+  }
+}
+
+function toggleRail() {
+  railPinned.value = !railPinned.value;
+  railPeek.value = false;
+  storeRailPinned();
+}
+
+function maybePeekRail() {
+  if (railPinned.value) return;
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    if (localStorage.getItem('samsara.ia.rail.day') === today) return;
+    localStorage.setItem('samsara.ia.rail.day', today);
+  } catch {
+    // 忽略
+  }
+  window.clearTimeout(railTimer);
+  railTimer = window.setTimeout(() => { railPeek.value = true; }, 350);
+  railTimer = window.setTimeout(() => { railPeek.value = false; }, 3000);
+}
 
 function navigate(path) {
   window.clearTimeout(navTimer);
@@ -294,11 +404,16 @@ function goMod(mod) {
   navigate(rememberedTarget('mods.' + mod.id, fallback));
 }
 
+function hasCjk(text) {
+  return /[\u3400-\u9fff]/.test(String(text || ''));
+}
+
 async function loadMods() {
   const ui = window.SamsaraUI;
   if (!ui?.api) return;
   try {
     const data = await ui.api('/api/config/pages');
+    const names = data.modNames || {};
     const groups = new Map();
     for (const pageSpec of data.pages || []) {
       if (pageSpec.source !== 'third-party') continue;
@@ -312,7 +427,16 @@ async function loadMods() {
       groups.get(first).push(pageSpec);
     }
     mods.value = [...groups.entries()]
-      .map(([id, pages]) => ({ id, pages }))
+      .map(([id, pages]) => {
+        const name = String(names[id] || names[id.toLowerCase()] || '').trim();
+        const chinese = hasCjk(name) ? name : '';
+        return {
+          id,
+          pages,
+          label: chinese || id,
+          hint: chinese ? id : pages.length + ' 个配置文件',
+        };
+      })
       .sort((a, b) => a.id.localeCompare(b.id));
     modsRetry = 0;
   } catch {
@@ -348,10 +472,21 @@ onMounted(async () => {
     await nextTick();
     await applyRoute(true);
     started = true;
+    measureChrome();
+    maybePeekRail();
     window.setTimeout(loadMods, 400);
+    window.addEventListener('resize', measureChrome, { passive: true });
+    window.addEventListener('scroll', scheduleMeasure, { passive: true });
   } catch (error) {
     loadError.value = '管理端加载失败：' + (error?.message || error);
   }
+});
+
+onUnmounted(() => {
+  window.removeEventListener('resize', measureChrome);
+  window.removeEventListener('scroll', scheduleMeasure);
+  window.clearTimeout(railTimer);
+  window.clearTimeout(measureTimer);
 });
 
 watch(() => route.path, async () => {
@@ -360,10 +495,31 @@ watch(() => route.path, async () => {
     await nextTick();
     await waitForCurrentPanel();
     await applyRoute();
+    measureChrome();
   } catch (error) {
     loadError.value = '页面切换失败：' + (error?.message || error);
   }
 });
+
+let measureTimer = 0;
+function scheduleMeasure() {
+  if (measureTimer) return;
+  measureTimer = window.setTimeout(() => {
+    measureTimer = 0;
+    measureChrome();
+  }, 120);
+}
+
+function measureChrome() {
+  const header = document.querySelector('.ia-header');
+  const section = document.querySelector('.section-tabs');
+  const headerH = header ? Math.round(header.getBoundingClientRect().height) : 128;
+  const sectionH = section ? Math.round(section.getBoundingClientRect().height) : 56;
+  const root = document.documentElement;
+  root.style.setProperty('--header-h', headerH + 'px');
+  root.style.setProperty('--ia-section-h', sectionH + 'px');
+  root.style.setProperty('--ia-nav-top', (headerH + sectionH + 12) + 'px');
+}
 
 async function waitForInitialPanel() {
   const id = initialPanelId();
@@ -401,21 +557,35 @@ function initialPanelId() {
   return panel ? 'panel-' + panel : '';
 }
 
+function guarded(fn) {
+  legacyNavGuard++;
+  try {
+    return fn();
+  } finally {
+    legacyNavGuard = Math.max(0, legacyNavGuard - 1);
+  }
+}
+
 async function applyRoute(force = false) {
   if (!window.SamsaraUI) return;
   const key = [workspace.value, page.value, route.meta.serverPanel || ''].join(':');
   if (force || key !== lastApplied) {
     lastApplied = key;
     if (workspace.value === 'vanilla') {
-      window.SamsaraServer?.showPanel?.(route.meta.serverPanel || 'server-config-panel');
+      guarded(() => window.SamsaraServer?.showPanel?.(route.meta.serverPanel || 'server-config-panel'));
     } else if (workspace.value === 'mods') {
-      window.SamsaraServer?.leaveServer?.();
+      guarded(() => window.SamsaraServer?.leaveServer?.());
+      window.SamsaraConfigEditor?.setSourceFilter?.('third-party');
       window.SamsaraConfigEditor?.setNavEnabled?.(false);
       hideLegacyChrome();
     } else {
-      window.SamsaraServer?.leaveServer?.();
+      guarded(() => window.SamsaraServer?.leaveServer?.());
+      if (route.meta.panel === 'config-editor') {
+        window.SamsaraConfigEditor?.setSourceFilter?.('samsara');
+        window.SamsaraConfigEditor?.setNavEnabled?.(true);
+      }
       if (route.meta.panel) {
-        applyLegacyPanel(route.meta.panel);
+        guarded(() => applyLegacyPanel(route.meta.panel));
       } else {
         hideLegacyChrome();
       }
@@ -455,6 +625,9 @@ function installLegacyTabBridge() {
   if (!originalSetActiveTab || originalSetActiveTab.__samsaraIaBridge) return;
   const bridge = (name) => {
     originalSetActiveTab(name);
+    // 内部路由应用（applyRoute / leaveServer / showPanel）由 guarded() 包住，
+    // 这里的导航必须被抑制，否则会从 /mods/* 或天网页跳回经济业务。
+    if (legacyNavGuard > 0) return;
     const target = LEGACY_ROUTES[name];
     if (target) navigate(target);
   };

@@ -18,10 +18,10 @@ const LEGACY_HASH_ROUTES = {
   announcements: '/announcements',
   'world-stack': '/world-stack',
   lottery: '/lottery',
-  server: '/server/config',
-  'server-backup': '/server/backup',
-  'server-console': '/server/console',
-  'server-audit': '/server/audit',
+  server: '/vanilla/config',
+  'server-backup': '/vanilla/backup',
+  'server-console': '/vanilla/console',
+  'server-audit': '/vanilla/audit',
   containers: '/containers',
 };
 

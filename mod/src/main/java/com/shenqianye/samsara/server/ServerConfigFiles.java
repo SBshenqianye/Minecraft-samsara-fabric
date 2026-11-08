@@ -82,7 +82,7 @@ public final class ServerConfigFiles {
             try {
                 row.put("bytes", exists ? Files.size(file) : 0L);
                 row.put("modified", exists ? Files.getLastModifiedTime(file).toMillis() : 0L);
-                row.put("content", exists ? Files.readString(file, StandardCharsets.UTF_8) : "");
+                row.put("content", exists ? stripBom(Files.readString(file, StandardCharsets.UTF_8)) : "");
                 row.put("error", "");
             } catch (IOException e) {
                 row.put("bytes", 0L);
@@ -151,7 +151,7 @@ public final class ServerConfigFiles {
     }
 
     private static String normalize(Spec spec, String text, SaveResult result) {
-        String body = text.replace("\r\n", "\n").replace('\r', '\n');
+        String body = stripBom(text).replace("\r\n", "\n").replace('\r', '\n');
         switch (spec.kind()) {
             case PROPERTIES -> {
                 int lineNo = 0;
@@ -218,8 +218,12 @@ public final class ServerConfigFiles {
         }
     }
 
-    private static boolean applyLive(MinecraftServer server, Spec spec, SaveResult result) {
-        if (server == null) {
+    private static String stripBom(String text) {
+        String value = text == null ? "" : text;
+        return value.startsWith("\uFEFF") ? value.substring(1) : value;
+    }
+
+    private static boolean applyLive(MinecraftServer server, Spec spec, SaveResult result) {        if (server == null) {
             return false;
         }
         try {

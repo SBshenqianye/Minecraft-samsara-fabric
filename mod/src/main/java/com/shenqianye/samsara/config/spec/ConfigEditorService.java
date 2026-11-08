@@ -15,6 +15,8 @@ import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.server.MinecraftServer;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -26,6 +28,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Stream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 
 /**
  * PageSpec/FormSpec 配置编辑器后端。
@@ -94,8 +98,52 @@ public final class ConfigEditorService {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("ok", true);
         out.put("pages", pages);
+        out.put("modNames", discoverModNames(serverRoot));
         out.put("warnings", warnings);
         return out;
+    }
+
+    /** 从 mods/*.jar 的 fabric.mod.json 读取 modId → 显示名，供工作区导航两行显示。 */
+    private Map<String, String> discoverModNames(Path serverRoot) {
+        Map<String, String> names = new LinkedHashMap<>();
+        Path mods = serverRoot.resolve("mods");
+        if (!Files.isDirectory(mods)) {
+            return names;
+        }
+        try (Stream<Path> stream = Files.list(mods)) {
+            for (Path jar : stream.filter(path -> path.getFileName().toString()
+                    .toLowerCase(Locale.ROOT).endsWith(".jar")).toList()) {
+                try (ZipFile zip = new ZipFile(jar.toFile())) {
+                    ZipEntry entry = zip.getEntry("fabric.mod.json");
+                    if (entry == null) {
+                        continue;
+                    }
+                    String text;
+                    try (InputStream in = zip.getInputStream(entry)) {
+                        text = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+                    }
+                    JsonElement parsed = JsonParser.parseString(text);
+                    if (!parsed.isJsonObject()) {
+                        continue;
+                    }
+                    JsonElement idElement = parsed.getAsJsonObject().get("id");
+                    JsonElement nameElement = parsed.getAsJsonObject().get("name");
+                    if (idElement == null || !idElement.isJsonPrimitive()) {
+                        continue;
+                    }
+                    String id = idElement.getAsString();
+                    String name = nameElement != null && nameElement.isJsonPrimitive()
+                            ? nameElement.getAsString() : id;
+                    names.put(id, name);
+                    names.put(id.toLowerCase(Locale.ROOT), name);
+                } catch (RuntimeException | IOException ignored) {
+                    // 损坏或不兼容的 mod jar 不影响配置页读取。
+                }
+            }
+        } catch (IOException ignored) {
+            // mods 目录不可读时只返回空映射。
+        }
+        return names;
     }
 
     private Resolved buildSamsara(String id) {

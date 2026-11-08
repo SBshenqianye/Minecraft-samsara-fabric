@@ -66,6 +66,26 @@ class ServerConfigFilesTest {
     }
 
     @Test
+    void stripsUtf8BomAndKeepsCommentsOutOfValues() throws Exception {
+        Files.writeString(root.resolve("server.properties"),
+                "\uFEFF#Minecraft server properties\n#comment=ignored\nlevel-name=world\n",
+                StandardCharsets.UTF_8);
+        List<Map<String, Object>> files = ServerConfigFiles.readAll(root);
+        Map<String, Object> props = files.stream()
+                .filter(f -> "server-properties".equals(f.get("id")))
+                .findFirst().orElseThrow();
+        String content = String.valueOf(props.get("content"));
+        assertFalse(content.startsWith("\uFEFF"));
+        ServerConfigFiles.SaveResult saved = ServerConfigFiles.save(root, "server-properties",
+                "\uFEFF#Minecraft server properties\n#comment=ignored\nlevel-name=world\n", null);
+        assertTrue(saved.ok);
+        String written = Files.readString(root.resolve("server.properties"),
+                StandardCharsets.UTF_8);
+        assertFalse(written.startsWith("\uFEFF"));
+        assertTrue(written.startsWith("#Minecraft server properties"));
+    }
+
+    @Test
     void onlyWhitelistedFilesCanBeWritten() {
         ServerConfigFiles.SaveResult result = ServerConfigFiles.save(root, "../evil", "x", null);
         assertFalse(result.ok);

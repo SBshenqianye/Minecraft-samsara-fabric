@@ -1,7 +1,7 @@
 'use strict';
 
 // § 颜色/格式文本编辑器：输入框保留原始代码，工具栏插入代码，预览直接渲染。
-// 预览和输入都允许查看纯文本；不把用户文本放进 innerHTML。
+// 颜色选择统一为 4×4 色板（与圈地/旗帜颜色浮窗同一套视觉），不再提供纯文本模式。
 (function () {
   const COLORS = [
     ['0', '黑', '#000000'], ['1', '深蓝', '#0000aa'], ['2', '深绿', '#00aa00'],
@@ -28,6 +28,28 @@
     return node;
   }
 
+  /** 4×4 MC 固定色板；与圈地颜色浮窗共用 claim-color-* 视觉。 */
+  function createPalette(onPick, options) {
+    const opts = options || {};
+    const grid = el('div', 'claim-color-grid chat-text-color-grid');
+    grid.setAttribute('role', 'group');
+    grid.setAttribute('aria-label', opts.label || 'Minecraft 16 色');
+    for (const [code, label, hex] of COLORS) {
+      const cell = el('button', 'claim-color-cell chat-text-color-cell');
+      cell.type = 'button';
+      cell.title = '§' + code + ' ' + label;
+      cell.setAttribute('aria-label', '插入颜色 §' + code + ' ' + label);
+      const swatch = el('span', 'claim-color-swatch');
+      swatch.style.background = hex;
+      const name = el('span', 'claim-color-name', label);
+      const meta = el('span', 'claim-color-meta', '§' + code + ' · ' + code.toUpperCase());
+      cell.append(swatch, name, meta);
+      cell.addEventListener('click', () => onPick(code, label, hex));
+      grid.append(cell);
+    }
+    return grid;
+  }
+
   function create(options) {
     const opts = options || {};
     const wrap = el('div', 'chat-text-editor');
@@ -39,11 +61,12 @@
     input.placeholder = opts.placeholder || '支持 § 颜色/格式代码，例如 §e[公告] §f欢迎';
 
     const previewHead = el('div', 'chat-text-preview-head');
-    const preview = el('div', 'chat-text-preview');
-    const toggle = el('button', 'chat-text-toggle', '纯文本');
-    toggle.type = 'button';
-    let plaintext = false;
-    previewHead.append(el('span', 'chat-text-preview-label', '预览'), toggle);
+    const preview = el('div', opts.serverList ? 'chat-text-preview server-list-preview'
+      : 'chat-text-preview');
+    const colorToggle = el('button', 'chat-text-toggle', '颜色 4×4');
+    colorToggle.type = 'button';
+    colorToggle.setAttribute('aria-expanded', 'false');
+    previewHead.append(el('span', 'chat-text-preview-label', '预览'), colorToggle);
 
     const insert = (code) => {
       const start = input.selectionStart == null ? input.value.length : input.selectionStart;
@@ -55,16 +78,22 @@
       refresh();
     };
 
-    const swatches = el('div', 'chat-text-swatches');
-    for (const [code, label, hex] of COLORS) {
-      const button = el('button', 'chat-text-swatch');
-      button.type = 'button';
-      button.title = '§' + code + ' ' + label;
-      button.setAttribute('aria-label', '插入颜色 §' + code + ' ' + label);
-      button.style.background = hex;
-      button.addEventListener('click', () => insert(code));
-      swatches.append(button);
-    }
+    const palette = createPalette((code) => insert(code), { label: 'MOTD 颜色' });
+    palette.hidden = true;
+    colorToggle.addEventListener('click', () => {
+      palette.hidden = !palette.hidden;
+      colorToggle.setAttribute('aria-expanded', palette.hidden ? 'false' : 'true');
+      if (!palette.hidden) palette.querySelector('button')?.focus();
+    });
+    wrap.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && !palette.hidden) {
+        palette.hidden = true;
+        colorToggle.setAttribute('aria-expanded', 'false');
+        colorToggle.focus();
+        event.stopPropagation();
+      }
+    });
+
     const formats = el('div', 'chat-text-formats');
     for (const [code, label, style] of FORMATS) {
       const button = el('button', 'chat-text-format', label);
@@ -74,7 +103,7 @@
       button.addEventListener('click', () => insert(code));
       formats.append(button);
     }
-    toolbar.append(swatches, formats);
+    toolbar.append(colorToggle, formats);
 
     function refresh() {
       if (typeof opts.onChange === 'function') opts.onChange(input.value);
@@ -83,22 +112,16 @@
 
     function renderPreview(text) {
       preview.replaceChildren();
-      if (plaintext) {
-        preview.append(el('pre', 'chat-text-raw', text));
+      if (opts.serverList) {
+        preview.append(renderServerList(text, opts));
         return;
       }
       preview.append(render(text));
     }
 
     input.addEventListener('input', refresh);
-    toggle.addEventListener('click', () => {
-      plaintext = !plaintext;
-      toggle.textContent = plaintext ? '预览' : '纯文本';
-      toggle.setAttribute('aria-pressed', plaintext ? 'true' : 'false');
-      renderPreview(input.value);
-    });
 
-    wrap.append(toolbar, input, previewHead, preview);
+    wrap.append(toolbar, palette, input, previewHead, preview);
     renderPreview(input.value);
     return {
       element: wrap,
@@ -110,6 +133,50 @@
       },
       refresh,
     };
+  }
+
+  function renderServerList(text, options) {
+    const opts = options || {};
+    const card = el('div', 'server-list-card');
+    const icon = el('div', 'server-list-icon', 'S');
+    const body = el('div', 'server-list-body');
+    const title = el('div', 'server-list-title');
+    const lines = splitMotd(text);
+    title.append(renderLine(lines[0]));
+    if (lines[1]) title.append(renderLine(lines[1]));
+    const meta = el('div', 'server-list-meta');
+    const players = el('span', 'server-list-players',
+      (opts.online == null ? '0' : String(opts.online)) + ' / '
+      + (opts.maxPlayers == null ? '20' : String(opts.maxPlayers)));
+    const signal = el('span', 'server-list-signal');
+    for (let i = 0; i < 5; i += 1) {
+      const bar = el('i');
+      bar.style.height = (4 + i * 3) + 'px';
+      signal.append(bar);
+    }
+    meta.append(players, signal);
+    body.append(title, meta);
+    const version = el('div', 'server-list-version', opts.version || 'Minecraft 26.3');
+    card.append(icon, body, version);
+    return card;
+  }
+
+  function splitMotd(text) {
+    const raw = String(text || '').replace(/\r/g, '');
+    if (raw.includes('\n')) {
+      const parts = raw.split('\n');
+      return [parts[0], parts.slice(1).join(' ')];
+    }
+    if (raw.length <= 58) return [raw, ''];
+    let cut = raw.lastIndexOf(' ', 58);
+    if (cut < 24) cut = 58;
+    return [raw.slice(0, cut), raw.slice(cut).trim()];
+  }
+
+  function renderLine(text) {
+    const line = el('div', 'server-list-line');
+    line.append(render(text));
+    return line;
   }
 
   function render(text) {
@@ -180,5 +247,5 @@
     return root;
   }
 
-  window.SamsaraChatText = { create, render };
+  window.SamsaraChatText = { create, render, createPalette, colors: COLORS };
 })();

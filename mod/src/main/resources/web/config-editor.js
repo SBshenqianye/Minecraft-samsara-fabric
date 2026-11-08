@@ -15,6 +15,7 @@
     edits: new Map(),
     pending: null,
     navEnabled: true,
+    sourceFilter: null,
   };
 
   function el(tag, className, text) {
@@ -39,22 +40,33 @@
     return state.pages.find((page) => page.id === id) || null;
   }
 
+  function sourcePages() {
+    if (!state.sourceFilter) return state.pages;
+    return state.pages.filter((page) => (page.source || 'samsara') === state.sourceFilter);
+  }
+
   async function load(preferredId) {
     const result = await UI.api('/api/config/pages');
     state.pages = Array.isArray(result.pages) ? result.pages : [];
+    state.modNames = result.modNames || {};
     state.loaded = true;
     state.edits.clear();
-    const target = preferredId && pageById(preferredId) ? preferredId
-      : state.current && pageById(state.current.id) ? state.current.id
-        : state.pages.length ? state.pages[0].id : '';
+    const pages = sourcePages();
+    const target = preferredId && pages.some((page) => page.id === preferredId) ? preferredId
+      : state.current && pages.some((page) => page.id === state.current.id) ? state.current.id
+        : pages.length ? pages[0].id : '';
     state.current = target ? pageById(target) : null;
     render();
   }
 
   function filteredPages() {
     const query = state.filter.trim().toLowerCase();
-    if (!query) return state.pages;
-    return state.pages.filter((page) => {
+    let pages = state.pages;
+    if (state.sourceFilter) {
+      pages = pages.filter((page) => (page.source || 'samsara') === state.sourceFilter);
+    }
+    if (!query) return pages;
+    return pages.filter((page) => {
       if ((page.title + ' ' + page.fileName + ' ' + page.source + ' ' + page.path)
         .toLowerCase().includes(query)) return true;
       return (page.form && page.form.fields || []).some((field) =>
@@ -76,13 +88,14 @@
       if (shell) shell.classList.add('no-nav');
     }
     renderBody();
+    const total = sourcePages().length;
     const count = $('config-editor-count');
-    if (count) count.textContent = String(state.pages.length);
+    if (count) count.textContent = String(total);
     const summary = $('config-editor-summary');
     if (summary) {
       summary.textContent = state.filter
-        ? '匹配 ' + filteredPages().length + ' / ' + state.pages.length + ' 个页面'
-        : state.pages.length + ' 个页面';
+        ? '匹配 ' + filteredPages().length + ' / ' + total + ' 个页面'
+        : total + ' 个页面';
     }
   }
 
@@ -496,6 +509,24 @@
     state.navEnabled = enabled !== false;
   }
 
+  /**
+   * 配置来源过滤：samsara / server / third-party / null。
+   * 保证 /samsara/config/editor 只显示 samsara 自有配置，其他模组页只显示 third-party。
+   */
+  function setSourceFilter(source) {
+    const next = source === 'samsara' || source === 'server' || source === 'third-party'
+      ? source : null;
+    if (state.sourceFilter === next) return;
+    state.sourceFilter = next;
+    if (!state.loaded) return;
+    const pages = sourcePages();
+    if (state.current && !pages.some((page) => page.id === state.current.id)) {
+      state.current = pages.length ? pages[0] : null;
+      state.edits.clear();
+    }
+    render();
+  }
+
   function openPage(id) {
     const page = pageById(id);
     if (!page) return false;
@@ -540,5 +571,7 @@
     load,
     openPage,
     setNavEnabled,
+    setSourceFilter,
+    getSourceFilter: () => state.sourceFilter,
   };
 })();

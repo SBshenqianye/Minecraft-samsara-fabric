@@ -252,11 +252,11 @@
                 <span>显示圈地</span>
               </label>
               <label class="check-line">
-                <input id="map-show-chunks" type="checkbox">
+                <input id="map-show-chunks" type="checkbox" checked>
                 <span>区块网格</span>
               </label>
-              <label class="check-line">
-                <input id="map-chunk-mode" type="checkbox">
+              <label class="check-line" title="区块操作模式默认开启；点击区块会先打开预览/确认，不会直接写世界。">
+                <input id="map-chunk-mode" type="checkbox" checked>
                 <span>区块操作</span>
               </label>
               <label class="check-line">
@@ -284,7 +284,7 @@
                 <span>稀有名字</span>
               </label>
               <label class="check-line">
-                <input id="map-show-separation" type="checkbox">
+                <input id="map-show-separation" type="checkbox" checked>
                 <span>排斥半径</span>
               </label>
               <button id="map-fit" class="ghost" type="button">定位全部圈地</button>
@@ -849,8 +849,8 @@
           <section class="panel">
             <div class="panel-head">
               <div>
-                <h2>Web 审计与随时回滚</h2>
-                <p class="panel-sub">每次管理端写请求前自动快照 Web 可管理的小文件：<code>config/samsara/</code>、服务器配置文件、栈层图标与 pending 队列。可直接回滚配置类修改；世界数据请使用世界栈时间线或本体备份。</p>
+                <h2>Web 审计（全部管理端写请求）</h2>
+                <p class="panel-sub">覆盖 samsara 配置、其他模组配置、服务器本体文件与 RCON/命令类写请求：每次管理端写操作前自动快照可回滚的小文件（<code>config/samsara/</code>、服务器配置文件、栈层图标与 pending 队列），并记录发起者。可直接回滚配置类修改；世界数据请使用世界栈时间线或本体备份。</p>
               </div>
               <div class="panel-tools">
                 <button id="server-audit-refresh" class="ghost" type="button">刷新审计</button>

@@ -465,8 +465,8 @@
       hint: '在服务器线程执行命令；stop 会关闭服务器',
     },
     'server-audit-panel': {
-      title: 'Web 审计',
-      hint: '每次管理端写请求前快照；配置类可直接回滚',
+      title: 'Web 审计（全部管理端写请求）',
+      hint: '覆盖 samsara、其他模组、服务器配置与 RCON；写前快照，配置类可回滚',
     },
   };
 
@@ -502,7 +502,9 @@
     if (save) save.hidden = id !== 'server-config-panel';
     if (create) create.hidden = id !== 'server-backup-panel';
     if (state.section === 'server') {
-      try { history.replaceState(null, '', SERVER_HASH[id] || '#server'); } catch (e) { /* file:// 等场景忽略 */ }
+      if (!window.SamsaraUseRouter) {
+        try { history.replaceState(null, '', SERVER_HASH[id] || '#server'); } catch (e) { /* file:// 等场景忽略 */ }
+      }
       renderServerNav();
     }
     if (id === 'server-backup-panel') {
@@ -737,6 +739,33 @@
     },
   };
 
+  const FILE_META = {
+    whitelist: {
+      className: 'file-access',
+      icon: '白',
+      badge: '权限 · 准入名单',
+      note: '白名单只决定谁能进入服务器；保存后立即重载，但需要先开启 white-list。',
+    },
+    ops: {
+      className: 'file-access',
+      icon: 'OP',
+      badge: '权限 · 管理员',
+      note: 'OP 拥有管理命令权限；等级 4 等同服主，修改前请确认对象。',
+    },
+    'banned-players': {
+      className: 'file-danger',
+      icon: '禁',
+      badge: '危险 · 玩家封禁',
+      note: '玩家封禁会让目标无法进入服务器；保存后立即重载。',
+    },
+    'banned-ips': {
+      className: 'file-danger',
+      icon: 'IP',
+      badge: '危险 · IP 封禁',
+      note: 'IP 封禁可能影响同一网络下的其他玩家；请谨慎添加。',
+    },
+  };
+
   function specFor(fileId, key) {
     if (fileId === 'server-properties') {
       return PROPERTY_SPECS[key] || {
@@ -752,9 +781,12 @@
   }
 
   function splitPropertyLines(content) {
-    return String(content || '').split(/\r?\n/).map((line) => {
+    // 去掉 UTF-8 BOM；properties 的 # 与 ! 都是注释，不能当成可编辑字段。
+    return String(content || '').replace(/^\uFEFF/, '').split(/\r?\n/).map((line) => {
       if (line === '') return { type: 'blank', raw: '' };
-      if (/^\s*[#!]/.test(line)) return { type: 'comment', raw: line };
+      if (/^\s*[#!]/.test(line) || /^\s*\\[#!]/.test(line)) {
+        return { type: 'comment', raw: line.replace(/^\s*\\/, '') };
+      }
       const eq = line.indexOf('=');
       if (eq <= 0) return { type: 'raw', raw: line };
       return { type: 'prop', key: line.slice(0, eq), value: line.slice(eq + 1) };
@@ -938,6 +970,12 @@
     const body = [];
     const targets = [];
     const navChildren = [];
+    if (file.kind === 'properties') {
+      const note = document.createElement('p');
+      note.className = 'server-file-note';
+      note.textContent = '以 # 或 ! 开头的行是注释，不会显示为可编辑字段；这里只列出 key=value。';
+      body.push(note);
+    }
     for (const name of groupOrder) {
       const items = groups.get(name);
       if (!items.length) continue;
@@ -989,6 +1027,10 @@
       control = window.SamsaraChatText.create({
         value: token.value,
         rows: 3,
+        serverList: file.id === 'server-properties' && token.key === 'motd',
+        online: state.model && state.model.onlinePlayers != null ? state.model.onlinePlayers : 0,
+        maxPlayers: state.model && state.model.maxPlayers != null ? state.model.maxPlayers : 20,
+        version: state.model && state.model.version ? state.model.version : 'Minecraft 26.3',
         onChange: (next) => {
           token.value = next == null ? '' : String(next);
           markDirty(file, draft);
@@ -1081,14 +1123,38 @@
     list.appendChild(actions);
 
     const id = fileId(file);
+    const meta = FILE_META[file.id] || null;
+    let summaryExtra = null;
+    const body = [];
+    if (meta) {
+      summaryExtra = document.createElement('span');
+      summaryExtra.className = 'server-file-badge';
+      summaryExtra.textContent = meta.badge;
+      const note = document.createElement('div');
+      note.className = 'server-file-note';
+      note.textContent = meta.note;
+      body.push(note);
+    }
+    body.push(list);
     const el = KIT.collapsible({
       id,
       title: file.name,
       path: displayPath(file),
       count: draft.data.length,
       open: isOpen(id, true),
-      body: list,
+      className: meta ? 'server-file-card ' + meta.className : 'server-file-card',
+      summaryExtra,
+      body,
     });
+    if (meta) {
+      const titleNode = el.querySelector('.file-title');
+      if (titleNode) {
+        const icon = document.createElement('span');
+        icon.className = 'server-file-icon';
+        icon.textContent = meta.icon;
+        titleNode.prepend(icon);
+      }
+    }
     targets.push({ id, el });
     return {
       el,
@@ -1974,7 +2040,7 @@
     if (state.section === 'server') renderServerNav();
   });
 
-  const initialHash = location.hash || '';
+  const initialHash = window.SamsaraUseRouter ? '' : (location.hash || '');
   if (initialHash === '#server' || initialHash === '#server-backup'
       || initialHash === '#server-console' || initialHash === '#server-audit') {
     setSection('server');

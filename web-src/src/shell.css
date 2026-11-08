@@ -87,8 +87,8 @@
 }
 
 .ia-main .side-nav {
-  top: calc(var(--header-h, 128px) + var(--ia-section-h) + 12px);
-  max-height: calc(100vh - var(--header-h, 128px) - var(--ia-section-h) - 24px);
+  top: var(--ia-nav-top, calc(var(--header-h, 128px) + var(--ia-section-h, 56px) + 12px));
+  max-height: calc(100vh - var(--ia-nav-top, 196px) - 12px);
 }
 
 .workspace-rail {

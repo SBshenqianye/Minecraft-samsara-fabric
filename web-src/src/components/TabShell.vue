@@ -1,22 +1,33 @@
 <template>
   <div class="tab-shell" :data-page="name">
-    <div v-if="title || $slots.actions" class="tab-shell-head">
-      <div>
-        <h2 v-if="title">{{ title }}</h2>
-        <p v-if="description" class="muted small">{{ description }}</p>
-      </div>
-      <div v-if="$slots.actions" class="tab-shell-actions">
+    <PageHeader
+      v-if="resolvedTitle || description || $slots.actions"
+      :title="resolvedTitle"
+      :description="description"
+      :badges="badges"
+      :compact="compact"
+    >
+      <template v-if="$slots.actions" #actions>
         <slot name="actions" />
-      </div>
-    </div>
+      </template>
+    </PageHeader>
     <slot />
   </div>
 </template>
 
 <script setup>
-defineProps({
+import { computed } from 'vue';
+import { useRoute } from 'vue-router';
+import PageHeader from './PageHeader.vue';
+
+const props = defineProps({
   name: { type: String, required: true },
   title: { type: String, default: '' },
   description: { type: String, default: '' },
+  badges: { type: Array, default: () => [] },
+  compact: { type: Boolean, default: false },
 });
+
+const route = useRoute();
+const resolvedTitle = computed(() => props.title || String(route.meta.title || ''));
 </script>

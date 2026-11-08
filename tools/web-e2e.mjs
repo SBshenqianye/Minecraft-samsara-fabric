@@ -233,7 +233,7 @@ async function main() {
     }
 
     // ---- 连接与本体页 ----
-    await navigate(base + '/#server');
+    await navigate(base + '/vanilla/config');
     await until("window.SamsaraUI && document.getElementById('token-connect')", 10000, '前端脚本');
     await sleep(300);
     await evaluate(`
@@ -302,28 +302,39 @@ async function main() {
         .find((node) => node.querySelector('.entry-key')?.textContent.includes('motd'));
       const editor = entry?.querySelector('.chat-text-editor');
       const input = editor?.querySelector('.chat-text-input');
-      const swatches = editor ? [...editor.querySelectorAll('.chat-text-swatch')] : [];
+      const cells = editor ? [...editor.querySelectorAll('.chat-text-color-grid .claim-color-cell')] : [];
       const before = input ? input.value : '';
-      if (swatches[10]) swatches[10].click();
+      if (cells[10]) cells[10].click();
       const after = input ? input.value : '';
-      const toggle = editor?.querySelector('.chat-text-toggle');
-      if (toggle) toggle.click();
-      const raw = editor?.querySelector('.chat-text-raw')?.textContent || '';
-      if (toggle) toggle.click();
       if (input) {
         input.value = before;
         input.dispatchEvent(new Event('input', { bubbles: true }));
       }
-      return { found: Boolean(editor), swatches: swatches.length,
+      return { found: Boolean(editor), cells: cells.length,
         inserted: after !== before && after.includes('§'),
-        rawHasCode: raw.includes('§'),
+        serverList: Boolean(editor?.querySelector('.server-list-card')),
+        twoLines: editor?.querySelectorAll('.server-list-line').length || 0,
+        hasSignal: Boolean(editor?.querySelector('.server-list-signal')),
+        plainToggle: Boolean(editor?.querySelector('.chat-text-toggle[aria-pressed]')),
         previewSpans: editor?.querySelectorAll('.chat-text-rendered span').length || 0 };
     })()`);
-    check('MOTD 使用 § 颜色编辑器', motdEditor.found && motdEditor.swatches >= 16,
+    check('MOTD 使用 4×4 固定色板', motdEditor.found && motdEditor.cells === 16,
         JSON.stringify(motdEditor));
-    check('MOTD 选色直接插入并渲染，可看纯文本', motdEditor.inserted
-        && motdEditor.rawHasCode && motdEditor.previewSpans > 0,
+    check('MOTD 选色直接插入并渲染', motdEditor.inserted && motdEditor.previewSpans > 0,
         JSON.stringify(motdEditor));
+    check('MOTD 预览为服务器列表样式', motdEditor.serverList === true
+        && motdEditor.twoLines >= 1 && motdEditor.hasSignal === true
+        && motdEditor.plainToggle === false, JSON.stringify(motdEditor));
+
+    const propertyKeys = await evaluate(`(() => {
+      const file = [...document.querySelectorAll('#server-config-files > details.file-block')]
+        .find((node) => node.id.includes('server-properties'));
+      const keys = [...(file?.querySelectorAll('.entry-key') || [])]
+        .map((node) => node.textContent.trim());
+      return { bad: keys.filter((key) => key.startsWith('\\\\#') || key.startsWith('\\uFEFF') || key.includes('Minecraft server properties')) };
+    })()`);
+    check('server.properties 注释不会显示为配置项', propertyKeys.bad.length === 0,
+        JSON.stringify(propertyKeys));
 
     const segmentedFit = await evaluate(`(() => {
       const groups = [...document.querySelectorAll('#server-config-files .segmented')];
@@ -817,7 +828,10 @@ async function main() {
       await wait(1200);
       const nav = [...document.querySelectorAll('#global-nav .nav-item')];
       const groups = nav.map((node) => node.textContent.trim());
-      const third = nav.find((node) => (node.dataset.target || '').startsWith('third-party:'));
+      window.SamsaraConfigEditor?.setSourceFilter?.('third-party');
+      await wait(600);
+      const thirdNav = [...document.querySelectorAll('#global-nav .nav-item')];
+      const third = thirdNav.find((node) => (node.dataset.target || '').startsWith('third-party:'));
       let fields = 0;
       let title = '';
       let previewOpen = false;
@@ -838,15 +852,16 @@ async function main() {
           if (dialog && dialog.open) dialog.close();
         }
       }
+      window.SamsaraConfigEditor?.setSourceFilter?.('samsara');
       return { nav: nav.length, groups, fields, title, previewOpen, previewText,
         summary: document.getElementById('config-editor-summary')?.textContent || '' };
     })()`);
-    check('配置编辑器加载 PageSpec 页面导航', editor.nav >= 3
+    check('配置编辑器只加载 samsara 自有 PageSpec 页面', editor.nav >= 3
         && editor.groups.some((text) => text.includes('samsara'))
-        && editor.groups.some((text) => text.includes('服务器'))
-        && editor.groups.some((text) => text.includes('第三方')),
+        && !editor.groups.some((text) => text.includes('服务器本体'))
+        && !editor.groups.some((text) => text.includes('第三方模组')),
         JSON.stringify({ nav: editor.nav, groups: editor.groups }));
-    check('配置编辑器渲染第三方 FormSpec 字段', editor.fields > 0
+    check('配置编辑器 source 过滤后可渲染第三方 FormSpec 字段', editor.fields > 0
         && editor.title.length > 0, JSON.stringify({ fields: editor.fields, title: editor.title }));
     check('配置编辑器预览弹窗可用且不写盘', editor.previewOpen
         && editor.previewText.includes('将修改'), JSON.stringify({ open: editor.previewOpen,
@@ -1715,11 +1730,10 @@ async function main() {
     });
     check('RCON 控制台需要管理端 token', noAuthConsole.status === 401,
         'status=' + noAuthConsole.status);
+    await navigate(base + '/vanilla/console');
+    await until("window.SamsaraUI && document.getElementById('server-console-panel')"
+        + " && !document.getElementById('server-console-panel').hidden", 20000, 'RCON 控制台路由');
     const consoleState = await evaluate(`(async () => {
-      [...document.querySelectorAll('.top-tab')].find((tab) => tab.dataset.section === 'server')?.click();
-      await new Promise((resolve) => setTimeout(resolve, 300));
-      document.querySelector('.tab[data-server-panel="server-console-panel"]')?.click();
-      await new Promise((resolve) => setTimeout(resolve, 300));
       const input = document.getElementById('server-console-command');
       const send = document.getElementById('server-console-send');
       input.value = 'list';
@@ -1729,6 +1743,7 @@ async function main() {
         panelVisible: !document.getElementById('server-console-panel')?.hidden,
         output: document.getElementById('server-console-output')?.textContent || '',
         message: document.getElementById('server-console-message')?.textContent || '',
+        path: location.pathname,
         hash: location.hash,
       };
     })()`);
@@ -1736,7 +1751,8 @@ async function main() {
         && consoleState.output.includes('> list') && consoleState.output.length > 8
         && consoleState.message.includes('完成'), JSON.stringify({
           output: consoleState.output.slice(0, 120), message: consoleState.message }));
-    check('RCON 控制台入口哈希', consoleState.hash === '#server-console', consoleState.hash);
+    check('RCON 控制台入口使用规范路径且不写 hash', consoleState.path === '/vanilla/console'
+        && consoleState.hash === '', JSON.stringify({ path: consoleState.path, hash: consoleState.hash }));
 
     const consoleComplete = await evaluate(`(async () => {
       const input = document.getElementById('server-console-command');
@@ -1853,10 +1869,10 @@ async function main() {
     const noAuthAudit = await fetch(base + '/api/audit');
     check('Web 审计需要管理端 token', noAuthAudit.status === 401,
         'status=' + noAuthAudit.status);
+    await navigate(base + '/vanilla/audit');
+    await until("window.SamsaraUI && document.getElementById('server-audit-panel')"
+        + " && !document.getElementById('server-audit-panel').hidden", 20000, 'Web 审计路由');
     const auditState = await evaluate(`(async () => {
-      [...document.querySelectorAll('.top-tab')].find((tab) => tab.dataset.section === 'server')?.click();
-      await new Promise((resolve) => setTimeout(resolve, 300));
-      document.querySelector('.tab[data-server-panel="server-audit-panel"]')?.click();
       await new Promise((resolve) => setTimeout(resolve, 3000));
       const rows = [...document.querySelectorAll('#server-audit-list .server-audit-item')];
       const first = rows[0];
@@ -1885,6 +1901,7 @@ async function main() {
         previewDiff,
         diffVisible,
         changes,
+        path: location.pathname,
         hash: location.hash,
       };
     })()`);
@@ -1894,8 +1911,8 @@ async function main() {
           text: auditState.text.slice(0, 120), panel: auditState.panelVisible,
           message: auditState.loadMessage }));
     check('Web 审计预览可用', auditState.previewMessage.includes('快照')
-        && auditState.hash === '#server-audit', JSON.stringify({
-          message: auditState.previewMessage, hash: auditState.hash }));
+        && auditState.hash === '' && auditState.path === '/vanilla/audit', JSON.stringify({
+          message: auditState.previewMessage, hash: auditState.hash, path: auditState.path }));
     check('Web 审计可查看文件级 diff', auditState.diffVisible === true
         && auditState.changes >= 0
         && (auditState.previewDiff.includes('---') || auditState.previewDiff.includes('没有可显示')),
@@ -1987,19 +2004,19 @@ async function main() {
 
     // ---- 简单页逐路由验证（Vue page/view 直接打开） ----
     const simpleRoutes = [
-      ['/config-editor', 'panel-config-editor'],
-      ['/announcements', 'panel-announcements'],
-      ['/output', 'panel-output'],
-      ['/permissions', 'panel-permissions'],
-      ['/identity', 'panel-identity'],
-      ['/world-stack', 'panel-world-stack'],
-      ['/lottery', 'panel-lottery'],
-      ['/server/config', 'server-config-panel'],
-      ['/server/backup', 'server-backup-panel'],
-      ['/server/console', 'server-console-panel'],
-      ['/server/audit', 'server-audit-panel'],
+      ['/config-editor', 'panel-config-editor', '/config-editor'],
+      ['/announcements', 'panel-announcements', '/announcements'],
+      ['/output', 'panel-output', '/output'],
+      ['/permissions', 'panel-permissions', '/permissions'],
+      ['/identity', 'panel-identity', '/identity'],
+      ['/world-stack', 'panel-world-stack', '/world-stack'],
+      ['/lottery', 'panel-lottery', '/lottery'],
+      ['/server/config', 'server-config-panel', '/vanilla/config'],
+      ['/server/backup', 'server-backup-panel', '/vanilla/backup'],
+      ['/server/console', 'server-console-panel', '/vanilla/console'],
+      ['/server/audit', 'server-audit-panel', '/vanilla/audit'],
     ];
-    for (const [path, panelId] of simpleRoutes) {
+    for (const [path, panelId, expectedPath] of simpleRoutes) {
       await navigate(base + path);
       await until("window.SamsaraUI && (() => { const p = document.getElementById('"
           + panelId + "'); return p && !p.hidden && getComputedStyle(p).display !== 'none'; })()",
@@ -2014,7 +2031,7 @@ async function main() {
           tokenDialog: document.getElementById('token-dialog')?.open === true,
         };
       })()`);
-      check('简单页路由 ' + path + ' 可打开', routeState.path === path
+      check('简单页路由 ' + path + ' 可打开', routeState.path === expectedPath
           && routeState.panelVisible && routeState.header && !routeState.tokenDialog,
           JSON.stringify(routeState));
     }
@@ -2105,6 +2122,84 @@ async function main() {
         JSON.stringify(iaSamsara.sections));
     check('samsara 工作区直接路由可用', iaSamsara.path === '/samsara/economy'
         && iaSamsara.crumb === '经济业务', JSON.stringify(iaSamsara));
+
+    // 三级子页导航：天网 / 世界 / 配置 / 社区
+    await navigate(base + '/samsara/sky/track');
+    await until("document.querySelector('.section-subnav [data-subnav=\"inventory\"]')",
+        20000, '天网三级导航');
+    const subnavSky = await evaluate(`(() => ({
+      items: [...document.querySelectorAll('.section-subnav .subnav-item')]
+        .map((node) => node.textContent.trim()),
+      section: document.querySelector('.section-tab.active')?.textContent.trim() || '',
+      crumb: [...document.querySelectorAll('.ia-crumbs > span')]
+        .filter((node) => !node.classList.contains('ia-crumb-sep'))
+        .map((node) => node.textContent.trim()),
+    }))()`);
+    check('天网三级导航为轨迹/Diff/容器/玩家背包',
+        subnavSky.items.join('|') === '轨迹回看|Diff 回看|容器|玩家背包'
+        && subnavSky.section === '天网', JSON.stringify(subnavSky));
+    check('面包屑为 samsara / 天网 / 轨迹回看',
+        subnavSky.crumb.join('|') === 'samsara|天网|轨迹回看', JSON.stringify(subnavSky));
+
+    await navigate(base + '/samsara/world/map');
+    await until("document.querySelector('.section-subnav [data-subnav=\"world-stack\"]')",
+        20000, '世界三级导航');
+    const worldNav = await evaluate(`(() => ({
+      items: [...document.querySelectorAll('.section-subnav .subnav-item')]
+        .map((node) => node.textContent.trim()),
+      stackVisible: (() => {
+        const node = document.querySelector('.section-subnav [data-subnav="world-stack"]');
+        const rect = node?.getBoundingClientRect();
+        return !!rect && rect.width > 0 && rect.height > 0;
+      })(),
+    }))()`);
+    check('世界三级导航可一键进入世界栈', worldNav.items.join('|') === '地图|世界栈'
+        && worldNav.stackVisible, JSON.stringify(worldNav));
+    await evaluate("document.querySelector('.section-subnav [data-subnav=\"world-stack\"]').click(); true;");
+    await until("location.pathname === '/samsara/world/stack'", 15000, '从地图进入世界栈');
+    const worldStackPath = await evaluate(`({
+      path: location.pathname,
+      crumb: [...document.querySelectorAll('.ia-crumbs > span')]
+        .filter((node) => !node.classList.contains('ia-crumb-sep'))
+        .map((node) => node.textContent.trim()),
+    })`);
+    check('地图页可一键进入世界栈且面包屑对齐', worldStackPath.path === '/samsara/world/stack'
+        && worldStackPath.crumb.join('|') === 'samsara|世界|世界栈',
+        JSON.stringify(worldStackPath));
+
+    // 配置编辑器只显示 samsara 自有配置
+    await navigate(base + '/samsara/config/editor');
+    await until("document.querySelector('#config-editor-body .config-editor-page-head h3')",
+        25000, '配置编辑器页面');
+    const configFilter = await evaluate(`(() => {
+      const navText = document.querySelector('#global-nav')?.textContent || '';
+      const body = document.querySelector('#config-editor-body');
+      const meta = body?.querySelector('p.muted.small')?.textContent || '';
+      return {
+        navText,
+        meta,
+        serverPropsVisible: /server\\.properties|whitelist\\.json|ops\\.json/.test(meta),
+        serverGroupVisible: navText.includes('服务器本体'),
+        thirdGroupVisible: navText.includes('第三方模组'),
+      };
+    })()`);
+    check('samsara 配置编辑器不显示服务器本体/第三方配置',
+        !configFilter.serverPropsVisible && !configFilter.serverGroupVisible
+        && !configFilter.thirdGroupVisible, JSON.stringify(configFilter));
+
+    // 工作区导航默认收起并记住手动固定
+    const railState = await evaluate(`(() => {
+      const rail = document.querySelector('.workspace-rail');
+      return { collapsed: rail?.classList.contains('collapsed') === true,
+        hasToggle: Boolean(rail?.querySelector('.rail-toggle')),
+        stored: localStorage.getItem('samsara.ia.rail') };
+    })()`);
+    check('工作区导航默认收起且可手动固定', railState.collapsed === true
+        && railState.hasToggle === true, JSON.stringify(railState));
+
+    await navigate(base + '/samsara/economy');
+    await until("document.querySelector('.section-tab[data-section=\"sky\"]')", 20000,
+        '回到经济业务以测量吸附');
 
     await cdp.send('Input.dispatchMouseEvent', {
       type: 'mouseWheel', x: 720, y: 520, deltaX: 0, deltaY: 520,

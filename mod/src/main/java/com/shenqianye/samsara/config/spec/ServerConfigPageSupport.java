@@ -39,7 +39,8 @@ public final class ServerConfigPageSupport {
 
     public static FieldValue read(Path serverRoot, ServerConfigFiles.Spec spec) throws IOException {
         Path file = serverRoot.resolve(spec.fileName());
-        String content = Files.isRegularFile(file) ? Files.readString(file, StandardCharsets.UTF_8) : "";
+        String content = Files.isRegularFile(file)
+                ? stripBom(Files.readString(file, StandardCharsets.UTF_8)) : "";
         Map<String, Object> values = new LinkedHashMap<>();
         List<FormFieldSpec> fields = new ArrayList<>();
         switch (spec.kind()) {
@@ -347,7 +348,7 @@ public final class ServerConfigPageSupport {
 
     private static Map<String, String> parseProperties(String content) {
         Map<String, String> out = new LinkedHashMap<>();
-        for (String line : String.valueOf(content == null ? "" : content).split("\\R", -1)) {
+        for (String line : stripBom(content).split("\\R", -1)) {
             String trimmed = line.trim();
             if (trimmed.isEmpty() || trimmed.startsWith("#") || trimmed.startsWith("!")) {
                 continue;
@@ -362,7 +363,7 @@ public final class ServerConfigPageSupport {
     }
 
     private static String renderProperties(String original, Map<String, String> values) {
-        List<String> lines = new ArrayList<>(List.of(String.valueOf(original == null ? "" : original)
+        List<String> lines = new ArrayList<>(List.of(stripBom(original)
                 .split("\\R", -1)));
         Map<String, Integer> seen = new LinkedHashMap<>();
         for (int i = 0; i < lines.size(); i++) {
@@ -394,9 +395,13 @@ public final class ServerConfigPageSupport {
         return out;
     }
 
-    private static Object parseJsonOrDefault(String content, Object fallback) {
-        try {
-            String text = String.valueOf(content == null ? "" : content).trim();
+    private static String stripBom(String text) {
+        String value = text == null ? "" : text;
+        return value.startsWith("\uFEFF") ? value.substring(1) : value;
+    }
+
+    private static Object parseJsonOrDefault(String content, Object fallback) {        try {
+            String text = stripBom(content).trim();
             if (text.isEmpty()) {
                 return fallback;
             }

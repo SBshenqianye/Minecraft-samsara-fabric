@@ -45,11 +45,16 @@ const legacyCommunity = (path, alias, component, page, title, panel) => ({
   meta: { workspace: 'samsara', section: 'community', page, title, panel },
 });
 
-const vanilla = (path, alias, serverPanel, title) => ({
+const vanilla = (path, serverPanel, title) => ({
   path,
-  alias,
   component: ServerPage,
-  meta: { workspace: 'vanilla', section: serverPanel, page: 'server', title, serverPanel },
+  meta: {
+    workspace: 'vanilla',
+    section: path.substring(path.lastIndexOf('/') + 1),
+    page: 'server',
+    title,
+    serverPanel,
+  },
 });
 
 function normalizeAliases(routes) {
@@ -63,6 +68,35 @@ function normalizeAliases(routes) {
   }
 }
 
+/**
+ * 二级分区下的三级导航。label 必须与对应路由 meta.title 完全一致。
+ * 旧专用页（经济业务）继续使用页内锚点导航，所以这里不重复列。
+ */
+export const SECTION_NAV = {
+  sky: [
+    { id: 'track', label: '轨迹回看', target: '/samsara/sky/track' },
+    { id: 'diff', label: 'Diff 回看', target: '/samsara/sky/diff' },
+    { id: 'containers', label: '容器', target: '/samsara/sky/containers' },
+    { id: 'inventory', label: '玩家背包', target: '/samsara/sky/inventory' },
+  ],
+  world: [
+    { id: 'map', label: '地图', target: '/samsara/world/map' },
+    { id: 'world-stack', label: '世界栈', target: '/samsara/world/stack' },
+  ],
+  config: [
+    { id: 'config-editor', label: '配置编辑', target: '/samsara/config/editor' },
+    { id: 'config', label: '高级配置', target: '/samsara/config/advanced' },
+    { id: 'claim-range', label: '圈地范围', target: '/samsara/config/claim-range' },
+    { id: 'output', label: '输出', target: '/samsara/config/output' },
+    { id: 'permissions', label: '权限', target: '/samsara/config/permissions' },
+  ],
+  community: [
+    { id: 'announcements', label: '公告', target: '/samsara/community/announcements' },
+    { id: 'identity', label: '身份组', target: '/samsara/community/identity' },
+  ],
+  economy: [],
+};
+
 const routes = [
     {
       path: '/',
@@ -70,11 +104,18 @@ const routes = [
       children: [
         { path: '', redirect: '/samsara/economy' },
 
-        // ---- 本体（Minecraft / Vanilla） ----
-        vanilla('vanilla/config', ['server', 'server/config'], 'server-config-panel', '服务器配置'),
-        vanilla('vanilla/backup', ['server/backup'], 'server-backup-panel', '存档备份'),
-        vanilla('vanilla/console', ['server/console'], 'server-console-panel', 'RCON 控制台'),
-        vanilla('vanilla/audit', ['server/audit'], 'server-audit-panel', 'Web 审计'),
+        // ---- 本体（Minecraft / Vanilla）----
+        vanilla('vanilla/config', 'server-config-panel', '服务器配置'),
+        vanilla('vanilla/backup', 'server-backup-panel', '存档备份'),
+        vanilla('vanilla/console', 'server-console-panel', 'RCON 控制台'),
+        vanilla('vanilla/audit', 'server-audit-panel', 'Web 审计'),
+
+        // 旧 /server/* 只做前端 redirect，不再作为可见规范路径。
+        { path: 'server', redirect: '/vanilla/config' },
+        { path: 'server/config', redirect: '/vanilla/config' },
+        { path: 'server/backup', redirect: '/vanilla/backup' },
+        { path: 'server/console', redirect: '/vanilla/console' },
+        { path: 'server/audit', redirect: '/vanilla/audit' },
 
         // ---- samsara / 经济业务 ----
         {
@@ -134,12 +175,12 @@ const routes = [
         {
           path: 'mods/:modId',
           component: ModConfigPage,
-          meta: { workspace: 'mods', section: 'files', page: 'mod-config', title: '其他模组' },
+          meta: { workspace: 'mods', section: 'files', page: 'mod-config', title: '配置文件' },
         },
         {
           path: 'mods/:modId/:file(.*)',
           component: ModConfigPage,
-          meta: { workspace: 'mods', section: 'files', page: 'mod-config', title: '其他模组' },
+          meta: { workspace: 'mods', section: 'files', page: 'mod-config', title: '配置文件' },
         },
       ],
     },

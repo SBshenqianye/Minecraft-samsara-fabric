@@ -1,0 +1,1 @@
+import{G as e,N as t,d as n,v as r}from"./runtime-core.esm-bundler-DuAFOsMD.js";import{t as i}from"./TabShell-BQ8Ra7Zm.js";import{t as a}from"./LegacyPanel-DR53xJIJ.js";var o={__name:`ConfigEditorPage`,setup(o){return(o,s)=>(t(),n(i,{name:`config-editor`},{default:e(()=>[r(a,{"panel-id":`panel-config-editor`})]),_:1}))}};export{o as default};

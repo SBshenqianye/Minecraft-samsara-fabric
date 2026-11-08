@@ -1655,3 +1655,64 @@ img.glint { filter: drop-shadow(0 0 3px #b26cff) saturate(1.2); }
 .server-audit-dialog .dialog-body { max-height: 86vh; overflow: auto; }
 .server-audit-dialog .server-audit-changes { margin-bottom: 10px; }
 .server-audit-dialog .server-audit-diffs { max-height: 52vh; overflow: auto; }
+
+/* ---- v0.48.2 Web 细节：服务器文件卡片 / 4×4 色板 / MOTD 服务器列表预览 ---- */
+.server-file-card { border-left: 3px solid var(--line-strong); }
+.server-file-card .file-summary { gap: 8px; }
+.server-file-icon {
+  display: inline-grid; place-items: center; min-width: 24px; height: 22px;
+  margin-right: 7px; padding: 0 5px; border-radius: 6px;
+  background: var(--panel-soft); border: 1px solid var(--line);
+  font-size: 11px; font-weight: 800; letter-spacing: .02em;
+}
+.server-file-badge {
+  margin-left: auto; padding: 2px 7px; border-radius: 999px;
+  border: 1px solid var(--line); font-size: 10px; font-weight: 700; white-space: nowrap;
+}
+.server-file-card.file-access { border-left-color: #0ea5e9; }
+.server-file-card.file-access .server-file-badge {
+  border-color: color-mix(in srgb, #0ea5e9 45%, var(--line));
+  background: color-mix(in srgb, #0ea5e9 12%, var(--panel)); color: #0369a1;
+}
+.server-file-card.file-access .server-file-icon {
+  border-color: color-mix(in srgb, #0ea5e9 40%, var(--line)); color: #0369a1;
+}
+.server-file-card.file-danger { border-left-color: #dc2626; }
+.server-file-card.file-danger .server-file-badge {
+  border-color: color-mix(in srgb, #dc2626 45%, var(--line));
+  background: color-mix(in srgb, #dc2626 11%, var(--panel)); color: #b91c1c;
+}
+.server-file-card.file-danger .server-file-icon {
+  border-color: color-mix(in srgb, #dc2626 42%, var(--line)); color: #b91c1c;
+}
+.server-file-note {
+  margin: 0 0 10px; padding: 7px 10px; border: 1px solid var(--line);
+  border-radius: 8px; background: var(--panel-soft); color: var(--muted);
+  font-size: 11px; line-height: 1.5;
+}
+.chat-text-color-grid { padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-soft); }
+.chat-text-color-cell { min-height: 38px; }
+.server-list-preview { padding: 0; border: 0; background: transparent; }
+.server-list-card {
+  display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; gap: 9px;
+  align-items: center; width: min(100%, 560px); padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, .12); border-radius: 4px;
+  background:
+    linear-gradient(rgba(12, 15, 20, .72), rgba(12, 15, 20, .84)),
+    repeating-linear-gradient(45deg, #20242c 0 12px, #191d24 12px 24px);
+  color: #e6e6e6; font-family: var(--mono);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .45);
+}
+.server-list-icon {
+  display: grid; place-items: center; width: 42px; height: 42px;
+  border: 1px solid rgba(255, 255, 255, .18); border-radius: 3px;
+  background: linear-gradient(135deg, #3b6f63, #1b2a3a);
+  color: #d9ffe9; font-size: 20px; font-weight: 800; text-shadow: 0 1px 0 #000;
+}
+.server-list-body { min-width: 0; }
+.server-list-title { font-size: 13px; line-height: 1.28; }
+.server-list-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.server-list-meta { display: flex; align-items: flex-end; gap: 8px; margin-top: 4px; color: #b9c0c9; font-size: 10px; }
+.server-list-signal { display: inline-flex; align-items: flex-end; gap: 1px; height: 18px; }
+.server-list-signal i { display: block; width: 3px; background: #7ee787; box-shadow: 0 0 0 1px rgba(0, 0, 0, .35); }
+.server-list-version { align-self: start; color: #aab2bd; font-size: 10px; white-space: nowrap; }
