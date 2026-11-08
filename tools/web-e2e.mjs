@@ -2293,6 +2293,23 @@ async function main() {
     })()`);
     check('工作区收起后把手贴最外侧且可展开', railHandle.handle
         && railHandle.collapsed && railHandle.left === 0, JSON.stringify(railHandle));
+    await cdp.send('Emulation.setDeviceMetricsOverride', {
+      width: 1400, height: 900, deviceScaleFactor: 1, mobile: false,
+    });
+    await sleep(500);
+    const railPinned = await evaluate(`(async () => {
+      document.querySelector('.rail-toggle')?.click();
+      await new Promise((resolve) => setTimeout(resolve, 450));
+      const rail = document.querySelector('.workspace-rail');
+      const left = Math.round(rail.getBoundingClientRect().left);
+      const pinned = rail.classList.contains('pinned');
+      document.querySelector('.rail-toggle')?.click();
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      return { left, pinned, restored: rail.classList.contains('collapsed') };
+    })()`);
+    check('工作区固定展开时贴网页最左侧', railPinned.left === 0
+        && railPinned.pinned === true && railPinned.restored === true,
+        JSON.stringify(railPinned));
     await evaluate("window.scrollTo(0, 0); true;");
     await sleep(200);
 

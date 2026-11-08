@@ -1,1 +1,0 @@
-import{G as e,N as t,d as n,v as r}from"./runtime-core.esm-bundler-DuAFOsMD.js";import{t as i}from"./TabShell-D7NFVBMX.js";import{t as a}from"./LegacyPanel-DR53xJIJ.js";var o={__name:`OutputPage`,setup(o){return(o,s)=>(t(),n(i,{name:`output`},{default:e(()=>[r(a,{"panel-id":`panel-output`})]),_:1}))}};export{o as default};

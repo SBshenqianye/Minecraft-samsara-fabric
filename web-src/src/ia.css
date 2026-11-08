@@ -38,7 +38,8 @@
 }
 
 .workspace-rail.collapsed:focus-within,
-.workspace-rail.peek {
+.workspace-rail.peek,
+.workspace-rail.pinned {
   transform: translateX(calc(-1 * var(--ia-nav-gutter, 18px)));
   opacity: 1;
   pointer-events: auto;
