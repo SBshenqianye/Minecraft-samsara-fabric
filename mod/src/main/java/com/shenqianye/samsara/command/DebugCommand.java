@@ -145,6 +145,7 @@ public class DebugCommand {
                 .then(SpawnCommand.spawnNode())
                 .then(ClaimCommand.claimNode())
                 .then(TrackViewCommand.trackNode())
+                .then(TrackViewCommand.cameraNode())
                 .then(ChunkCommand.chunkNode())
                 .then(DiffViewCommand.diffNode())
                 .then(WhereCommand.whereNode())

@@ -9,6 +9,7 @@ import com.mojang.brigadier.context.CommandContext;
 import com.shenqianye.samsara.command.ui.SuggestionProviders;
 import com.shenqianye.samsara.output.OutputRenderer;
 import com.shenqianye.samsara.permission.PermissionRequirements;
+import com.shenqianye.samsara.track.view.CameraService;
 import com.shenqianye.samsara.track.view.ViewManager;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -49,6 +50,115 @@ public final class TrackViewCommand {
                 .then(viewNode("track"))
                 .then(listNode("track"))
                 .then(TrackClipCommand.clipNode());
+    }
+
+    /** {@code /samsara camera ...}：同时驱动轨迹回看与 Diff 回看。 */
+    public static LiteralArgumentBuilder<CommandSourceStack> cameraNode() {
+        String path = "camera";
+        return Commands.literal("camera")
+                .requires(PermissionRequirements.path(path))
+                .then(Commands.literal("start")
+                        .requires(PermissionRequirements.path(path + " start"))
+                        .then(Commands.argument("input", StringArgumentType.greedyString())
+                                .suggests(SuggestionProviders.viewGreedyProvider())
+                                .executes(TrackViewCommand::cameraStart)))
+                .then(Commands.literal("stop")
+                        .requires(PermissionRequirements.path(path + " stop"))
+                        .executes(ctx -> cameraStop(ctx, null))
+                        .then(Commands.argument("player", StringArgumentType.word())
+                                .suggests(SuggestionProviders.playersProvider("观看者"))
+                                .executes(ctx -> cameraStop(ctx,
+                                        StringArgumentType.getString(ctx, "player")))))
+                .then(Commands.literal("status")
+                        .requires(PermissionRequirements.path(path + " status"))
+                        .executes(ctx -> cameraStatus(ctx, null))
+                        .then(Commands.argument("player", StringArgumentType.word())
+                                .suggests(SuggestionProviders.playersProvider("观看者"))
+                                .executes(ctx -> cameraStatus(ctx,
+                                        StringArgumentType.getString(ctx, "player")))))
+                .then(Commands.literal("pause")
+                        .requires(PermissionRequirements.path(path + " pause"))
+                        .executes(ctx -> cameraPause(ctx, null))
+                        .then(Commands.argument("player", StringArgumentType.word())
+                                .suggests(SuggestionProviders.playersProvider("观看者"))
+                                .executes(ctx -> cameraPause(ctx,
+                                        StringArgumentType.getString(ctx, "player")))))
+                .then(Commands.literal("resume")
+                        .requires(PermissionRequirements.path(path + " resume"))
+                        .executes(ctx -> cameraResume(ctx, null))
+                        .then(Commands.argument("player", StringArgumentType.word())
+                                .suggests(SuggestionProviders.playersProvider("观看者"))
+                                .executes(ctx -> cameraResume(ctx,
+                                        StringArgumentType.getString(ctx, "player")))))
+                .then(Commands.literal("seek")
+                        .requires(PermissionRequirements.path(path + " seek"))
+                        .then(Commands.argument("input", StringArgumentType.greedyString())
+                                .suggests(SuggestionProviders.seekProvider())
+                                .executes(TrackViewCommand::cameraSeek)))
+                .then(Commands.literal("speed")
+                        .requires(PermissionRequirements.path(path + " speed"))
+                        .then(Commands.argument("value", DoubleArgumentType.doubleArg(0.1, 64))
+                                .suggests(SuggestionProviders.speedProvider())
+                                .executes(ctx -> cameraSpeed(ctx,
+                                        DoubleArgumentType.getDouble(ctx, "value")))));
+    }
+
+    private static int cameraStart(CommandContext<CommandSourceStack> ctx) {
+        ServerPlayer viewer;
+        try {
+            viewer = ctx.getSource().getPlayerOrException();
+        } catch (Exception e) {
+            return reply(ctx.getSource(), "镜头回看需要以玩家身份执行");
+        }
+        CameraService.StartRequest request;
+        try {
+            request = CameraService.parse(StringArgumentType.getString(ctx, "input"));
+        } catch (IllegalArgumentException e) {
+            return reply(ctx.getSource(), "参数错误：" + e.getMessage());
+        }
+        String msg = CameraService.getInstance().start(ctx.getSource().getServer(), viewer,
+                request, isAdmin(ctx.getSource()));
+        return reply(ctx.getSource(), msg);
+    }
+
+    private static int cameraStop(CommandContext<CommandSourceStack> ctx, String target) {
+        String msg = CameraService.getInstance().stop(ctx.getSource().getServer(),
+                ctx.getSource().getPlayer(), target, isAdmin(ctx.getSource()));
+        return reply(ctx.getSource(), msg);
+    }
+
+    private static int cameraStatus(CommandContext<CommandSourceStack> ctx, String target) {
+        String msg = CameraService.getInstance().status(ctx.getSource().getServer(),
+                ctx.getSource().getPlayer(), target);
+        return reply(ctx.getSource(), msg);
+    }
+
+    private static int cameraPause(CommandContext<CommandSourceStack> ctx, String target) {
+        String msg = CameraService.getInstance().pause(ctx.getSource().getServer(),
+                ctx.getSource().getPlayer(), target, isAdmin(ctx.getSource()));
+        return reply(ctx.getSource(), msg);
+    }
+
+    private static int cameraResume(CommandContext<CommandSourceStack> ctx, String target) {
+        String msg = CameraService.getInstance().resume(ctx.getSource().getServer(),
+                ctx.getSource().getPlayer(), target, isAdmin(ctx.getSource()));
+        return reply(ctx.getSource(), msg);
+    }
+
+    private static int cameraSeek(CommandContext<CommandSourceStack> ctx) {
+        String spec = StringArgumentType.getString(ctx, "input").trim();
+        if (spec.isEmpty()) {
+            return reply(ctx.getSource(), "缺少跳转目标（示例：+30s、-10m、50%、2026-10-28T21:20）");
+        }
+        String msg = CameraService.getInstance().seek(ctx.getSource().getServer(),
+                ctx.getSource().getPlayer(), null, spec, isAdmin(ctx.getSource()));
+        return reply(ctx.getSource(), msg);
+    }
+
+    private static int cameraSpeed(CommandContext<CommandSourceStack> ctx, double value) {
+        String msg = CameraService.getInstance().speed(ctx.getSource().getServer(),
+                ctx.getSource().getPlayer(), null, value, isAdmin(ctx.getSource()));
+        return reply(ctx.getSource(), msg);
     }
 
     /** 供 {@code /samsara debug track view} 复用（调用方已要求 OWNER）。 */

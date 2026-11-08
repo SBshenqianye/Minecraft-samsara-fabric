@@ -7,6 +7,8 @@
 > **v0.48.0 起**：目录统一为 `layouts/`（`AdminLayout.vue`）、`pages/`（所有路由页面）、`components/`（`ItemSlotGrid.vue`、`FolderTree.vue`、`LegacyPanel.vue`、`TabShell.vue`），删除 `views/`。管理端为左侧顶级工作区 + 二级 Tab + 页内导航；Element Plus 按需引入（`unplugin-vue-components` + `ElementPlusResolver`），不全局导入完整样式。
 >
 > **v0.48.1 起**：管理端 header 由 `AdminLayout.vue` 自绘（品牌/版本/面包屑/连接/操作栏），旧 header 不再导入；`.top-tabs` / `#mods-tabs` / `#server-tabs` 仅保留隐藏 DOM 兼容旧脚本和 E2E。header 必须是 sticky 容器本身（不要再套等高层 wrapper）；二级 Tab 贴 header，`#global-nav` 在二级 Tab 下方。`/user` 使用独立的公开信息壳层。
+>
+> **v0.49.0 起**：所有页面统一 `PageHeader` 横幅（标题/说明/徽标/主操作）；samsara 二级分区使用 `router.js` 的 `SECTION_NAV` 渲染三级左侧子页导航；面包屑固定为“工作区 / 二级分区 / 当前子页”。`/server/*` 只做 redirect，规范路径是 `/vanilla/*`；配置编辑器用 `setSourceFilter` 按来源过滤。内部路由应用必须包在 `legacyNavGuard` 中，避免旧 `setActiveTab` 桥接二次导航。
 
 ## 1. 生命周期契约
 
@@ -85,8 +87,10 @@ mount(ctx) {
 - 源目录 `web-src/`；构建命令 `cd web-src && npm.cmd ci && npm.cmd run build`。
 - Vite `base=/vue/`，输出 `mod/src/main/resources/web/vue/`；构建产物必须提交，保证 `gradle clean build` 不需要 npm。
 - 结构：`layouts/AdminLayout.vue` 管共享 header/工作区导航/二级 Tab/token 弹窗/浮窗；`pages/*.vue` 每个路由页面一个文件；`components/TabShell.vue` 是可复用页面壳；`components/LegacyPanel.vue` 负责把旧 panel 挂到页面里；`components/ItemSlotGrid.vue` 是容器/背包共用槽位网格；`components/FolderTree.vue` 是其他模组递归文件夹树。
-- 路由：`/vanilla/*`、`/samsara/economy|sky|config|world|community/*`、`/mods/<modId>/<file...>`；旧 `/config`、`/config-editor`、`/claim-range`、`/identity`、`/output`、`/permissions`、`/map`、`/announcements`、`/world-stack`、`/lottery`、`/containers`、`/server/*` 保留 alias 或独立页。
-- 新增二级页时：先在 `pages/XxxPage.vue` 写页面，再在 `router.js` 加路由与 `meta`（`workspace`、`section`、`page`、`panel`），最后在 `AdminLayout` 的页面栈里加 `v-show`/`v-if` 和 `sections` 映射。
+- 路由：`/vanilla/*`、`/samsara/economy|sky|config|world|community/*`、`/mods/<modId>/<file...>`；旧 `/config`、`/config-editor`、`/claim-range`、`/identity`、`/output`、`/permissions`、`/map`、`/announcements`、`/world-stack`、`/lottery`、`/containers` 保留 alias；`/server/*` 只做前端 redirect 到 `/vanilla/*`。
+- 新增二级页时：先在 `pages/XxxPage.vue` 写页面，再在 `router.js` 加路由与 `meta`（`workspace`、`section`、`page`、`panel`），把子页加入 `SECTION_NAV`，最后在 `AdminLayout` 的页面栈里加 `v-show`/`v-if` 和 `sections` 映射。`meta.title` 必须与三级导航文案一致。
+- 配置来源过滤：`/samsara/config/editor` 调 `setSourceFilter('samsara')`；其他模组页调 `setSourceFilter('third-party')`；`/vanilla/config` 仍由 `server.js` 管服务器本体配置。不要在同一页混显示不同 source。
+- 横幅：页面用 `PageHeader` 或 `TabShell`（内部已用 PageHeader）；旧 panel 第一层 `panel-head` 由 `ia.css` 统一成同一视觉。主操作按钮跟随标题，不贴超宽横幅最右。
 - Element Plus 按需引入：Vite 用 `unplugin-vue-components` + `ElementPlusResolver`；不要在 `main.js` 全局 `import 'element-plus/dist/index.css'`。`ElMessage` / `ElMessageBox` 等 API 显式 import，图标按需 import。
 - 第三层页面内导航继续用旧 `#global-nav`（`buildNav`）；其他模组页可调用 `SamsaraConfigEditor.setNavEnabled(false)` 隐藏全局导航，改用自己的文件夹树。
 - 不在浏览器内编译模板：必须用 SFC 预编译；CSP 继续禁止 `unsafe-eval`。

@@ -139,6 +139,13 @@ public final class ConfigSchema {
                 ConfigEntry.bool("track.recordInventory", false, "轨迹",
                         "是否额外记录完整背包快照（F-108）；只用于只读查看，"
                                 + "不会贴到实体库存、不会产生可拾取物品"),
+                ConfigEntry.bool("track.idle.enabled", true, "轨迹",
+                        "玩家位置/朝向长时间不变时降低位置采样频率；仍保留骨架点、登录/退出、"
+                                + "换维度、聊天与关键动作事件。.bin/.evt 格式不变"),
+                ConfigEntry.integer("track.idle.afterSeconds", 10, 1, 3600, "轨迹",
+                        "静止多少秒后进入降采样；默认 10 秒"),
+                ConfigEntry.integer("track.idle.heartbeatSeconds", 60, 1, 3600, "轨迹",
+                        "静止期间至少每隔多少秒写一个骨架位置点；默认 60 秒"),
                 ConfigEntry.choice("track.retention.mode", "adaptive",
                         List.of("adaptive", "keepAll", "curve"), "轨迹保留",
                         "保留策略：adaptive = 与 v1 等价的 1/4/16/64/256 天档位；"

@@ -1,6 +1,6 @@
 # samsara · Web API 接口文档
 
-> 状态：v0.48.1（2026-11-08）
+> 状态：v0.49.0（2026-11-08）
 > 适用：本地管理端 `/`、用户端只读页 `/user`、以及未来接入的脚本/面板。
 > 代码入口：`mod/src/main/java/com/shenqianye/samsara/web/LocalWebServer.java`
 > 安全边界：`WebSecurity.java`、`WebUserService.java`
@@ -177,7 +177,7 @@
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/api/config` | 读取 samsara 自有 YAML 的兼容模型（文件/分组/条目/值/默认值/说明） |
-| GET | `/api/config/pages` | PageSpec/FormSpec 模型：samsara YAML、服务器本体 6 文件、第三方 YAML/JSON/TOML/properties；含 `source`/`format`/`revision`/`writable`/`requiresConfirmation`/`customWidget`/`values` |
+| GET | `/api/config/pages` | PageSpec/FormSpec 模型：samsara YAML、服务器本体 6 文件、第三方 YAML/JSON/TOML/properties；含 `source`/`format`/`revision`/`writable`/`requiresConfirmation`/`customWidget`/`values`；另有 `modNames`（从 `mods/*.jar` 的 `fabric.mod.json` 读取 modId → 显示名，供工作区导航） |
 | POST | `/api/config/preview` | 预览配置变更；请求体 `{"file":"samsara:commands","values":{...}}`，返回字段级错误、变更清单、diff、revision |
 | PUT | `/api/config` | 保存配置；旧格式 `{"file":"commands","values":{...}}`；PageSpec 页面使用 `{"file":"samsara:commands","source":"samsara","values":{...},"revision":"...","confirm":true}`（第三方/服务器配置必须 `confirm`） |
 | POST | `/api/reload` | 热重载 samsara 配置（第三方/服务器页面刷新会重新读取文件） |

@@ -49,6 +49,9 @@ public final class CommandConfig {
     private int rewindChatWindowMs;
 
     private boolean trackRecordInventory;
+    private boolean trackIdleEnabled;
+    private int trackIdleAfterMs;
+    private int trackIdleHeartbeatMs;
     private TrackRetention.Settings trackRetention = TrackRetention.Settings.defaults();
     private int trackChatRetentionDays;
     private int trackClipMaxDurationMs;
@@ -210,6 +213,20 @@ public final class CommandConfig {
         return trackRecordInventory;
     }
 
+    public boolean trackIdleEnabled() {
+        return trackIdleEnabled;
+    }
+
+    /** 静止多久后开始跳过高频位置样本。 */
+    public int trackIdleAfterMs() {
+        return trackIdleAfterMs;
+    }
+
+    /** 静止期间写骨架位置点的最大间隔。 */
+    public int trackIdleHeartbeatMs() {
+        return trackIdleHeartbeatMs;
+    }
+
     public TrackRetention.Settings trackRetention() {
         return trackRetention;
     }
@@ -304,6 +321,9 @@ public final class CommandConfig {
         rewindChatWindowMs = Math.max(1_000, config.integer(id, "rewind.chatWindowMs"));
 
         trackRecordInventory = config.bool(id, "track.recordInventory");
+        trackIdleEnabled = config.bool(id, "track.idle.enabled");
+        trackIdleAfterMs = Math.max(1, config.integer(id, "track.idle.afterSeconds")) * 1000;
+        trackIdleHeartbeatMs = Math.max(1, config.integer(id, "track.idle.heartbeatSeconds")) * 1000;
         trackRetention = new TrackRetention.Settings(
                 TrackRetention.Mode.parse(config.string(id, "track.retention.mode")),
                 clamp(config.decimal(id, "track.retention.adaptive.q"), 0.0001, 0.9999),

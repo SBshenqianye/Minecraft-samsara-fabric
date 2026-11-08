@@ -3,6 +3,40 @@
 > 面向玩家与服主的功能变化；实现细节、未达标项与证据见[《实现状态》](docs/实现状态.md)。
 > 每个版本按「新增 / 修复 / 优化 / 变更 / 重构 / 文档」分组，只写功能口径。
 
+## v0.49.0（2026-11-08）· 壳层/导航/配置视觉统一与镜头回看（模组 0.41.0）
+
+### 修复
+
+- **其他模组误跳经济业务**：`AdminLayout` 在应用内部路由时用 `legacyNavGuard` 抑制旧 `UI.setActiveTab` 的桥接导航；`/mods/ViaBackwards`、`/mods/ViaFabric` 只打开各自配置，不再跳 `/samsara/economy`。旧 `setActiveTab` 的显式用户调用仍会导航。
+- **本体 URL 与 hash**：`/server/*` 改为前端 redirect 到 `/vanilla/*`；`server.js` 在 `SamsaraUseRouter` 模式下不再写 `#server-*`。可见 UI 生成的 URL 全部是规范路径。
+- **server.properties 注释**：Java 与前端同时剥离 UTF-8 BOM；`#`/`!`（含旧版误转义 `\#`）一律按注释处理，不再显示成可编辑字段；页面补充注释说明。
+- **配置编辑器混入本体配置**：`config-editor.js` 新增 `setSourceFilter('samsara'|'server'|'third-party'|null)`；`/samsara/config/editor` 只显示 samsara 自有配置，其他模组页只显示 `third-party`。
+
+### 新增
+
+- **统一 PageHeader / 页面横幅**：标题+说明在左，主操作紧跟标题或换行左对齐，不再贴在超宽横幅最右；`TabShell` 与旧 panel 第一层共用同一套横幅视觉。
+- **三级左侧子页导航**：天网（轨迹回看 / Diff 回看 / 容器 / 玩家背包）、世界（地图 / 世界栈）、配置（配置编辑 / 高级配置 / 圈地范围 / 输出 / 权限）、社区（公告 / 身份组）；经济业务继续使用页内锚点导航。地图页可直接进入世界栈。
+- **面包屑对齐**：统一为“工作区 / 二级分区 / 子页”，二级 Tab 来自 `router.meta.section`，三级导航来自 `router.meta.title` 同名文案。
+- **工作区导航**：中文 + 英文/ID 两行显示（本体 / Minecraft · Vanilla，周目管理 / samsara，其他模组按 `fabric.mod.json` 显示名）；默认收起到最左边，首次/每天第一次自动弹出，鼠标靠近悬浮显示，可手动固定并记住选择。
+- **动态吸附测量**：滚动/缩放时实际测量 header 与二级栏高度，写入 `--header-h` / `--ia-section-h` / `--ia-nav-top`，不再写死 119px/153px；导航随滚动平滑跟随。
+- **服务器文件卡片**：whitelist / ops 使用权限色与“准入/管理员”徽标；banned-players / banned-ips 使用危险色、图标和独立说明卡片；保存前更容易区分。
+- **MOTD 预览**：改为原版服务器列表条目样式（两行 MOTD、在线人数、信号、版本、深色半透明背景），保留 § 颜色；移除纯文本模式。
+- **4×4 颜色板**：MOTD 使用 16 色 4×4 网格（色块+颜色名+序号/代码），与圈地/旗帜色板同一套 `claim-color-*` 视觉；支持键盘聚焦与 Esc 关闭。
+- **地图默认全开**：圈地、区块网格、区块操作、出生点、高度明暗、玩家、实体、轨迹、稀有名字、排斥半径默认勾选；一次性迁移旧 localStorage 中关闭的区块网格。区块操作默认开启时仍先预览/确认，不直接写世界。
+- **`/samsara camera`**：新增统一镜头命名空间 `start|stop|status|pause|resume|seek|speed`，内部同时驱动 `ViewManager` 与 `DiffViewService`；默认 track + diff 同时播放，可用 `--track=off` / `--diff=off` 单独关闭。原有 `track view` / `diff view` 保留。启动顺序 Diff 先、轨迹后，停止顺序轨迹先、Diff 后，保证观看者最终恢复原始状态。
+- **挂机轨迹降采样**：新增 `track.idle.enabled`、`track.idle.afterSeconds`（默认 10）、`track.idle.heartbeatSeconds`（默认 60）。位置/朝向/状态不变时跳过 5Hz 样本，仅保留骨架点、登录/退出、换维度、聊天与关键动作事件；`.bin/.evt` 格式不变。
+
+### 变更
+
+- `WebVersion.VALUE = 0.49.0`；`mod_version = 0.41.0`；jar 为 `samsara-0.41.0.jar`。
+- Web 审计标题改为“Web 审计（全部管理端写请求）”，说明覆盖 samsara、其他模组、服务器配置与 RCON/命令类写请求。
+
+### 测试
+
+- 新增 `CameraServiceTest`、`TrackRecorderTest` 挂机判定、BOM/注释单测；单测总数 532 项 0 失败。
+- Web E2E 更新为规范路径/无 hash/三级导航/配置过滤/MOTD 4×4/工作区收起等 213 项，全部通过。
+- 测试服实测 `/samsara camera start` 同时进入轨迹 PLAYING 与 Diff 回看；`pause/resume/seek/speed/stop` 均同时作用于两者；`track view status`/`diff view status` 停止后为空。
+
 ## v0.48.1（2026-11-08）· 前端壳层重做与滚动吸附修复
 
 ### 修复

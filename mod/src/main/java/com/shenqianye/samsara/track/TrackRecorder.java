@@ -95,6 +95,8 @@ public final class TrackRecorder {
         SeasonData.Settings settings;
         TrackStore.Sample last;
         long lastSampleMs;
+        long lastWrittenMs;
+        long idleSinceMs;
         long lastFlushMs;
         long segmentStartMs;
         double hz;
@@ -374,6 +376,34 @@ public final class TrackRecorder {
         return !spectator && !viewing;
     }
 
+    /**
+     * 位置/朝向/状态是否与上一条样本相同（挂机降采样用）。
+     * 容差只吸收浮点抖动，不把正常走动误判为静止。
+     */
+    public static boolean isIdleSample(TrackStore.Sample previous, TrackStore.Sample current) {
+        if (previous == null || current == null) {
+            return false;
+        }
+        return previous.flags() == current.flags()
+                && Math.abs(previous.x() - current.x()) <= 0.001
+                && Math.abs(previous.y() - current.y()) <= 0.001
+                && Math.abs(previous.z() - current.z()) <= 0.001
+                && Math.abs(previous.yaw() - current.yaw()) <= 0.01
+                && Math.abs(previous.pitch() - current.pitch()) <= 0.01;
+    }
+
+    /**
+     * 挂机降采样判定：静止超过 afterMs 后跳过高频样本，但至少每 heartbeatMs
+     * 写一个骨架点。抽成纯函数便于单测。
+     */
+    public static boolean shouldSkipIdleSample(boolean enabled, boolean samePose,
+                                               long idleSinceMs, long now, int afterMs,
+                                               long lastWrittenMs, int heartbeatMs) {
+        return enabled && samePose && idleSinceMs > 0L
+                && now - idleSinceMs >= Math.max(1, afterMs)
+                && now - lastWrittenMs < Math.max(1, heartbeatMs);
+    }
+
     private void stopAll() {
         for (State st : states.values()) {
             close(st);
@@ -464,6 +494,34 @@ public final class TrackRecorder {
                     player.getX(), player.getY(), player.getZ(),
                     player.getYRot(), player.getXRot(),
                     flags(player));
+            CommandConfig commandConfig = CommandConfig.getInstance();
+            boolean samePose = !newSegment && st.last != null && isIdleSample(st.last, cur);
+            if (samePose) {
+                if (st.idleSinceMs == 0L) {
+                    st.idleSinceMs = now;
+                }
+            } else {
+                st.idleSinceMs = 0L;
+            }
+            boolean idleSkipped = shouldSkipIdleSample(commandConfig.trackIdleEnabled(),
+                    samePose, st.idleSinceMs, now, commandConfig.trackIdleAfterMs(),
+                    st.lastWrittenMs, commandConfig.trackIdleHeartbeatMs());
+            if (idleSkipped) {
+                // 静止：只保留事件侧车（装备/背包/动作/聊天），位置样本按 heartbeat 写骨架点。
+                maybeWriteEquipment(player, st, now);
+                if (commandConfig.trackRecordInventory()) {
+                    maybeWriteInventory(player, st, now);
+                }
+                if (now - st.lastFlushMs > 2000) {
+                    if (st.evtOut != null) {
+                        st.evtOut.flush();
+                        st.lastEventFlushMs = now;
+                    }
+                    st.lastFlushMs = now;
+                }
+                st.lastSampleMs = now;
+                return;
+            }
             if (newSegment) {
                 TrackStore.Segment header = new TrackStore.Segment(st.uuid, dim, now, hz);
                 st.out.write(TrackStore.encodeSegmentHeader(header));
@@ -480,6 +538,7 @@ public final class TrackRecorder {
             st.out.write(TrackStore.encodeSample(st.last, cur));
             st.last = cur;
             st.lastSampleMs = now;
+            st.lastWrittenMs = now;
 
             // 5Hz 采样时比较装备；有变化才写 EQUIP
             maybeWriteEquipment(player, st, now);

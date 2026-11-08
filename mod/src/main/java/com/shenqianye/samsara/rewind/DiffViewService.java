@@ -104,8 +104,14 @@ public final class DiffViewService {
         double lastWriteY;
         double lastWriteZ;
         boolean restored;
+        boolean paused;
+        long pausedCursorMs;
+        long pausedAtWallMs;
 
         long cursor(long now) {
+            if (paused) {
+                return Math.max(fromMs, Math.min(toMs, pausedCursorMs));
+            }
             long t = fromMs + (long) ((now - startWallMs) * speed);
             return Math.max(fromMs, Math.min(toMs, t));
         }
@@ -580,6 +586,105 @@ public final class DiffViewService {
 
     public synchronized int activeSessions() {
         return sessions.size();
+    }
+
+    /** 按观看者名字/UUID 找到会话；target 为空返回 null。 */
+    private Session find(String target) {
+        if (target == null || target.isBlank()) {
+            return null;
+        }
+        for (Session s : sessions.values()) {
+            if (s.viewerName.equalsIgnoreCase(target)
+                    || s.viewer.toString().equalsIgnoreCase(target)) {
+                return s;
+            }
+        }
+        return null;
+    }
+
+    /** camera 命名空间：暂停/继续 Diff 播放。 */
+    public synchronized String setPaused(String target, boolean paused) {
+        Session s = find(target);
+        if (s == null) {
+            return "没有该观看者的 Diff 回看";
+        }
+        if (paused && !s.paused) {
+            s.pausedCursorMs = s.cursor(System.currentTimeMillis());
+            s.pausedAtWallMs = System.currentTimeMillis();
+            s.paused = true;
+            return "已暂停";
+        }
+        if (!paused && s.paused) {
+            long now = System.currentTimeMillis();
+            s.startWallMs += Math.max(0L, now - s.pausedAtWallMs);
+            s.paused = false;
+            return "已继续";
+        }
+        return paused ? "已经是暂停状态" : "已经在播放";
+    }
+
+    /** camera 命名空间：跳转 Diff 游标（绝对时间、±秒/分/时、百分比）。 */
+    public synchronized String seek(String target, String spec) {
+        Session s = find(target);
+        if (s == null) {
+            return "没有该观看者的 Diff 回看";
+        }
+        long now = System.currentTimeMillis();
+        long current = s.cursor(now);
+        long wanted;
+        String text = spec == null ? "" : spec.trim();
+        try {
+            if (text.endsWith("%")) {
+                double percent = Double.parseDouble(text.substring(0, text.length() - 1));
+                wanted = s.fromMs + (long) ((s.toMs - s.fromMs)
+                        * Math.max(0.0, Math.min(100.0, percent)) / 100.0);
+            } else if (text.startsWith("+") || text.startsWith("-")) {
+                long delta = parseDelta(text.substring(1));
+                wanted = current + (text.startsWith("-") ? -delta : delta);
+            } else {
+                wanted = ViewTime.parseAbsolute(text);
+            }
+        } catch (RuntimeException e) {
+            return "跳转参数无效：" + text;
+        }
+        wanted = Math.max(s.fromMs, Math.min(s.toMs, wanted));
+        if (s.paused) {
+            s.pausedCursorMs = wanted;
+        } else {
+            s.startWallMs = now - (long) ((wanted - s.fromMs) / s.speed);
+        }
+        return "已跳转到 " + ViewTime.format(wanted);
+    }
+
+    /** 单次解析 +30s / -10m / +1h；suffix 为 s/m/h。 */
+    private static long parseDelta(String text) {
+        if (text.isEmpty()) {
+            return 0L;
+        }
+        char unit = text.charAt(text.length() - 1);
+        double amount = Double.parseDouble(unit >= '0' && unit <= '9' ? text : text.substring(0, text.length() - 1));
+        return switch (Character.toLowerCase(unit)) {
+            case 'm' -> (long) (amount * 60_000L);
+            case 'h' -> (long) (amount * 3_600_000L);
+            default -> (long) (amount * 1_000L);
+        };
+    }
+
+    /** camera 命名空间：同步 Diff 倍速。 */
+    public synchronized String setSpeed(String target, double speed) {
+        Session s = find(target);
+        if (s == null) {
+            return "没有该观看者的 Diff 回看";
+        }
+        long now = System.currentTimeMillis();
+        long cursor = s.cursor(now);
+        s.speed = clampSpeed(speed);
+        if (s.paused) {
+            s.pausedCursorMs = cursor;
+        } else {
+            s.startWallMs = now - (long) ((cursor - s.fromMs) / s.speed);
+        }
+        return "已设为 " + s.speed + "×";
     }
 
     public synchronized void shutdown(MinecraftServer server) {
