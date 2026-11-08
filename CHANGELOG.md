@@ -37,7 +37,7 @@
 - Web E2E 更新为规范路径/无 hash/三级导航/配置过滤/MOTD 4×4/工作区收起等 213 项，全部通过。
 - 测试服实测 `/samsara camera start` 同时进入轨迹 PLAYING 与 Diff 回看；`pause/resume/seek/speed/stop` 均同时作用于两者；`track view status`/`diff view status` 停止后为空。
 - 挂机实测：静止 30 秒 `.bin` 仅增长 431 B（约 10 秒 × 5Hz + 骨架点），同窗口 5Hz 全采样约 1050 B。
-- `samsara-0.41.0.jar` SHA-256 `DD480874C624BB841C67CB0547D973D598C3908B401B2E02F49835228AB6B576`；构建产物 / 测试服 / 生产服三处一致。
+- `samsara-0.41.0.jar` SHA-256 `8E9657B3577658AA3D88611BE934193E236B34D4EE3831B4FE65CD1BA22FB22D`；构建产物 / 测试服 / 生产服三处一致。
 - 生产服只读烟测：`/mods/ViaBackwards` → `/mods/ViaBackwards/config.yml`（29 字段）、`/mods/ViaFabric` → `/mods/ViaFabric/viafabric.yml`（5 字段），均未跳经济业务；`/samsara/config/advanced` 面包屑与三级导航正确。
 
 ## v0.48.1（2026-11-08）· 前端壳层重做与滚动吸附修复
