@@ -83,8 +83,8 @@
         class="workspace-rail"
         :class="{ collapsed: !railPinned && !railPeek, peek: railPeek, pinned: railPinned }"
         aria-label="顶级工作区"
-        @mouseenter="railPeek = !railPinned"
-        @mouseleave="railPeek = false"
+        @mouseenter="onRailEnter"
+        @mouseleave="onRailLeave"
       >
         <div class="rail-head">
           <span class="rail-title">工作区</span>
@@ -131,8 +131,8 @@
         class="rail-handle"
         type="button"
         aria-label="展开工作区导航"
-        @mouseenter="railPeek = true"
-        @click="railPeek = true"
+        @mouseenter="onRailEnter"
+        @click="onRailEnter"
       >工作区 ›</button>
 
       <div class="ia-main">
@@ -334,6 +334,7 @@ let originalSetActiveTab = null;
 let modsRetry = 0;
 let legacyNavGuard = 0;
 let railTimer = 0;
+let railCloseTimer = 0;
 
 function readRailPinned() {
   try {
@@ -503,6 +504,7 @@ onUnmounted(() => {
   document.removeEventListener('pointermove', onGlobalPointerMove);
   window.removeEventListener('blur', onWindowBlur);
   window.clearTimeout(railTimer);
+  window.clearTimeout(railCloseTimer);
   window.clearTimeout(measureTimer);
   window.clearTimeout(navAlignTimer);
 });
@@ -524,11 +526,32 @@ let navAlignTimer = 0;
 
 function onGlobalPointerMove(event) {
   if (!railPeek.value || railPinned.value) return;
-  if (railEl.value?.contains(event.target) || railHandle.value?.contains(event.target)) return;
+  if (railEl.value?.contains(event.target) || railHandle.value?.contains(event.target)) {
+    window.clearTimeout(railCloseTimer);
+    return;
+  }
+  // 把手与侧栏之间可能只隔几个像素；延迟一点收回，避免鼠标移动途中闪退。
+  window.clearTimeout(railCloseTimer);
+  railCloseTimer = window.setTimeout(() => {
+    if (railPeek.value && !railPinned.value
+        && !railEl.value?.matches(':hover') && !railHandle.value?.matches(':hover')) {
+      railPeek.value = false;
+    }
+  }, 220);
+}
+
+function onRailEnter() {
+  window.clearTimeout(railCloseTimer);
+  if (!railPinned.value) railPeek.value = true;
+}
+
+function onRailLeave() {
+  window.clearTimeout(railCloseTimer);
   railPeek.value = false;
 }
 
 function onWindowBlur() {
+  window.clearTimeout(railCloseTimer);
   railPeek.value = false;
 }
 
