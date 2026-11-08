@@ -9,9 +9,10 @@
   --ia-nav-gutter: 18px;
   display: flex;
   align-items: flex-start;
-  width: min(1780px, 100%);
-  margin: 0 auto;
-  padding: 0 var(--ia-nav-gutter);
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0 var(--ia-nav-gutter) 0 0;
   gap: 14px;
 }
 
@@ -40,7 +41,7 @@
 .workspace-rail.collapsed:focus-within,
 .workspace-rail.peek,
 .workspace-rail.pinned {
-  transform: translateX(calc(-1 * var(--ia-nav-gutter, 18px)));
+  transform: translateX(0);
   opacity: 1;
   pointer-events: auto;
   z-index: 18;

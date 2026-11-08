@@ -1,0 +1,1 @@
+import{G as e,N as t,d as n,v as r}from"./runtime-core.esm-bundler-DuAFOsMD.js";import{t as i}from"./TabShell-Cag7gnsJ.js";import{t as a}from"./LegacyPanel-DR53xJIJ.js";var o={__name:`PermissionsPage`,setup(o){return(o,s)=>(t(),n(i,{name:`permissions`},{default:e(()=>[r(a,{"panel-id":`panel-permissions`})]),_:1}))}};export{o as default};
