@@ -79,6 +79,7 @@
     </header>
     <div class="ia-body">
       <nav
+        ref="railEl"
         class="workspace-rail"
         :class="{ collapsed: !railPinned && !railPeek, peek: railPeek, pinned: railPinned }"
         aria-label="顶级工作区"
@@ -123,6 +124,16 @@
         </button>
         <p v-if="!mods.length" class="rail-empty">连接后显示有配置的模组</p>
       </nav>
+
+      <button
+        v-show="!railPinned && !railPeek"
+        ref="railHandle"
+        class="rail-handle"
+        type="button"
+        aria-label="展开工作区导航"
+        @mouseenter="railPeek = true"
+        @click="railPeek = true"
+      >工作区 ›</button>
 
       <div class="ia-main">
         <div class="ia-crumbs" aria-label="面包屑">
@@ -225,6 +236,8 @@ const loadError = ref('');
 const mods = ref([]);
 const railPinned = ref(readRailPinned());
 const railPeek = ref(false);
+const railEl = ref(null);
+const railHandle = ref(null);
 
 const baseWorkspaces = [
   { id: 'vanilla', label: '本体', hint: 'Minecraft / Vanilla' },
@@ -238,12 +251,12 @@ const SECTIONS = {
     { id: 'config', label: '配置', target: '/samsara/config/editor' },
     { id: 'world', label: '世界', target: '/samsara/world/map' },
     { id: 'community', label: '社区', target: '/samsara/community/announcements' },
+    { id: 'system', label: '系统', target: '/samsara/system/audit' },
   ],
   vanilla: [
     { id: 'config', label: '服务器配置', target: '/vanilla/config' },
     { id: 'backup', label: '存档备份', target: '/vanilla/backup' },
     { id: 'console', label: 'RCON', target: '/vanilla/console' },
-    { id: 'audit', label: 'Web 审计', target: '/vanilla/audit' },
   ],
 };
 
@@ -477,6 +490,8 @@ onMounted(async () => {
     window.setTimeout(loadMods, 400);
     window.addEventListener('resize', measureChrome, { passive: true });
     window.addEventListener('scroll', scheduleMeasure, { passive: true });
+    document.addEventListener('pointermove', onGlobalPointerMove, { passive: true });
+    window.addEventListener('blur', onWindowBlur);
   } catch (error) {
     loadError.value = '管理端加载失败：' + (error?.message || error);
   }
@@ -485,8 +500,11 @@ onMounted(async () => {
 onUnmounted(() => {
   window.removeEventListener('resize', measureChrome);
   window.removeEventListener('scroll', scheduleMeasure);
+  document.removeEventListener('pointermove', onGlobalPointerMove);
+  window.removeEventListener('blur', onWindowBlur);
   window.clearTimeout(railTimer);
   window.clearTimeout(measureTimer);
+  window.clearTimeout(navAlignTimer);
 });
 
 watch(() => route.path, async () => {
@@ -502,15 +520,27 @@ watch(() => route.path, async () => {
 });
 
 let measureTimer = 0;
+let navAlignTimer = 0;
+
+function onGlobalPointerMove(event) {
+  if (!railPeek.value || railPinned.value) return;
+  if (railEl.value?.contains(event.target) || railHandle.value?.contains(event.target)) return;
+  railPeek.value = false;
+}
+
+function onWindowBlur() {
+  railPeek.value = false;
+}
+
 function scheduleMeasure() {
   if (measureTimer) return;
   measureTimer = window.setTimeout(() => {
     measureTimer = 0;
-    measureChrome();
+    measureChrome(false);
   }, 120);
 }
 
-function measureChrome() {
+function measureChrome(resetRail = true) {
   const header = document.querySelector('.ia-header');
   const section = document.querySelector('.section-tabs');
   const headerH = header ? Math.round(header.getBoundingClientRect().height) : 128;
@@ -518,7 +548,43 @@ function measureChrome() {
   const root = document.documentElement;
   root.style.setProperty('--header-h', headerH + 'px');
   root.style.setProperty('--ia-section-h', sectionH + 'px');
-  root.style.setProperty('--ia-nav-top', (headerH + sectionH + 12) + 'px');
+  // 浏览器窗口拖动/缩放时，收起状态可能停在“悬停展开”：
+  // 统一在尺寸变化后收回，避免变成无法收回的浮层。
+  if (resetRail) railPeek.value = false;
+  alignSideNav(headerH, sectionH);
+  window.clearTimeout(navAlignTimer);
+  navAlignTimer = window.setTimeout(() => alignSideNav(headerH, sectionH), 260);
+}
+
+/**
+ * 让左侧导航标题与当前最上侧可见卡片的标题等高。
+ * 顶部标题被 sticky header/二级栏遮住时，平滑下移到下一张卡片。
+ */
+function alignSideNav(headerH, sectionH) {
+  const side = document.querySelector('.ia-side');
+  if (!side) return;
+  const root = document.documentElement;
+  const minTop = headerH + sectionH + 8;
+  const navTitle = side.querySelector('.section-subnav .subnav-title, #global-nav .nav-title');
+  const sideRect = side.getBoundingClientRect();
+  const titleRect = navTitle ? navTitle.getBoundingClientRect() : null;
+  const titleOffset = titleRect ? Math.max(0, titleRect.top - sideRect.top) : 0;
+  const viewport = window.innerHeight || document.documentElement.clientHeight;
+  const maxTop = Math.max(minTop, viewport - 120);
+  const candidates = document.querySelectorAll(
+    '.content .page-banner-title, .content .panel > .panel-head > div:first-child > h2,'
+    + ' .content .panel > .panel-head > div:first-child > h3');
+  let target = minTop;
+  for (const node of candidates) {
+    const rect = node.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) continue;
+    if (getComputedStyle(node).display === 'none') continue;
+    if (rect.top < minTop - 1) continue;
+    target = rect.top - titleOffset;
+    break;
+  }
+  const top = Math.max(minTop, Math.min(maxTop, Math.round(target)));
+  root.style.setProperty('--ia-nav-top', top + 'px');
 }
 
 async function waitForInitialPanel() {
@@ -543,7 +609,7 @@ async function waitForCurrentPanel() {
 }
 
 function currentPanelId() {
-  if (workspace.value === 'vanilla') return route.meta.serverPanel || 'server-config-panel';
+  if (page.value === 'server') return route.meta.serverPanel || 'server-config-panel';
   if (workspace.value === 'mods') return 'panel-config-editor';
   const panel = route.meta.panel;
   return panel ? 'panel-' + panel : '';
@@ -551,7 +617,7 @@ function currentPanelId() {
 
 function initialPanelId() {
   if (route.meta.server) return route.meta.serverPanel || 'server-config-panel';
-  if (workspace.value === 'vanilla') return route.meta.serverPanel || 'server-config-panel';
+  if (page.value === 'server') return route.meta.serverPanel || 'server-config-panel';
   if (workspace.value === 'mods') return 'panel-config-editor';
   const panel = route.meta.panel;
   return panel ? 'panel-' + panel : '';
@@ -571,8 +637,14 @@ async function applyRoute(force = false) {
   const key = [workspace.value, page.value, route.meta.serverPanel || ''].join(':');
   if (force || key !== lastApplied) {
     lastApplied = key;
-    if (workspace.value === 'vanilla') {
+    if (workspace.value === 'vanilla' || page.value === 'server') {
       guarded(() => window.SamsaraServer?.showPanel?.(route.meta.serverPanel || 'server-config-panel'));
+      if (page.value === 'server' && workspace.value === 'samsara') {
+        // 审计页属于 samsara 工作区，不要显示“本体”的旧一级分栏样式。
+        document.body.classList.remove('server-section');
+        const modsActions = document.getElementById('mods-actions');
+        if (modsActions) modsActions.hidden = true;
+      }
     } else if (workspace.value === 'mods') {
       guarded(() => window.SamsaraServer?.leaveServer?.());
       window.SamsaraConfigEditor?.setSourceFilter?.('third-party');

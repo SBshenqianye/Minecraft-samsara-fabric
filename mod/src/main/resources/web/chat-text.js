@@ -138,26 +138,37 @@
   function renderServerList(text, options) {
     const opts = options || {};
     const card = el('div', 'server-list-card');
-    const icon = el('div', 'server-list-icon', 'S');
+    const icon = el('div', 'server-list-icon');
+    const iconImg = document.createElement('img');
+    iconImg.src = opts.iconUrl || '/items/grass_block.png';
+    iconImg.alt = '';
+    iconImg.draggable = false;
+    icon.append(iconImg);
     const body = el('div', 'server-list-body');
     const title = el('div', 'server-list-title');
     const lines = splitMotd(text);
-    title.append(renderLine(lines[0]));
-    if (lines[1]) title.append(renderLine(lines[1]));
-    const meta = el('div', 'server-list-meta');
-    const players = el('span', 'server-list-players',
-      (opts.online == null ? '0' : String(opts.online)) + ' / '
-      + (opts.maxPlayers == null ? '20' : String(opts.maxPlayers)));
+    const first = renderLine(lines[0]);
+    first.classList.add('server-list-line-first');
+    title.append(first);
+    const second = renderLine(lines[1] || '');
+    second.classList.add('server-list-line-second');
+    title.append(second);
+    const right = el('div', 'server-list-right');
+    const status = el('div', 'server-list-status');
     const signal = el('span', 'server-list-signal');
     for (let i = 0; i < 5; i += 1) {
       const bar = el('i');
-      bar.style.height = (4 + i * 3) + 'px';
+      bar.style.height = (3 + i * 3) + 'px';
       signal.append(bar);
     }
-    meta.append(players, signal);
-    body.append(title, meta);
+    const players = el('span', 'server-list-players',
+      (opts.online == null ? '0' : String(opts.online)) + '/' 
+      + (opts.maxPlayers == null ? '20' : String(opts.maxPlayers)));
+    status.append(signal, players);
     const version = el('div', 'server-list-version', opts.version || 'Minecraft 26.3');
-    card.append(icon, body, version);
+    right.append(status, version);
+    body.append(title);
+    card.append(icon, body, right);
     return card;
   }
 

@@ -68,6 +68,7 @@ public final class WebSecurity {
                  "/samsara/world", "/samsara/world/map", "/samsara/world/stack",
                  "/samsara/community", "/samsara/community/announcements",
                  "/samsara/community/identity",
+                 "/samsara/system", "/samsara/system/audit",
                  "/track", "/diff", "/inventory" -> "/web/vue/index.html";
             case "/legacy.html" -> "/web/index.html";
             case "/legacy-user.html" -> "/web/user.html";

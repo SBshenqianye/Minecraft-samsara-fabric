@@ -29,18 +29,43 @@
   transition: transform .22s ease, opacity .22s ease, box-shadow .22s ease;
 }
 
-/* 默认收起到最左边；首次/每天第一次进入自动弹出，鼠标靠近悬浮显示。 */
+/* 默认收起到最左边；首次/每天第一次进入自动弹出，鼠标靠近“工作区”把手或悬浮时显示。 */
 .workspace-rail.collapsed {
-  transform: translateX(calc(-100% + 14px));
-  opacity: .92;
+  transform: translateX(-110%);
+  opacity: 0;
+  pointer-events: none;
 }
 
-.workspace-rail.collapsed:hover,
 .workspace-rail.collapsed:focus-within,
 .workspace-rail.peek {
   transform: translateX(0);
   opacity: 1;
+  pointer-events: auto;
   z-index: 18;
+}
+
+.rail-handle {
+  position: fixed;
+  left: 0;
+  top: calc(var(--ia-nav-top, 196px) + 18px);
+  z-index: 19;
+  padding: 9px 10px 9px 8px;
+  border: 1px solid var(--line-strong);
+  border-left: 0;
+  border-radius: 0 10px 10px 0;
+  background: color-mix(in srgb, var(--panel) 92%, var(--accent) 8%);
+  color: var(--fg-soft);
+  box-shadow: var(--shadow);
+  font-size: 11px;
+  font-weight: 700;
+  writing-mode: vertical-rl;
+  letter-spacing: .08em;
+  cursor: pointer;
+}
+
+.rail-handle:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .rail-head {
@@ -293,6 +318,14 @@
 }
 
 /* ---- 统一页面横幅 ---- */
+.page-header-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  margin: 0 0 14px;
+}
+
 .page-banner {
   display: flex;
   flex-wrap: wrap;
@@ -300,7 +333,7 @@
   justify-content: flex-start;
   gap: 12px 18px;
   width: 100%;
-  margin: 0 0 14px;
+  margin: 0;
   padding: 14px 16px;
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -309,6 +342,15 @@
       color-mix(in srgb, var(--accent) 7%, var(--panel)) 0%,
       var(--panel) 58%);
   box-shadow: var(--shadow-soft);
+}
+
+.page-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 7px;
+  width: 100%;
 }
 
 .page-banner-main {
@@ -370,14 +412,29 @@
   margin-bottom: 10px;
 }
 
-/* 旧页面第一个 panel-head 也走同一套横幅视觉：标题在左，操作紧跟标题，不再贴到超宽横幅最右。 */
-.ia-main .content .tab-shell > .panel-stack > .panel:first-child > .panel-head,
+/* 旧页面第一个 panel-head：标题单独成横幅，操作按钮放到横幅下方的工具栏。 */
+.ia-main .content .tab-shell .panel-stack > .panel:first-child > .panel-head,
+.ia-main .content > .panel-stack > .panel:first-child > .panel-head,
 .ia-main .content #panel-server > .server-panel:not([hidden]) > .panel:first-child > .panel-head {
-  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
   justify-content: flex-start;
-  gap: 10px 18px;
+  gap: 8px 0;
   width: 100%;
   margin: 0 0 14px;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.ia-main .content .tab-shell .panel-stack > .panel:first-child > .panel-head > div:first-child,
+.ia-main .content > .panel-stack > .panel:first-child > .panel-head > div:first-child,
+.ia-main .content #panel-server > .server-panel:not([hidden]) > .panel:first-child > .panel-head > div:first-child {
+  flex: 1 1 100%;
+  min-width: 0;
+  max-width: 100%;
   padding: 14px 16px;
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -388,18 +445,14 @@
   box-shadow: var(--shadow-soft);
 }
 
-.ia-main .content .tab-shell > .panel-stack > .panel:first-child > .panel-head > div:first-child,
-.ia-main .content #panel-server > .server-panel:not([hidden]) > .panel:first-child > .panel-head > div:first-child {
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: min(100%, 820px);
-}
-
-.ia-main .content .tab-shell > .panel-stack > .panel:first-child > .panel-head .panel-tools,
+.ia-main .content .tab-shell .panel-stack > .panel:first-child > .panel-head .panel-tools,
+.ia-main .content > .panel-stack > .panel:first-child > .panel-head .panel-tools,
 .ia-main .content #panel-server > .server-panel:not([hidden]) > .panel:first-child > .panel-head .panel-tools {
-  flex: 0 1 auto;
+  flex: 1 1 100%;
   justify-content: flex-start;
-  margin-right: auto;
+  margin: 0;
+  padding: 0;
+  background: transparent;
 }
 
 :root {
@@ -450,7 +503,8 @@
   }
 
   .rail-title,
-  .rail-empty {
+  .rail-empty,
+  .rail-handle {
     display: none;
   }
 

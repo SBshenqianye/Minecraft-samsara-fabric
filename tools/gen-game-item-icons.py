@@ -491,6 +491,23 @@ def apply_item_transform(faces, transform):
     return out
 
 
+def shulker_faces(assets: Assets, path: str):
+    """Shulker boxes use a special block-entity renderer; approximate with a cube."""
+    tex_ref = f'minecraft:block/{path}'
+    if assets.texture(tex_ref) is None:
+        tex_ref = 'minecraft:block/shulker_box'
+    element = {
+        'from': [0, 0, 0],
+        'to': [16, 16, 16],
+        'faces': {direction: {'texture': '#all'} for direction in DIR_CORNERS},
+    }
+    faces = element_faces(assets, [element], {'all': tex_ref})
+    base = assets.resolve_model('minecraft:item/template_shulker_box')
+    gui = dict((base.get('display') or {}).get('gui') or {})
+    gui.setdefault('rotation', [30, 45, 0])
+    return faces, gui
+
+
 def spec_faces(assets: Assets, spec):
     spec = choose_model_spec(spec)
     if not spec:
@@ -559,6 +576,8 @@ def main():
             continue
         if path in SKULLS:
             faces, gui = spec_faces(assets, spec)
+        elif path == 'shulker_box' or path.endswith('_shulker_box'):
+            faces, gui = shulker_faces(assets, path)
         else:
             faces, gui = spec_faces(assets, spec)
         if faces:

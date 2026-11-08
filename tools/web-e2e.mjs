@@ -1869,7 +1869,7 @@ async function main() {
     const noAuthAudit = await fetch(base + '/api/audit');
     check('Web 审计需要管理端 token', noAuthAudit.status === 401,
         'status=' + noAuthAudit.status);
-    await navigate(base + '/vanilla/audit');
+    await navigate(base + '/samsara/system/audit');
     await until("window.SamsaraUI && document.getElementById('server-audit-panel')"
         + " && !document.getElementById('server-audit-panel').hidden", 20000, 'Web 审计路由');
     const auditState = await evaluate(`(async () => {
@@ -1903,6 +1903,7 @@ async function main() {
         changes,
         path: location.pathname,
         hash: location.hash,
+        section: document.querySelector('.section-tab.active')?.textContent.trim() || '',
       };
     })()`);
     check('Web 审计有写请求快照记录', auditState.panelVisible && auditState.rows >= 1
@@ -1911,8 +1912,10 @@ async function main() {
           text: auditState.text.slice(0, 120), panel: auditState.panelVisible,
           message: auditState.loadMessage }));
     check('Web 审计预览可用', auditState.previewMessage.includes('快照')
-        && auditState.hash === '' && auditState.path === '/vanilla/audit', JSON.stringify({
-          message: auditState.previewMessage, hash: auditState.hash, path: auditState.path }));
+        && auditState.hash === '' && auditState.path === '/samsara/system/audit'
+        && auditState.section === '系统', JSON.stringify({
+          message: auditState.previewMessage, hash: auditState.hash, path: auditState.path,
+          section: auditState.section }));
     check('Web 审计可查看文件级 diff', auditState.diffVisible === true
         && auditState.changes >= 0
         && (auditState.previewDiff.includes('---') || auditState.previewDiff.includes('没有可显示')),
@@ -2014,7 +2017,8 @@ async function main() {
       ['/server/config', 'server-config-panel', '/vanilla/config'],
       ['/server/backup', 'server-backup-panel', '/vanilla/backup'],
       ['/server/console', 'server-console-panel', '/vanilla/console'],
-      ['/server/audit', 'server-audit-panel', '/vanilla/audit'],
+      ['/server/audit', 'server-audit-panel', '/samsara/system/audit'],
+      ['/vanilla/audit', 'server-audit-panel', '/samsara/system/audit'],
     ];
     for (const [path, panelId, expectedPath] of simpleRoutes) {
       await navigate(base + path);
@@ -2101,8 +2105,8 @@ async function main() {
     }))()`);
     check('顶级工作区包含本体与 samsara', iaVanilla.workspaces.includes('vanilla')
         && iaVanilla.workspaces.includes('samsara'), JSON.stringify(iaVanilla.workspaces));
-    check('本体二级 Tab 为服务器配置/存档备份/RCON/审计',
-        iaVanilla.sections.join('|') === '服务器配置|存档备份|RCON|Web 审计',
+    check('本体二级 Tab 为服务器配置/存档备份/RCON',
+        iaVanilla.sections.join('|') === '服务器配置|存档备份|RCON',
         JSON.stringify(iaVanilla.sections));
     check('本体工作区直接路由可用', iaVanilla.path === '/vanilla/config'
         && iaVanilla.panelVisible && iaVanilla.crumb === '服务器配置',
@@ -2117,11 +2121,30 @@ async function main() {
       path: location.pathname,
       crumb: document.querySelector('.ia-crumb-title')?.textContent.trim() || '',
     }))()`);
-    check('samsara 二级 Tab 为经济业务/天网/配置/世界/社区',
-        iaSamsara.sections.join('|') === '经济业务|天网|配置|世界|社区',
+    check('samsara 二级 Tab 为经济业务/天网/配置/世界/社区/系统',
+        iaSamsara.sections.join('|') === '经济业务|天网|配置|世界|社区|系统',
         JSON.stringify(iaSamsara.sections));
     check('samsara 工作区直接路由可用', iaSamsara.path === '/samsara/economy'
         && iaSamsara.crumb === '经济业务', JSON.stringify(iaSamsara));
+
+    await until("document.getElementById('panel-lottery')"
+        + " && !document.getElementById('panel-lottery').hidden", 20000, '经济业务面板');
+    const economyLayout = await evaluate(`(() => {
+      const panel = document.getElementById('panel-lottery');
+      const head = panel?.querySelector('#lottery-overview .panel-head');
+      const title = head?.querySelector(':scope > div:first-child');
+      const tools = head?.querySelector('.panel-tools');
+      const t = title?.getBoundingClientRect();
+      const p = tools?.getBoundingClientRect();
+      const grid = panel ? getComputedStyle(panel).display : '';
+      return {
+        display: grid,
+        columns: panel ? getComputedStyle(panel).gridTemplateColumns : '',
+        toolbarBelow: !!t && !!p && p.top >= t.bottom - 1,
+      };
+    })()`);
+    check('经济业务为多板块网格且操作栏在横幅下方', economyLayout.display === 'grid'
+        && economyLayout.toolbarBelow === true, JSON.stringify(economyLayout));
 
     // 三级子页导航：天网 / 世界 / 配置 / 社区
     await navigate(base + '/samsara/sky/track');
@@ -2212,14 +2235,28 @@ async function main() {
         const rect = node.getBoundingClientRect();
         return { top: Math.round(rect.top), height: Math.round(rect.height) };
       };
+      const section = box('.section-tabs');
+      const minTop = (section ? section.top + section.height : 0) + 1;
+      const candidates = [...document.querySelectorAll(
+        '.content .page-banner-title, .content .panel > .panel-head > div:first-child > h2')];
+      const card = candidates.find((node) => {
+        const rect = node.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0
+          && getComputedStyle(node).display !== 'none' && rect.top >= minTop;
+      });
+      const cardRect = card ? card.getBoundingClientRect() : null;
       return {
         y: Math.round(window.scrollY),
         scrollHeight: document.documentElement.scrollHeight,
         viewport: document.documentElement.clientHeight,
         header: box('.ia-header'),
-        section: box('.section-tabs'),
+        section,
         rail: box('.workspace-rail'),
         nav: box('#global-nav'),
+        navTitle: box('.ia-side .section-subnav .subnav-title')
+          || box('#global-nav .nav-title'),
+        cardTitle: cardRect ? { top: Math.round(cardRect.top),
+          text: card.textContent.trim().slice(0, 24) } : null,
         overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 2,
       };
     })()`);
@@ -2241,9 +2278,21 @@ async function main() {
         stickyLayout.y > 0 && stickyLayout.header?.top === 0
         && Math.abs(stickyLayout.section.top - stickyLayout.header.height) <= 2
         && stickyLayout.nav.top >= stickyLayout.section.top + stickyLayout.section.height
-        && stickyLayout.nav.top <= stickyLayout.section.top + stickyLayout.section.height + 24
         && stickyLayout.rail.top >= stickyLayout.header.height - 2
         && !stickyLayout.overflow, JSON.stringify(stickyLayout));
+    check('页内导航标题跟随最上侧卡片标题', Boolean(stickyLayout.navTitle)
+        && Boolean(stickyLayout.cardTitle)
+        && Math.abs(stickyLayout.navTitle.top - stickyLayout.cardTitle.top) <= 6,
+        JSON.stringify({ navTitle: stickyLayout.navTitle, cardTitle: stickyLayout.cardTitle }));
+    const railHandle = await evaluate(`(() => {
+      const node = document.querySelector('.rail-handle');
+      const rail = document.querySelector('.workspace-rail');
+      return { handle: !!node && getComputedStyle(node).display !== 'none',
+        collapsed: rail?.classList.contains('collapsed') === true,
+        left: node ? Math.round(node.getBoundingClientRect().left) : -1 };
+    })()`);
+    check('工作区收起后把手贴最外侧且可展开', railHandle.handle
+        && railHandle.collapsed && railHandle.left === 0, JSON.stringify(railHandle));
     await evaluate("window.scrollTo(0, 0); true;");
     await sleep(200);
 
@@ -2256,6 +2305,15 @@ async function main() {
     })`);
     check('二级 Tab 切换会更新路由与页面', skyRoute.path === '/samsara/sky/track'
         && skyRoute.active === '天网' && skyRoute.track === true, JSON.stringify(skyRoute));
+    const skyBanner = await evaluate(`(() => ({
+      banner: document.querySelector('[data-page="track"] .page-banner-title')?.textContent.trim() || '',
+      bannerTop: Math.round(document.querySelector('[data-page="track"] .page-banner')
+        ?.getBoundingClientRect().top || -1),
+      toolbarInsideBanner: !!document.querySelector('[data-page="track"] .page-banner .page-toolbar'),
+    }))()`);
+    check('天网页面有统一横幅', skyBanner.banner === '轨迹回看'
+        && skyBanner.bannerTop >= 0 && skyBanner.toolbarInsideBanner === false,
+        JSON.stringify(skyBanner));
 
     await navigate(base + '/samsara/sky/containers');
     await until("document.querySelector('.container-page.embedded')", 25000, '天网容器页');

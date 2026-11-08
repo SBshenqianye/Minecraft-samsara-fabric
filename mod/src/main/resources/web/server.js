@@ -1456,7 +1456,8 @@
       stats.textContent = '';
       const items = [
         ['备份数', String((timeline.nodes || []).length)],
-        ['当前节点', timeline.headId || '—'],
+        ['时间线头节点', timeline.headId || '—'],
+        ['当前世界', '实时运行（不在此列表）'],
         ['world 大小', formatBytes(data.worldBytes)],
         ['可用空间', formatBytes(data.freeBytes)],
         ['保留', (data.keep === 0 ? '不自动清理' : '最新 ' + data.keep + ' 份 + 祖先')],
@@ -1536,7 +1537,7 @@
       if (node.current) {
         const badge = document.createElement('span');
         badge.className = 'world-stack-badge ok';
-        badge.textContent = '当前时间线';
+        badge.textContent = '时间线头节点';
         badges.appendChild(badge);
       }
       if (node.restoredAt) {
@@ -1570,14 +1571,8 @@
 
       const actions = document.createElement('div');
       actions.className = 'timeline-actions';
-      if (node.current) {
-        const current = KIT.button('当前世界', 'ghost', () => {});
-        current.disabled = true;
-        actions.appendChild(current);
-      } else {
-        const rollback = KIT.button('回滚到这里', 'primary', () => previewRestore(node.id));
-        actions.appendChild(rollback);
-      }
+      const rollback = KIT.button('回滚到这里', 'primary', () => previewRestore(node.id));
+      actions.appendChild(rollback);
       const download = KIT.button('下载', 'ghost', () => downloadBackup(node));
       actions.appendChild(download);
       const del = KIT.button('删除', 'ghost danger', () => deleteBackup(node.id));

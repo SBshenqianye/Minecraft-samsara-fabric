@@ -1694,25 +1694,118 @@ img.glint { filter: drop-shadow(0 0 3px #b26cff) saturate(1.2); }
 .chat-text-color-cell { min-height: 38px; }
 .server-list-preview { padding: 0; border: 0; background: transparent; }
 .server-list-card {
-  display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; gap: 9px;
-  align-items: center; width: min(100%, 560px); padding: 8px 10px;
-  border: 1px solid rgba(255, 255, 255, .12); border-radius: 4px;
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  width: min(100%, 560px);
+  min-height: 80px;
+  padding: 9px 11px;
+  border: 1px solid #000;
+  border-radius: 2px;
   background:
-    linear-gradient(rgba(12, 15, 20, .72), rgba(12, 15, 20, .84)),
-    repeating-linear-gradient(45deg, #20242c 0 12px, #191d24 12px 24px);
-  color: #e6e6e6; font-family: var(--mono);
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .45);
+    linear-gradient(rgba(0, 0, 0, .62), rgba(0, 0, 0, .69)),
+    repeating-linear-gradient(45deg, #16181c 0 10px, #111317 10px 20px);
+  color: #ffffff;
+  font-family: var(--mono);
+  text-shadow: 1px 1px 0 #000;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08);
 }
 .server-list-icon {
-  display: grid; place-items: center; width: 42px; height: 42px;
-  border: 1px solid rgba(255, 255, 255, .18); border-radius: 3px;
-  background: linear-gradient(135deg, #3b6f63, #1b2a3a);
-  color: #d9ffe9; font-size: 20px; font-weight: 800; text-shadow: 0 1px 0 #000;
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border: 1px solid rgba(255, 255, 255, .22);
+  border-radius: 2px;
+  background: #111317;
+  overflow: hidden;
 }
-.server-list-body { min-width: 0; }
-.server-list-title { font-size: 13px; line-height: 1.28; }
+.server-list-icon img {
+  width: 52px;
+  height: 52px;
+  image-rendering: pixelated;
+}
+.server-list-body { min-width: 0; align-self: center; }
+.server-list-title { font-size: 13px; line-height: 1.36; }
 .server-list-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.server-list-meta { display: flex; align-items: flex-end; gap: 8px; margin-top: 4px; color: #b9c0c9; font-size: 10px; }
-.server-list-signal { display: inline-flex; align-items: flex-end; gap: 1px; height: 18px; }
-.server-list-signal i { display: block; width: 3px; background: #7ee787; box-shadow: 0 0 0 1px rgba(0, 0, 0, .35); }
-.server-list-version { align-self: start; color: #aab2bd; font-size: 10px; white-space: nowrap; }
+.server-list-line-first { color: #ffffff; }
+.server-list-line-second { color: #b9b9b9; min-height: 1.36em; }
+.server-list-right {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 4px;
+  min-width: 86px;
+  padding: 2px 0;
+}
+.server-list-status {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  color: #d7d7d7;
+  font-size: 10px;
+  line-height: 1;
+}
+.server-list-signal { display: inline-flex; align-items: flex-end; gap: 1px; height: 16px; }
+.server-list-signal i {
+  display: block;
+  width: 3px;
+  background: #55ff55;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .7);
+}
+.server-list-version {
+  color: #b9b9b9;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+/* ---- 经济业务：多板块仪表盘，而不是单列长页面 ---- */
+#panel-lottery.panel-stack {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
+  grid-template-areas:
+    "overview overview"
+    "round fund"
+    "round claims"
+    "round insurance"
+    "values values"
+    "history history";
+  gap: 16px;
+  align-items: start;
+}
+
+#lottery-overview { grid-area: overview; }
+#lottery-round-panel { grid-area: round; }
+#lottery-fund-panel { grid-area: fund; }
+#lottery-claims-panel { grid-area: claims; }
+#lottery-insurance-panel { grid-area: insurance; }
+#lottery-values-panel { grid-area: values; }
+#lottery-history-panel { grid-area: history; }
+
+#lottery-fund-panel,
+#lottery-claims-panel,
+#lottery-insurance-panel,
+#lottery-history-panel {
+  min-width: 0;
+}
+
+#lottery-values-panel .lottery-value-scroll {
+  max-height: 520px;
+}
+
+@media (max-width: 1200px) {
+  #panel-lottery.panel-stack {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "overview"
+      "round"
+      "fund"
+      "claims"
+      "insurance"
+      "values"
+      "history";
+  }
+}

@@ -21,7 +21,7 @@ const LEGACY_HASH_ROUTES = {
   server: '/vanilla/config',
   'server-backup': '/vanilla/backup',
   'server-console': '/vanilla/console',
-  'server-audit': '/vanilla/audit',
+  'server-audit': '/samsara/system/audit',
   containers: '/containers',
 };
 

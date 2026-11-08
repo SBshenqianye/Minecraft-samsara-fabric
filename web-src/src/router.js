@@ -94,6 +94,9 @@ export const SECTION_NAV = {
     { id: 'announcements', label: '公告', target: '/samsara/community/announcements' },
     { id: 'identity', label: '身份组', target: '/samsara/community/identity' },
   ],
+  system: [
+    { id: 'audit', label: 'Web 审计', target: '/samsara/system/audit' },
+  ],
   economy: [],
 };
 
@@ -108,14 +111,27 @@ const routes = [
         vanilla('vanilla/config', 'server-config-panel', '服务器配置'),
         vanilla('vanilla/backup', 'server-backup-panel', '存档备份'),
         vanilla('vanilla/console', 'server-console-panel', 'RCON 控制台'),
-        vanilla('vanilla/audit', 'server-audit-panel', 'Web 审计'),
+
+        // Web 审计属于 samsara Web 管理，不再放在“本体”工作区。
+        {
+          path: 'samsara/system/audit',
+          component: ServerPage,
+          meta: {
+            workspace: 'samsara',
+            section: 'system',
+            page: 'server',
+            title: 'Web 审计',
+            serverPanel: 'server-audit-panel',
+          },
+        },
 
         // 旧 /server/* 只做前端 redirect，不再作为可见规范路径。
         { path: 'server', redirect: '/vanilla/config' },
         { path: 'server/config', redirect: '/vanilla/config' },
         { path: 'server/backup', redirect: '/vanilla/backup' },
         { path: 'server/console', redirect: '/vanilla/console' },
-        { path: 'server/audit', redirect: '/vanilla/audit' },
+        { path: 'server/audit', redirect: '/samsara/system/audit' },
+        { path: 'vanilla/audit', redirect: '/samsara/system/audit' },
 
         // ---- samsara / 经济业务 ----
         {

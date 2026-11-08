@@ -750,7 +750,7 @@
             <div class="panel-head">
               <div>
                 <h2>存档备份</h2>
-                <p class="panel-sub">备份 world + 服务器配置 + config/samsara。创建与恢复都在停服后、下次启动前执行；恢复前会自动保留当前 world，失败回滚。源 world 永不自动删除。</p>
+                <p class="panel-sub">备份 world + 服务器配置 + config/samsara。列表里的“时间线头节点”只是最新一份备份，不是实时世界；当前世界始终在运行中变化，不会出现在备份列表里。每份备份都可以回滚；创建与恢复都在停服后、下次启动前执行，恢复前会自动保留当前 world，失败回滚。</p>
               </div>
             </div>
             <div id="server-backup-message" class="message" role="status"></div>
