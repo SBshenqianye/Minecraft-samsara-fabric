@@ -1255,7 +1255,7 @@ public final class LocalWebServer {
             String method = exchange.getRequestMethod();
             if ("GET".equals(method)) {
                 json(exchange, 200, Map.of("ok", true,
-                        "entries", WebAuditService.get().list(100)));
+                        "entries", WebAuditService.get().list(0)));
                 return;
             }
             if (!"POST".equals(method)) {

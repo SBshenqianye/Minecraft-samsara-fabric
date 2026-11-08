@@ -52,6 +52,10 @@ public final class CommandConfig {
     private boolean trackIdleEnabled;
     private int trackIdleAfterMs;
     private int trackIdleHeartbeatMs;
+    private boolean trackAdaptiveEnabled;
+    private double trackAdaptiveMoveHz;
+    private double trackAdaptiveCombatHz;
+    private int trackAdaptiveCombatWindowMs;
     private TrackRetention.Settings trackRetention = TrackRetention.Settings.defaults();
     private int trackChatRetentionDays;
     private int trackClipMaxDurationMs;
@@ -227,6 +231,22 @@ public final class CommandConfig {
         return trackIdleHeartbeatMs;
     }
 
+    public boolean trackAdaptiveEnabled() {
+        return trackAdaptiveEnabled;
+    }
+
+    public double trackAdaptiveMoveHz() {
+        return trackAdaptiveMoveHz;
+    }
+
+    public double trackAdaptiveCombatHz() {
+        return trackAdaptiveCombatHz;
+    }
+
+    public int trackAdaptiveCombatWindowMs() {
+        return trackAdaptiveCombatWindowMs;
+    }
+
     public TrackRetention.Settings trackRetention() {
         return trackRetention;
     }
@@ -324,6 +344,11 @@ public final class CommandConfig {
         trackIdleEnabled = config.bool(id, "track.idle.enabled");
         trackIdleAfterMs = Math.max(1, config.integer(id, "track.idle.afterSeconds")) * 1000;
         trackIdleHeartbeatMs = Math.max(1, config.integer(id, "track.idle.heartbeatSeconds")) * 1000;
+        trackAdaptiveEnabled = config.bool(id, "track.adaptive.enabled");
+        trackAdaptiveMoveHz = clamp(config.decimal(id, "track.adaptive.moveHz"), 1.0, 10.0);
+        trackAdaptiveCombatHz = clamp(config.decimal(id, "track.adaptive.combatHz"), 2.0, 20.0);
+        trackAdaptiveCombatWindowMs = Math.max(0,
+                Math.min(60_000, config.integer(id, "track.adaptive.combatWindowMs")));
         trackRetention = new TrackRetention.Settings(
                 TrackRetention.Mode.parse(config.string(id, "track.retention.mode")),
                 clamp(config.decimal(id, "track.retention.adaptive.q"), 0.0001, 0.9999),

@@ -85,6 +85,9 @@ public final class DiffViewService {
         int cx;
         int cz;
         int radius;
+        boolean focusFollow = true;
+        int focusCx;
+        int focusCz;
         long fromMs;
         long toMs;
         double speed;
@@ -182,6 +185,22 @@ public final class DiffViewService {
     public synchronized String startGlobal(MinecraftServer server, ServerPlayer viewer,
                                            String dimension, String fromSpec, String toSpec,
                                            double speed, int radius) {
+        return startGlobal(server, viewer, dimension, fromSpec, toSpec, speed, radius,
+                true, 0, 0);
+    }
+
+    /** 固定焦点：围绕指定区块回看，不随观看者移动。 */
+    public synchronized String startGlobalFixed(MinecraftServer server, ServerPlayer viewer,
+                                                String dimension, String fromSpec, String toSpec,
+                                                double speed, int cx, int cz, int radius) {
+        return startGlobal(server, viewer, dimension, fromSpec, toSpec, speed, radius,
+                false, cx, cz);
+    }
+
+    private synchronized String startGlobal(MinecraftServer server, ServerPlayer viewer,
+                                            String dimension, String fromSpec, String toSpec,
+                                            double speed, int radius, boolean follow,
+                                            int focusCx, int focusCz) {
         if (viewer == null) {
             return "只有玩家可以进入回看";
         }
@@ -213,12 +232,17 @@ public final class DiffViewService {
         s.viewerName = viewer.getScoreboardName();
         s.level = target.level();
         s.single = false;
-        s.radius = Math.max(1, Math.min(32, radius));
+        s.focusFollow = follow;
+        s.focusCx = focusCx;
+        s.focusCz = focusCz;
+        s.radius = Math.max(0, Math.min(32, radius));
         s.fromMs = from;
         s.toMs = Math.max(from + 1, to);
         s.speed = clampSpeed(speed);
-        return begin(server, viewer, s, "全局 · 半径 " + s.radius
-                + " 区块（仅当前已加载区块；未加载区块不显示）");
+        return begin(server, viewer, s, follow
+                ? "全局 · 半径 " + s.radius + " 区块（跟随观看者；仅当前已加载区块）"
+                : "固定区块 " + focusCx + "," + focusCz + " · 半径 " + s.radius
+                        + "（不随观看者移动；仅当前已加载区块）");
     }
 
     private String guardStart(ServerPlayer viewer) {
@@ -347,8 +371,8 @@ public final class DiffViewService {
     }
 
     private static void collectLoadedChunks(Session s, ServerPlayer viewer) {
-        int pcx = viewer.chunkPosition().x();
-        int pcz = viewer.chunkPosition().z();
+        int pcx = s.focusFollow ? viewer.chunkPosition().x() : s.focusCx;
+        int pcz = s.focusFollow ? viewer.chunkPosition().z() : s.focusCz;
         ChunkDiffTarget target = ChunkDiffTarget.ofLevel(s.level);
         if (target == null) {
             return;
@@ -564,6 +588,24 @@ public final class DiffViewService {
         }
         Samsara.LOGGER.info("[Diff 回看] 结束: viewer={} scope={} reason={} sent={}",
                 s.viewerName, s.single ? "chunk" : "global", reason, s.sentTotal);
+    }
+
+    public synchronized String status(String target) {
+        Session s = find(target);
+        if (s == null) {
+            return "当前没有进行中的 diff 回看";
+        }
+        long now = System.currentTimeMillis();
+        String scope = s.single ? "区块 " + s.cx + "," + s.cz
+                : (s.focusFollow ? "全局 · 半径 " + s.radius + " · 区块 " + s.processedChunks
+                        : "固定区块 " + s.focusCx + "," + s.focusCz
+                                + " · 半径 " + s.radius + " · 区块 " + s.processedChunks);
+        return "diff：" + scope
+                + " · " + s.speed + "×"
+                + (s.paused ? " · 已暂停" : "")
+                + " · " + ViewTime.format(s.cursor(now))
+                + " / " + ViewTime.format(s.toMs)
+                + " · 已发 " + s.sentTotal + " 格";
     }
 
     public synchronized String status() {

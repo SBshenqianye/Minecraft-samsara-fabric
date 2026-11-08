@@ -23,6 +23,11 @@ public final class SuggestionCatalog {
             "--aim", "--aim-deadzone", "--aim-edge", "--aim-speed", "--aim-pitch",
             "--equipment-drop", "--scrub");
 
+    private static final List<String> CAMERA_OPTIONS = List.of(
+            "--speed", "--duration", "--dim", "--radius", "--no-track", "--no-diff",
+            "--track", "--diff", "--cycle", "--follow", "--spectator", "--to",
+            "--players", "--aim", "--settling", "--equipment-drop", "--scrub");
+
     private static final List<String> DURATIONS = List.of(
             "30s", "1m", "5m", "10m", "30m", "1h", "2h", "6h", "12h", "1d");
 
@@ -53,7 +58,13 @@ public final class SuggestionCatalog {
             Map.entry("--aim-pitch", "是否同时修正俯仰，默认 on"),
             Map.entry("--glow", "人偶发光高亮（默认开）"),
             Map.entry("--no-glow", "关闭人偶发光"),
-            Map.entry("--no-name-tag", "隐藏人偶头顶名牌"));
+            Map.entry("--no-name-tag", "隐藏人偶头顶名牌"),
+            Map.entry("--radius", "Diff 回看半径（区块），默认 8"),
+            Map.entry("--diff-radius", "同 --radius"),
+            Map.entry("--no-track", "只启动 Diff 回看，不启动轨迹人偶"),
+            Map.entry("--no-diff", "只启动轨迹回看，不启动 Diff"),
+            Map.entry("--track", "track=on/off，默认 on"),
+            Map.entry("--diff", "diff=on/off，默认 on"));
 
     private static final Map<String, String> DURATION_HINTS = Map.of(
             "30s", "30 秒（快速预览）",
@@ -72,6 +83,10 @@ public final class SuggestionCatalog {
 
     public static List<String> viewOptions() {
         return VIEW_OPTIONS;
+    }
+
+    public static List<String> cameraOptions() {
+        return CAMERA_OPTIONS;
     }
 
     public static List<String> durations() {

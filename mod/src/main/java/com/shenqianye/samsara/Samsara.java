@@ -119,6 +119,7 @@ public class Samsara implements DedicatedServerModInitializer {
             RewindEngine.getInstance().tick(server);
             com.shenqianye.samsara.track.TrackReplay.tick(server);
             com.shenqianye.samsara.track.view.ViewManager.getInstance().tick(server);
+            com.shenqianye.samsara.track.view.CameraService.getInstance().tick(server);
             com.shenqianye.samsara.rewind.DiffViewService.getInstance().tick(server);
             com.shenqianye.samsara.identity.IdentityService.getInstance().tick(server);
             com.shenqianye.samsara.opauth.OpAuthService.getInstance().tick(server);
@@ -188,6 +189,7 @@ public class Samsara implements DedicatedServerModInitializer {
         });
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
             com.shenqianye.samsara.track.view.ViewManager.getInstance().shutdown(server);
+            com.shenqianye.samsara.track.view.CameraService.getInstance().shutdown(server);
             com.shenqianye.samsara.rewind.DiffViewService.getInstance().shutdown(server);
             com.shenqianye.samsara.track.TrackReplay.shutdown();
             RewindEngine.getInstance().onServerStopped(server);
@@ -247,6 +249,7 @@ public class Samsara implements DedicatedServerModInitializer {
             // 身份全状态同步必须在服务器保存玩家数据之前执行
             com.shenqianye.samsara.identity.IdentityService.getInstance().onServerStopping(server);
             com.shenqianye.samsara.track.view.ViewManager.getInstance().shutdown(server); // 先恢复观看者，再让服务器保存
+            com.shenqianye.samsara.track.view.CameraService.getInstance().shutdown(server);
             com.shenqianye.samsara.rewind.DiffViewService.getInstance().shutdown(server);
             com.shenqianye.samsara.track.TrackReplay.shutdown(); // 先移除回放人偶，避免写进存档
             DiffRecorder.flush(); // 停服前把常开窗口的缓冲落盘（不依赖后续 SERVER_STOPPED 的时序）

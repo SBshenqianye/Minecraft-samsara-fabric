@@ -240,7 +240,7 @@
       list.append(empty);
       return;
     }
-    for (const entry of auditEntries.slice(0, 100)) {
+    for (const entry of auditEntries) {
       const row = document.createElement('div');
       row.className = 'server-audit-item';
       const main = document.createElement('div');
@@ -270,12 +270,6 @@
       }
       row.append(main, actions);
       list.append(row);
-    }
-    if (auditEntries.length > 100) {
-      const more = document.createElement('p');
-      more.className = 'muted small';
-      more.textContent = '仅显示最近 100 条审计记录；更早的记录仍保存在 backups/samsara/web-audit。';
-      list.append(more);
     }
   }
 

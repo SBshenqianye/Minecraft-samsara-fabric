@@ -3,6 +3,25 @@
 > 面向玩家与服主的功能变化；实现细节、未达标项与证据见[《实现状态》](docs/实现状态.md)。
 > 每个版本按「新增 / 修复 / 优化 / 变更 / 重构 / 文档」分组，只写功能口径。
 
+## v0.49.2（2026-11-09）· 游戏内 camera 编排与轨迹活动分档（模组 0.41.0）
+
+### 新增
+
+- **`/samsara camera` 完整编排**：`start/stop/status/pause/resume/seek/speed`，默认同时启动轨迹回看与 Diff 回看；支持 `--no-track`、`--no-diff`、`--dim`、`--radius`、`--chunk <x> <z>`、`--fixed`。
+- **固定焦点**：`--chunk`/`--fixed` 时 Diff 固定围绕指定区块；人偶离开焦点范围自动隐藏，回到范围恢复；未指定区块时 Diff 跟随观看者/人偶所在区块，并保留已收集的区块（轨迹与 Diff 焦点并集）。
+- **失败回滚**：任一侧启动失败时自动停止另一侧；轨迹异步加载失败也会通过 `CameraService.onViewFailed` 回滚 Diff。
+- **camera 幂等停止**：重复 `camera stop` 不报错，始终尝试清理两侧。
+- **轨迹活动分档采样**：`track.adaptive.enabled`（默认 true）、`moveHz`（默认 3）、`combatHz`（默认 5）、`combatWindowMs`（默认 3000）；纯移动、攻击/使用、骑乘分别取样；静止沿用 idle 心跳。`adaptive=false` 恢复固定 Hz。
+- **审计无上限**：`/api/audit` 不再只返回最近 100 条，Web 审计列表渲染全部记录。
+
+### 测试
+
+- 单测新增 `TrackSamplingPolicyTest` 与 camera 参数/固定焦点用例；总数 538 项 0 失败。
+- 测试服 RCON 实测：camera 默认 track+diff、`--no-track`/`--no-diff`、status/pause/resume/seek/speed/stop、重复 stop、异步失败回滚、固定区块、旧 `track view`/`diff view` 均通过。
+- 轨迹文件实测：静止 25 秒 `.bin` 增长 0 B（仅等待 60 秒心跳）；移动窗口按 moveHz 写入，明显低于固定 5Hz。
+- `samsara-0.41.0.jar` SHA-256 `DA041A4C4A83B7E9F6943D3F06B343166FA5C8AA91769FA7A2315F5E694FC342`；构建产物 / 测试服 / 生产服三处一致。
+- `/api/audit` 实测返回 2774 条（>100），确认 100/200 条上限已移除。
+
 ## v0.49.1（2026-11-08）· 导航/审计/备份/经济面板细节修正（模组 0.41.0）
 
 ### 修复

@@ -36,13 +36,17 @@ public final class CameraService {
         UUID viewer;
         boolean track;
         boolean diff;
+        boolean fixedFocus;
+        int chunkX;
+        int chunkZ;
+        int radius;
         long startedAtMs;
     }
 
     public record StartRequest(List<String> targets, boolean all, String start,
                                String trackOptions, boolean track, boolean diff,
                                double speed, int diffRadius, String diffDimension,
-                               String diffTo) {
+                               String diffTo, boolean fixedFocus, int chunkX, int chunkZ) {
     }
 
     public synchronized String start(MinecraftServer server, ServerPlayer viewer,
@@ -59,9 +63,20 @@ public final class CameraService {
         List<String> notes = new ArrayList<>();
         boolean diffStarted = false;
         if (request.diff()) {
-            String diff = DiffViewService.getInstance().startGlobal(server, viewer,
-                    request.diffDimension(), request.start(), request.diffTo(), request.speed(),
-                    request.diffRadius());
+            String diff;
+            if (request.fixedFocus()) {
+                int cx = request.chunkX() == Integer.MIN_VALUE
+                        ? viewer.chunkPosition().x() : request.chunkX();
+                int cz = request.chunkZ() == Integer.MIN_VALUE
+                        ? viewer.chunkPosition().z() : request.chunkZ();
+                diff = DiffViewService.getInstance().startGlobalFixed(server, viewer,
+                        request.diffDimension(), request.start(), request.diffTo(),
+                        request.speed(), cx, cz, request.diffRadius());
+            } else {
+                diff = DiffViewService.getInstance().startGlobal(server, viewer,
+                        request.diffDimension(), request.start(), request.diffTo(),
+                        request.speed(), request.diffRadius());
+            }
             diffStarted = diff.startsWith("开始");
             if (diffStarted) {
                 notes.add("Diff：" + diff);
@@ -83,15 +98,29 @@ public final class CameraService {
         if (!trackStarted && !diffStarted) {
             return String.join("；", notes);
         }
-        if (!trackStarted && diffStarted) {
-            // 只请求轨迹但失败时，不留下半开的 Diff 会话。
-            DiffViewService.getInstance().stop(server, viewer, null, allowOthers);
-            return String.join("；", notes);
+        if (request.track() && !trackStarted) {
+            // 任一侧失败时默认回滚另一方，恢复到启动前状态。
+            if (diffStarted) {
+                DiffViewService.getInstance().stop(server, viewer, null, allowOthers);
+            }
+            return String.join("；", notes) + "；已回滚，未留下回看会话";
+        }
+        if (request.diff() && !diffStarted) {
+            if (trackStarted) {
+                ViewManager.getInstance().stop(server, viewer, null, allowOthers);
+            }
+            return String.join("；", notes) + "；已回滚，未留下回看会话";
         }
         Session s = new Session();
         s.viewer = viewer.getUUID();
         s.track = trackStarted;
         s.diff = diffStarted;
+        s.fixedFocus = request.fixedFocus();
+        s.chunkX = request.chunkX() == Integer.MIN_VALUE
+                ? viewer.chunkPosition().x() : request.chunkX();
+        s.chunkZ = request.chunkZ() == Integer.MIN_VALUE
+                ? viewer.chunkPosition().z() : request.chunkZ();
+        s.radius = request.diffRadius();
         s.startedAtMs = System.currentTimeMillis();
         sessions.put(s.viewer, s);
         return "镜头回看已开始（" + (s.track ? "轨迹" : "轨迹关")
@@ -103,13 +132,15 @@ public final class CameraService {
     public synchronized String stop(MinecraftServer server, ServerPlayer actor,
                                     String target, boolean allowOthers) {
         UUID uuid = resolve(server, actor, target, allowOthers);
-        if (uuid == null) {
+        // 即使 camera 会话记录已丢失，也尝试清理两边，保证 stop 幂等。
+        String track = ViewManager.getInstance().stop(server, actor, target, allowOthers);
+        String diff = DiffViewService.getInstance().stop(server, actor, target, allowOthers);
+        boolean removed = uuid == null ? sessions.isEmpty() : sessions.remove(uuid) != null;
+        if (!removed && !track.contains("已停止") && !diff.contains("已停止")
+                && !track.contains("已结束") && !diff.contains("已结束")) {
             return target == null || target.isBlank() ? "你当前没有进行中的镜头回看"
                     : "没有该观看者的镜头回看: " + target;
         }
-        String track = ViewManager.getInstance().stop(server, actor, target, allowOthers);
-        String diff = DiffViewService.getInstance().stop(server, actor, target, allowOthers);
-        sessions.remove(uuid);
         return "镜头回看已停止 · 轨迹：" + track + " · Diff：" + diff;
     }
 
@@ -127,8 +158,10 @@ public final class CameraService {
         }
         String track = s.track
                 ? ViewManager.getInstance().status(server, actor, target)
-                : "已关闭（--track=off）";
-        String diff = s.diff ? DiffViewService.getInstance().status() : "已关闭（--diff=off）";
+                : "已关闭（--no-track）";
+        String diff = s.diff
+                ? DiffViewService.getInstance().status(nameOf(actor, target))
+                : "已关闭（--no-diff）";
         return "镜头回看：" + track + " · " + diff;
     }
 
@@ -167,11 +200,48 @@ public final class CameraService {
         return actor == null ? null : actor.getScoreboardName();
     }
 
+    /** 每 tick：固定焦点模式下，人偶离开焦点区块范围时隐藏，回来再显示。 */
+    public synchronized void tick(MinecraftServer server) {
+        if (sessions.isEmpty()) {
+            return;
+        }
+        for (Session s : new ArrayList<>(sessions.values())) {
+            ServerPlayer viewer = server.getPlayerList().getPlayer(s.viewer);
+            if (viewer == null) {
+                continue;
+            }
+            if (!s.fixedFocus || !s.track) {
+                continue;
+            }
+            int dx = viewer.chunkPosition().x() - s.chunkX;
+            int dz = viewer.chunkPosition().z() - s.chunkZ;
+            boolean inside = Math.hypot(dx, dz) <= Math.max(0, s.radius) + 0.5;
+            ViewManager.getInstance().setMannequinVisible(s.viewer, inside);
+        }
+    }
+
     public synchronized boolean hasSession(UUID viewer) {
         return sessions.containsKey(viewer);
     }
 
     public synchronized void forget(UUID viewer) {
+        sessions.remove(viewer);
+    }
+
+    public synchronized void shutdown(MinecraftServer server) {
+        sessions.clear();
+    }
+
+    /** ViewManager 异步加载失败时回调：回滚同一 camera 会话里的 Diff。 */
+    public synchronized void onViewFailed(MinecraftServer server, UUID viewer) {
+        Session s = viewer == null ? null : sessions.get(viewer);
+        if (s == null) {
+            return;
+        }
+        if (s.diff) {
+            ServerPlayer player = server.getPlayerList().getPlayer(viewer);
+            DiffViewService.getInstance().stop(server, player, null, true);
+        }
         sessions.remove(viewer);
     }
 
@@ -227,8 +297,11 @@ public final class CameraService {
         }
         boolean track = true;
         boolean diff = true;
+        boolean fixedFocus = false;
+        int chunkX = Integer.MIN_VALUE;
+        int chunkZ = Integer.MIN_VALUE;
         double speed = 1.0;
-        int radius = DiffViewService.DEFAULT_RADIUS;
+        Integer radiusValue = null;
         String dimension = null;
         List<String> trackOptions = new ArrayList<>();
         for (int i = index; i < tokens.length; i++) {
@@ -241,6 +314,8 @@ public final class CameraService {
                 value = token.substring(eq + 1);
             }
             switch (key) {
+                case "--no-track" -> track = false;
+                case "--no-diff" -> diff = false;
                 case "--track" -> {
                     if (value == null) {
                         value = next(tokens, ++i, key);
@@ -253,20 +328,26 @@ public final class CameraService {
                     }
                     diff = bool(value);
                 }
-                case "--diff-radius" -> {
+                case "--diff-radius", "--radius" -> {
                     if (value == null) {
                         value = next(tokens, ++i, key);
                     }
                     try {
-                        radius = Integer.parseInt(value);
+                        radiusValue = Integer.parseInt(value);
                     } catch (NumberFormatException e) {
-                        throw new IllegalArgumentException("--diff-radius 应为 1~32 的整数");
+                        throw new IllegalArgumentException("--radius 应为 0~32 的整数");
                     }
-                    if (radius < 1 || radius > 32) {
-                        throw new IllegalArgumentException("--diff-radius 应在 1~32 之间");
+                    if (radiusValue < 0 || radiusValue > 32) {
+                        throw new IllegalArgumentException("--radius 应在 0~32 之间");
                     }
                 }
-                case "--diff-dimension", "--diff-dim" -> {
+                case "--chunk" -> {
+                    fixedFocus = true;
+                    chunkX = intValue(tokens, ++i, "--chunk x");
+                    chunkZ = intValue(tokens, ++i, "--chunk z");
+                }
+                case "--fixed" -> fixedFocus = true;
+                case "--diff-dimension", "--diff-dim", "--dim" -> {
                     if (value == null) {
                         value = next(tokens, ++i, key);
                     }
@@ -289,9 +370,20 @@ public final class CameraService {
                 default -> trackOptions.add(token);
             }
         }
+        int radius = radiusValue != null ? radiusValue
+                : (fixedFocus ? 0 : DiffViewService.DEFAULT_RADIUS);
         return new StartRequest(targets, all, start, String.join(" ", trackOptions),
                 track, diff, speed, radius, dimension,
-                diffToOf(start, trackOptions));
+                diffToOf(start, trackOptions), fixedFocus, chunkX, chunkZ);
+    }
+
+    private static int intValue(String[] tokens, int index, String label) {
+        String value = next(tokens, index, label);
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(label + " 应为整数");
+        }
     }
 
     /** 把轨迹的 --duration 换算成 Diff 的结束时间，保证两个回看窗口一致。 */

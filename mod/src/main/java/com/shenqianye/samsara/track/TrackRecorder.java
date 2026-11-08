@@ -97,6 +97,7 @@ public final class TrackRecorder {
         long lastSampleMs;
         long lastWrittenMs;
         long idleSinceMs;
+        long combatUntilMs;
         long lastFlushMs;
         long segmentStartMs;
         double hz;
@@ -434,11 +435,11 @@ public final class TrackRecorder {
         if (server != null) {
             st.registries = server.registryAccess();
         }
-        double hz = Math.max(2, Math.min(20, cfg.trackSampleHz));
-        long interval = Math.max(10, Math.round(1000.0 / hz));
-        if (st.lastSampleMs > 0 && now - st.lastSampleMs < interval) {
-            return;
-        }
+        CommandConfig commandConfig = CommandConfig.getInstance();
+        double nominalHz = commandConfig.trackAdaptiveEnabled()
+                ? Math.max(commandConfig.trackAdaptiveCombatHz(),
+                        Math.max(2, Math.min(20, cfg.trackSampleHz)))
+                : Math.max(2, Math.min(20, cfg.trackSampleHz));
         try {
             LocalDate today = LocalDate.now();
             int cycleId = cycleIdNow();
@@ -494,7 +495,6 @@ public final class TrackRecorder {
                     player.getX(), player.getY(), player.getZ(),
                     player.getYRot(), player.getXRot(),
                     flags(player));
-            CommandConfig commandConfig = CommandConfig.getInstance();
             boolean samePose = !newSegment && st.last != null && isIdleSample(st.last, cur);
             if (samePose) {
                 if (st.idleSinceMs == 0L) {
@@ -503,11 +503,17 @@ public final class TrackRecorder {
             } else {
                 st.idleSinceMs = 0L;
             }
-            boolean idleSkipped = shouldSkipIdleSample(commandConfig.trackIdleEnabled(),
-                    samePose, st.idleSinceMs, now, commandConfig.trackIdleAfterMs(),
-                    st.lastWrittenMs, commandConfig.trackIdleHeartbeatMs());
-            if (idleSkipped) {
-                // 静止：只保留事件侧车（装备/背包/动作/聊天），位置样本按 heartbeat 写骨架点。
+            boolean vehicle = player.getVehicle() != null;
+            TrackSamplingPolicy.Config sampling = new TrackSamplingPolicy.Config(
+                    commandConfig.trackAdaptiveEnabled(), cfg.trackSampleHz,
+                    commandConfig.trackAdaptiveMoveHz(), commandConfig.trackAdaptiveCombatHz(),
+                    commandConfig.trackAdaptiveCombatWindowMs(), commandConfig.trackIdleAfterMs(),
+                    commandConfig.trackIdleHeartbeatMs());
+            TrackSamplingPolicy.Decision decision = TrackSamplingPolicy.decide(
+                    samePose, st.idleSinceMs, st.lastWrittenMs, st.combatUntilMs,
+                    vehicle, now, sampling);
+            if (!newSegment && !decision.write()) {
+                // 未到当前档位的采样间隔：只保留事件侧车（装备/背包/动作/聊天）。
                 maybeWriteEquipment(player, st, now);
                 if (commandConfig.trackRecordInventory()) {
                     maybeWriteInventory(player, st, now);
@@ -523,11 +529,11 @@ public final class TrackRecorder {
                 return;
             }
             if (newSegment) {
-                TrackStore.Segment header = new TrackStore.Segment(st.uuid, dim, now, hz);
+                TrackStore.Segment header = new TrackStore.Segment(st.uuid, dim, now, nominalHz);
                 st.out.write(TrackStore.encodeSegmentHeader(header));
                 st.dimension = dim;
                 st.segmentStartMs = now;
-                st.hz = hz;
+                st.hz = nominalHz;
                 st.last = null;
                 // 新段初始快照：首条事件必须是 EQUIP
                 resetEventState(st);
@@ -737,6 +743,9 @@ public final class TrackRecorder {
         try {
             boolean using = player.isUsingItem();
             int hand = using ? handId(player.getUsedItemHand()) : -1;
+            if (using) {
+                markCombat(st, now);
+            }
             if (using && !st.lastUsing) {
                 writeEvent(st, now, TrackEvents.TYPE_USE_START, TrackEvents.useStartPayload(hand));
                 st.lastUsing = true;
@@ -792,6 +801,7 @@ public final class TrackRecorder {
             return;
         }
         long now = System.currentTimeMillis();
+        markCombat(st, now);
         int handId = handId(hand);
         if (st.lastSwingHand == handId && now - st.lastSwingMs < 50L) {
             return;
@@ -813,6 +823,7 @@ public final class TrackRecorder {
         }
         try {
             int handId = player.isUsingItem() ? handId(player.getUsedItemHand()) : handId(hand);
+            markCombat(st, now);
             // 同一个 tick 可能同时触发 UseItem/UseBlock 回调（主手+副手），只记一次
             boolean duplicate = st.lastUsing && now - st.lastUseStartedMs < 100L;
             if (!duplicate && (!st.lastUsing || st.lastUseHand != handId)) {
@@ -832,8 +843,15 @@ public final class TrackRecorder {
         }
     }
 
-    private static void writeEvent(State st, long now, int type, byte[] payload) throws IOException {
-        if (st.evtOut == null) {
+    private static void markCombat(State st, long now) {
+        int window = CommandConfig.getInstance().trackAdaptiveCombatWindowMs();
+        if (window <= 0) {
+            return;
+        }
+        st.combatUntilMs = Math.max(st.combatUntilMs, now + window);
+    }
+
+    private static void writeEvent(State st, long now, int type, byte[] payload) throws IOException {        if (st.evtOut == null) {
             return;
         }
         TrackEvents.write(st.evtOut, st.lastEventMs, new TrackEvents.Event(now, type, payload));

@@ -60,7 +60,7 @@ public final class TrackViewCommand {
                 .then(Commands.literal("start")
                         .requires(PermissionRequirements.path(path + " start"))
                         .then(Commands.argument("input", StringArgumentType.greedyString())
-                                .suggests(SuggestionProviders.viewGreedyProvider())
+                                .suggests(SuggestionProviders.cameraGreedyProvider())
                                 .executes(TrackViewCommand::cameraStart)))
                 .then(Commands.literal("stop")
                         .requires(PermissionRequirements.path(path + " stop"))

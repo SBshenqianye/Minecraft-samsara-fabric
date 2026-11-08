@@ -22,14 +22,14 @@ public final class PermissionDefaults {
         map.put("debug", "owner");
         map.put("perm", "user");
         map.put("track", "user");
-        map.put("camera", "owner");
-        map.put("camera start", "owner");
-        map.put("camera stop", "owner");
-        map.put("camera status", "owner");
-        map.put("camera pause", "owner");
-        map.put("camera resume", "owner");
-        map.put("camera seek", "owner");
-        map.put("camera speed", "owner");
+        map.put("camera", "op");
+        map.put("camera start", "op");
+        map.put("camera stop", "op");
+        map.put("camera status", "op");
+        map.put("camera pause", "op");
+        map.put("camera resume", "op");
+        map.put("camera seek", "op");
+        map.put("camera speed", "op");
 
         // 单区块回溯（保存）/ 回看（只读）
         map.put("chunk", "owner");
@@ -142,3 +142,4 @@ public final class PermissionDefaults {
         return map;
     }
 }
+

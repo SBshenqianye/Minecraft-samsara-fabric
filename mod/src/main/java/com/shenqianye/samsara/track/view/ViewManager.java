@@ -858,6 +858,7 @@ public final class ViewManager {
             ViewAudit.append(s.viewerName, s.targetName, s.cycleId, s.windowFrom,
                     s.windowTo, s.speed(), "FAILED: " + reason);
         }
+        CameraService.getInstance().onViewFailed(server, s.viewer);
     }
 
     // ---- 人偶推进 ----
@@ -2133,6 +2134,23 @@ public final class ViewManager {
     /** 录制端用：该 UUID 是否正在回看（不解析名字，避免每 tick 查玩家表）。 */
     public synchronized boolean isViewing(UUID viewer) {
         return viewer != null && sessions.containsKey(viewer);
+    }
+
+    /** camera 固定焦点：人偶离开焦点范围时隐藏，回来时恢复；只影响本会话的客户端实体。 */
+    public synchronized void setMannequinVisible(UUID viewer, boolean visible) {
+        ViewSession s = viewer == null ? null : sessions.get(viewer);
+        if (s == null) {
+            return;
+        }
+        for (ViewTarget target : s.targets) {
+            ViewMannequin mannequin = target.mannequin;
+            if (mannequin != null && !mannequin.isRemoved()) {
+                mannequin.setInvisible(!visible);
+            }
+        }
+        if (s.mannequin != null && !s.mannequin.isRemoved()) {
+            s.mannequin.setInvisible(!visible);
+        }
     }
 
     /** 点击控制面板：切换正放/倒放 */

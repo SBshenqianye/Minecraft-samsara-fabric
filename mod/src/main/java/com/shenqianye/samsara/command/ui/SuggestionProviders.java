@@ -61,6 +61,10 @@ public final class SuggestionProviders {
 
     /** 回看可选参数（与 {@code ViewOptions.parse} 支持的键一致） */
     private static final List<String> VIEW_OPTIONS = SuggestionCatalog.viewOptions();
+    private static final List<String> CAMERA_OPTIONS = SuggestionCatalog.cameraOptions();
+    private static final List<String> DIMENSIONS = List.of(
+            "minecraft:overworld", "minecraft:the_nether", "minecraft:the_end");
+    private static final List<String> RADII = List.of("2", "4", "8", "16", "32");
 
     private static final List<String> DURATIONS = SuggestionCatalog.durations();
 
@@ -393,6 +397,17 @@ public final class SuggestionProviders {
      */
     public static TokenSuggestions viewInput(String remaining, Collection<String> startTimes,
                                              Collection<String> cycleCandidates) {
+        return input(remaining, startTimes, cycleCandidates, VIEW_OPTIONS);
+    }
+
+    /** camera start 的 greedy 补全：选项比 track view 多 --no-track/--no-diff/--radius。 */
+    public static TokenSuggestions cameraInput(String remaining, Collection<String> startTimes) {
+        return input(remaining, startTimes, cycles(), CAMERA_OPTIONS);
+    }
+
+    private static TokenSuggestions input(String remaining, Collection<String> startTimes,
+                                          Collection<String> cycleCandidates,
+                                          List<String> options) {
         String input = remaining == null ? "" : remaining;
         int offset = CompletionSupport.lastSeparator(input, ' ') + 1;
         String token = input.substring(offset);
@@ -411,7 +426,7 @@ public final class SuggestionProviders {
 
         // 当前 token 是选项
         if (token.startsWith("--")) {
-            return new TokenSuggestions(offset, token, filter(token, VIEW_OPTIONS));
+            return new TokenSuggestions(offset, token, filter(token, options));
         }
 
         boolean optionArea = before.contains("--");
@@ -419,7 +434,7 @@ public final class SuggestionProviders {
             // 还没开始写选项
             if (!before.isEmpty() && Character.isWhitespace(input.charAt(input.length() - 1))) {
                 // 开始时间已输入完 → 进入选项
-                return new TokenSuggestions(input.length(), "", VIEW_OPTIONS);
+                return new TokenSuggestions(input.length(), "", options);
             }
             return new TokenSuggestions(0, token, filter(token, startTimes));
         }
@@ -434,13 +449,13 @@ public final class SuggestionProviders {
             if (values != null) {
                 return new TokenSuggestions(input.length(), "", values);
             }
-            return new TokenSuggestions(input.length(), "", VIEW_OPTIONS);
+            return new TokenSuggestions(input.length(), "", options);
         }
         List<String> values = valuesFor(prev, cycleCandidates);
         if (values != null) {
             return new TokenSuggestions(offset, token, filter(token, values));
         }
-        return new TokenSuggestions(offset, token, filter(token, VIEW_OPTIONS));
+        return new TokenSuggestions(offset, token, filter(token, options));
     }
 
     private static List<String> inlineValues(String key, Collection<String> cycleCandidates) {
@@ -449,6 +464,9 @@ public final class SuggestionProviders {
             case "--duration" -> DURATIONS;
             case "--speed" -> SPEEDS;
             case "--follow", "--aim", "--aim-pitch" -> List.of("on", "off");
+            case "--track", "--diff" -> List.of("on", "off");
+            case "--dim", "--diff-dim", "--diff-dimension" -> DIMENSIONS;
+            case "--radius", "--diff-radius" -> RADII;
             default -> null;
         };
     }
@@ -458,7 +476,9 @@ public final class SuggestionProviders {
             case "--cycle" -> List.copyOf(cycleCandidates == null ? List.<String>of() : cycleCandidates);
             case "--duration" -> DURATIONS;
             case "--speed" -> SPEEDS;
-            case "--follow", "--aim", "--aim-pitch" -> List.of("on", "off");
+            case "--follow", "--aim", "--aim-pitch", "--track", "--diff" -> List.of("on", "off");
+            case "--dim", "--diff-dim", "--diff-dimension" -> DIMENSIONS;
+            case "--radius", "--diff-radius" -> RADII;
             default -> null;
         };
     }
@@ -556,6 +576,26 @@ public final class SuggestionProviders {
                 // 只补选项/周目
             }
             TokenSuggestions token = viewInput(builder.getRemaining(), startTimes);
+            return offerToken(builder, token, SuggestionProviders::viewTooltip);
+        };
+    }
+
+    /** camera start 的 greedyString：与 track view 相同的开始时间/目标补全 + camera 选项。 */
+    public static SuggestionProvider<CommandSourceStack> cameraGreedyProvider() {
+        return (ctx, builder) -> {
+            List<String> startTimes = List.of();
+            try {
+                String remaining = builder.getRemaining().trim();
+                String first = remaining.isEmpty() ? ""
+                        : remaining.split("\\s+", 2)[0];
+                if (!first.isBlank() && !first.startsWith("--")
+                        && !first.equalsIgnoreCase("all")) {
+                    startTimes = viewStartTimes(ctx.getSource().getServer(), first);
+                }
+            } catch (Exception ignored) {
+                // 只补选项/周目
+            }
+            TokenSuggestions token = cameraInput(builder.getRemaining(), startTimes);
             return offerToken(builder, token, SuggestionProviders::viewTooltip);
         };
     }

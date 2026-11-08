@@ -167,7 +167,7 @@ public final class WebAuditService {
     }
 
     public List<Map<String, Object>> list(int limit) {
-        int max = Math.max(1, Math.min(limit, 200));
+        int max = limit <= 0 ? Integer.MAX_VALUE : limit;
         List<Entry> entries = new ArrayList<>();
         if (Files.isDirectory(root)) {
             try (Stream<Path> stream = Files.list(root)) {
