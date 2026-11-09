@@ -1,0 +1,1 @@
+import{G as e,N as t,d as n,v as r}from"./runtime-core.esm-bundler-DuAFOsMD.js";import{t as i}from"./TabShell-hqFyohgo.js";import{t as a}from"./LegacyPanel-DR53xJIJ.js";var o={__name:`ClaimRangePage`,setup(o){return(o,s)=>(t(),n(i,{name:`claim-range`},{default:e(()=>[r(a,{"panel-id":`panel-claim-range`})]),_:1}))}};export{o as default};

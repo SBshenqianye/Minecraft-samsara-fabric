@@ -12,15 +12,6 @@
           </div>
         </div>
 
-        <div class="ia-header-context" aria-live="polite">
-          <template v-for="(crumb, index) in crumbs" :key="crumb + index">
-            <span v-if="index" class="ia-context-sep">/</span>
-            <span :class="index === crumbs.length - 1 ? 'ia-context-page' : 'ia-context-workspace'">
-              {{ crumb }}
-            </span>
-          </template>
-        </div>
-
         <div class="connection">
           <span id="connection-state" class="conn-state">未连接</span>
           <a class="user-view-link" href="/user" target="_blank" rel="noopener"
@@ -28,29 +19,44 @@
         </div>
       </div>
 
-      <div id="mods-actions" class="tab-actions ia-actions">
-        <div class="tab-actions-title">
-          <strong id="action-title">配置</strong>
-          <span id="action-hint" class="muted small"></span>
+      <section class="page-hero" aria-label="页面横幅">
+        <div class="page-hero-art" aria-hidden="true"></div>
+        <div class="page-hero-context">
+          <div class="ia-crumbs" aria-label="面包屑">
+            <template v-for="(crumb, index) in crumbs" :key="'crumb-' + crumb + index">
+              <span v-if="index" class="ia-crumb-sep">/</span>
+              <span :class="index === crumbs.length - 1 ? 'ia-crumb-title' : 'ia-crumb-part'">
+                {{ crumb }}
+              </span>
+            </template>
+          </div>
+          <span class="page-hero-tag">{{ workspaceShort }} · 控制台</span>
         </div>
-        <div class="tab-actions-buttons">
-          <button id="action-default" class="ghost" type="button" hidden>恢复默认</button>
-          <button id="reload" class="ghost" type="button">重新读取</button>
-          <button id="save" class="primary" type="button">保存并重载</button>
-        </div>
-      </div>
 
-      <div id="server-actions" class="tab-actions ia-actions" hidden>
-        <div class="tab-actions-title">
-          <strong id="server-action-title">服务器配置</strong>
-          <span id="server-action-hint" class="muted small"></span>
+        <div id="mods-actions" class="page-hero-main">
+          <div class="page-hero-text">
+            <h1 id="action-title" class="page-hero-title">配置</h1>
+            <p id="action-hint" class="page-hero-hint muted small"></p>
+          </div>
+          <div class="tab-actions-buttons page-hero-buttons">
+            <button id="action-default" class="ghost" type="button" hidden>恢复默认</button>
+            <button id="reload" class="ghost" type="button">重新读取</button>
+            <button id="save" class="primary" type="button">保存并重载</button>
+          </div>
         </div>
-        <div class="tab-actions-buttons">
-          <button id="server-reload" class="ghost" type="button">重新读取</button>
-          <button id="server-save" class="primary" type="button">保存并重载</button>
-          <button id="server-backup-create" class="primary" type="button" hidden>创建备份</button>
+
+        <div id="server-actions" class="page-hero-main" hidden>
+          <div class="page-hero-text">
+            <h1 id="server-action-title" class="page-hero-title">服务器配置</h1>
+            <p id="server-action-hint" class="page-hero-hint muted small"></p>
+          </div>
+          <div class="tab-actions-buttons page-hero-buttons">
+            <button id="server-reload" class="ghost" type="button">重新读取</button>
+            <button id="server-save" class="primary" type="button">保存并重载</button>
+            <button id="server-backup-create" class="primary" type="button" hidden>创建备份</button>
+          </div>
         </div>
-      </div>
+      </section>
 
       <nav class="ia-legacy-tabs" aria-hidden="true">
         <button class="top-tab active" type="button" data-section="mods">samsara</button>
@@ -136,15 +142,6 @@
       >工作区 ›</button>
 
       <div class="ia-main">
-        <div class="ia-crumbs" aria-label="面包屑">
-          <template v-for="(crumb, index) in crumbs" :key="'crumb-' + crumb + index">
-            <span v-if="index" class="ia-crumb-sep">/</span>
-            <span :class="index === crumbs.length - 1 ? 'ia-crumb-title' : 'ia-crumb-part'">
-              {{ crumb }}
-            </span>
-          </template>
-        </div>
-
         <nav v-if="sections.length" class="section-tabs" aria-label="二级页面">
           <button
             v-for="section in sections"
@@ -395,7 +392,8 @@ function rememberTarget(workspaceId, sectionId, path) {
 
 function rememberedTarget(key, fallback) {
   try {
-    return localStorage.getItem(lastKey(key)) || fallback;
+    const stored = localStorage.getItem(lastKey(key));
+    return stored && stored !== 'undefined' ? stored : fallback;
   } catch {
     return fallback;
   }
@@ -487,6 +485,11 @@ onMounted(async () => {
     await applyRoute(true);
     started = true;
     measureChrome();
+    // 旧脚本初始化时会按 URL hash 回落到默认 panel；等它跑完后检查 hero 是否被改错，
+    // 只有确实错位时才重新应用路由，避免打断 RCON 这类刚执行完的命令提示。
+    window.setTimeout(() => {
+      if (started && !heroMatchesRoute()) applyRoute(true).catch(() => {});
+    }, 450);
     maybePeekRail();
     window.setTimeout(loadMods, 400);
     window.addEventListener('resize', measureChrome, { passive: true });
@@ -655,6 +658,47 @@ function guarded(fn) {
   }
 }
 
+const HERO_HINTS = {
+  track: '查看最近可回看的玩家与时段；真正的回放仍在游戏内执行。',
+  diff: '只读回看区块差异；复用现有 Diff API，不重写回放算法。',
+  containers: '维度/坐标/半径/类型搜索，读取与编辑容器槽位；写入前保存审计快照并校验 revision。',
+  inventory: '在线玩家可读可写；离线玩家只读，写入进入安全队列，登录或停服前应用。',
+  'mod-config': '第三方模组配置；写入前预览并自动备份，保存后可热重载。',
+};
+
+/**
+ * 统一顶部 hero 横幅：旧页面由 TAB_ACTIONS 写标题/说明并显示保存按钮；
+ * Vue 页面由路由 meta + HERO_HINTS 写标题/说明，页面自己的按钮留在内容区。
+ */
+/** 旧脚本初始化后是否把 hero 覆盖成了别的页面（常见于深链接刷新回落到高级配置）。 */
+function heroMatchesRoute() {
+  const serverMode = workspace.value === 'vanilla' || page.value === 'server';
+  const node = document.getElementById(serverMode ? 'server-action-title' : 'action-title');
+  const current = String(node?.textContent || '').trim();
+  const wanted = String(route.meta.title || '').trim();
+  if (!wanted) return true;
+  return current === wanted || current.includes(wanted) || wanted.includes(current);
+}
+
+function showHero(mode, title, hint) {
+  const mods = document.getElementById('mods-actions');
+  const server = document.getElementById('server-actions');
+  if (!mods || !server) return;
+  const serverMode = mode === 'server';
+  mods.hidden = serverMode;
+  server.hidden = !serverMode;
+  if (serverMode) return;
+  if (mode === 'page') {
+    mods.classList.add('hero-text-only');
+    const titleNode = document.getElementById('action-title');
+    const hintNode = document.getElementById('action-hint');
+    if (titleNode) titleNode.textContent = title || '';
+    if (hintNode) hintNode.textContent = hint || '';
+  } else {
+    mods.classList.remove('hero-text-only');
+  }
+}
+
 async function applyRoute(force = false) {
   if (!window.SamsaraUI) return;
   const key = [workspace.value, page.value, route.meta.serverPanel || ''].join(':');
@@ -662,17 +706,17 @@ async function applyRoute(force = false) {
     lastApplied = key;
     if (workspace.value === 'vanilla' || page.value === 'server') {
       guarded(() => window.SamsaraServer?.showPanel?.(route.meta.serverPanel || 'server-config-panel'));
+      showHero('server');
       if (page.value === 'server' && workspace.value === 'samsara') {
         // 审计页属于 samsara 工作区，不要显示“本体”的旧一级分栏样式。
         document.body.classList.remove('server-section');
-        const modsActions = document.getElementById('mods-actions');
-        if (modsActions) modsActions.hidden = true;
       }
     } else if (workspace.value === 'mods') {
       guarded(() => window.SamsaraServer?.leaveServer?.());
       window.SamsaraConfigEditor?.setSourceFilter?.('third-party');
       window.SamsaraConfigEditor?.setNavEnabled?.(false);
       hideLegacyChrome();
+      showHero('page', String(route.meta.title || '配置文件'), HERO_HINTS['mod-config']);
     } else {
       guarded(() => window.SamsaraServer?.leaveServer?.());
       if (route.meta.panel === 'config-editor') {
@@ -681,15 +725,18 @@ async function applyRoute(force = false) {
       }
       if (route.meta.panel) {
         guarded(() => applyLegacyPanel(route.meta.panel));
+        showHero('legacy');
       } else {
         hideLegacyChrome();
+        showHero('page', String(route.meta.title || ''),
+            HERO_HINTS[String(route.meta.page || '')] || '');
       }
     }
   }
   if (route.path) {
     rememberTarget(workspace.value, activeSection.value, route.path);
     if (workspace.value === 'mods' && activeModId.value) {
-      rememberTarget('mods.' + activeModId.value, route.path);
+      rememberTarget('mods.' + activeModId.value, 'files', route.path);
     }
   }
 }
@@ -703,10 +750,6 @@ function applyLegacyPanel(name) {
 }
 
 function hideLegacyChrome() {
-  for (const id of ['mods-actions', 'server-actions']) {
-    const node = document.getElementById(id);
-    if (node) node.hidden = true;
-  }
   const nav = document.getElementById('global-nav');
   if (nav) {
     nav.replaceChildren();

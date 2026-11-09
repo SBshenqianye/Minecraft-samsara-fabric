@@ -283,10 +283,7 @@ function hideLegacyChrome() {
   }
   const shell = document.querySelector('main.app-shell');
   if (shell) shell.classList.add('no-nav');
-  for (const id of ['mods-actions', 'server-actions']) {
-    const node = document.getElementById(id);
-    if (node) node.hidden = true;
-  }
+  // 顶部 hero 由 AdminLayout 统一维护，这里只清理旧页内导航。
 }
 
 function waitFor(check, timeoutMs) {

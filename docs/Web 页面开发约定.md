@@ -90,7 +90,7 @@ mount(ctx) {
 - 路由：`/vanilla/*`、`/samsara/economy|sky|config|world|community|system/*`、`/mods/<modId>/<file...>`；旧 `/config`、`/config-editor`、`/claim-range`、`/identity`、`/output`、`/permissions`、`/map`、`/announcements`、`/world-stack`、`/lottery`、`/containers` 保留 alias；`/server/*` 只做前端 redirect 到 `/vanilla/*`（审计例外：`/server/audit` 与 `/vanilla/audit` 都 redirect 到 `/samsara/system/audit`）。
 - 新增二级页时：先在 `pages/XxxPage.vue` 写页面，再在 `router.js` 加路由与 `meta`（`workspace`、`section`、`page`、`panel`），把子页加入 `SECTION_NAV`，最后在 `AdminLayout` 的页面栈里加 `v-show`/`v-if` 和 `sections` 映射。`meta.title` 必须与三级导航文案一致。
 - 配置来源过滤：`/samsara/config/editor` 调 `setSourceFilter('samsara')`；其他模组页调 `setSourceFilter('third-party')`；`/vanilla/config` 仍由 `server.js` 管服务器本体配置。不要在同一页混显示不同 source。
-- 横幅：页面用 `PageHeader` 或 `TabShell`（内部已用 PageHeader）；旧 panel 第一层 `panel-head` 由 `ia.css` 统一成同一视觉。主操作按钮跟随标题，不贴超宽横幅最右。
+- 横幅：全站唯一横幅是 `AdminLayout` 顶部 hero（`#mods-actions` / `#server-actions`），统一显示面包屑、标题、说明和全局操作；页面标题/说明由 AdminLayout 按路由写入，内容区不再使用 `PageHeader` 或另造标题横幅。页面自己的刷新/查询/保存按钮留在内容区（`TabShell` 的 actions 或普通 toolbar）。
 - Element Plus 按需引入：Vite 用 `unplugin-vue-components` + `ElementPlusResolver`；不要在 `main.js` 全局 `import 'element-plus/dist/index.css'`。`ElMessage` / `ElMessageBox` 等 API 显式 import，图标按需 import。
 - 第三层页面内导航继续用旧 `#global-nav`（`buildNav`）；其他模组页可调用 `SamsaraConfigEditor.setNavEnabled(false)` 隐藏全局导航，改用自己的文件夹树。
 - 不在浏览器内编译模板：必须用 SFC 预编译；CSP 继续禁止 `unsafe-eval`。

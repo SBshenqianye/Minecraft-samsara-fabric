@@ -1,10 +1,5 @@
 <template>
   <div class="container-page" :class="{ embedded }">
-    <PageHeader
-      v-if="embedded"
-      title="容器"
-      description="维度/坐标/半径/类型搜索，读取与编辑容器槽位；写入前保存审计快照并校验 revision。"
-    />
     <header v-if="!embedded">
       <h1>容器</h1>
       <span class="muted small">浏览/编辑箱子、桶、潜影盒等容器；写入前会保存审计快照</span>
@@ -185,7 +180,6 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue';
 import ItemSlotGrid from '../components/ItemSlotGrid.vue';
-import PageHeader from '../components/PageHeader.vue';
 
 const props = defineProps({
   embedded: { type: Boolean, default: false },

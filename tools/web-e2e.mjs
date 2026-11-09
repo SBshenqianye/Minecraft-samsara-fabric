@@ -2323,13 +2323,13 @@ async function main() {
     check('二级 Tab 切换会更新路由与页面', skyRoute.path === '/samsara/sky/track'
         && skyRoute.active === '天网' && skyRoute.track === true, JSON.stringify(skyRoute));
     const skyBanner = await evaluate(`(() => ({
-      banner: document.querySelector('[data-page="track"] .page-banner-title')?.textContent.trim() || '',
-      bannerTop: Math.round(document.querySelector('[data-page="track"] .page-banner')
+      banner: document.getElementById('action-title')?.textContent.trim() || '',
+      bannerTop: Math.round(document.querySelector('.page-hero')
         ?.getBoundingClientRect().top || -1),
-      toolbarInsideBanner: !!document.querySelector('[data-page="track"] .page-banner .page-toolbar'),
+      contentBanner: !!document.querySelector('[data-page="track"] .page-banner'),
     }))()`);
-    check('天网页面有统一横幅', skyBanner.banner === '轨迹回看'
-        && skyBanner.bannerTop >= 0 && skyBanner.toolbarInsideBanner === false,
+    check('天网页面使用统一顶部横幅', skyBanner.banner === '轨迹回看'
+        && skyBanner.bannerTop >= 0 && skyBanner.contentBanner === false,
         JSON.stringify(skyBanner));
 
     await navigate(base + '/samsara/sky/containers');

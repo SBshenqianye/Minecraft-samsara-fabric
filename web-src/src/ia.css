@@ -9,9 +9,9 @@
   --ia-nav-gutter: 18px;
   display: flex;
   align-items: flex-start;
-  width: 100%;
-  max-width: none;
-  margin: 0;
+  width: min(1780px, 100%);
+  max-width: 1780px;
+  margin: 0 auto;
   padding: 0 var(--ia-nav-gutter) 0 0;
   gap: 14px;
 }
