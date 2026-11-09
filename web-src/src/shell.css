@@ -32,41 +32,44 @@
   overflow: hidden;
   width: min(1780px, 100%);
   margin: 2px auto 0;
-  padding: 16px 24px 20px;
-  border: 1px solid color-mix(in srgb, var(--accent) 16%, var(--line));
-  border-radius: 20px;
+  padding: 22px 30px 24px 34px;
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, #062522);
+  border-radius: 18px;
   background:
-    radial-gradient(140% 180% at 0% 0%,
-      color-mix(in srgb, var(--accent) 14%, transparent) 0%, transparent 58%),
-    linear-gradient(120deg,
-      color-mix(in srgb, var(--accent) 6%, var(--panel)) 0%,
-      var(--panel) 62%);
-  box-shadow: 0 22px 46px -34px color-mix(in srgb, var(--accent) 55%, transparent),
+    radial-gradient(120% 180% at 100% 0%,
+      color-mix(in srgb, #2dd4bf 30%, transparent) 0%, transparent 55%),
+    radial-gradient(100% 150% at 0% 100%,
+      color-mix(in srgb, #f59e0b 12%, transparent) 0%, transparent 55%),
+    linear-gradient(120deg, #0b3b38 0%, #0f766e 58%, #0d9488 100%);
+  box-shadow: 0 24px 48px -34px color-mix(in srgb, #0f766e 70%, transparent),
     var(--shadow-soft);
 }
 
-.page-hero-art {
+.page-hero::before {
+  content: "";
   position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background-image: radial-gradient(circle at 1px 1px,
-    color-mix(in srgb, var(--accent) 34%, transparent) 1px, transparent 0);
-  background-size: 20px 20px;
-  opacity: .16;
-  mask-image: linear-gradient(100deg, #000 0%, transparent 58%);
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: linear-gradient(180deg, #5eead4 0%, #fbbf24 100%);
 }
 
 .page-hero::after {
   content: "";
   position: absolute;
-  top: -150px;
-  right: -110px;
-  width: 380px;
-  height: 380px;
+  right: -90px;
+  top: -130px;
+  width: 340px;
+  height: 340px;
   border-radius: 50%;
   background: radial-gradient(circle,
-    color-mix(in srgb, var(--accent) 16%, transparent) 0%, transparent 68%);
+    color-mix(in srgb, #5eead4 22%, transparent) 0%, transparent 68%);
   pointer-events: none;
+}
+
+.page-hero-art {
+  display: none;
 }
 
 .page-hero-context {
@@ -76,8 +79,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  min-height: 22px;
-  margin-bottom: 10px;
+  min-height: 20px;
+  margin-bottom: 12px;
 }
 
 .page-hero-context .ia-crumbs {
@@ -85,13 +88,22 @@
   padding: 0;
 }
 
+.page-hero .ia-crumb-part,
+.page-hero .ia-crumb-sep {
+  color: rgba(255, 255, 255, .58);
+}
+
+.page-hero .ia-crumb-title {
+  color: rgba(255, 255, 255, .92);
+}
+
 .page-hero-tag {
   flex: 0 0 auto;
-  padding: 3px 9px;
-  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line));
+  padding: 3px 10px;
+  border: 1px solid rgba(255, 255, 255, .22);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
-  color: color-mix(in srgb, var(--accent) 72%, var(--muted));
+  background: rgba(255, 255, 255, .08);
+  color: rgba(255, 255, 255, .78);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: .12em;
@@ -102,9 +114,9 @@
   position: relative;
   z-index: 1;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
-  gap: 28px;
+  gap: 32px;
 }
 
 .page-hero-main[hidden] {
@@ -113,28 +125,30 @@
 
 .page-hero-text {
   min-width: 0;
-  max-width: 980px;
+  max-width: 1080px;
 }
 
 .page-hero-title {
   margin: 0;
-  color: var(--fg);
-  font-size: clamp(26px, 2.4vw, 36px);
-  line-height: 1.08;
-  letter-spacing: -.025em;
+  color: #fff;
+  font-size: clamp(25px, 2.1vw, 32px);
+  font-weight: 800;
+  line-height: 1.12;
+  letter-spacing: -.02em;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, .12);
 }
 
 .page-hero-hint {
-  margin: 10px 0 0;
-  max-width: 860px;
-  color: var(--muted);
+  margin: 8px 0 0;
+  max-width: 780px;
+  color: rgba(255, 255, 255, .76);
   font-size: 13px;
-  line-height: 1.65;
+  line-height: 1.6;
 }
 
 .page-hero-buttons {
   flex: 0 0 auto;
-  padding-bottom: 3px;
+  padding: 0;
 }
 
 .page-hero-buttons .ghost,
@@ -143,6 +157,30 @@
   padding: 0 18px;
   border-radius: 10px;
   font-size: 13px;
+}
+
+.page-hero-buttons .ghost {
+  border-color: rgba(255, 255, 255, .34);
+  background: rgba(255, 255, 255, .06);
+  color: #fff;
+}
+
+.page-hero-buttons .ghost:hover {
+  border-color: rgba(255, 255, 255, .6);
+  background: rgba(255, 255, 255, .14);
+  color: #fff;
+}
+
+.page-hero-buttons .primary {
+  border-color: #fff;
+  background: #fff;
+  color: #0f766e;
+}
+
+.page-hero-buttons .primary:hover {
+  border-color: #ecfdf5;
+  background: #ecfdf5;
+  color: #115e59;
 }
 
 .hero-text-only .page-hero-buttons {

@@ -345,6 +345,10 @@
 
   function renderNav() {
     if (!window.SamsaraUI) return;
+    // 地图页不在前台时不要重建全局页内导航，避免切到经济业务/公告后
+    // 左侧导航仍显示“地图导航”。
+    const mapPanel = document.getElementById('panel-map');
+    if (!mapPanel || mapPanel.hidden || !mapPanel.getClientRects().length) return;
     const targets = [];
     const items = [];
     const stats = ensureEls().stats;

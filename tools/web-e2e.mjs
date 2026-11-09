@@ -2280,10 +2280,13 @@ async function main() {
         && stickyLayout.nav.top >= stickyLayout.section.top + stickyLayout.section.height
         && stickyLayout.rail.top >= stickyLayout.header.height - 2
         && !stickyLayout.overflow, JSON.stringify(stickyLayout));
-    check('页内导航标题跟随最上侧卡片标题', Boolean(stickyLayout.navTitle)
-        && Boolean(stickyLayout.cardTitle)
-        && Math.abs(stickyLayout.navTitle.top - stickyLayout.cardTitle.top) <= 6,
-        JSON.stringify({ navTitle: stickyLayout.navTitle, cardTitle: stickyLayout.cardTitle }));
+    const sectionBottom = stickyLayout.section
+      ? stickyLayout.section.top + stickyLayout.section.height : 0;
+    check('页内导航固定在二级栏下方，不跟随卡片标题跳动', Boolean(stickyLayout.navTitle)
+        && stickyLayout.navTitle.top >= sectionBottom
+        && stickyLayout.navTitle.top <= sectionBottom + 80,
+        JSON.stringify({ navTitle: stickyLayout.navTitle, section: stickyLayout.section,
+          cardTitle: stickyLayout.cardTitle }));
     const railHandle = await evaluate(`(() => {
       const node = document.querySelector('.rail-handle');
       const rail = document.querySelector('.workspace-rail');

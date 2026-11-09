@@ -578,39 +578,15 @@ function measureChrome(resetRail = true) {
   // 统一在尺寸变化后收回，避免变成无法收回的浮层。
   if (resetRail) railPeek.value = false;
   alignSideNav(headerH, sectionH);
-  window.clearTimeout(navAlignTimer);
-  navAlignTimer = window.setTimeout(() => alignSideNav(headerH, sectionH), 260);
 }
 
 /**
- * 让左侧导航标题与当前最上侧可见卡片的标题等高。
- * 顶部标题被 sticky header/二级栏遮住时，平滑下移到下一张卡片。
+ * 左侧页面导航与工作区导航固定在二级栏下方，不再跟随内容卡片标题滚动，
+ * 避免滚动时导航上下跳动。
  */
 function alignSideNav(headerH, sectionH) {
-  const side = document.querySelector('.ia-side');
-  if (!side) return;
   const root = document.documentElement;
-  const minTop = headerH + sectionH + 8;
-  const navTitle = side.querySelector('.section-subnav .subnav-title, #global-nav .nav-title');
-  const sideRect = side.getBoundingClientRect();
-  const titleRect = navTitle ? navTitle.getBoundingClientRect() : null;
-  const titleOffset = titleRect ? Math.max(0, titleRect.top - sideRect.top) : 0;
-  const viewport = window.innerHeight || document.documentElement.clientHeight;
-  const maxTop = Math.max(minTop, viewport - 120);
-  const candidates = document.querySelectorAll(
-    '.content .page-banner-title, .content .panel > .panel-head > div:first-child > h2,'
-    + ' .content .panel > .panel-head > div:first-child > h3');
-  let target = minTop;
-  for (const node of candidates) {
-    const rect = node.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) continue;
-    if (getComputedStyle(node).display === 'none') continue;
-    if (rect.top < minTop - 1) continue;
-    target = rect.top - titleOffset;
-    break;
-  }
-  const top = Math.max(minTop, Math.min(maxTop, Math.round(target)));
-  root.style.setProperty('--ia-nav-top', top + 'px');
+  root.style.setProperty('--ia-nav-top', Math.round(headerH + sectionH + 12) + 'px');
 }
 
 async function waitForInitialPanel() {

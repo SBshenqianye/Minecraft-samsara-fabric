@@ -3362,14 +3362,29 @@ function enterPage(name) {
   return true;
 }
 
+function activeNavPage() {
+  if (document.body.classList.contains('server-section')) return 'server';
+  return state.tab || '';
+}
+
 function buildNav(title, items, targets, options) {
   const nav = $('global-nav');
   if (!nav) return;
+  const opts = options || {};
+  // 页面切走后，隐藏页面的异步刷新不能覆盖当前页面的页内导航。
+  if (opts.owner && opts.owner !== activeNavPage()) return;
+  const targetList = Array.isArray(targets) ? targets : [];
+  if (targetList.length) {
+    const visible = targetList.some((target) => {
+      const el = target && target.el;
+      return el && typeof el.getClientRects === 'function' && el.getClientRects().length > 0;
+    });
+    if (!visible) return;
+  }
   nav.hidden = false;
   const shell = document.querySelector('main.app-shell');
   if (shell) shell.classList.remove('no-nav');
   nav.replaceChildren();
-  const opts = options || {};
   const heading = document.createElement('div');
   heading.className = 'nav-title';
   const headingText = document.createElement('span');

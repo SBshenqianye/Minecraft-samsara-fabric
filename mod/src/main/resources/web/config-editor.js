@@ -134,7 +134,7 @@
         children,
       });
     }
-    UI.buildNav('配置编辑器', navItems, []);
+    UI.buildNav('配置编辑器', navItems, [], { owner: 'config-editor' });
     if (state.current) UI.setNavActive(state.current.id);
   }
 

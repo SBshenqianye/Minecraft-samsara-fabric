@@ -18,7 +18,7 @@
 
 .workspace-rail {
   position: sticky;
-  top: calc(var(--header-h, 128px) + 12px);
+  top: var(--ia-nav-top, calc(var(--header-h, 128px) + var(--ia-section-h, 56px) + 12px));
   flex: 0 0 192px;
   align-self: flex-start;
   max-height: calc(100vh - var(--header-h, 128px) - 26px);
@@ -50,7 +50,7 @@
 .rail-handle {
   position: fixed;
   left: 0;
-  top: calc(var(--ia-nav-top, 196px) + 18px);
+  top: calc(var(--ia-nav-top, 196px) + 10px);
   z-index: 19;
   padding: 9px 10px 9px 8px;
   border: 1px solid var(--line-strong);

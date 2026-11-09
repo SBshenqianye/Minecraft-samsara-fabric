@@ -99,7 +99,7 @@ function renderOutputNav() {
   const count = query
     ? shown + ' / ' + O.model.messages.length
     : String(O.model.messages.length);
-  window.SamsaraUI.buildNav(title, navItems, [], { count });
+  window.SamsaraUI.buildNav(title, navItems, [], { count, owner: 'output' });
   window.SamsaraUI.setNavActive('out-msg-' + encodeURIComponent(O.key));
 }
 
