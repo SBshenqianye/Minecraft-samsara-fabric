@@ -6,7 +6,6 @@
       class="slot"
       :class="{ selected: selected === index, filled: !!itemAt(index) }"
       type="button"
-      :title="titleFor(index)"
       :aria-label="ariaFor(index)"
       :draggable="!!itemAt(index)"
       @click.prevent="$emit('slot-click', { index, button: 0, shift: $event.shiftKey })"
@@ -15,12 +14,24 @@
       @dragend="$emit('drag-end', { index })"
       @dragover.prevent
       @drop.prevent="$emit('drop-slot', { index, event: $event })"
+      @mouseenter="$emit('slot-hover', { index, event: $event, item: itemAt(index) })"
+      @mousemove="$emit('slot-hover', { index, event: $event, item: itemAt(index) })"
+      @mouseleave="$emit('slot-leave', { index })"
     >
       <ItemIcon
         v-if="itemAt(index)"
         :item="itemAt(index)"
       />
       <span v-else class="empty-index">{{ index }}</span>
+      <span
+        v-if="itemAt(index)"
+        class="slot-edit"
+        role="button"
+        tabindex="0"
+        title="编辑组件 / NBT（不会拿起物品）"
+        @click.stop="$emit('slot-edit', { index })"
+        @keydown.enter.stop="$emit('slot-edit', { index })"
+      >✎</span>
     </button>
   </div>
 </template>
@@ -38,7 +49,8 @@ const props = defineProps({
   hasCursor: { type: Boolean, default: false },
 });
 
-defineEmits(['select', 'slot-click', 'drop-slot', 'drag-start', 'drag-end']);
+defineEmits(['select', 'slot-click', 'slot-edit', 'drop-slot', 'drag-start',
+  'drag-end', 'slot-hover', 'slot-leave']);
 
 const itemMap = computed(() => {
   const map = new Map();
@@ -53,9 +65,7 @@ function itemAt(index) {
 function titleFor(index) {
   const item = itemAt(index);
   if (!item) return '空槽位 ' + index;
-  const parts = [item.name || item.id, item.id, '数量 ' + item.count];
-  if (item.components) parts.push(String(item.components));
-  return parts.join('\n');
+  return (item.name || item.id) + ' ×' + item.count + '\n点击拿起 / 右键分半，悬停显示完整属性';
 }
 
 function ariaFor(index) {

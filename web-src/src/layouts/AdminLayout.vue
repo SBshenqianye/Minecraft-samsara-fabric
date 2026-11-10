@@ -181,6 +181,8 @@
             <DiffPage v-if="page === 'diff'" />
             <ContainerPage v-if="page === 'containers'" embedded />
             <InventoryPage v-if="page === 'inventory'" />
+            <PoolInventoryPage v-if="page === 'web-inventory'" kind="web" />
+            <PoolInventoryPage v-if="page === 'fund-inventory'" kind="fund" />
             <ConfigEditorPage v-if="page === 'config-editor'" />
             <ConfigPage v-show="page === 'config'" />
             <ClaimRangePage v-show="page === 'claim-range'" />
@@ -228,6 +230,7 @@ import TrackPage from '../pages/TrackPage.vue';
 import DiffPage from '../pages/DiffPage.vue';
 import ContainerPage from '../pages/ContainerPage.vue';
 import InventoryPage from '../pages/InventoryPage.vue';
+import PoolInventoryPage from '../pages/PoolInventoryPage.vue';
 import ConfigPage from '../pages/ConfigPage.vue';
 import ConfigEditorPage from '../pages/ConfigEditorPage.vue';
 import ClaimRangePage from '../pages/ClaimRangePage.vue';

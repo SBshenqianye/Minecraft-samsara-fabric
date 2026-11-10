@@ -81,6 +81,31 @@ public final class LotteryWebService {
                 LotteryService.getInstance().cancelNow()));
     }
 
+    public Map<String, Object> fundInventory() {
+        return run(() -> LotteryService.getInstance().fundInventory());
+    }
+
+    public Map<String, Object> writeFundInventory(String body) {
+        List<String> slots = parseSlots(body);
+        if (slots == null) {
+            return Map.of("ok", false, "status", 400, "error", "请求体应包含 slots 字符串数组");
+        }
+        return run(() -> LotteryService.getInstance().writeFundInventory(slots));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<String> parseSlots(String body) {
+        try {
+            Map<String, Object> request = new com.google.gson.Gson().fromJson(body, Map.class);
+            if (request == null || !(request.get("slots") instanceof List<?> list)) return null;
+            List<String> out = new java.util.ArrayList<>(list.size());
+            for (Object item : list) out.add(item == null ? "" : String.valueOf(item));
+            return out;
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
     private Map<String, Object> run(Supplier<Map<String, Object>> action) {
         if (server == null) {
             return Map.of("ok", false, "error", "服务器不可用");

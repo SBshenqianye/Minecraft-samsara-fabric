@@ -167,6 +167,7 @@ const containers = ref([]);
 const indexSize = ref(0);
 const selected = ref(null);
 const slots = ref([]);
+const baselineSlots = ref([]);
 const items = ref([]);
 const revision = ref(0);
 const dirty = ref(false);
@@ -202,6 +203,7 @@ const markers = computed(() => containers.value
     label: typeLabel(row.type),
     sub: `${row.x}, ${row.y}, ${row.z} · ${row.nonEmpty}/${row.size}`,
     kind: 'container',
+    icon: row.type,
   })));
 
 const selectedMarkerId = computed(() =>
@@ -400,6 +402,7 @@ async function openContainer(row) {
     if (result.status !== 200 || !result.data.ok) throw new Error(result.data.error || '读取容器失败');
     selected.value = result.data;
     slots.value = (result.data.container.slots || []).slice();
+    baselineSlots.value = slots.value.slice();
     items.value = (result.data.items || []).slice();
     revision.value = result.data.container.revision;
     dirty.value = false;
@@ -419,11 +422,25 @@ function samePos(a, b) {
   return a && b && a.dimension === b.dimension && a.x === b.x && a.y === b.y && a.z === b.z;
 }
 
+function sameSlots(a, b) {
+  const left = a || [];
+  const right = b || [];
+  if (left.length !== right.length) return false;
+  for (let i = 0; i < left.length; i++) {
+    if ((left[i] || '') !== (right[i] || '')) return false;
+  }
+  return true;
+}
+
 function onWorkbenchChange(payload) {
   if (!selected.value) return;
   slots.value = payload.slots;
   items.value = payload.items;
-  dirty.value = true;
+  dirty.value = !sameSlots(payload.slots, baselineSlots.value);
+  if (!dirty.value) {
+    liveTimer && clearTimeout(liveTimer);
+    return;
+  }
   if (mode.value !== 'live' || payload.pending) {
     if (mode.value === 'live' && payload.pending) {
       message.value = '光标上还有物品，放下后才会实时写入。';
@@ -514,6 +531,7 @@ async function save(silent) {
       messageKind.value = 'ok';
       if (!silent) ElMessage.success('已写入容器');
     }
+    baselineSlots.value = slots.value.slice();
     await search();
   } catch (e) {
     error.value = e.message || String(e);

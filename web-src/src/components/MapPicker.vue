@@ -4,6 +4,7 @@
       <div class="map-layer">
         <img
           v-for="tile in tiles"
+          v-show="!tile.failed"
           :key="tile.key"
           class="map-tile"
           :src="tile.src"
@@ -11,25 +12,35 @@
           alt=""
           draggable="false"
           @load="tile.loaded = true"
+          @error="tile.failed = true"
         />
         <button
           v-for="marker in visibleMarkers"
           :key="marker.id"
           type="button"
           class="map-marker"
-          :class="{ active: marker.id === selectedId, offline: marker.online === false }"
+          :class="{ active: marker.id === selectedId, offline: marker.online === false, player: marker.kind === 'player' }"
           :style="{ left: marker.left + 'px', top: marker.top + 'px' }"
           :title="marker.label + (marker.sub ? ' · ' + marker.sub : '')"
           @pointerdown.stop
           @click.stop="$emit('select', marker.id)"
         >
-          <span class="marker-dot">{{ marker.kind === 'player' ? '人' : '箱' }}</span>
+          <span v-if="marker.kind === 'player'" class="marker-head" :style="avatarStyle(marker)">
+            <span v-if="!avatarUrls[marker.id]" class="marker-initial">{{ initialOf(marker) }}</span>
+          </span>
+          <ItemIcon
+            v-else
+            class="marker-item"
+            :item="{ id: marker.icon || 'chest', name: marker.label, count: 1 }"
+            size="sm"
+            :show-count="false"
+          />
           <span class="marker-label">{{ marker.label }}</span>
         </button>
       </div>
       <div class="map-controls">
-        <button type="button" class="ghost tiny" title="放大" @click.stop="zoom(1)">＋</button>
-        <button type="button" class="ghost tiny" title="缩小" @click.stop="zoom(-1)">－</button>
+        <button type="button" class="ghost tiny" title="放大（滚轮向上）" @click.stop="zoom(1)">＋</button>
+        <button type="button" class="ghost tiny" title="缩小（滚轮向下）" @click.stop="zoom(-1)">－</button>
         <button type="button" class="ghost tiny" title="回到标记" @click.stop="centerOnMarkers">◎</button>
       </div>
       <div class="map-foot">
@@ -41,7 +52,8 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import ItemIcon from './ItemIcon.vue';
 
 const props = defineProps({
   markers: { type: Array, default: () => [] },
@@ -61,6 +73,9 @@ const scale = ref(2);
 const viewW = ref(600);
 const viewH = ref(380);
 const tiles = ref([]);
+const avatarUrls = reactive({});
+const avatarLoading = new Set();
+const avatarCache = new Map();
 const dragging = ref(false);
 let dragStart = null;
 
@@ -167,6 +182,7 @@ function rebuildTiles() {
         top: (rz * 512 - top) * ppb,
         size,
         loaded: false,
+        failed: false,
       });
     }
   }
@@ -183,7 +199,8 @@ function zoom(direction) {
 }
 
 function onWheel(event) {
-  zoom(event.deltaY < 0 ? 1 : -1);
+  // 滚轮向上放大（scale 数字变小），滚轮向下缩小。
+  zoom(event.deltaY < 0 ? -1 : 1);
 }
 
 function startPan(event) {
@@ -209,9 +226,69 @@ function endPan() {
   window.removeEventListener('pointermove', onPan);
 }
 
+function initialOf(marker) {
+  const name = String(marker.label || marker.name || '?').trim();
+  return /^[A-Za-z0-9\u4e00-\u9fff]/.test(name) ? name.charAt(0).toUpperCase() : '?';
+}
+
+function avatarStyle(marker) {
+  const url = avatarUrls[marker.id];
+  if (!url) return {};
+  return {
+    backgroundImage: `url('${url}')`,
+    backgroundSize: '100% 100%',
+  };
+}
+
+function loadAvatar(marker) {
+  if (!marker || marker.kind !== 'player' || avatarUrls[marker.id] || avatarLoading.has(marker.id)) return;
+  const cached = avatarCache.get(marker.id);
+  if (cached) {
+    avatarUrls[marker.id] = cached;
+    return;
+  }
+  const query = marker.uuid
+    ? 'uuid=' + encodeURIComponent(marker.uuid)
+    : 'name=' + encodeURIComponent(marker.label || '');
+  if (!query) return;
+  avatarLoading.add(marker.id);
+  const image = new Image();
+  image.crossOrigin = 'anonymous';
+  image.referrerPolicy = 'no-referrer';
+  image.decoding = 'async';
+  image.onload = () => {
+    avatarLoading.delete(marker.id);
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = 64;
+      canvas.height = 64;
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(image, 8, 8, 8, 8, 0, 0, 64, 64);
+      try { ctx.drawImage(image, 40, 8, 8, 8, 0, 0, 64, 64); } catch { /* 旧皮肤没有帽子层 */ }
+      const data = canvas.toDataURL('image/png');
+      avatarCache.set(marker.id, data);
+      avatarUrls[marker.id] = data;
+    } catch {
+      // tainted canvas 或解码失败时保留首字母占位。
+    }
+  };
+  image.onerror = () => {
+    avatarLoading.delete(marker.id);
+  };
+  image.src = '/api/user/map/avatar?' + query;
+}
+
+function prepareMarkers() {
+  for (const marker of props.markers) {
+    if ((marker.kind || 'container') === 'player') loadAvatar(marker);
+  }
+}
+
 let observer = null;
 onMounted(() => {
   loadModel();
+  prepareMarkers();
   if (viewport.value) {
     viewW.value = viewport.value.clientWidth || 600;
     viewH.value = viewport.value.clientHeight || props.height;
@@ -235,8 +312,9 @@ watch(() => props.dimension, () => {
 }, { immediate: false });
 
 watch(() => props.markers, () => {
+  prepareMarkers();
   rebuildTiles();
-});
+}, { deep: false });
 </script>
 
 <style scoped>
@@ -246,7 +324,11 @@ watch(() => props.markers, () => {
   border: 1px solid var(--line);
   border-radius: 12px;
   overflow: hidden;
-  background: #10151c;
+  background:
+    linear-gradient(rgba(255, 255, 255, .025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, .025) 1px, transparent 1px),
+    #10151c;
+  background-size: 32px 32px, 32px 32px, auto;
   touch-action: none;
 }
 
@@ -276,9 +358,9 @@ watch(() => props.markers, () => {
   z-index: 4;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   transform: translate(-50%, -50%);
-  padding: 3px 6px;
+  padding: 3px 7px 3px 4px;
   border: 1px solid #f0c674;
   border-radius: 999px;
   background: rgba(18, 22, 30, .9);
@@ -286,13 +368,19 @@ watch(() => props.markers, () => {
   font-size: 10px;
   white-space: nowrap;
   cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .35);
+}
+
+.map-marker.player {
+  border-color: #7ad7a8;
+  color: #d6ffe9;
 }
 
 .map-marker.active {
   border-color: #58a6ff;
   background: rgba(20, 50, 90, .94);
   color: #d8ecff;
-  box-shadow: 0 0 0 2px rgba(88, 166, 255, .35);
+  box-shadow: 0 0 0 2px rgba(88, 166, 255, .35), 0 2px 8px rgba(0, 0, 0, .35);
 }
 
 .map-marker.offline {
@@ -300,29 +388,32 @@ watch(() => props.markers, () => {
   color: #b7bec9;
 }
 
-.marker-dot {
+.marker-head {
   display: grid;
   place-items: center;
-  width: 15px;
-  height: 15px;
-  border-radius: 50%;
-  background: #f0c674;
-  color: #1b1b1b;
-  font-size: 9px;
+  width: 20px;
+  height: 20px;
+  overflow: hidden;
+  border-radius: 4px;
+  background-color: #263241;
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .18);
+}
+
+.marker-initial {
+  color: #f5f8ff;
+  font-size: 10px;
   font-weight: 700;
 }
 
-.map-marker.active .marker-dot {
-  background: #58a6ff;
-}
-
-.map-marker.offline .marker-dot {
-  background: #6e7681;
-  color: #fff;
+.marker-item {
+  width: 18px;
+  height: 18px;
 }
 
 .marker-label {
-  max-width: 90px;
+  max-width: 96px;
   overflow: hidden;
   text-overflow: ellipsis;
 }

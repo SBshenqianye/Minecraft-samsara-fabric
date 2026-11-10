@@ -772,6 +772,30 @@ details.output-group > summary { padding: 3px 2px; }
 .audit-output { white-space: pre-wrap; font-size: 12px; color: var(--muted); margin: 8px 0 0; }
 
 /* ---- dialogs ---- */
+.identity-data-dialog { width: min(980px, 96vw); max-width: 96vw; }
+.identity-data-dialog .dialog-body { max-height: 92vh; overflow: auto; }
+.identity-data-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-soft); }
+.identity-data-uuid { flex: 1 1 280px; min-width: 0; overflow-wrap: anywhere; color: var(--fg-soft); font: 12px/1.45 var(--mono); }
+.identity-edit-link { padding: 4px 9px !important; font-size: 11px !important; }
+.identity-inline-inventory { display: flex; flex-direction: column; gap: 7px; margin-top: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.identity-inline-inventory-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+.identity-inline-inventory-head strong { font-size: 13px; }
+.identity-inventory-frame { width: 100%; height: 58vh; min-height: 360px; border: 0; border-radius: 10px; background: transparent; }
+.identity-data-content { display: flex; flex-direction: column; gap: 9px; }
+.identity-data-section { padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-soft); }
+.identity-data-section > strong { display: block; margin-bottom: 7px; font-size: 12px; }
+.identity-data-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+.identity-data-tag { padding: 2px 7px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 10px; overflow-wrap: anywhere; }
+.identity-data-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 6px; }
+.identity-data-stat { display: flex; justify-content: space-between; gap: 10px; padding: 5px 7px; border-radius: 7px; background: var(--panel); font-size: 11px; }
+.identity-data-stat span:last-child { color: var(--fg-soft); font-family: var(--mono); text-align: right; overflow-wrap: anywhere; }
+.identity-data-items { display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow: auto; }
+.identity-data-item { display: flex; align-items: center; gap: 8px; padding: 5px 7px; border-radius: 7px; background: var(--panel); }
+.identity-data-item-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.identity-data-item-name { font-size: 12px; }
+.identity-data-item-meta { color: var(--muted); font-size: 10px; }
+
+/* ---- dialogs ---- */
 .app-dialog { border: 1px solid var(--line); border-radius: 16px; padding: 0; width: min(620px, calc(100vw - 32px)); max-height: calc(100vh - 32px); background: var(--panel); color: var(--fg); box-shadow: 0 30px 90px rgba(0,0,0,.35); }
 .app-dialog::backdrop { background: rgba(8, 12, 17, .55); backdrop-filter: blur(3px); }
 .dialog-body { display: flex; flex-direction: column; gap: 10px; padding: 20px; max-height: calc(100vh - 32px); overflow: auto; }
@@ -1378,6 +1402,7 @@ body.server-section #panel-lottery {
 .server-audit-change.modified { color: #fbbf24; border-color: rgba(251, 191, 36, .45); }
 .server-audit-diff { max-height: 420px; overflow: auto; margin: 0; font: 11px/1.5 var(--mono); white-space: pre-wrap; word-break: break-all; }
 .server-audit-diffs { display: flex; flex-direction: column; gap: 6px; max-height: 460px; overflow: auto; }
+.server-audit-more { margin: 10px auto 2px; display: block; }
 .server-audit-file { border: 1px solid var(--line); border-radius: 7px; background: rgba(8, 12, 17, .55); }
 .server-audit-file > summary { cursor: pointer; padding: 6px 9px; font: 11px var(--mono); color: #cbd5e1; position: sticky; top: 0; background: rgba(15, 23, 42, .96); z-index: 1; }
 .server-audit-file[open] > summary { border-bottom: 1px solid var(--line); }
@@ -1414,6 +1439,7 @@ body.server-section #panel-lottery {
 .lottery-claim { display: flex; flex-direction: column; gap: 9px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
 .lottery-claim:last-child { border-bottom: 0; }
 .lottery-items { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+.lottery-fund-inventory-link { margin: 0 0 8px; padding: 4px 9px; font-size: 11px; }
 .lottery-item-card {
   display: flex; align-items: center; gap: 9px; padding: 8px 10px;
   border: 1px solid var(--line); border-radius: 10px; background: var(--panel-soft);

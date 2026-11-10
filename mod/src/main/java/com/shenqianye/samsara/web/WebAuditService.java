@@ -167,22 +167,28 @@ public final class WebAuditService {
     }
 
     public List<Map<String, Object>> list(int limit) {
-        int max = limit <= 0 ? Integer.MAX_VALUE : limit;
-        List<Entry> entries = new ArrayList<>();
-        if (Files.isDirectory(root)) {
-            try (Stream<Path> stream = Files.list(root)) {
-                for (Path dir : (Iterable<Path>) stream.filter(Files::isDirectory)
-                        .sorted(Comparator.reverseOrder())::iterator) {
-                    Entry entry = readManifest(dir);
-                    if (entry != null) entries.add(entry);
-                }
-            } catch (IOException ignored) {
-            }
-        }
-        entries.sort(Comparator.comparingLong((Entry e) -> e.createdAt).reversed());
+        return listPage(0, limit <= 0 ? Integer.MAX_VALUE : limit);
+    }
+
+    /** 审计分页：按目录时间倒序跳过 offset 条，只解析当前页 manifest。 */
+    public List<Map<String, Object>> listPage(int offset, int limit) {
+        int skip = Math.max(0, offset);
+        int max = limit <= 0 ? 30 : Math.min(200, limit);
         List<Map<String, Object>> out = new ArrayList<>();
-        for (int i = 0; i < entries.size() && i < max; i++) {
-            out.add(entries.get(i).toMap());
+        if (!Files.isDirectory(root)) return out;
+        try (Stream<Path> stream = Files.list(root)) {
+            for (Path dir : (Iterable<Path>) stream.filter(Files::isDirectory)
+                    .sorted(Comparator.reverseOrder())::iterator) {
+                if (skip > 0) {
+                    skip--;
+                    continue;
+                }
+                Entry entry = readManifest(dir);
+                if (entry == null) continue;
+                out.add(entry.toMap());
+                if (out.size() >= max) break;
+            }
+        } catch (IOException ignored) {
         }
         return out;
     }

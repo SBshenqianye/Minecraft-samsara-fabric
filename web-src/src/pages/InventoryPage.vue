@@ -14,7 +14,7 @@
       <p v-if="error" class="container-message error">{{ error }}</p>
       <p v-if="message" class="container-message ok">{{ message }}</p>
 
-      <div class="inventory-layout">
+      <div class="inventory-layout" :class="{ embedded: isEmbedded }">
         <aside class="panel inventory-side">
           <template v-if="source === 'identity'">
             <h3>身份 data UUID</h3>
@@ -58,6 +58,7 @@
             <div class="inventory-map-head">
               <h3>地图选玩家</h3>
               <span class="muted small">在线玩家实时位置；离线玩家保留最后退出位置。</span>
+              <span class="muted small" v-if="playersUpdatedAt">· 状态 {{ playersUpdatedAt }}</span>
               <span class="spacer"></span>
               <select v-model="mapDimension">
                 <option v-for="dimension in mapDimensions" :key="dimension.id" :value="dimension.id">
@@ -147,7 +148,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import TabShell from '../components/TabShell.vue';
@@ -169,14 +170,18 @@ const players = ref([]);
 const selectedPlayer = ref(null);
 const data = ref(null);
 const slots = ref([]);
+const baselineSlots = ref([]);
 const revision = ref(0);
 const dirty = ref(false);
 const mode = ref('simulate');
 const schema = ref({});
 const source = ref('player');
 const identityUuid = ref('');
+const isEmbedded = computed(() => String(route.query.embed || '') === '1');
 const mapDimension = ref('minecraft:overworld');
+const playersUpdatedAt = ref('');
 let liveTimer = null;
+let playersTimer = null;
 
 const modeOptions = [
   { id: 'live', label: '实时', hint: '每次操作立即写入；离线玩家/未加载目标会排队。' },
@@ -228,6 +233,8 @@ const playerMarkers = computed(() => players.value
     sub: `${player.online ? '在线' : '离线'} · ${Math.round(player.x)}, ${Math.round(player.y)}, ${Math.round(player.z)}`,
     kind: 'player',
     online: player.online === true,
+    uuid: player.uuid,
+    name: player.name || '',
   })));
 
 const layout = computed(() => {
@@ -249,7 +256,41 @@ onMounted(() => {
   source.value = initialSource;
   identityUuid.value = String(route.query.data || '');
   if (token.value) connect();
+  playersTimer = window.setInterval(refreshPlayersQuietly, 4000);
 });
+
+onBeforeUnmount(() => {
+  window.clearInterval(playersTimer);
+  liveTimer && clearTimeout(liveTimer);
+});
+
+async function refreshPlayersQuietly() {
+  if (!connected.value || source.value !== 'player') return;
+  try {
+    const result = await api('/api/server/players');
+    if (result.status !== 200) return;
+    const next = result.data.players || [];
+    players.value = next;
+    playersUpdatedAt.value = new Date().toLocaleTimeString();
+    if (selectedPlayer.value) {
+      const match = next.find((player) => player.uuid === selectedPlayer.value.uuid);
+      if (match) {
+        const wasOnline = selectedPlayer.value.online === true;
+        selectedPlayer.value = match;
+        if (data.value) {
+          data.value = Object.assign({}, data.value, { online: match.online });
+        }
+        if (wasOnline !== match.online) {
+          message.value = match.online
+            ? '玩家已上线，可直接实时写入。'
+            : '玩家已下线，后续写入会进入安全队列。';
+        }
+      }
+    }
+  } catch {
+    // 轮询失败不打断当前编辑。
+  }
+}
 
 function shortDimension(dimension) {
   const value = String(dimension || '');
@@ -416,16 +457,31 @@ async function loadInventory() {
 function applyInventoryData(payload) {
   data.value = payload;
   slots.value = (payload.slots || []).slice();
+  baselineSlots.value = slots.value.slice();
   revision.value = payload.revision;
   dirty.value = false;
   message.value = '';
+}
+
+function sameSlots(a, b) {
+  const left = a || [];
+  const right = b || [];
+  if (left.length !== right.length) return false;
+  for (let i = 0; i < left.length; i++) {
+    if ((left[i] || '') !== (right[i] || '')) return false;
+  }
+  return true;
 }
 
 function onWorkbenchChange(payload) {
   if (!data.value) return;
   slots.value = payload.slots;
   data.value = Object.assign({}, data.value, { items: payload.items });
-  dirty.value = true;
+  dirty.value = !sameSlots(payload.slots, baselineSlots.value);
+  if (!dirty.value) {
+    liveTimer && clearTimeout(liveTimer);
+    return;
+  }
   if (mode.value !== 'live' || payload.pending) {
     if (mode.value === 'live' && payload.pending) {
       message.value = '光标上还有物品，放下后才会实时写入。';
@@ -503,6 +559,7 @@ async function save(silent) {
     const queued = result.data.queued === true;
     data.value = Object.assign({}, data.value, result.data);
     slots.value = (result.data.slots || slots.value).slice();
+    baselineSlots.value = slots.value.slice();
     revision.value = result.data.revision;
     dirty.value = false;
     if (source.value === 'identity') {
@@ -537,6 +594,14 @@ async function save(silent) {
   grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
   gap: 16px;
   align-items: start;
+}
+
+.inventory-layout.embedded {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.inventory-layout.embedded .inventory-side {
+  display: none;
 }
 
 .inventory-side {

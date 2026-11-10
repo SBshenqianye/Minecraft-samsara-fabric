@@ -1278,8 +1278,17 @@ public final class LocalWebServer {
             String path = exchange.getRequestURI().getPath();
             String method = exchange.getRequestMethod();
             if ("GET".equals(method)) {
-                json(exchange, 200, Map.of("ok", true,
-                        "entries", WebAuditService.get().list(0)));
+                Map<String, String> query = parseQuery(exchange.getRequestURI().getRawQuery());
+                int offset = Math.max(0, intParam(query, "offset", 0));
+                int limit = Math.max(1, Math.min(100, intParam(query, "limit", 30)));
+                List<Map<String, Object>> entries = WebAuditService.get().listPage(offset, limit);
+                Map<String, Object> out = new LinkedHashMap<>();
+                out.put("ok", true);
+                out.put("entries", entries);
+                out.put("offset", offset);
+                out.put("limit", limit);
+                out.put("hasMore", entries.size() >= limit);
+                json(exchange, 200, out);
                 return;
             }
             if (!"POST".equals(method)) {
@@ -1490,6 +1499,26 @@ public final class LocalWebServer {
                         intParam(query, "limit", 100)));
                 return;
             }
+            if ("GET".equals(method) && "/api/lottery/fund".equals(path)) {
+                json(exchange, 200, lotteryService.fundInventory());
+                return;
+            }
+            if ("POST".equals(method) && "/api/lottery/fund/write".equals(path)) {
+                String body;
+                try {
+                    body = readBody(exchange);
+                } catch (BodyTooLarge e) {
+                    status = 413;
+                    json(exchange, status, Map.of("error", "请求体过大"));
+                    return;
+                }
+                Map<String, Object> result = lotteryService.writeFundInventory(body);
+                Object requested = result.get("status");
+                status = requested instanceof Number number ? number.intValue()
+                        : result.get("ok") == Boolean.TRUE ? 200 : 400;
+                json(exchange, status, result);
+                return;
+            }
             if ("POST".equals(method) && "/api/lottery/draw".equals(path)) {
                 json(exchange, 200, lotteryService.draw());
                 return;
@@ -1672,6 +1701,32 @@ public final class LocalWebServer {
                 json(exchange, status, result);
                 return;
             }
+            if ("GET".equals(method) && "/api/inventory/web".equals(path)) {
+                json(exchange, 200, inventoryService.webRead());
+                return;
+            }
+            if ("POST".equals(method) && ("/api/inventory/web/write".equals(path)
+                    || "/api/inventory/web/deposit".equals(path)
+                    || "/api/inventory/web/withdraw".equals(path))) {
+                String body;
+                try {
+                    body = readBody(exchange);
+                } catch (BodyTooLarge e) {
+                    status = 413;
+                    json(exchange, status, Map.of("error", "请求体过大"));
+                    return;
+                }
+                Map<String, Object> result = "/api/inventory/web/write".equals(path)
+                        ? inventoryService.webWrite(body)
+                        : "/api/inventory/web/deposit".equals(path)
+                        ? inventoryService.webDeposit(body)
+                        : inventoryService.webWithdraw(body);
+                Object requested = result.get("status");
+                status = requested instanceof Number number ? number.intValue()
+                        : result.get("ok") == Boolean.TRUE ? 200 : 400;
+                json(exchange, status, result);
+                return;
+            }
             status = 404;
             json(exchange, status, Map.of("error", "未知背包接口"));
         } catch (RuntimeException e) {
@@ -1702,7 +1757,7 @@ public final class LocalWebServer {
                 return;
             }
             if ("POST".equals(method) && ("/api/items/describe".equals(path)
-                    || "/api/items/build".equals(path))) {
+                    || "/api/items/build".equals(path) || "/api/items/raw".equals(path))) {
                 String body;
                 try {
                     body = readBody(exchange);
@@ -1712,7 +1767,8 @@ public final class LocalWebServer {
                     return;
                 }
                 Map<String, Object> result = "/api/items/describe".equals(path)
-                        ? itemService.describe(body) : itemService.build(body);
+                        ? itemService.describe(body) : "/api/items/raw".equals(path)
+                        ? itemService.raw(body) : itemService.build(body);
                 Object requested = result.get("status");
                 status = requested instanceof Number number ? number.intValue()
                         : result.get("ok") == Boolean.TRUE ? 200 : 400;
@@ -2027,7 +2083,7 @@ public final class LocalWebServer {
      */
     private static void securityHeaders(HttpExchange exchange) {
         Headers headers = exchange.getResponseHeaders();
-        headers.set("X-Frame-Options", "DENY");
+        headers.set("X-Frame-Options", "SAMEORIGIN");
         headers.set("Referrer-Policy", "no-referrer");
         headers.set("Permissions-Policy", "geolocation=(), microphone=(), camera=()");
         headers.set("Content-Security-Policy",
@@ -2035,7 +2091,7 @@ public final class LocalWebServer {
                         + "style-src 'self' 'unsafe-inline'; "
                         + "img-src 'self' data: blob:; connect-src 'self'; "
                         + "font-src 'self' data:; object-src 'none'; base-uri 'none'; "
-                        + "form-action 'self'; frame-ancestors 'none'");
+                        + "form-action 'self'; frame-ancestors 'self'");
     }
 
     private static void sendFile(HttpExchange exchange, int status, String type, String name,

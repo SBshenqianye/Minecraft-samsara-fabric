@@ -426,8 +426,9 @@ function renderDataDetail(root, uuid, data) {
   const backup = dataNode('button', 'ghost', '备份数据');
   backup.type = 'button';
   backup.addEventListener('click', () => backupData(uuid));
-  const edit = dataNode('button', 'primary', '编辑背包');
+  const edit = dataNode('button', 'ghost identity-edit-link', '编辑背包');
   edit.type = 'button';
+  edit.title = '需要更大空间时在新页面编辑该 data UUID 的背包';
   edit.addEventListener('click', () => {
     if (window.SamsaraRouter?.push) {
       document.getElementById('identity-data-dialog')?.close();
@@ -444,6 +445,19 @@ function renderDataDetail(root, uuid, data) {
     root.append(dataNode('p', 'message error', data.error || data.message || '读取失败'));
     return;
   }
+  const inline = dataNode('section', 'identity-inline-inventory');
+  const inlineHead = dataNode('div', 'identity-inline-inventory-head');
+  inlineHead.append(
+    dataNode('strong', '', '背包编辑'),
+    dataNode('span', 'muted small', '详情内直接编辑；写入前自动备份，在线时直接写入同身份玩家。'),
+  );
+  const frame = document.createElement('iframe');
+  frame.className = 'identity-inventory-frame';
+  frame.loading = 'lazy';
+  frame.title = 'data UUID 背包编辑';
+  frame.src = '/identity-inventory?source=identity&data=' + encodeURIComponent(uuid) + '&embed=1';
+  inline.append(inlineHead, frame);
+  root.append(inline);
   const chips = dataNode('div', 'status-chips');
   const values = [
     ['数据文件', data.exists ? '存在' : '不存在'],

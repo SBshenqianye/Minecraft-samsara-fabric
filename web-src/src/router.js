@@ -14,6 +14,7 @@ const IdentityPage = () => import('./pages/IdentityPage.vue');
 const ServerPage = () => import('./pages/ServerPage.vue');
 const ContainerPage = () => import('./pages/ContainerPage.vue');
 const InventoryPage = () => import('./pages/InventoryPage.vue');
+const PoolInventoryPage = () => import('./pages/PoolInventoryPage.vue');
 const TrackPage = () => import('./pages/TrackPage.vue');
 const DiffPage = () => import('./pages/DiffPage.vue');
 const ModConfigPage = () => import('./pages/ModConfigPage.vue');
@@ -78,6 +79,7 @@ export const SECTION_NAV = {
     { id: 'diff', label: 'Diff 回看', target: '/samsara/sky/diff' },
     { id: 'containers', label: '容器', target: '/samsara/sky/containers' },
     { id: 'inventory', label: '玩家背包', target: '/samsara/sky/inventory' },
+    { id: 'web-inventory', label: 'Web 背包', target: '/samsara/sky/web-inventory' },
   ],
   world: [
     { id: 'map', label: '地图', target: '/samsara/world/map' },
@@ -100,6 +102,7 @@ export const SECTION_NAV = {
   economy: [
     { id: 'overview', label: '概览', target: '/samsara/economy' },
     { id: 'fund', label: '服务器基金', target: '/samsara/economy/fund' },
+    { id: 'fund-inventory', label: '基金仓库', target: '/samsara/economy/fund-inventory' },
     { id: 'lottery', label: '死人乐透', target: '/samsara/economy/lottery' },
     { id: 'insurance', label: '保险', target: '/samsara/economy/insurance' },
   ],
@@ -152,6 +155,11 @@ const routes = [
           alias: ['samsara/economy/values'],
         },
         {
+          ...samsara('economy', 'fund-inventory', PoolInventoryPage, '基金仓库', null),
+          path: 'samsara/economy/fund-inventory',
+          props: { kind: 'fund' },
+        },
+        {
           ...samsara('economy', 'lottery', LotteryPage, '死人乐透', 'lottery',
               { subpage: 'lottery' }),
           path: 'samsara/economy/lottery',
@@ -184,6 +192,11 @@ const routes = [
           ...samsara('sky', 'inventory', InventoryPage, '玩家背包', null),
           path: 'samsara/sky/inventory',
           alias: ['inventory'],
+        },
+        {
+          ...samsara('sky', 'web-inventory', PoolInventoryPage, 'Web 背包', null),
+          path: 'samsara/sky/web-inventory',
+          props: { kind: 'web' },
         },
 
         // ---- samsara / 配置 ----
@@ -218,6 +231,7 @@ const routes = [
       ],
     },
     { path: '/containers', name: 'containers', component: ContainerPage },
+    { path: '/identity-inventory', name: 'identity-inventory', component: InventoryPage },
     { path: '/user', name: 'user', component: UserPage },
   { path: '/:pathMatch(.*)*', redirect: '/samsara/economy' },
 ];

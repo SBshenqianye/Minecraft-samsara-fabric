@@ -93,6 +93,27 @@ public final class ItemWebService {
         });
     }
 
+    /** 直接解析完整物品 SNBT，供“原始 NBT”编辑。 */
+    public Map<String, Object> raw(String body) {
+        Map<String, Object> request = parse(body);
+        if (request == null) return error(400, "请求体应为 JSON 对象");
+        return onServer(() -> {
+            RegistryAccess registries = registries();
+            if (registries == null) return error(503, "服务器未启动");
+            ItemStack stack = ItemStackModel.parseSnbt(str(request.get("snbt")), registries);
+            if (stack.isEmpty()) return error(400, "SNBT 无法解析为物品");
+            int count = intOr(request.get("count"), stack.getCount());
+            if (count < 1) count = 1;
+            stack.setCount(Math.min(count, Math.max(1, stack.getMaxStackSize())));
+            String encoded = LotteryItemCodec.encode(stack, registries);
+            if (encoded.isBlank()) return error(500, "物品编码失败");
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("ok", true);
+            out.put("item", ItemStackModel.describe(stack, registries, encoded));
+            return out;
+        });
+    }
+
     private ItemStack baseStack(Map<String, Object> request, RegistryAccess registries) {
         String encoded = str(request.get("encoded"));
         if (!encoded.isBlank()) {

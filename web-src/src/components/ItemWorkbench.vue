@@ -7,7 +7,24 @@
         <span class="muted small">{{ modeHint }}</span>
       </div>
       <div class="spacer"></div>
+      <span class="workbench-hover-hint">悬停槽位查看完整 tooltip；点槽位右上角 ✎ 可直接编辑组件，不会拿起物品。</span>
       <span v-if="busy" class="muted small">处理中…</span>
+      <button
+        v-if="webDeposit"
+        class="ghost tiny"
+        type="button"
+        :disabled="busy || !selectedItem"
+        title="把当前选中的物品存入 Web 幽灵背包"
+        @click="depositToWeb"
+      >存入 Web 背包</button>
+      <button
+        v-if="webWithdraw"
+        class="ghost tiny"
+        type="button"
+        :disabled="busy"
+        title="从 Web 幽灵背包取出一件物品放到光标"
+        @click="openWebPicker"
+      >从 Web 背包取回</button>
       <span v-if="cursor" class="cursor-chip">
         光标：<ItemIcon :item="cursor" size="sm" :show-count="false" />
         <span>{{ cursor.name }} ×{{ cursor.count }}</span>
@@ -15,7 +32,41 @@
       </span>
     </div>
 
+    <Teleport to="body">
+      <div
+        v-if="cursor"
+        class="workbench-floating-cursor"
+        :style="{ left: pointerX + 'px', top: pointerY + 'px' }"
+      >
+        <ItemIcon :item="cursor" size="lg" :show-count="true" />
+      </div>
+    </Teleport>
+
     <p v-if="workbenchError" class="container-message error">{{ workbenchError }}</p>
+    <p v-if="workbenchMessage" class="container-message ok">{{ workbenchMessage }}</p>
+
+    <div v-if="webPickerOpen" class="workbench-web-picker">
+      <div class="workbench-web-picker-head">
+        <strong>Web 背包</strong>
+        <span class="muted small">{{ webItems.length }} 件</span>
+        <span class="spacer"></span>
+        <button class="ghost tiny" type="button" @click="webPickerOpen = false">关闭</button>
+      </div>
+      <div v-if="webItems.length" class="workbench-web-list">
+        <button
+          v-for="row in webItems"
+          :key="row.slot"
+          type="button"
+          class="workbench-web-row"
+          @click="takeWebItem(row)"
+        >
+          <ItemIcon :item="row" size="sm" :show-count="true" />
+          <span class="workbench-web-name">{{ row.name }} ×{{ row.count }}</span>
+          <span class="muted small">槽位 {{ row.slot }}</span>
+        </button>
+      </div>
+      <p v-else class="muted small">Web 背包是空的。</p>
+    </div>
 
     <div class="workbench-body">
       <div class="workbench-grids">
@@ -29,6 +80,9 @@
             :columns="section.columns || 9"
             :has-cursor="!!cursor"
             @slot-click="onSectionClick(section, $event)"
+            @slot-edit="onSectionEdit(section, $event)"
+            @slot-hover="onSlotHover"
+            @slot-leave="onSlotLeave"
             @drag-start="onSectionDragStart(section, $event)"
             @drag-end="onDragEnd"
             @drop-slot="onSectionDrop(section, $event)"
@@ -40,7 +94,11 @@
       <aside class="workbench-side">
         <div class="workbench-panel">
           <h4>物品库</h4>
-          <div class="workbench-search">
+          <div class="workbench-library-tabs">
+            <button type="button" :class="{ active: !debugVisible }" @click="debugVisible = false">搜索物品</button>
+            <button type="button" :class="{ active: debugVisible }" @click="debugVisible = true">调试方块</button>
+          </div>
+          <div v-if="!debugVisible" class="workbench-search">
             <input
               v-model="searchQuery"
               type="text"
@@ -49,13 +107,28 @@
             />
             <button class="ghost tiny" type="button" :disabled="searchLoading" @click="searchItems">搜索</button>
           </div>
-          <div v-if="searchResults.length" class="library-list">
+          <div v-if="debugVisible" class="library-list">
+            <button
+              v-for="row in DEBUG_ITEMS"
+              :key="row.id"
+              type="button"
+              class="library-row"
+              @click="libraryPick(row)"
+            >
+              <span class="library-name">{{ row.name }}</span>
+              <span class="library-id">{{ row.id }}</span>
+            </button>
+          </div>
+          <div v-else-if="searchResults.length" class="library-list">
             <button
               v-for="row in searchResults"
               :key="row.id"
               type="button"
               class="library-row"
               @click="libraryPick(row)"
+              @mouseenter="showItemTooltip(row, $event)"
+              @mousemove="moveItemTooltip($event)"
+              @mouseleave="hideItemTooltip"
             >
               <span class="library-name">{{ row.zh || row.name || row.id }}</span>
               <span class="library-id">{{ row.id }}</span>
@@ -84,10 +157,11 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import ItemEditor from './ItemEditor.vue';
 import ItemIcon from './ItemIcon.vue';
 import ItemSlotGrid from './ItemSlotGrid.vue';
+import { hideItemTooltip, itemTooltip, moveItemTooltip, showItemTooltip } from './itemTooltip.js';
 
 const props = defineProps({
   slots: { type: Array, default: () => [] },
@@ -98,6 +172,8 @@ const props = defineProps({
   itemEndpoint: { type: String, default: '/api/containers/item' },
   revision: { type: Number, default: 0 },
   disabled: { type: Boolean, default: false },
+  webDeposit: { type: Boolean, default: true },
+  webWithdraw: { type: Boolean, default: true },
 });
 const emit = defineEmits(['change', 'select']);
 
@@ -111,7 +187,30 @@ const workbenchError = ref('');
 const searchQuery = ref('');
 const searchResults = ref([]);
 const searchLoading = ref(false);
+const debugVisible = ref(false);
+const pointerX = ref(12);
+const pointerY = ref(12);
+const workbenchMessage = ref('');
+const webPickerOpen = ref(false);
+const webItems = ref([]);
 let dragSource = null;
+
+const DEBUG_ITEMS = [
+  { id: 'minecraft:command_block', name: '命令方块' },
+  { id: 'minecraft:chain_command_block', name: '连锁命令方块' },
+  { id: 'minecraft:repeating_command_block', name: '循环命令方块' },
+  { id: 'minecraft:structure_block', name: '结构方块' },
+  { id: 'minecraft:jigsaw', name: '拼图方块' },
+  { id: 'minecraft:barrier', name: '屏障' },
+  { id: 'minecraft:light', name: '光源方块' },
+  { id: 'minecraft:structure_void', name: '结构空位' },
+  { id: 'minecraft:debug_stick', name: '调试棒' },
+  { id: 'minecraft:spawner', name: '刷怪笼' },
+  { id: 'minecraft:bedrock', name: '基岩' },
+  { id: 'minecraft:end_portal_frame', name: '末地传送门框架' },
+  { id: 'minecraft:command_block_minecart', name: '命令方块矿车' },
+  { id: 'minecraft:knowledge_book', name: '知识之书' },
+];
 
 const modeLabel = computed(() => {
   if (props.mode === 'live') return '实时';
@@ -229,6 +328,11 @@ function onSectionClick(section, payload) {
   return onSlotClick(Object.assign({}, payload, { index: sectionIndex(section, payload) }));
 }
 
+function onSectionEdit(section, payload) {
+  hideItemTooltip();
+  selectedIndex.value = sectionIndex(section, payload);
+}
+
 function onSectionDragStart(section, payload) {
   return onDragStart(Object.assign({}, payload, { index: sectionIndex(section, payload) }));
 }
@@ -236,6 +340,30 @@ function onSectionDragStart(section, payload) {
 function onSectionDrop(section, payload) {
   return onDrop(Object.assign({}, payload, { index: sectionIndex(section, payload) }));
 }
+
+function onSlotHover({ item, event }) {
+  if (item) showItemTooltip(item, event);
+  else hideItemTooltip();
+}
+
+function onSlotLeave() {
+  hideItemTooltip();
+}
+
+function onPointerMove(event) {
+  pointerX.value = event.clientX + 10;
+  pointerY.value = event.clientY + 10;
+  if (itemTooltip.visible) moveItemTooltip(event);
+}
+
+onMounted(() => {
+  window.addEventListener('pointermove', onPointerMove, { passive: true });
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('pointermove', onPointerMove);
+  hideItemTooltip();
+});
 
 async function onSlotClick({ index, button, shift }) {
   if (props.disabled || busy.value) return;
@@ -246,6 +374,7 @@ async function onSlotClick({ index, button, shift }) {
   }
   busy.value = true;
   workbenchError.value = '';
+  let changed = false;
   try {
     const slotItem = itemAt(index);
     if (!cursor.value) {
@@ -256,12 +385,16 @@ async function onSlotClick({ index, button, shift }) {
       if (!picked) return;
       cursor.value = picked;
       setSlot(index, take >= slotItem.count ? null : await withCount(slotItem, slotItem.count - take));
+      changed = true;
     } else if (!slotItem) {
       const place = button === 2 ? 1 : cursor.value.count;
       const placed = await withCount(cursor.value, place);
       setSlot(index, placed);
       cursor.value = place >= cursor.value.count
         ? null : await withCount(cursor.value, cursor.value.count - place);
+      selectedIndex.value = index;
+      if (!cursor.value) cursorOrigin.value = null;
+      changed = true;
     } else if (sameSignature(slotItem, cursor.value)) {
       const max = Math.min(slotItem.maxStack || 64, cursor.value.maxStack || 64);
       const space = max - slotItem.count;
@@ -270,17 +403,19 @@ async function onSlotClick({ index, button, shift }) {
       setSlot(index, await withCount(slotItem, slotItem.count + place));
       cursor.value = place >= cursor.value.count
         ? null : await withCount(cursor.value, cursor.value.count - place);
+      changed = true;
     } else if (button !== 2) {
       const previous = slotItem;
       setSlot(index, cursor.value);
       cursor.value = previous;
       cursorOrigin.value = index;
+      changed = true;
     }
   } catch (e) {
     workbenchError.value = e.message || String(e);
   } finally {
     busy.value = false;
-    commit('interact');
+    if (changed) commit('interact');
   }
 }
 
@@ -288,6 +423,7 @@ async function quickMove(index) {
   const item = itemAt(index);
   if (!item) return;
   busy.value = true;
+  let changed = false;
   try {
     let target = localItems.value.find((row) =>
       row.slot !== index && sameSignature(row, item)
@@ -297,19 +433,21 @@ async function quickMove(index) {
       const move = Math.min(space, Number(item.count));
       setSlot(target.slot, await withCount(target, Number(target.count) + move));
       setSlot(index, move >= Number(item.count) ? null : await withCount(item, Number(item.count) - move));
+      changed = true;
     } else {
       const empty = localSlots.value.findIndex((slot, i) => i !== index && !slot);
       if (empty >= 0) {
         setSlot(empty, item);
         setSlot(index, null);
         selectedIndex.value = empty;
+        changed = true;
       }
     }
   } catch (e) {
     workbenchError.value = e.message || String(e);
   } finally {
     busy.value = false;
-    commit('interact');
+    if (changed) commit('interact');
   }
 }
 
@@ -337,6 +475,7 @@ async function onDrop({ index }) {
 async function returnCursor() {
   if (!cursor.value) return;
   busy.value = true;
+  let changed = false;
   try {
     let target = cursorOrigin.value;
     if (target === null || localSlots.value[target]) {
@@ -347,12 +486,13 @@ async function returnCursor() {
       cursor.value = null;
       cursorOrigin.value = null;
       selectedIndex.value = target;
+      changed = true;
     } else {
       workbenchError.value = '没有空槽位可以放回；可先清空一个槽位。';
     }
   } finally {
     busy.value = false;
-    commit('interact');
+    if (changed) commit('interact');
   }
 }
 
@@ -414,6 +554,7 @@ function applyEditorItem(item) {
 
 function removeSelected() {
   if (selectedIndex.value === null) return;
+  if (!localSlots.value[selectedIndex.value] && !cursor.value) return;
   if (!localSlots.value[selectedIndex.value] && cursor.value
       && cursorOrigin.value === selectedIndex.value) {
     cursor.value = null;
@@ -429,7 +570,83 @@ function resetSelection() {
   cursor.value = null;
   cursorOrigin.value = null;
   workbenchError.value = '';
+  workbenchMessage.value = '';
   searchResults.value = [];
+  webPickerOpen.value = false;
+}
+
+async function depositToWeb() {
+  if (props.disabled || busy.value) return;
+  const item = selectedItem.value || cursor.value;
+  if (!item || !item.encoded) {
+    workbenchError.value = '请先选中一个有物品的槽位（或拿起物品）。';
+    workbenchMessage.value = '';
+    return;
+  }
+  busy.value = true;
+  workbenchError.value = '';
+  workbenchMessage.value = '';
+  try {
+    await api('/api/inventory/web/deposit', {
+      method: 'POST',
+      body: JSON.stringify({ encoded: item.encoded }),
+    });
+    if (cursor.value && cursorOrigin.value === selectedIndex.value) {
+      cursor.value = null;
+      cursorOrigin.value = null;
+    } else if (selectedIndex.value !== null && localSlots.value[selectedIndex.value]) {
+      setSlot(selectedIndex.value, null);
+    } else if (cursor.value) {
+      cursor.value = null;
+      cursorOrigin.value = null;
+    }
+    workbenchMessage.value = '已存入 Web 背包。';
+    commit('interact');
+  } catch (e) {
+    workbenchError.value = e.message || String(e);
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function openWebPicker() {
+  if (props.disabled || busy.value) return;
+  busy.value = true;
+  workbenchError.value = '';
+  workbenchMessage.value = '';
+  try {
+    const data = await api('/api/inventory/web', {});
+    webItems.value = Array.isArray(data.items) ? data.items : [];
+    webPickerOpen.value = true;
+  } catch (e) {
+    workbenchError.value = e.message || String(e);
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function takeWebItem(row) {
+  if (props.disabled || busy.value) return;
+  busy.value = true;
+  workbenchError.value = '';
+  workbenchMessage.value = '';
+  try {
+    const data = await api('/api/inventory/web/withdraw', {
+      method: 'POST',
+      body: JSON.stringify({ index: row.slot, count: row.count }),
+    });
+    if (!data.item) throw new Error('未返回物品');
+    cursor.value = data.item;
+    cursorOrigin.value = null;
+    selectedIndex.value = null;
+    webPickerOpen.value = false;
+    workbenchMessage.value = '已从 Web 背包取出 ' + (data.item.name || data.item.id) + '，点击槽位放下。';
+    commit('interact');
+  } catch (e) {
+    workbenchError.value = e.message || String(e);
+  } finally {
+    busy.value = false;
+  }
 }
 
 defineExpose({ resetSelection });
@@ -458,6 +675,13 @@ defineExpose({ resetSelection });
   align-items: center;
   gap: 6px;
   min-width: 0;
+}
+
+.workbench-hover-hint {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.35;
 }
 
 .mode-dot {
@@ -552,6 +776,32 @@ defineExpose({ resetSelection });
   gap: 6px;
 }
 
+.workbench-library-tabs {
+  display: flex;
+  gap: 3px;
+  margin-bottom: 7px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+}
+
+.workbench-library-tabs button {
+  flex: 1;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.workbench-library-tabs button.active {
+  background: var(--accent);
+  color: #fff;
+}
+
 .workbench-search input {
   flex: 1;
   min-width: 0;
@@ -610,6 +860,65 @@ defineExpose({ resetSelection });
 
 .workbench-editor-panel {
   min-height: 220px;
+}
+
+.workbench-floating-cursor {
+  position: fixed;
+  z-index: 99998;
+  pointer-events: none;
+  filter: drop-shadow(0 6px 8px rgba(0, 0, 0, .45));
+  transform: translate(0, 0) scale(1.08);
+  transform-origin: top left;
+}
+
+.workbench-web-picker {
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.workbench-web-picker-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 6px;
+}
+
+.workbench-web-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.workbench-web-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.workbench-web-row:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.workbench-web-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
 }
 
 .ghost.tiny {

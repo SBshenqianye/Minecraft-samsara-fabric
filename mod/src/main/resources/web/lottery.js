@@ -237,6 +237,21 @@
     const fund = model.fund || {};
     if (total) total.textContent = vp(fund.value);
     renderItemCards('lottery-fund', fund.items, '基金为空。');
+    const root = $('lottery-fund');
+    const host = root ? root.parentElement : null;
+    if (host && !document.getElementById('lottery-fund-inventory-link')) {
+      const link = make('button', 'ghost lottery-fund-inventory-link', '打开基金仓库');
+      link.id = 'lottery-fund-inventory-link';
+      link.type = 'button';
+      link.addEventListener('click', () => {
+        if (window.SamsaraRouter?.push) {
+          window.SamsaraRouter.push({ path: '/samsara/economy/fund-inventory' });
+        } else {
+          window.location.href = '/samsara/economy/fund-inventory';
+        }
+      });
+      host.insertBefore(link, root);
+    }
   }
 
   const STATUS = {

@@ -253,6 +253,10 @@ async function main() {
       await evaluate("document.getElementById('token-connect').click(); true;");
       await until("document.getElementById('token-dialog').open === false", 20000, '连接 token（重试）');
     }
+    // 后续整页导航时自动补 token，避免极少数渲染进程重载丢失 sessionStorage。
+    await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
+      source: `sessionStorage.setItem('samsara-token', ${JSON.stringify(token)});`,
+    });
     await until("document.querySelectorAll('#server-config-files > details.file-block').length >= 6", 25000, '本体配置文件');
 
     const webVersion = await evaluate(`(async () => {
@@ -1895,6 +1899,68 @@ async function main() {
         && Array.isArray(stoneDescribe.item?.enchantments)
         && Array.isArray(stoneDescribe.item?.attributes),
         JSON.stringify({ glint: stoneDescribe.item?.glint, id: stoneDescribe.item?.id }));
+
+    const rawSnbt = await fetch(base + '/api/items/raw', {
+      method: 'POST', headers: authHeaders,
+      body: JSON.stringify({ snbt: stoneDescribe.item?.snbt || '', count: 1 }),
+    }).then((response) => response.json());
+    check('原始 NBT 编辑接口可用', rawSnbt.ok === true && rawSnbt.item?.id === 'minecraft:stone',
+        JSON.stringify({ ok: rawSnbt.ok, id: rawSnbt.item?.id, error: rawSnbt.error }));
+
+    const webInv = await fetch(base + '/api/inventory/web', { headers: authHeaders })
+      .then((response) => response.json());
+    check('Web 幽灵背包可读取且固定 54 格', webInv.ok === true
+        && webInv.size === 54 && webInv.slots?.length === 54, JSON.stringify({ size: webInv.size }));
+    const webStone = await (await fetch(base + '/api/inventory/item', {
+      method: 'POST', headers: authHeaders,
+      body: JSON.stringify({ id: 'minecraft:stone', count: 2 }),
+    })).json();
+    const empty54 = Array(54).fill('');
+    const webSlots = empty54.slice();
+    webSlots[0] = webStone.encoded;
+    const webWrite = await fetch(base + '/api/inventory/web/write', {
+      method: 'POST', headers: authHeaders,
+      body: JSON.stringify({ slots: webSlots }),
+    }).then((response) => response.json());
+    check('Web 幽灵背包可写入并保留编码', webWrite.ok === true
+        && webWrite.slots?.[0] === webStone.encoded, JSON.stringify({ ok: webWrite.ok }));
+    const webDeposit = await fetch(base + '/api/inventory/web/deposit', {
+      method: 'POST', headers: authHeaders,
+      body: JSON.stringify({ encoded: webStone.encoded }),
+    }).then((response) => response.json());
+    check('Web 幽灵背包支持存入物品', webDeposit.ok === true, JSON.stringify({ ok: webDeposit.ok }));
+    const webWithdraw = await fetch(base + '/api/inventory/web/withdraw', {
+      method: 'POST', headers: authHeaders,
+      body: JSON.stringify({ index: 0, count: 1 }),
+    }).then((response) => response.json());
+    check('Web 幽灵背包支持取回物品', webWithdraw.ok === true && webWithdraw.item?.count === 1,
+        JSON.stringify({ ok: webWithdraw.ok }));
+    await fetch(base + '/api/inventory/web/write', {
+      method: 'POST', headers: authHeaders,
+      body: JSON.stringify({ slots: Array(54).fill('') }),
+    });
+
+    const fundInv = await fetch(base + '/api/lottery/fund', { headers: authHeaders })
+      .then((response) => response.json());
+    check('基金仓库可读取且固定 54 格', fundInv.ok === true
+        && fundInv.size === 54 && fundInv.slots?.length === 54, JSON.stringify({ size: fundInv.size }));
+    const fundWrite = await fetch(base + '/api/lottery/fund/write', {
+      method: 'POST', headers: authHeaders,
+      body: JSON.stringify({ slots: fundInv.slots || [] }),
+    }).then((response) => response.json());
+    check('基金仓库可写回且保持编码', fundWrite.ok === true
+        && (fundInv.slots || []).every((slot, index) => (fundWrite.slots?.[index] || '') === (slot || '')),
+        JSON.stringify({ ok: fundWrite.ok }));
+
+    const auditPage = await fetch(base + '/api/audit?offset=0&limit=5',
+        { headers: authHeaders }).then((response) => response.json());
+    const auditPage2 = await fetch(base + '/api/audit?offset=5&limit=5',
+        { headers: authHeaders }).then((response) => response.json());
+    check('Web 审计支持分页懒加载', auditPage.ok === true
+        && (auditPage.entries || []).length <= 5
+        && (auditPage2.entries || []).length <= 5
+        && (auditPage.entries?.[0]?.id || '') !== (auditPage2.entries?.[0]?.id || ''),
+        JSON.stringify({ first: auditPage.entries?.length, second: auditPage2.entries?.length }));
     const beforeWrite = containerRead.container;
     const movedSlots = beforeWrite.slots.slice();
     movedSlots[1] = movedSlots[0];
@@ -2043,15 +2109,29 @@ async function main() {
         .find((slot) => slot.querySelector('.item-icon-view'));
       const emptySlot = [...document.querySelectorAll('.slot')]
         .find((slot) => !slot.querySelector('.item-icon-view'));
-      itemSlot?.click();
-      await sleep(700);
-      const editor = !!document.querySelector('.item-editor');
-      const editorInputs = document.querySelectorAll('.item-editor input, .item-editor textarea, .item-editor select').length;
       const defaultMode = document.querySelector('.mode-switch button.active')?.textContent.trim() || '';
       const preset = [...document.querySelectorAll('.mode-switch button')]
         .find((button) => button.textContent.trim() === '预设');
       preset?.click();
       await sleep(250);
+      // 空槽点击不应该产生修改。
+      emptySlot?.click();
+      await sleep(220);
+      const saveBefore = [...document.querySelectorAll('button')]
+        .find((button) => button.textContent.trim().startsWith('保存修改'));
+      const emptyDirty = !!saveBefore && !saveBefore.disabled;
+      // 悬停 filled 槽位应出现 MC 风格 tooltip。
+      itemSlot?.dispatchEvent(new MouseEvent('mouseenter', {
+        bubbles: false, clientX: 420, clientY: 320,
+      }));
+      await sleep(150);
+      const tooltip = document.querySelector('.mc-item-tooltip');
+      const tooltipText = tooltip?.textContent || '';
+      itemSlot?.click();
+      await sleep(700);
+      const editor = !!document.querySelector('.item-editor');
+      const editorInputs = document.querySelectorAll('.item-editor input, .item-editor textarea, .item-editor select').length;
+      const floating = !!document.querySelector('.workbench-floating-cursor');
       // 预设模式下用点击拿起/放下模拟游戏内搬运：第一次点击已经拿起，这里放到空槽。
       emptySlot?.click();
       await sleep(900);
@@ -2060,6 +2140,11 @@ async function main() {
       const saveEnabled = !!save && !save.disabled;
       save?.click();
       await sleep(500);
+      const overlay = document.querySelector('.el-overlay');
+      const box = document.querySelector('.el-message-box');
+      const modalFixed = overlay ? getComputedStyle(overlay).position === 'fixed' : false;
+      const modalVisible = box ? getComputedStyle(box).display !== 'none'
+        && box.getBoundingClientRect().width > 100 : false;
       const confirm = [...document.querySelectorAll('.el-message-box__btns button')]
         .find((button) => button.textContent.trim() === '确认写入');
       confirm?.click();
@@ -2076,9 +2161,15 @@ async function main() {
         mapTiles: [...document.querySelectorAll('.map-picker .map-tile')]
           .filter((img) => img.complete && img.naturalWidth > 0).length,
         defaultMode,
+        emptyDirty,
+        tooltip: Boolean(tooltip),
+        tooltipText,
+        floating,
         editor,
         editorInputs,
         saveEnabled,
+        modalFixed,
+        modalVisible,
         message: document.querySelector('.container-message.ok')?.textContent || '',
         messages,
         modalStillOpen: !!document.querySelector('.el-message-box'),
@@ -2098,6 +2189,16 @@ async function main() {
           tiles: containerUi.mapTiles }));
     check('容器页默认使用模拟模式', containerUi.defaultMode === '模拟',
         JSON.stringify({ mode: containerUi.defaultMode }));
+    check('空槽点击不产生假修改', containerUi.emptyDirty === false,
+        JSON.stringify({ emptyDirty: containerUi.emptyDirty }));
+    check('槽位悬停显示 MC 风格 tooltip', containerUi.tooltip === true
+        && containerUi.tooltipText.includes('minecraft:'),
+        JSON.stringify({ tooltip: containerUi.tooltip, text: containerUi.tooltipText.slice(0, 120) }));
+    check('拿起物品后光标物品跟随鼠标', containerUi.floating === true,
+        JSON.stringify({ floating: containerUi.floating }));
+    check('确认弹窗为固定遮罩而不是页面底部元素', containerUi.modalFixed === true
+        && containerUi.modalVisible === true,
+        JSON.stringify({ fixed: containerUi.modalFixed, visible: containerUi.modalVisible }));
     check('容器为主格显示结构化组件编辑器', containerUi.editor === true
         && containerUi.editorInputs > 0 && containerUi.saveEnabled === true,
         JSON.stringify(containerUi));
@@ -2254,8 +2355,8 @@ async function main() {
       active: document.querySelector('.section-subnav .subnav-item.active')
         ?.textContent.trim() || '',
     }))()`);
-    check('经济业务二级 Tab 为概览/服务器基金/死人乐透/保险',
-        economyTabs.items.join('|') === '概览|服务器基金|死人乐透|保险'
+    check('经济业务二级 Tab 为概览/服务器基金/基金仓库/死人乐透/保险',
+        economyTabs.items.join('|') === '概览|服务器基金|基金仓库|死人乐透|保险'
         && economyTabs.active === '概览', JSON.stringify(economyTabs));
     const economyLayout = await evaluate(`(() => {
       const panel = document.getElementById('panel-lottery');
@@ -2286,8 +2387,8 @@ async function main() {
         .filter((node) => !node.classList.contains('ia-crumb-sep'))
         .map((node) => node.textContent.trim()),
     }))()`);
-    check('天网三级导航为轨迹/Diff/容器/玩家背包',
-        subnavSky.items.join('|') === '轨迹回看|Diff 回看|容器|玩家背包'
+    check('天网三级导航为轨迹/Diff/容器/玩家背包/Web 背包',
+        subnavSky.items.join('|') === '轨迹回看|Diff 回看|容器|玩家背包|Web 背包'
         && subnavSky.section === '天网', JSON.stringify(subnavSky));
     check('面包屑为 samsara / 天网 / 轨迹回看',
         subnavSky.crumb.join('|') === 'samsara|天网|轨迹回看', JSON.stringify(subnavSky));
@@ -2742,6 +2843,34 @@ async function main() {
         && inventoryUi.mapMarkers >= 1 && inventoryUi.mapTiles >= 1,
         JSON.stringify({ map: inventoryUi.map, markers: inventoryUi.mapMarkers,
           tiles: inventoryUi.mapTiles }));
+
+    await navigate(base + '/samsara/sky/web-inventory');
+    await until("document.querySelector('.pool-head') && document.querySelectorAll('.slot').length === 54",
+        30000, 'Web 背包页');
+    const webInventoryUi = await evaluate(`(() => ({
+      page: !!document.querySelector('[data-page="pool-inventory"]'),
+      slots: document.querySelectorAll('.slot').length,
+      mode: document.querySelector('.mode-switch button.active')?.textContent.trim() || '',
+      debugTab: [...document.querySelectorAll('.workbench-library-tabs button')]
+        .some((button) => button.textContent.includes('调试方块')),
+      section: document.querySelector('.section-tab.active')?.textContent.trim() || '',
+    }))()`);
+    check('Web 幽灵背包页可打开并显示 54 格', webInventoryUi.page === true
+        && webInventoryUi.slots === 54 && webInventoryUi.mode === '模拟'
+        && webInventoryUi.debugTab === true, JSON.stringify(webInventoryUi));
+
+    await navigate(base + '/samsara/economy/fund-inventory');
+    await until("document.querySelector('.pool-head') && document.querySelectorAll('.slot').length === 54",
+        30000, '基金仓库页');
+    const fundInventoryUi = await evaluate(`(() => ({
+      page: !!document.querySelector('[data-page="pool-inventory"]'),
+      slots: document.querySelectorAll('.slot').length,
+      mode: document.querySelector('.mode-switch button.active')?.textContent.trim() || '',
+      section: document.querySelector('.section-tab.active')?.textContent.trim() || '',
+    }))()`);
+    check('基金仓库页可打开并复用工作台', fundInventoryUi.page === true
+        && fundInventoryUi.slots === 54 && fundInventoryUi.mode === '模拟'
+        && fundInventoryUi.section === '经济业务', JSON.stringify(fundInventoryUi));
 
     // ---- 天网：轨迹回看与 Diff 回看入口 ----
     const trackApi = await fetch(base + '/api/track?days=7&limit=5', { headers: authHeaders });

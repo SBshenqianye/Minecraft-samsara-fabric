@@ -458,6 +458,56 @@ public final class LotteryService {
         return out;
     }
 
+    /** 基金仓库：固定 54 格，供 Web 复用容器工作台。 */
+    public synchronized Map<String, Object> fundInventory() {
+        List<String> slots = new ArrayList<>(fund);
+        while (slots.size() < 54) slots.add("");
+        List<Map<String, Object>> items = new ArrayList<>();
+        for (int i = 0; i < slots.size(); i++) {
+            String encoded = slots.get(i);
+            if (encoded == null || encoded.isBlank()) continue;
+            ItemStack stack = LotteryItemCodec.decode(encoded, registries);
+            if (stack.isEmpty()) continue;
+            Map<String, Object> row = new LinkedHashMap<>(
+                    com.shenqianye.samsara.item.ItemStackModel.compact(stack, encoded));
+            row.put("slot", i);
+            items.add(row);
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ok", true);
+        out.put("size", 54);
+        out.put("slots", slots);
+        out.put("items", items);
+        out.put("value", ItemValueService.getInstance()
+                .valueOf(LotteryItemCodec.decodeAll(slots, registries)));
+        return out;
+    }
+
+    /** 写回基金仓库；空白槽会被剔除，只保留实际物品。 */
+    public synchronized Map<String, Object> writeFundInventory(List<String> slots) {
+        if (slots == null || slots.size() > 54) {
+            return Map.of("ok", false, "status", 400, "error", "基金仓库最多 54 格");
+        }
+        List<String> normalized = new ArrayList<>(slots);
+        while (normalized.size() < 54) normalized.add("");
+        for (int i = 0; i < normalized.size(); i++) {
+            String encoded = normalized.get(i);
+            if (encoded == null || encoded.isBlank()) continue;
+            ItemStack stack = LotteryItemCodec.decode(encoded, registries);
+            if (stack.isEmpty()) {
+                return Map.of("ok", false, "status", 400,
+                        "error", "第 " + i + " 格物品编码无效");
+            }
+            if (stack.getCount() <= 0 || stack.getCount() > Math.max(1, stack.getMaxStackSize())) {
+                return Map.of("ok", false, "status", 400,
+                        "error", "第 " + i + " 格数量超出上限");
+            }
+        }
+        fund = normalized;
+        saveFund();
+        return fundInventory();
+    }
+
     /** 把实物列表转成 Web 通用物品模型，供基金 / 奖池共用。 */
     private List<Map<String, Object>> itemModels(List<ItemStack> items) {
         List<Map<String, Object>> list = new ArrayList<>();

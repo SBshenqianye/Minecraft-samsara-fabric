@@ -58,10 +58,12 @@ public final class WebSecurity {
                  "/vanilla/audit",
                  "/samsara", "/samsara/economy", "/samsara/economy/overview",
                  "/samsara/economy/current", "/samsara/economy/values",
-                 "/samsara/economy/fund", "/samsara/economy/insurance",
+                 "/samsara/economy/fund", "/samsara/economy/fund-inventory",
+                 "/samsara/economy/insurance",
                  "/samsara/economy/history", "/samsara/economy/lottery",
                  "/samsara/sky", "/samsara/sky/track", "/samsara/sky/diff",
                  "/samsara/sky/containers", "/samsara/sky/inventory",
+                 "/samsara/sky/web-inventory", "/identity-inventory",
                  "/samsara/config", "/samsara/config/editor", "/samsara/config/advanced",
                  "/samsara/config/claim-range", "/samsara/config/output",
                  "/samsara/config/permissions",
@@ -176,6 +178,8 @@ public final class WebSecurity {
                 || "/api/lottery".equals(path)
                 || "/api/lottery/draw".equals(path)
                 || "/api/lottery/cancel".equals(path)
+                || "/api/lottery/fund".equals(path)
+                || "/api/lottery/fund/write".equals(path)
                 || "/api/containers".equals(path)
                 || "/api/containers/read".equals(path)
                 || "/api/containers/write".equals(path)
@@ -185,9 +189,14 @@ public final class WebSecurity {
                 || "/api/inventory".equals(path)
                 || "/api/inventory/write".equals(path)
                 || "/api/inventory/item".equals(path)
+                || "/api/inventory/web".equals(path)
+                || "/api/inventory/web/write".equals(path)
+                || "/api/inventory/web/deposit".equals(path)
+                || "/api/inventory/web/withdraw".equals(path)
                 || "/api/items".equals(path)
                 || "/api/items/schema".equals(path)
                 || "/api/items/describe".equals(path)
+                || "/api/items/raw".equals(path)
                 || "/api/items/build".equals(path)
                 || "/api/track".equals(path)
                 || "/api/track/list".equals(path)

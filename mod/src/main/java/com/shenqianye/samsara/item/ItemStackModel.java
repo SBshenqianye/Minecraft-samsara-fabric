@@ -5,9 +5,15 @@ import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.NbtOps;
+import net.minecraft.nbt.Tag;
+import net.minecraft.nbt.TagParser;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
+import net.minecraft.resources.RegistryOps;
 import net.minecraft.resources.ResourceKey;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.minecraft.util.Unit;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.entity.EquipmentSlotGroup;
@@ -62,6 +68,8 @@ public final class ItemStackModel {
         out.put("signature", signature(stack));
         out.put("glint", stack.hasFoil());
         out.put("components", stack.getComponents().toString());
+        out.put("componentCount", stack.getComponents().size());
+        out.put("snbt", snbt(stack, registries));
 
         Component customName = stack.get(DataComponents.CUSTOM_NAME);
         out.put("customName", customName == null ? "" : customName.getString());
@@ -106,7 +114,45 @@ public final class ItemStackModel {
         out.put("glint", stack.hasFoil());
         Integer tint = tint(stack);
         out.put("tint", tint);
+        out.put("componentCount", stack.getComponents().size());
+        Component customName = stack.get(DataComponents.CUSTOM_NAME);
+        out.put("customName", customName == null ? "" : customName.getString());
+        ItemLore lore = stack.get(DataComponents.LORE);
+        List<String> loreLines = new ArrayList<>();
+        if (lore != null) lore.lines().forEach(line -> loreLines.add(line.getString()));
+        out.put("lore", loreLines);
+        out.put("enchantments", enchantments(stack.get(DataComponents.ENCHANTMENTS)));
+        out.put("unbreakable", stack.has(DataComponents.UNBREAKABLE));
+        out.put("damage", stack.getDamageValue());
+        out.put("maxDamage", stack.getMaxDamage());
+        out.put("rarity", stack.get(DataComponents.RARITY) == null
+                ? "" : stack.get(DataComponents.RARITY).getSerializedName());
+        out.put("attributes", attributes(stack.get(DataComponents.ATTRIBUTE_MODIFIERS)));
+        out.put("potion", potion(stack.get(DataComponents.POTION_CONTENTS)));
         return out;
+    }
+
+    /** 完整物品 SNBT（含 id/count/components），供 Web 原始 NBT 编辑。 */
+    public static String snbt(ItemStack stack, RegistryAccess registries) {
+        if (stack == null || stack.isEmpty() || registries == null) return "";
+        try {
+            RegistryOps<Tag> ops = RegistryOps.create(NbtOps.INSTANCE, registries);
+            return ItemStack.CODEC.encodeStart(ops, stack).getOrThrow().toString();
+        } catch (RuntimeException e) {
+            return "";
+        }
+    }
+
+    /** 解析 Web 提交的完整物品 SNBT。 */
+    public static ItemStack parseSnbt(String text, RegistryAccess registries) {
+        if (text == null || text.isBlank() || registries == null) return ItemStack.EMPTY;
+        try {
+            CompoundTag tag = TagParser.parseCompoundFully(text.trim());
+            RegistryOps<Tag> ops = RegistryOps.create(NbtOps.INSTANCE, registries);
+            return ItemStack.CODEC.parse(ops, tag).result().orElse(ItemStack.EMPTY);
+        } catch (CommandSyntaxException | RuntimeException e) {
+            return ItemStack.EMPTY;
+        }
     }
 
     /** 物品身份（不含数量）；用于拖拽合并时判断是不是同一种物品。 */

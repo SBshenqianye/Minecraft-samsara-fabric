@@ -210,6 +210,9 @@
   }
 
   let auditEntries = [];
+  let auditOffset = 0;
+  let auditHasMore = false;
+  let auditLoading = false;
 
   function auditMessage(text, kind) {
     const el = $('server-audit-message');
@@ -218,14 +221,26 @@
     el.className = 'message' + (kind ? ' ' + kind : '');
   }
 
-  async function loadAudit() {
+  async function loadAudit(reset = true) {
+    if (auditLoading) return;
+    auditLoading = true;
+    if (reset) {
+      auditOffset = 0;
+      auditEntries = [];
+    }
     try {
-      const data = await UI.api('/api/audit');
-      auditEntries = Array.isArray(data.entries) ? data.entries : [];
+      const data = await UI.api('/api/audit?offset=' + auditOffset + '&limit=30');
+      const page = Array.isArray(data.entries) ? data.entries : [];
+      auditEntries = auditEntries.concat(page);
+      auditOffset += page.length;
+      auditHasMore = Boolean(data.hasMore) || page.length >= 30;
       renderAudit();
-      auditMessage('共 ' + auditEntries.length + ' 条审计记录；写请求前自动快照。', 'ok');
+      auditMessage('已加载 ' + auditEntries.length + ' 条审计记录'
+        + (auditHasMore ? '；可继续加载更早记录。' : '；写请求前自动快照。'), 'ok');
     } catch (error) {
       auditMessage(error.message || '读取审计失败', 'error');
+    } finally {
+      auditLoading = false;
     }
   }
 
@@ -270,6 +285,15 @@
       }
       row.append(main, actions);
       list.append(row);
+    }
+    if (auditHasMore) {
+      const more = document.createElement('button');
+      more.type = 'button';
+      more.className = 'ghost server-audit-more';
+      more.textContent = auditLoading ? '加载中…' : '加载更早的审计记录';
+      more.disabled = auditLoading;
+      more.addEventListener('click', () => loadAudit(false));
+      list.append(more);
     }
   }
 

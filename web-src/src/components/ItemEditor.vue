@@ -156,10 +156,29 @@
       </div>
     </section>
 
-    <details class="editor-raw">
-      <summary>原始组件 / 编码</summary>
-      <pre>{{ item.components }}</pre>
-      <pre>{{ item.encoded }}</pre>
+    <details class="editor-raw" open>
+      <summary>原始 NBT / 编码（可编辑）</summary>
+      <label class="raw-field">
+        <span>完整物品 SNBT（id / count / components）</span>
+        <textarea v-model="form.rawSnbt" rows="7" spellcheck="false"></textarea>
+      </label>
+      <div class="raw-actions">
+        <button class="ghost tiny" type="button" :disabled="applying" @click="applyRawSnbt">
+          应用原始 NBT
+        </button>
+        <button class="ghost tiny" type="button" @click="form.rawSnbt = item.snbt || ''">还原 NBT</button>
+      </div>
+      <label class="raw-field">
+        <span>物品编码（Base64 NBT）</span>
+        <textarea v-model="form.rawEncoded" rows="4" spellcheck="false"></textarea>
+      </label>
+      <div class="raw-actions">
+        <button class="ghost tiny" type="button" :disabled="applying" @click="applyRawEncoded">
+          应用编码
+        </button>
+        <button class="ghost tiny" type="button" @click="form.rawEncoded = item.encoded || ''">还原编码</button>
+      </div>
+      <p class="raw-snapshot">组件快照：{{ item.components }}</p>
     </details>
   </div>
 </template>
@@ -205,6 +224,8 @@ function emptyForm() {
     storedEnchantments: [],
     potion: { id: '', customColor: '', effects: [] },
     attributes: [],
+    rawSnbt: '',
+    rawEncoded: '',
   };
 }
 
@@ -245,6 +266,8 @@ function sync(item) {
     slot: row.slot,
     modifierId: row.modifierId || '',
   }));
+  form.rawSnbt = item.snbt || '';
+  form.rawEncoded = item.encoded || '';
   dirty.value = false;
   editorError.value = '';
 }
@@ -344,6 +367,62 @@ function buildPatch() {
   return patch;
 }
 
+async function postJson(path, payload) {
+  const token = sessionStorage.getItem('samsara-token') || '';
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: {
+      Authorization: 'Bearer ' + token,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok || !body.ok) throw new Error(body.error || '应用物品失败');
+  return body;
+}
+
+function applyItem(item) {
+  lastEncoded = item.encoded;
+  dirty.value = false;
+  emit('update', item);
+  sync(item);
+}
+
+async function applyRawSnbt() {
+  if (!props.item) return;
+  applying.value = true;
+  editorError.value = '';
+  try {
+    const body = await postJson('/api/items/raw', {
+      snbt: form.rawSnbt,
+      count: props.item.count,
+    });
+    applyItem(body.item);
+  } catch (e) {
+    editorError.value = e.message || String(e);
+  } finally {
+    applying.value = false;
+  }
+}
+
+async function applyRawEncoded() {
+  if (!props.item) return;
+  applying.value = true;
+  editorError.value = '';
+  try {
+    const body = await postJson('/api/items/describe', {
+      encoded: form.rawEncoded.trim(),
+      count: props.item.count,
+    });
+    applyItem(body.item);
+  } catch (e) {
+    editorError.value = e.message || String(e);
+  } finally {
+    applying.value = false;
+  }
+}
+
 async function applyNow(force) {
   if (!props.item || !props.item.encoded) return;
   clearTimeout(timer);
@@ -351,27 +430,15 @@ async function applyNow(force) {
   applying.value = true;
   editorError.value = '';
   try {
-    const token = sessionStorage.getItem('samsara-token') || '';
-    const response = await fetch('/api/items/build', {
-      method: 'POST',
-      headers: {
-        Authorization: 'Bearer ' + token,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        encoded: props.item.encoded,
-        count: props.item.count,
-        patch: buildPatch(),
-      }),
+    const body = await postJson('/api/items/build', {
+      encoded: props.item.encoded,
+      count: props.item.count,
+      patch: buildPatch(),
     });
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok || !body.ok) throw new Error(body.error || '应用物品组件失败');
     if (Array.isArray(body.errors) && body.errors.length) {
       editorError.value = body.errors.join('；');
     }
-    lastEncoded = body.item.encoded;
-    dirty.value = false;
-    emit('update', body.item);
+    applyItem(body.item);
   } catch (e) {
     editorError.value = e.message || String(e);
   } finally {
@@ -545,6 +612,45 @@ async function applyNow(force) {
   background: var(--panel-soft);
   font-size: 11px;
   white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.raw-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.raw-field textarea {
+  width: 100%;
+  min-height: 84px;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--fg);
+  font: 11px/1.45 var(--mono, ui-monospace, monospace);
+  resize: vertical;
+}
+
+.raw-actions {
+  display: flex;
+  gap: 6px;
+  margin: 6px 0 2px;
+}
+
+.raw-snapshot {
+  margin: 8px 0 0;
+  max-height: 120px;
+  overflow: auto;
+  padding: 7px 8px;
+  border-radius: 8px;
+  background: var(--panel-soft);
+  color: var(--muted);
+  font: 10px/1.4 var(--mono, ui-monospace, monospace);
   word-break: break-all;
 }
 </style>
