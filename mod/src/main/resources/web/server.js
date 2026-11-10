@@ -516,6 +516,7 @@
 
   function renderServerNav() {
     if (state.section !== 'server') return;
+    document.querySelector('main.app-shell')?.classList.remove('no-side');
     if (state.serverPanel === 'server-backup-panel') {
       const timeline = (state.model && state.model.timeline) || { nodes: [] };
       const items = [
@@ -530,13 +531,9 @@
       return;
     }
     if (state.serverPanel === 'server-console-panel') {
-      UI.buildNav('RCON 控制台', [
-        { label: '命令输入', target: 'server-console-command' },
-        { label: '命令输出', target: 'server-console-output' },
-      ], [
-        { id: 'server-console-command', el: document.getElementById('server-console-command') },
-        { id: 'server-console-output', el: document.getElementById('server-console-output') },
-      ]);
+      // 控制台本身就是单块内容，没有可锚定的章节；不显示页内导航，内容区占满。
+      UI.clearNav?.();
+      document.querySelector('main.app-shell')?.classList.add('no-side');
       return;
     }
     if (state.serverPanel === 'server-audit-panel') {

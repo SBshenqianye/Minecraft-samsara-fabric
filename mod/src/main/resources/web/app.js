@@ -3745,6 +3745,7 @@ window.SamsaraUI = {
   pageScope: () => state.activePageContext?.scope || null,
   pageToken: () => state.pageToken,
   buildNav,
+  clearNav,
   setNavActive,
   watchNav,
   scrollToTarget,

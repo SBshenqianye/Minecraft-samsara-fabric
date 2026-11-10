@@ -73,6 +73,23 @@
   color: var(--accent);
 }
 
+/* 导航完全收回后再“冒出来”，避免把手和展开动画同时出现。 */
+@keyframes rail-handle-pop {
+  from {
+    opacity: 0;
+    transform: translateX(-8px) scale(.94);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.rail-handle {
+  animation: rail-handle-pop .18s ease both;
+  transform-origin: left center;
+}
+
 .rail-head {
   display: flex;
   align-items: center;
@@ -249,6 +266,17 @@
   grid-template-columns: minmax(0, 1fr);
 }
 
+/* RCON 等没有页内导航的页面：内容区占满，不留空的左栏。 */
+.ia-body .app-shell.no-side,
+.ia-body .app-shell.no-side.has-subnav,
+.ia-body .app-shell.no-side.no-nav {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.ia-body .app-shell.no-side .ia-side {
+  display: none;
+}
+
 /* 有三级子页导航时，即使旧页面隐藏了页内锚点导航也保留左栏。 */
 .ia-body .app-shell.has-subnav,
 .ia-body .app-shell.has-subnav.no-nav {
@@ -278,20 +306,55 @@
   overflow: visible;
 }
 
-.ia-side:has(> .side-nav[hidden]) > .section-subnav {
-  margin-top: 0;
+.ia-side:has(> .side-nav[hidden]) {
+  display: none;
+}
+
+/* 没有页内锚点时内容区占满，不保留空的左侧导航栏。 */
+.ia-body .app-shell:not(:has(.ia-side .side-nav:not([hidden]))) {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .section-subnav {
   display: flex;
-  flex-direction: column;
-  gap: 3px;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
   flex: 0 0 auto;
-  padding: 10px;
+  overflow-x: auto;
+  padding: 8px 0 9px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  scrollbar-width: thin;
+}
+
+.section-subnav .subnav-title {
+  display: none;
+}
+
+.section-subnav .subnav-item {
+  flex: 0 0 auto;
+  padding: 6px 13px;
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: 999px;
   background: var(--panel);
-  box-shadow: var(--shadow-soft);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.section-subnav .subnav-item:hover {
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--line));
+  background: var(--panel-soft);
+  color: var(--fg-soft);
+}
+
+.section-subnav .subnav-item.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .subnav-title {

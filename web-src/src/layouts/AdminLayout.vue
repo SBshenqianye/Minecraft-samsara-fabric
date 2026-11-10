@@ -132,7 +132,7 @@
     </nav>
 
     <button
-      v-show="!railPinned && !railPeek"
+      v-show="!railPinned && !railPeek && !railClosing"
       ref="railHandle"
       class="rail-handle"
       type="button"
@@ -157,22 +157,23 @@
           </button>
         </nav>
 
-        <main class="app-shell" :class="{ 'has-subnav': subnavItems.length > 0 }">
+        <nav v-if="subnavItems.length" class="section-subnav" aria-label="三级页面">
+          <div class="subnav-title">{{ sectionLabel }}</div>
+          <button
+            v-for="item in subnavItems"
+            :key="item.id"
+            class="subnav-item"
+            :class="{ active: item.id === activeSubpage }"
+            type="button"
+            :data-subnav="item.id"
+            @click="navigate(item.target)"
+          >
+            {{ item.label }}
+          </button>
+        </nav>
+
+        <main class="app-shell">
           <div class="ia-side">
-            <nav v-if="subnavItems.length" class="section-subnav" aria-label="三级页面">
-              <div class="subnav-title">{{ sectionLabel }}</div>
-              <button
-                v-for="item in subnavItems"
-                :key="item.id"
-                class="subnav-item"
-                :class="{ active: item.id === activeSubpage }"
-                type="button"
-                :data-subnav="item.id"
-                @click="navigate(item.target)"
-              >
-                {{ item.label }}
-              </button>
-            </nav>
             <aside id="global-nav" class="side-nav" aria-label="页内导航"></aside>
           </div>
           <div class="content">
@@ -250,6 +251,7 @@ const loadError = ref('');
 const mods = ref([]);
 const railPinned = ref(readRailPinned());
 const railPeek = ref(false);
+const railClosing = ref(false);
 const railEl = ref(null);
 const railHandle = ref(null);
 
@@ -366,11 +368,8 @@ let scrollbarThumbH = 0;
 let scrollbarObserver = null;
 
 function readRailPinned() {
-  try {
-    return localStorage.getItem('samsara.ia.rail') === 'pinned';
-  } catch {
-    return false;
-  }
+  // 工作区导航每次进入都默认收起；展开只用于本次悬停/点击。
+  return false;
 }
 
 function storeRailPinned() {
@@ -381,9 +380,27 @@ function storeRailPinned() {
   }
 }
 
-function toggleRail() {
-  railPinned.value = !railPinned.value;
+function collapseRail() {
+  if (!railPinned.value && !railPeek.value && !railClosing.value) return;
+  railPinned.value = false;
   railPeek.value = false;
+  storeRailPinned();
+  // 等收回动画结束再显示“工作区”把手，避免把手和导航同时出现。
+  railClosing.value = true;
+  window.clearTimeout(railCloseTimer);
+  railCloseTimer = window.setTimeout(() => {
+    railClosing.value = false;
+  }, 240);
+}
+
+function toggleRail() {
+  if (railPinned.value || railPeek.value) {
+    collapseRail();
+    return;
+  }
+  railPinned.value = true;
+  railPeek.value = false;
+  railClosing.value = false;
   storeRailPinned();
 }
 
@@ -398,7 +415,7 @@ function maybePeekRail() {
   }
   window.clearTimeout(railTimer);
   railTimer = window.setTimeout(() => { railPeek.value = true; }, 350);
-  railTimer = window.setTimeout(() => { railPeek.value = false; }, 3000);
+  railTimer = window.setTimeout(() => { collapseRail(); }, 3000);
 }
 
 function navigate(path) {
@@ -660,7 +677,7 @@ let measureTimer = 0;
 let navAlignTimer = 0;
 
 function onGlobalPointerMove(event) {
-  if (!railPeek.value || railPinned.value) return;
+  if (!railPeek.value && !railPinned.value) return;
   if (railEl.value?.contains(event.target) || railHandle.value?.contains(event.target)) {
     window.clearTimeout(railCloseTimer);
     return;
@@ -668,26 +685,27 @@ function onGlobalPointerMove(event) {
   // 把手与侧栏之间可能只隔几个像素；延迟一点收回，避免鼠标移动途中闪退。
   window.clearTimeout(railCloseTimer);
   railCloseTimer = window.setTimeout(() => {
-    if (railPeek.value && !railPinned.value
+    if ((railPeek.value || railPinned.value)
         && !railEl.value?.matches(':hover') && !railHandle.value?.matches(':hover')) {
-      railPeek.value = false;
+      collapseRail();
     }
   }, 220);
 }
 
 function onRailEnter() {
   window.clearTimeout(railCloseTimer);
+  railClosing.value = false;
   if (!railPinned.value) railPeek.value = true;
 }
 
 function onRailLeave() {
   window.clearTimeout(railCloseTimer);
-  railPeek.value = false;
+  collapseRail();
 }
 
 function onWindowBlur() {
   window.clearTimeout(railCloseTimer);
-  railPeek.value = false;
+  collapseRail();
 }
 
 function scheduleMeasure() {
