@@ -96,20 +96,23 @@ let liveTimer = null;
 
 const title = computed(() => props.kind === 'fund' ? '基金仓库' : 'Web 背包');
 const description = computed(() => props.kind === 'fund'
-  ? '服务器基金的实物仓库，和容器/玩家背包共用同一套槽位、组件编辑与写入模式。'
-  : '幽灵管理员的 54 格 Web 仓库；可从物品库创造物品、编辑组件，并与容器/玩家共用操作逻辑。');
+  ? '服务器基金的实物仓库，和容器/玩家背包共用同一套槽位、组件编辑与写入模式；支持垃圾桶。'
+  : '幽灵管理员的 54 格 Web 仓库：装备栏、副手、主背包、快捷栏与仓库，共用容器工作台、调试方块页签和垃圾桶。');
 const readEndpoint = computed(() => props.kind === 'fund'
   ? '/api/lottery/fund' : '/api/inventory/web');
 const writeEndpoint = computed(() => props.kind === 'fund'
   ? '/api/lottery/fund/write' : '/api/inventory/web/write');
 const nonEmpty = computed(() => (slots.value || []).filter((value) => value).length);
 
-const layout = computed(() => [{
-  label: '仓库 0–53',
-  start: 0,
-  size: 54,
-  columns: 9,
-}]);
+const layout = computed(() => props.kind === 'web'
+  ? [
+      { label: '装备 0–3', start: 0, size: 4, columns: 4 },
+      { label: '副手 4', start: 4, size: 1, columns: 1 },
+      { label: '主背包 5–31', start: 5, size: 27, columns: 9 },
+      { label: '快捷栏 32–40', start: 32, size: 9, columns: 9 },
+      { label: '仓库 41–53', start: 41, size: 13, columns: 9 },
+    ]
+  : [{ label: '基金仓库 0–53', start: 0, size: 54, columns: 9 }]);
 
 const modeOptions = [
   { id: 'live', label: '实时', hint: '每次操作立即写入仓库。' },

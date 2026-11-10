@@ -25,6 +25,15 @@
         title="从 Web 幽灵背包取出一件物品放到光标"
         @click="openWebPicker"
       >从 Web 背包取回</button>
+      <button
+        class="workbench-trash"
+        :class="{ armed: !!cursor }"
+        type="button"
+        title="垃圾桶：拿起物品后点这里删除（或把物品拖进来）"
+        @click="trashCursor"
+        @dragover.prevent
+        @drop.prevent="trashDrop"
+      >🗑 垃圾桶</button>
       <span v-if="cursor" class="cursor-chip">
         光标：<ItemIcon :item="cursor" size="sm" :show-count="false" />
         <span>{{ cursor.name }} ×{{ cursor.count }}</span>
@@ -463,6 +472,27 @@ function onDragEnd() {
   dragSource = null;
 }
 
+function trashCursor() {
+  if (!cursor.value) {
+    workbenchError.value = '';
+    workbenchMessage.value = '垃圾桶：先拿起物品再点这里，或把物品拖进来。';
+    return;
+  }
+  cursor.value = null;
+  cursorOrigin.value = null;
+  workbenchMessage.value = '已丢进垃圾桶。';
+  commit('interact');
+}
+
+function trashDrop() {
+  if (dragSource === null) return;
+  const source = dragSource;
+  dragSource = null;
+  setSlot(source, null);
+  workbenchMessage.value = '已丢进垃圾桶。';
+  commit('interact');
+}
+
 async function onDrop({ index }) {
   if (props.disabled || busy.value || dragSource === null || dragSource === index) return;
   if (cursor.value) return;
@@ -682,6 +712,22 @@ defineExpose({ resetSelection });
   color: var(--muted);
   font-size: 10px;
   line-height: 1.35;
+}
+
+.workbench-trash {
+  padding: 3px 8px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.workbench-trash.armed {
+  border-color: #d9534f;
+  background: rgba(217, 83, 79, .12);
+  color: #ff8a85;
 }
 
 .mode-dot {
