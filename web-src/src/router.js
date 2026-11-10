@@ -97,7 +97,12 @@ export const SECTION_NAV = {
   system: [
     { id: 'audit', label: 'Web 审计', target: '/samsara/system/audit' },
   ],
-  economy: [],
+  economy: [
+    { id: 'overview', label: '概览', target: '/samsara/economy' },
+    { id: 'fund', label: '服务器基金', target: '/samsara/economy/fund' },
+    { id: 'lottery', label: '死人乐透', target: '/samsara/economy/lottery' },
+    { id: 'insurance', label: '保险', target: '/samsara/economy/insurance' },
+  ],
 };
 
 const routes = [
@@ -135,15 +140,27 @@ const routes = [
 
         // ---- samsara / 经济业务 ----
         {
-          ...samsara('economy', 'lottery', LotteryPage, '经济业务', 'lottery'),
+          ...samsara('economy', 'lottery', LotteryPage, '概览', 'lottery',
+              { subpage: 'overview' }),
           path: 'samsara/economy',
-          alias: ['lottery'],
+          alias: ['lottery', 'samsara/economy/overview'],
         },
         {
-          ...samsara('economy', 'lottery', LotteryPage, '当前轮次', 'lottery'),
-          path: 'samsara/economy/current',
-          alias: ['samsara/economy/overview', 'samsara/economy/values',
-            'samsara/economy/fund', 'samsara/economy/insurance', 'samsara/economy/history'],
+          ...samsara('economy', 'lottery', LotteryPage, '服务器基金', 'lottery',
+              { subpage: 'fund' }),
+          path: 'samsara/economy/fund',
+          alias: ['samsara/economy/values'],
+        },
+        {
+          ...samsara('economy', 'lottery', LotteryPage, '死人乐透', 'lottery',
+              { subpage: 'lottery' }),
+          path: 'samsara/economy/lottery',
+          alias: ['samsara/economy/current', 'samsara/economy/history'],
+        },
+        {
+          ...samsara('economy', 'lottery', LotteryPage, '保险', 'lottery',
+              { subpage: 'insurance' }),
+          path: 'samsara/economy/insurance',
         },
 
         // ---- samsara / 天网 ----

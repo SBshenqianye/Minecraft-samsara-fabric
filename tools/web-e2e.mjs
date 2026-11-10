@@ -956,9 +956,12 @@ async function main() {
         && lotteryPools.userGold, JSON.stringify({
           seed: lotteryPools.seed, gold: lotteryPools.gold, userGold: lotteryPools.userGold }));
 
+    await navigate(base + '/samsara/economy/lottery');
+    await until("location.pathname === '/samsara/economy/lottery'"
+        + " && document.querySelector('.section-subnav [data-subnav=\"lottery\"]')",
+        20000, '经济业务死人乐透页');
     const lotteryNav = await evaluate(`(async () => {
-      window.SamsaraUI.setActiveTab('lottery');
-      await new Promise((resolve) => setTimeout(resolve, 900));
+      await new Promise((resolve) => setTimeout(resolve, 700));
       const items = [...document.querySelectorAll('#global-nav .nav-item')]
         .map((node) => node.textContent.trim());
       return {
@@ -967,11 +970,21 @@ async function main() {
         saveHidden: document.getElementById('save')?.hidden,
       };
     })()`);
-    check('经济业务使用通用左侧导航', lotteryNav.title.includes('经济业务')
-        && lotteryNav.items.length >= 7 && lotteryNav.items.includes('当前轮次')
-        && lotteryNav.items.includes('物品价值表') && lotteryNav.items.includes('待领取')
+    check('经济业务死人乐透页使用通用左侧导航', lotteryNav.title.includes('经济业务')
+        && lotteryNav.items.length >= 3 && lotteryNav.items.includes('当前轮次')
+        && lotteryNav.items.includes('待领取') && lotteryNav.items.includes('历史开奖')
+        && !lotteryNav.items.includes('物品价值表')
         && lotteryNav.saveHidden === true,
         JSON.stringify(lotteryNav));
+    await evaluate("document.querySelector('.section-subnav [data-subnav=\"fund\"]').click(); true;");
+    await until("location.pathname === '/samsara/economy/fund'", 15000, '经济业务服务器基金页');
+    const fundNav = await evaluate(`(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 700));
+      return [...document.querySelectorAll('#global-nav .nav-item')]
+        .map((node) => node.textContent.trim());
+    })()`);
+    check('经济业务服务器基金页包含物品价值表', fundNav.includes('服务器基金')
+        && fundNav.includes('物品价值表'), JSON.stringify(fundNav));
 
     // ---- 权限分段控件：保存 deny → 回显 → 恢复原等级 ----
     const permLevels = await evaluate(`(async () => {
@@ -2138,10 +2151,19 @@ async function main() {
         iaSamsara.sections.join('|') === '经济业务|天网|配置|世界|社区|系统',
         JSON.stringify(iaSamsara.sections));
     check('samsara 工作区直接路由可用', iaSamsara.path === '/samsara/economy'
-        && iaSamsara.crumb === '经济业务', JSON.stringify(iaSamsara));
+        && iaSamsara.crumb === '概览', JSON.stringify(iaSamsara));
 
     await until("document.getElementById('panel-lottery')"
         + " && !document.getElementById('panel-lottery').hidden", 20000, '经济业务面板');
+    const economyTabs = await evaluate(`(() => ({
+      items: [...document.querySelectorAll('.section-subnav .subnav-item')]
+        .map((node) => node.textContent.trim()),
+      active: document.querySelector('.section-subnav .subnav-item.active')
+        ?.textContent.trim() || '',
+    }))()`);
+    check('经济业务二级 Tab 为概览/服务器基金/死人乐透/保险',
+        economyTabs.items.join('|') === '概览|服务器基金|死人乐透|保险'
+        && economyTabs.active === '概览', JSON.stringify(economyTabs));
     const economyLayout = await evaluate(`(() => {
       const panel = document.getElementById('panel-lottery');
       const head = panel?.querySelector('#lottery-overview .panel-head');
@@ -2233,7 +2255,7 @@ async function main() {
     check('工作区导航默认收起且可手动固定', railState.collapsed === true
         && railState.hasToggle === true, JSON.stringify(railState));
 
-    await navigate(base + '/samsara/economy');
+    await navigate(base + '/samsara/economy/lottery');
     await until("document.querySelector('.section-tab[data-section=\"sky\"]')", 20000,
         '回到经济业务以测量吸附');
 

@@ -150,7 +150,9 @@ public final class ContainerWebService {
             Map<String, Object> out = new LinkedHashMap<>();
             out.put("ok", true);
             out.put("encoded", result);
-            out.put("id", String.valueOf(BuiltInRegistries.ITEM.getKey(stack.getItem())));
+            String itemId = String.valueOf(BuiltInRegistries.ITEM.getKey(stack.getItem()));
+            out.put("id", itemId);
+            out.put("icon", itemId.contains(":") ? itemId.substring(itemId.indexOf(':') + 1) : itemId);
             out.put("name", stack.getHoverName().getString());
             out.put("count", stack.getCount());
             out.put("components", stack.getComponents().toString());

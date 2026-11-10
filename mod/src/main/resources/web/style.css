@@ -1809,3 +1809,34 @@ img.glint { filter: drop-shadow(0 0 3px #b26cff) saturate(1.2); }
       "history";
   }
 }
+
+/* 经济业务二级 Tab：每个 Tab 只排列自己可见的面板。 */
+#panel-lottery.lottery-tab-overview {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "overview";
+}
+
+#panel-lottery.lottery-tab-fund {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "overview" "fund" "values";
+}
+
+#panel-lottery.lottery-tab-lottery {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "overview" "round" "claims" "history";
+}
+
+#panel-lottery.lottery-tab-insurance {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "overview" "insurance";
+}
+
+@media (min-width: 1201px) {
+  #panel-lottery.lottery-tab-lottery {
+    grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
+    grid-template-areas:
+      "overview overview"
+      "round claims"
+      "history history";
+  }
+}

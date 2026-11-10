@@ -55,7 +55,10 @@ function itemAt(index) {
 }
 
 function iconUrl(item) {
-  return props.iconBase + (item.icon || 'stone') + '.png';
+  const explicit = String(item.icon || '').trim();
+  const raw = explicit || String(item.id || '');
+  const name = raw.includes(':') ? raw.slice(raw.indexOf(':') + 1) : raw;
+  return props.iconBase + (name || 'stone') + '.png';
 }
 
 function fail(index) {

@@ -381,6 +381,7 @@ function storeRailPinned() {
 }
 
 function collapseRail() {
+  window.clearTimeout(railTimer);
   if (!railPinned.value && !railPeek.value && !railClosing.value) return;
   railPinned.value = false;
   railPeek.value = false;
@@ -665,7 +666,8 @@ watch(() => route.path, async () => {
     await nextTick();
     await waitForCurrentPanel();
     await applyRoute();
-    measureChrome();
+    // 切页不重置工作区导航；只有鼠标离开/窗口缩放才收回。
+    measureChrome(false);
     animateContent();
     nextTick(updatePageScrollbar);
   } catch (error) {
@@ -694,6 +696,7 @@ function onGlobalPointerMove(event) {
 
 function onRailEnter() {
   window.clearTimeout(railCloseTimer);
+  window.clearTimeout(railTimer);
   railClosing.value = false;
   if (!railPinned.value) railPeek.value = true;
 }
@@ -726,7 +729,7 @@ function measureChrome(resetRail = true) {
   root.style.setProperty('--ia-section-h', sectionH + 'px');
   // 浏览器窗口拖动/缩放时，收起状态可能停在“悬停展开”：
   // 统一在尺寸变化后收回，避免变成无法收回的浮层。
-  if (resetRail) railPeek.value = false;
+  if (resetRail) collapseRail();
   alignSideNav(headerH, sectionH);
 }
 
@@ -890,7 +893,8 @@ function showHero(mode, title, hint) {
 
 async function applyRoute(force = false) {
   if (!window.SamsaraUI) return;
-  const key = [workspace.value, page.value, route.meta.serverPanel || ''].join(':');
+  const key = [workspace.value, page.value, route.meta.serverPanel || '',
+    route.meta.subpage || ''].join(':');
   if (force || key !== lastApplied) {
     lastApplied = key;
     if (workspace.value === 'vanilla' || page.value === 'server') {
@@ -915,6 +919,9 @@ async function applyRoute(force = false) {
       if (route.meta.panel) {
         guarded(() => applyLegacyPanel(route.meta.panel));
         showHero('legacy');
+        if (route.meta.panel === 'lottery') {
+          window.samsaraLottery?.setTab?.(String(route.meta.subpage || 'overview'));
+        }
       } else {
         hideLegacyChrome();
         showHero('page', String(route.meta.title || ''),

@@ -7,6 +7,20 @@
   const KEY = 'samsara-token';
   let token = sessionStorage.getItem(KEY) || '';
   let valueTable = null;
+  let currentTab = 'overview';
+
+  const LOTTERY_PANELS = [
+    'lottery-overview', 'lottery-round-panel', 'lottery-values-panel',
+    'lottery-fund-panel', 'lottery-claims-panel', 'lottery-insurance-panel',
+    'lottery-history-panel',
+  ];
+  const LOTTERY_TABS = {
+    overview: ['lottery-overview'],
+    fund: ['lottery-overview', 'lottery-fund-panel', 'lottery-values-panel'],
+    lottery: ['lottery-overview', 'lottery-round-panel', 'lottery-claims-panel',
+      'lottery-history-panel'],
+    insurance: ['lottery-overview', 'lottery-insurance-panel'],
+  };
 
   function headers() {
     return token ? { Authorization: 'Bearer ' + token } : {};
@@ -395,8 +409,8 @@
     const sections = [
       ['lottery-overview', '概览'],
       ['lottery-round-panel', '当前轮次'],
-      ['lottery-values-panel', '物品价值表'],
       ['lottery-fund-panel', '服务器基金'],
+      ['lottery-values-panel', '物品价值表'],
       ['lottery-claims-panel', '待领取'],
       ['lottery-insurance-panel', '保险'],
       ['lottery-history-panel', '历史开奖'],
@@ -405,22 +419,41 @@
     const targets = [];
     for (const [id, label] of sections) {
       const element = $(id);
-      if (!element) continue;
+      if (!element || element.hidden) continue;
       items.push({ label, target: id });
       targets.push({ id, el: element });
     }
     UI.buildNav('经济业务', items, targets);
   }
 
+  function setTab(tab) {
+    currentTab = LOTTERY_TABS[tab] ? tab : 'overview';
+    const visible = new Set(LOTTERY_TABS[currentTab]);
+    for (const id of LOTTERY_PANELS) {
+      const element = $(id);
+      if (element) element.hidden = !visible.has(id);
+    }
+    const stack = $('panel-lottery');
+    if (stack) {
+      for (const name of Object.keys(LOTTERY_TABS)) {
+        stack.classList.toggle('lottery-tab-' + name, name === currentTab);
+      }
+    }
+    buildNav();
+    // 首次激活时面板可能还没完成布局，下一帧再建一次导航。
+    requestAnimationFrame(buildNav);
+  }
+
   // 供管理端“业务信息 → 经济业务”标签直接调用，不通过 iframe 嵌套。
   window.samsaraLottery = {
     activate: () => {
-      buildNav();
+      setTab(currentTab);
       load();
       if (valueTable) valueTable.ensure();
     },
     load,
     buildNav,
+    setTab,
   };
 
   if (document.readyState === 'loading') {

@@ -1,37 +1,57 @@
 <template>
-  <div class="user-page">
-    <header class="app-header user-header user-topbar">
-      <div class="brand user-brand">
-        <div class="brand-mark" aria-hidden="true">
-          <span></span><span></span><span></span>
+  <div class="user-page admin-layout ia-layout user-public">
+    <header class="app-header ia-header user-topbar user-header">
+      <div class="ia-header-main">
+        <div class="brand ia-brand user-brand">
+          <div class="brand-mark" aria-hidden="true">
+            <span></span><span></span><span></span>
+          </div>
+          <div class="brand-text">
+            <h1>samsara</h1>
+            <p>服务器公开信息 <span class="version-pill">只读</span></p>
+          </div>
         </div>
-        <div class="brand-text">
-          <h1>samsara</h1>
-          <p>服务器公开信息</p>
+        <div class="user-top-actions">
+          <el-tag size="small" effect="plain" type="success">公开只读</el-tag>
+          <a class="user-view-link" href="/" title="进入管理端，需要 token">管理端</a>
         </div>
       </div>
-      <div class="user-top-actions">
-        <el-tag size="small" effect="plain" type="success">公开只读</el-tag>
-        <a class="user-view-link" href="/" title="进入管理端（需要 token）">管理端</a>
-      </div>
+
+      <section class="page-hero" aria-label="公开信息横幅">
+        <div class="page-hero-art" aria-hidden="true"></div>
+        <div class="page-hero-context">
+          <div class="ia-crumbs" aria-label="面包屑">
+            <span>samsara</span>
+            <span class="ia-crumb-sep">/</span>
+            <span class="ia-crumb-title">公开信息</span>
+          </div>
+          <span class="page-hero-tag">PUBLIC</span>
+        </div>
+        <div class="page-hero-main">
+          <div class="page-hero-text">
+            <h1 class="page-hero-title">服务器公开信息</h1>
+            <p class="page-hero-hint">只读视图，不需要 token；数据由服务端公开白名单生成，不包含 UUID、路径、配置与写操作。</p>
+          </div>
+        </div>
+      </section>
     </header>
 
-    <div class="user-layout">
-      <aside class="user-nav" aria-label="公开信息导航">
-        <div class="user-nav-title">公开信息</div>
-        <a
-          v-for="item in sections"
-          :key="item.id"
-          class="user-nav-item"
-          :class="{ active: activeSection === item.id }"
-          :href="'#' + item.id"
-          @click.prevent="scrollTo(item.id)"
-        >
-          {{ item.label }}
-        </a>
-      </aside>
-
-      <main ref="host" class="user-content"></main>
+    <div class="ia-body">
+      <div class="ia-main">
+        <nav class="section-tabs user-nav" aria-label="公开信息导航">
+          <button
+            v-for="item in sections"
+            :key="item.id"
+            class="section-tab user-nav-item"
+            :class="{ active: activeSection === item.id }"
+            type="button"
+            @click="scrollTo(item.id)"
+          >
+            {{ item.label }}
+          </button>
+        </nav>
+        <main ref="host" class="content user-content"></main>
+      </div>
     </div>
 
     <button v-if="showTop" class="user-top-button" type="button" @click="scrollTop">
@@ -41,7 +61,7 @@
 </template>
 
 <script setup>
-import { onMounted, onUnmounted, ref } from 'vue';
+import { nextTick, onMounted, onUnmounted, ref } from 'vue';
 import { mountLegacyUser } from '../legacy/user.js';
 
 const host = ref(null);
@@ -68,12 +88,26 @@ onMounted(async () => {
     host.value?.appendChild(box);
   }
   window.addEventListener('scroll', onScroll, { passive: true });
+  window.addEventListener('resize', measure, { passive: true });
+  await nextTick();
+  measure();
   updateActive();
 });
 
 onUnmounted(() => {
   window.removeEventListener('scroll', onScroll);
+  window.removeEventListener('resize', measure);
 });
+
+function measure() {
+  const header = document.querySelector('.user-topbar');
+  const tabs = document.querySelector('.user-nav');
+  const root = document.documentElement;
+  root.style.setProperty('--header-h',
+      Math.round(header?.getBoundingClientRect().height || 0) + 'px');
+  root.style.setProperty('--ia-section-h',
+      Math.round(tabs?.getBoundingClientRect().height || 0) + 'px');
+}
 
 function onScroll() {
   if (ticking) return;
@@ -85,7 +119,10 @@ function onScroll() {
 }
 
 function updateActive() {
-  const y = window.scrollY + 180;
+  const root = getComputedStyle(document.documentElement);
+  const offset = (parseInt(root.getPropertyValue('--header-h'), 10) || 0)
+    + (parseInt(root.getPropertyValue('--ia-section-h'), 10) || 0) + 24;
+  const y = window.scrollY + offset;
   let current = sections[0].id;
   for (const item of sections) {
     const node = document.getElementById(item.id);
@@ -98,7 +135,10 @@ function updateActive() {
 function scrollTo(id) {
   const node = document.getElementById(id);
   if (!node) return;
-  const top = node.getBoundingClientRect().top + window.scrollY - 86;
+  const root = getComputedStyle(document.documentElement);
+  const offset = (parseInt(root.getPropertyValue('--header-h'), 10) || 0)
+    + (parseInt(root.getPropertyValue('--ia-section-h'), 10) || 0) + 12;
+  const top = node.getBoundingClientRect().top + window.scrollY - offset;
   window.scrollTo({ top, behavior: 'smooth' });
   activeSection.value = id;
 }
@@ -110,25 +150,12 @@ function scrollTop() {
 
 <style scoped>
 .user-page {
-  width: min(1440px, 100%);
-  margin: 0 auto;
-  padding: 0 20px 72px;
+  width: 100%;
+  padding-bottom: 72px;
 }
 
-.user-topbar {
-  position: sticky;
-  top: 0;
-  z-index: 30;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  min-height: 74px;
-  margin-bottom: 20px;
-  padding: 10px 0;
-  background: color-mix(in srgb, var(--bg) 90%, transparent);
-  border-bottom: 1px solid var(--line);
-  backdrop-filter: blur(16px);
+.user-public .ia-main {
+  margin-left: 0;
 }
 
 .user-brand {
@@ -146,54 +173,8 @@ function scrollTop() {
   flex: 0 0 auto;
 }
 
-.user-layout {
-  display: grid;
-  grid-template-columns: 190px minmax(0, 1fr);
-  gap: 20px;
-  align-items: start;
-}
-
 .user-nav {
-  position: sticky;
-  top: 92px;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 10px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--panel);
-  box-shadow: var(--shadow-soft);
-}
-
-.user-nav-title {
-  padding: 4px 8px 7px;
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: .12em;
-  text-transform: uppercase;
-}
-
-.user-nav-item {
-  padding: 7px 9px;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  color: var(--fg-soft);
-  font-size: 13px;
-  text-decoration: none;
-}
-
-.user-nav-item:hover {
-  background: var(--panel-soft);
-  border-color: var(--line);
-}
-
-.user-nav-item.active {
-  background: var(--accent-soft);
-  border-color: color-mix(in srgb, var(--accent) 28%, var(--line));
-  color: var(--accent);
-  font-weight: 600;
+  flex-wrap: nowrap;
 }
 
 .user-content {
@@ -201,10 +182,11 @@ function scrollTop() {
   display: flex;
   flex-direction: column;
   gap: 18px;
+  padding-top: 12px;
 }
 
 .user-content :deep(section[id^="user-section-"]) {
-  scroll-margin-top: 96px;
+  scroll-margin-top: 180px;
 }
 
 .user-top-button {
@@ -228,36 +210,11 @@ function scrollTop() {
 
 @media (max-width: 900px) {
   .user-page {
-    padding: 0 12px 64px;
+    padding-bottom: 60px;
   }
 
-  .user-topbar {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 8px;
-    padding: 10px 0;
-  }
-
-  .user-layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .user-nav {
-    position: static;
-    display: flex;
-    flex-direction: row;
-    gap: 6px;
-    overflow-x: auto;
-    padding: 8px;
-  }
-
-  .user-nav-title {
-    display: none;
-  }
-
-  .user-nav-item {
-    flex: 0 0 auto;
-    white-space: nowrap;
+  .user-content {
+    padding-top: 8px;
   }
 }
 </style>
