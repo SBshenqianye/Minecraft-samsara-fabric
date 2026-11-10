@@ -160,7 +160,7 @@ function rebuildTiles() {
     for (let rz = minRz; rz <= maxRz; rz++) {
       out.push({
         key: rx + ',' + rz + ',' + scale.value,
-        src: '/api/map/tile?stack=' + encodeURIComponent(stackId.value)
+        src: '/api/user/map/tile?stack=' + encodeURIComponent(stackId.value)
           + '&dim=' + encodeURIComponent(props.dimension)
           + '&rx=' + rx + '&rz=' + rz + '&scale=' + scale.value + '&shade=1',
         left: (rx * 512 - left) * ppb,

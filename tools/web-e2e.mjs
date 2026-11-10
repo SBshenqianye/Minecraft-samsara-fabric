@@ -2073,6 +2073,8 @@ async function main() {
         hasGlint: !!document.querySelector('.slot .item-icon-view.has-glint'),
         map: !!document.querySelector('.map-picker'),
         mapMarkers: document.querySelectorAll('.map-marker').length,
+        mapTiles: [...document.querySelectorAll('.map-picker .map-tile')]
+          .filter((img) => img.complete && img.naturalWidth > 0).length,
         defaultMode,
         editor,
         editorInputs,
@@ -2091,8 +2093,9 @@ async function main() {
         && containerUi.hasItem === true && containerUi.hasGlint === false,
         JSON.stringify(containerUi));
     check('容器页地图选择箱子并显示标记', containerUi.map === true
-        && containerUi.mapMarkers >= 1, JSON.stringify({ map: containerUi.map,
-          markers: containerUi.mapMarkers }));
+        && containerUi.mapMarkers >= 1 && containerUi.mapTiles >= 1,
+        JSON.stringify({ map: containerUi.map, markers: containerUi.mapMarkers,
+          tiles: containerUi.mapTiles }));
     check('容器页默认使用模拟模式', containerUi.defaultMode === '模拟',
         JSON.stringify({ mode: containerUi.defaultMode }));
     check('容器为主格显示结构化组件编辑器', containerUi.editor === true
@@ -2715,7 +2718,9 @@ async function main() {
     }
     await until("document.querySelectorAll('.inventory-main .slot').length === 41",
         20000, '玩家背包槽位');
-    const inventoryUi = await evaluate(`(() => ({
+    const inventoryUi = await evaluate(`(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 900));
+      return ({
       page: !!document.querySelector('[data-page="inventory"]'),
       slots: document.querySelectorAll('.inventory-main .slot').length,
       players: document.querySelectorAll('.inventory-player').length,
@@ -2723,16 +2728,20 @@ async function main() {
       defaultMode: document.querySelector('.inventory-main .mode-switch button.active')?.textContent.trim() || '',
       map: !!document.querySelector('.inventory-map-block .map-picker'),
       mapMarkers: document.querySelectorAll('.inventory-map-block .map-marker').length,
+      mapTiles: [...document.querySelectorAll('.inventory-map-block .map-tile')]
+        .filter((img) => img.complete && img.naturalWidth > 0).length,
       section: document.querySelector('.section-tab.active')?.textContent.trim() || '',
       errors: window.__e2eErrors?.length || 0,
-    }))()`);
+      });
+    })()`);
     check('天网玩家背包页可打开', inventoryUi.page && inventoryUi.slots === 41
         && inventoryUi.players >= 1 && inventoryUi.scope === true
         && inventoryUi.defaultMode === '模拟'
         && inventoryUi.section === '天网', JSON.stringify(inventoryUi));
     check('玩家背包地图显示在线/离线玩家标记', inventoryUi.map === true
-        && inventoryUi.mapMarkers >= 1, JSON.stringify({ map: inventoryUi.map,
-          markers: inventoryUi.mapMarkers }));
+        && inventoryUi.mapMarkers >= 1 && inventoryUi.mapTiles >= 1,
+        JSON.stringify({ map: inventoryUi.map, markers: inventoryUi.mapMarkers,
+          tiles: inventoryUi.mapTiles }));
 
     // ---- 天网：轨迹回看与 Diff 回看入口 ----
     const trackApi = await fetch(base + '/api/track?days=7&limit=5', { headers: authHeaders });
