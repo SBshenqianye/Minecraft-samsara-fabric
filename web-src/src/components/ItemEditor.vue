@@ -339,13 +339,15 @@ function buildPatch() {
       modifierId: row.modifierId || '',
     })),
   };
-  const modelFloats = form.modelFloats.split(',').map((part) => Number(part.trim()))
+  const modelFloats = form.modelFloats.split(',').map((part) => part.trim())
+    .filter(Boolean).map((part) => Number(part))
     .filter((value) => Number.isFinite(value));
   const modelFlags = form.modelFlags.split(',').map((part) => part.trim().toLowerCase())
     .filter((part) => part === 'true' || part === 'false').map((part) => part === 'true');
   const modelStrings = form.modelStrings.split(',').map((part) => part.trim())
     .filter(Boolean);
-  const modelColors = form.modelColors.split(',').map((part) => Number(part.trim()))
+  const modelColors = form.modelColors.split(',').map((part) => part.trim())
+    .filter(Boolean).map((part) => Number(part))
     .filter((value) => Number.isFinite(value));
   patch.customModelData = (modelFloats.length || modelFlags.length || modelStrings.length
     || modelColors.length)
