@@ -87,20 +87,19 @@
     <nav
       ref="railEl"
       class="workspace-rail"
-      :class="{ collapsed: !railPinned && !railPeek, peek: railPeek, pinned: railPinned }"
+      :class="{ collapsed: !railOpen, peek: railOpen && !railPinned, pinned: railPinned }"
       aria-label="顶级工作区"
       @mouseenter="onRailEnter"
-      @mouseleave="onRailLeave"
     >
       <div class="rail-head">
         <span class="rail-title">工作区</span>
         <button
           class="rail-toggle"
           type="button"
-          :aria-pressed="railPinned ? 'true' : 'false'"
-          :title="railPinned ? '收起工作区导航' : '固定工作区导航'"
+          :aria-pressed="railOpen ? 'true' : 'false'"
+          :title="railOpen ? '收起工作区导航' : '展开工作区导航'"
           @click="toggleRail"
-        >{{ railPinned ? '«' : '»' }}</button>
+        >{{ railOpen ? '«' : '»' }}</button>
       </div>
       <button
         v-for="workspace in baseWorkspaces"
@@ -132,7 +131,7 @@
     </nav>
 
     <button
-      v-show="!railPinned && !railPeek && !railClosing"
+      v-show="!railOpen && !railClosing"
       ref="railHandle"
       class="rail-handle"
       type="button"
@@ -250,7 +249,7 @@ const scrollbarVisible = ref(false);
 const loadError = ref('');
 const mods = ref([]);
 const railPinned = ref(readRailPinned());
-const railPeek = ref(false);
+const railOpen = ref(false);
 const railClosing = ref(false);
 const railEl = ref(null);
 const railHandle = ref(null);
@@ -366,6 +365,9 @@ let scrollbarStartScroll = 0;
 let scrollbarTrackH = 0;
 let scrollbarThumbH = 0;
 let scrollbarObserver = null;
+let lastPointerX = -1;
+let lastPointerY = -1;
+let railIgnoreOutsideUntil = 0;
 
 function readRailPinned() {
   // 工作区导航每次进入都默认收起；展开只用于本次悬停/点击。
@@ -380,11 +382,39 @@ function storeRailPinned() {
   }
 }
 
+function rectContains(rect, x, y, pad = 8) {
+  return Boolean(rect
+    && x >= rect.left - pad && x <= rect.right + pad
+    && y >= rect.top - pad && y <= rect.bottom + pad);
+}
+
+function pointerInsideRail(x, y) {
+  const rail = railEl.value?.getBoundingClientRect();
+  const zone = rail ? {
+    left: 0,
+    right: Math.max(rail.right, 210),
+    top: rail.top,
+    bottom: rail.bottom,
+  } : null;
+  return rectContains(zone, x, y)
+    || rectContains(railHandle.value?.getBoundingClientRect(), x, y);
+}
+
+function openRail(pinned = false) {
+  window.clearTimeout(railCloseTimer);
+  window.clearTimeout(railTimer);
+  railClosing.value = false;
+  railOpen.value = true;
+  // 展开动画期间不要因为指针还在左侧滑动区就判定为“离开”。
+  railIgnoreOutsideUntil = performance.now() + 300;
+  if (pinned) railPinned.value = true;
+}
+
 function collapseRail() {
   window.clearTimeout(railTimer);
-  if (!railPinned.value && !railPeek.value && !railClosing.value) return;
+  if (!railOpen.value && !railClosing.value) return;
+  railOpen.value = false;
   railPinned.value = false;
-  railPeek.value = false;
   storeRailPinned();
   // 等收回动画结束再显示“工作区”把手，避免把手和导航同时出现。
   railClosing.value = true;
@@ -395,18 +425,16 @@ function collapseRail() {
 }
 
 function toggleRail() {
-  if (railPinned.value || railPeek.value) {
+  if (railOpen.value) {
     collapseRail();
     return;
   }
-  railPinned.value = true;
-  railPeek.value = false;
-  railClosing.value = false;
+  openRail(true);
   storeRailPinned();
 }
 
 function maybePeekRail() {
-  if (railPinned.value) return;
+  if (railOpen.value) return;
   try {
     const today = new Date().toISOString().slice(0, 10);
     if (localStorage.getItem('samsara.ia.rail.day') === today) return;
@@ -415,8 +443,12 @@ function maybePeekRail() {
     // 忽略
   }
   window.clearTimeout(railTimer);
-  railTimer = window.setTimeout(() => { railPeek.value = true; }, 350);
-  railTimer = window.setTimeout(() => { collapseRail(); }, 3000);
+  railTimer = window.setTimeout(() => {
+    openRail(false);
+    railTimer = window.setTimeout(() => {
+      if (!pointerInsideRail(lastPointerX, lastPointerY)) collapseRail();
+    }, 3000);
+  }, 350);
 }
 
 function navigate(path) {
@@ -679,31 +711,25 @@ let measureTimer = 0;
 let navAlignTimer = 0;
 
 function onGlobalPointerMove(event) {
-  if (!railPeek.value && !railPinned.value) return;
-  if (railEl.value?.contains(event.target) || railHandle.value?.contains(event.target)) {
+  lastPointerX = event.clientX;
+  lastPointerY = event.clientY;
+  if (!railOpen.value) return;
+  if (performance.now() < railIgnoreOutsideUntil) return;
+  if (pointerInsideRail(lastPointerX, lastPointerY)) {
     window.clearTimeout(railCloseTimer);
     return;
   }
-  // 把手与侧栏之间可能只隔几个像素；延迟一点收回，避免鼠标移动途中闪退。
+  // 用一个短延迟做二次确认，避免鼠标从把手移到导航、或动画途中误判。
   window.clearTimeout(railCloseTimer);
   railCloseTimer = window.setTimeout(() => {
-    if ((railPeek.value || railPinned.value)
-        && !railEl.value?.matches(':hover') && !railHandle.value?.matches(':hover')) {
+    if (railOpen.value && !pointerInsideRail(lastPointerX, lastPointerY)) {
       collapseRail();
     }
-  }, 220);
+  }, 140);
 }
 
 function onRailEnter() {
-  window.clearTimeout(railCloseTimer);
-  window.clearTimeout(railTimer);
-  railClosing.value = false;
-  if (!railPinned.value) railPeek.value = true;
-}
-
-function onRailLeave() {
-  window.clearTimeout(railCloseTimer);
-  collapseRail();
+  openRail(false);
 }
 
 function onWindowBlur() {

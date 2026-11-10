@@ -10,16 +10,16 @@
   let currentTab = 'overview';
 
   const LOTTERY_PANELS = [
-    'lottery-overview', 'lottery-round-panel', 'lottery-values-panel',
-    'lottery-fund-panel', 'lottery-claims-panel', 'lottery-insurance-panel',
-    'lottery-history-panel',
+    'lottery-dashboard', 'lottery-overview', 'lottery-round-panel',
+    'lottery-values-panel', 'lottery-fund-panel', 'lottery-claims-panel',
+    'lottery-insurance-panel', 'lottery-history-panel',
   ];
   const LOTTERY_TABS = {
-    overview: ['lottery-overview'],
-    fund: ['lottery-overview', 'lottery-fund-panel', 'lottery-values-panel'],
+    overview: ['lottery-dashboard'],
+    fund: ['lottery-fund-panel', 'lottery-values-panel'],
     lottery: ['lottery-overview', 'lottery-round-panel', 'lottery-claims-panel',
       'lottery-history-panel'],
-    insurance: ['lottery-overview', 'lottery-insurance-panel'],
+    insurance: ['lottery-insurance-panel'],
   };
 
   function headers() {
@@ -313,7 +313,135 @@
     }
   }
 
+  function dashboardCard(title, tag) {
+    const card = make('article', 'dash-card');
+    const head = make('div', 'dash-card-head');
+    head.append(make('h3', null, title), make('span', null, tag));
+    card.append(head);
+    return card;
+  }
+
+  function renderDashboard(model) {
+    const root = $('lottery-dashboard-body');
+    if (!root) return;
+    root.replaceChildren();
+
+    const fund = model.fund || { value: 0, items: [] };
+    const betting = model.bettingDay || {};
+    const counting = model.countingDay || {};
+    const policies = (model.insurance && model.insurance.policies) || [];
+    const pot = Number(model.activePot || betting.pot || 0);
+    const rollover = Number(model.rollover || 0);
+    const tickets = Number(betting.tickets || 0);
+
+    const grid = make('div', 'economy-dash-grid');
+
+    // 服务器基金
+    const fundCard = dashboardCard('服务器基金', 'FUND');
+    const fundValue = Number(fund.value || 0);
+    fundCard.append(make('strong', 'dash-value', vp(fundValue)));
+    fundCard.append(make('p', 'dash-sub',
+        '基金物品 ' + (fund.items || []).length + ' 件 · 与奖池/滚存共同构成实物资产'));
+    const fundBar = make('div', 'dash-bar');
+    const fundSeg = make('span');
+    const fundTotal = Math.max(1, fundValue + pot + rollover);
+    fundSeg.style.width = Math.round(fundValue / fundTotal * 100) + '%';
+    fundBar.append(fundSeg);
+    fundCard.append(fundBar);
+    const fundIcons = make('div', 'dash-icons');
+    for (const item of (fund.items || []).slice(0, 6)) {
+      const icon = window.SamsaraItem?.icon ? window.SamsaraItem.icon(item, { size: 'sm' }) : null;
+      fundIcons.append(icon || make('span', 'dash-item-chip', item.zh || item.name || item.id));
+    }
+    if (!fundIcons.children.length) {
+      fundIcons.append(make('span', 'dash-empty', '暂无基金物品'));
+    }
+    fundCard.append(fundIcons);
+    grid.append(fundCard);
+
+    // 死人乐透
+    const lotCard = dashboardCard('死人乐透', 'LOTTERY');
+    lotCard.append(make('strong', 'dash-value', vp(pot)));
+    lotCard.append(make('p', 'dash-sub',
+        (betting.day ? '第 ' + String(betting.day).replace(/^game-/, '') + ' 游戏日' : '当前轮次')
+        + ' · ' + tickets + ' 张下注 · 滚存 ' + vp(rollover)));
+    const donut = make('div', 'dash-donut');
+    const potTotal = Math.max(1, pot + rollover);
+    const potPct = Math.round(pot / potTotal * 100);
+    donut.style.background = 'conic-gradient(var(--accent) 0 ' + potPct
+      + '%, #f59e0b ' + potPct + '% 100%)';
+    donut.append(make('strong', null, vp(pot)));
+    lotCard.append(donut);
+    const lotLegend = make('div', 'dash-legend');
+    lotLegend.append(
+      make('span', null, '● 奖池 ' + vp(pot)),
+      make('span', null, '● 滚存 ' + vp(rollover)));
+    lotCard.append(lotLegend);
+    grid.append(lotCard);
+
+    // 保险
+    const insCard = dashboardCard('保险', 'INSURANCE');
+    const statusCounts = {};
+    for (const policy of policies) {
+      const status = String(policy.status || 'OTHER').toUpperCase();
+      statusCounts[status] = (statusCounts[status] || 0) + 1;
+    }
+    const activeCount = statusCounts.ACTIVE || 0;
+    insCard.append(make('strong', 'dash-value', String(activeCount)));
+    insCard.append(make('p', 'dash-sub',
+        '生效 ' + activeCount + ' · 总保单 ' + policies.length
+        + (counting.deathCount != null ? ' · 昨日死亡 ' + counting.deathCount : '')));
+    const insBar = make('div', 'dash-bar dash-bar-stack');
+    const colorByStatus = {
+      ACTIVE: '#0d9488', CLAIMED: '#2563eb', REVIVED: '#14b8a6',
+      REVIVE_FAILED: '#ef4444', VOID: '#94a3b8', OTHER: '#cbd5e1',
+    };
+    const totalPolicies = Math.max(1, policies.length);
+    for (const [status, count] of Object.entries(statusCounts)) {
+      const seg = make('span');
+      seg.style.width = Math.round(count / totalPolicies * 100) + '%';
+      seg.style.background = colorByStatus[status] || '#cbd5e1';
+      insBar.append(seg);
+    }
+    insCard.append(insBar);
+    const insLegend = make('div', 'dash-legend');
+    for (const [status, count] of Object.entries(statusCounts)) {
+      const chip = make('span');
+      const dot = make('i');
+      dot.style.background = colorByStatus[status] || '#cbd5e1';
+      chip.append(dot, document.createTextNode(status + ' ' + count));
+      insLegend.append(chip);
+    }
+    if (!policies.length) insLegend.append(make('span', 'dash-empty', '暂无保单'));
+    insCard.append(insLegend);
+    grid.append(insCard);
+
+    // 历史开奖走势
+    const history = (model.history || []).slice(0, 8).reverse();
+    const histCard = dashboardCard('历史开奖走势', 'HISTORY');
+    histCard.classList.add('dash-card-wide');
+    if (!history.length) {
+      histCard.append(make('p', 'dash-empty', '暂无历史开奖。'));
+    } else {
+      const chart = make('div', 'dash-history');
+      const maxPot = Math.max(1, ...history.map((row) => Number(row.pot || 0)));
+      for (const row of history) {
+        const col = make('div', 'dash-history-col');
+        const bar = make('div', 'dash-history-bar');
+        bar.style.height = Math.max(3, Math.round(Number(row.pot || 0) / maxPot * 100)) + '%';
+        if (Number(row.winnerCount || 0) > 0) bar.classList.add('has-winner');
+        col.append(bar);
+        col.append(make('span', null, String(row.day || '').replace(/^game-/, '')));
+        chart.append(col);
+      }
+      histCard.append(chart);
+    }
+    grid.append(histCard);
+    root.append(grid);
+  }
+
   function render(model) {
+    renderDashboard(model);
     renderStats(model);
     renderRound(model);
     renderPool(model);
@@ -374,6 +502,8 @@
     const cancelButton = $('lottery-cancel');
     if (connectButton) connectButton.addEventListener('click', connect);
     if (refreshButton) refreshButton.addEventListener('click', refreshAll);
+    const dashboardRefresh = $('lottery-dashboard-refresh');
+    if (dashboardRefresh) dashboardRefresh.addEventListener('click', refreshAll);
     if (drawButton) drawButton.addEventListener('click', () =>
       action('/api/lottery/draw', '确认手动开奖当前统计日？'));
     if (cancelButton) cancelButton.addEventListener('click', () =>
@@ -407,7 +537,8 @@
     const UI = window.SamsaraUI;
     if (!UI || !UI.buildNav) return;
     const sections = [
-      ['lottery-overview', '概览'],
+      ['lottery-dashboard', '概览'],
+      ['lottery-overview', '状态'],
       ['lottery-round-panel', '当前轮次'],
       ['lottery-fund-panel', '服务器基金'],
       ['lottery-values-panel', '物品价值表'],

@@ -1813,7 +1813,201 @@ img.glint { filter: drop-shadow(0 0 3px #b26cff) saturate(1.2); }
 /* 经济业务二级 Tab：每个 Tab 只排列自己可见的面板。 */
 #panel-lottery.lottery-tab-overview {
   grid-template-columns: minmax(0, 1fr);
-  grid-template-areas: "overview";
+  grid-template-areas: "dashboard";
+}
+
+#lottery-dashboard {
+  grid-area: dashboard;
+}
+
+.economy-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.economy-dash-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.dash-card {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background:
+    radial-gradient(120% 160% at 100% 0%,
+      color-mix(in srgb, var(--accent) 8%, transparent), transparent 60%),
+    var(--panel);
+  box-shadow: var(--shadow-soft);
+}
+
+.dash-card-wide {
+  grid-column: 1 / -1;
+}
+
+.dash-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dash-card-head h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.dash-card-head span {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .14em;
+}
+
+.dash-value {
+  display: block;
+  margin: 12px 0 4px;
+  color: var(--fg);
+  font-size: 28px;
+  line-height: 1.1;
+}
+
+.dash-sub {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.dash-bar {
+  display: flex;
+  height: 8px;
+  margin: 14px 0 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--panel-soft);
+}
+
+.dash-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), #f59e0b);
+}
+
+.dash-bar-stack > span {
+  border-radius: 0;
+}
+
+.dash-icons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+}
+
+.dash-item-chip {
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.dash-empty {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.dash-donut {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 112px;
+  height: 112px;
+  margin: 8px auto 6px;
+  border-radius: 50%;
+}
+
+.dash-donut::after {
+  content: "";
+  position: absolute;
+  inset: 14px;
+  border-radius: 50%;
+  background: var(--panel);
+}
+
+.dash-donut strong {
+  position: relative;
+  z-index: 1;
+  font-size: 13px;
+}
+
+.dash-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.dash-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.dash-legend i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.dash-history {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  height: 150px;
+  padding-top: 12px;
+}
+
+.dash-history-col {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  height: 100%;
+  min-width: 0;
+}
+
+.dash-history-bar {
+  width: min(42px, 70%);
+  min-height: 3px;
+  border-radius: 6px 6px 2px 2px;
+  background: color-mix(in srgb, var(--accent) 55%, var(--line));
+}
+
+.dash-history-bar.has-winner {
+  background: linear-gradient(180deg, #f59e0b, var(--accent));
+}
+
+.dash-history-col span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+@media (max-width: 1100px) {
+  .economy-dash-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 #panel-lottery.lottery-tab-fund {

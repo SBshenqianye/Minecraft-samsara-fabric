@@ -10,23 +10,19 @@
       :aria-label="ariaFor(index)"
       @click="$emit('select', index)"
     >
-      <template v-if="itemAt(index)">
-        <img
-          v-if="!failed.has(index)"
-          :src="iconUrl(itemAt(index))"
-          :alt="itemAt(index).name"
-          @error="fail(index)"
-        />
-        <span v-else class="fallback">{{ (itemAt(index).name || '?').slice(0, 1) }}</span>
-        <span class="count">{{ itemAt(index).count }}</span>
-      </template>
+      <ItemIcon
+        v-if="itemAt(index)"
+        :item="itemAt(index)"
+        :count="itemAt(index).count"
+      />
       <span v-else class="empty-index">{{ index }}</span>
     </button>
   </div>
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed } from 'vue';
+import ItemIcon from './ItemIcon.vue';
 
 const props = defineProps({
   slots: { type: Array, default: () => [] },
@@ -38,33 +34,14 @@ const props = defineProps({
 
 defineEmits(['select']);
 
-const failed = ref(new Set());
-
 const itemMap = computed(() => {
   const map = new Map();
   for (const item of props.items) map.set(item.slot, item);
   return map;
 });
 
-watch(() => props.items, () => {
-  failed.value = new Set();
-});
-
 function itemAt(index) {
   return itemMap.value.get(index) || null;
-}
-
-function iconUrl(item) {
-  const explicit = String(item.icon || '').trim();
-  const raw = explicit || String(item.id || '');
-  const name = raw.includes(':') ? raw.slice(raw.indexOf(':') + 1) : raw;
-  return props.iconBase + (name || 'stone') + '.png';
-}
-
-function fail(index) {
-  const next = new Set(failed.value);
-  next.add(index);
-  failed.value = next;
 }
 
 function titleFor(index) {

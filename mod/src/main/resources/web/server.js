@@ -780,7 +780,8 @@
       }
       const eq = line.indexOf('=');
       if (eq <= 0) return { type: 'raw', raw: line };
-      return { type: 'prop', key: line.slice(0, eq), value: line.slice(eq + 1) };
+      const value = line.slice(eq + 1);
+      return { type: 'prop', key: line.slice(0, eq), value, originalValue: value };
     });
   }
 
@@ -798,7 +799,7 @@
     if (file.kind === 'properties' || file.kind === 'eula') {
       const tokens = splitPropertyLines(content);
       if (file.kind === 'eula' && !tokens.some((t) => t.type === 'prop' && t.key === 'eula')) {
-        tokens.push({ type: 'prop', key: 'eula', value: 'false' });
+        tokens.push({ type: 'prop', key: 'eula', value: 'false', originalValue: 'false' });
       }
       return { kind: 'lines', tokens, dirty: false };
     }
@@ -1036,12 +1037,12 @@
     const actions = [];
     if (file.kind === 'properties') {
       const reset = KIT.button('恢复默认', 'ghost', () => {
-        const at = draft.tokens.indexOf(token);
-        if (at >= 0) draft.tokens.splice(at, 1);
-        refreshDirty(file);
+        // 恢复为本次加载时的值，并保留配置项；不要从文件里删除整条配置。
+        token.value = token.originalValue != null ? token.originalValue : '';
+        markDirty(file, draft);
         renderConfig();
       });
-      reset.title = '从文件中删除该项；保存后服务器会使用默认值';
+      reset.title = '恢复为本次加载时的值；保留配置项，不会删除这一条';
       actions.push(reset);
     }
     return KIT.field({

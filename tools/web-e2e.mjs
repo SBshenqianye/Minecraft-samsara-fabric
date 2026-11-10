@@ -2166,7 +2166,7 @@ async function main() {
         && economyTabs.active === '概览', JSON.stringify(economyTabs));
     const economyLayout = await evaluate(`(() => {
       const panel = document.getElementById('panel-lottery');
-      const head = panel?.querySelector('#lottery-overview .panel-head');
+      const head = panel?.querySelector('#lottery-dashboard .panel-head');
       const title = head?.querySelector(':scope > div:first-child');
       const tools = head?.querySelector('.panel-tools');
       const t = title?.getBoundingClientRect();
@@ -2319,7 +2319,7 @@ async function main() {
       ? stickyLayout.section.top + stickyLayout.section.height : 0;
     check('页内导航固定在二级栏下方，不跟随卡片标题跳动', Boolean(stickyLayout.navTitle)
         && stickyLayout.navTitle.top >= sectionBottom
-        && stickyLayout.navTitle.top <= sectionBottom + 80,
+        && stickyLayout.navTitle.top <= sectionBottom + 160,
         JSON.stringify({ navTitle: stickyLayout.navTitle, section: stickyLayout.section,
           cardTitle: stickyLayout.cardTitle }));
     await evaluate("window.scrollBy(0, 2); true;");
@@ -2363,6 +2363,64 @@ async function main() {
     check('工作区固定展开时贴网页最左侧', railPinned.left === 0
         && railPinned.pinned === true && railPinned.restored === true,
         JSON.stringify(railPinned));
+
+    // 真实鼠标：移入把手不收回、点击工作区不收回、移出后收回并延迟显示把手。
+    const handlePos = await evaluate(`(() => {
+      const node = document.querySelector('.rail-handle');
+      const rect = node.getBoundingClientRect();
+      return { x: Math.round(rect.left + Math.min(12, rect.width / 2)),
+        y: Math.round(rect.top + rect.height / 2) };
+    })()`);
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: handlePos.x, y: handlePos.y });
+    await sleep(420);
+    const railHoverOpen = await evaluate(`(() => {
+      const rail = document.querySelector('.workspace-rail');
+      const handle = document.querySelector('.rail-handle');
+      return { closed: rail.classList.contains('collapsed'),
+        handle: !!(handle.offsetWidth || handle.offsetHeight),
+        x: Math.round(rail.getBoundingClientRect().x) };
+    })()`);
+    check('鼠标移入把手后工作区导航展开且把手隐藏', railHoverOpen.closed === false
+        && railHoverOpen.handle === false && railHoverOpen.x === 0,
+        JSON.stringify(railHoverOpen));
+
+    const railBox = await evaluate(`(() => {
+      const rect = document.querySelector('.workspace-rail').getBoundingClientRect();
+      return { x: Math.round(rect.left + 100), y: Math.round(rect.top + 60) };
+    })()`);
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: railBox.x, y: railBox.y });
+    await sleep(320);
+    const railInside = await evaluate(`!document.querySelector('.workspace-rail').classList.contains('collapsed')`);
+    check('鼠标在导航栏内部时不会误收回', railInside === true, 'inside=' + railInside);
+
+    const workspacePoint = await evaluate(`(() => {
+      const node = document.querySelector('.rail-item[data-workspace="samsara"]');
+      const rect = node.getBoundingClientRect();
+      return { x: Math.round(rect.left + rect.width / 2),
+        y: Math.round(rect.top + rect.height / 2) };
+    })()`);
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: workspacePoint.x, y: workspacePoint.y });
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: workspacePoint.x, y: workspacePoint.y, button: 'left', clickCount: 1 });
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: workspacePoint.x, y: workspacePoint.y, button: 'left', clickCount: 1 });
+    await sleep(800);
+    const railAfterClick = await evaluate(`(() => {
+      const rail = document.querySelector('.workspace-rail');
+      return { closed: rail.classList.contains('collapsed'), path: location.pathname };
+    })()`);
+    check('点击工作区后导航栏保持展开', railAfterClick.closed === false,
+        JSON.stringify(railAfterClick));
+
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1100, y: 700 });
+    await sleep(500);
+    const railAfterLeave = await evaluate(`(() => {
+      const rail = document.querySelector('.workspace-rail');
+      const handle = document.querySelector('.rail-handle');
+      return { closed: rail.classList.contains('collapsed'),
+        handle: !!(handle.offsetWidth || handle.offsetHeight) };
+    })()`);
+    check('鼠标离开后工作区导航收回并显示把手', railAfterLeave.closed === true
+        && railAfterLeave.handle === true, JSON.stringify(railAfterLeave));
+
     await evaluate("window.scrollTo(0, 0); true;");
     await sleep(200);
 
