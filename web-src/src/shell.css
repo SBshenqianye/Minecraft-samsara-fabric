@@ -247,14 +247,9 @@
   max-width: min(48vw, 680px);
 }
 
-.ia-main .side-nav {
+.ia-main > .side-nav {
   top: var(--ia-nav-top, calc(var(--header-h, 128px) + var(--ia-section-h, 56px) + 12px));
   max-height: calc(100vh - var(--ia-nav-top, 196px) - 12px);
-}
-
-.workspace-rail {
-  top: calc(var(--header-h, 128px) + 12px);
-  max-height: calc(100vh - var(--header-h, 128px) - 24px);
 }
 
 .section-tabs {
@@ -268,6 +263,105 @@
 
 .ia-main .content .tab-shell .panel-stack > .panel:first-child > .panel-head {
   margin-bottom: 10px;
+}
+
+/* ---- 自定义滚动条：页面滚动条浮在最右侧，不占布局宽度 ---- */
+html {
+  scrollbar-width: none;
+}
+
+html::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--muted) 34%, transparent) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 34%, transparent);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.page-scrollbar {
+  position: fixed;
+  top: 4px;
+  right: 3px;
+  bottom: 4px;
+  width: 6px;
+  z-index: 80;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .18s ease;
+}
+
+.page-scrollbar.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.page-scrollbar-thumb {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 6px;
+  min-height: 36px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 38%, transparent);
+  cursor: grab;
+  transition: background .15s ease;
+}
+
+.page-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--accent) 70%, transparent);
+}
+
+.page-scrollbar-thumb:active {
+  cursor: grabbing;
+}
+
+/* ---- 页面切换与交互过渡 ---- */
+@keyframes ia-page-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.content.page-enter {
+  animation: ia-page-in .22s ease both;
+}
+
+.section-tab,
+.rail-item,
+.subnav-item,
+.nav-item {
+  transition: background .15s ease, color .15s ease, border-color .15s ease,
+    transform .15s ease, box-shadow .15s ease;
+}
+
+.content .panel,
+.content .panel-stack > * {
+  transition: box-shadow .18s ease, border-color .18s ease;
 }
 
 @media (max-width: 1120px) {

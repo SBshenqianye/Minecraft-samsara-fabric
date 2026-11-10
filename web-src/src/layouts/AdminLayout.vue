@@ -83,64 +83,65 @@
         <button class="tab" type="button" data-server-panel="server-audit-panel">Web 审计</button>
       </nav>
     </header>
-    <div class="ia-body">
-      <nav
-        ref="railEl"
-        class="workspace-rail"
-        :class="{ collapsed: !railPinned && !railPeek, peek: railPeek, pinned: railPinned }"
-        aria-label="顶级工作区"
-        @mouseenter="onRailEnter"
-        @mouseleave="onRailLeave"
-      >
-        <div class="rail-head">
-          <span class="rail-title">工作区</span>
-          <button
-            class="rail-toggle"
-            type="button"
-            :aria-pressed="railPinned ? 'true' : 'false'"
-            :title="railPinned ? '收起工作区导航' : '固定工作区导航'"
-            @click="toggleRail"
-          >{{ railPinned ? '«' : '»' }}</button>
-        </div>
-        <button
-          v-for="workspace in baseWorkspaces"
-          :key="workspace.id"
-          class="rail-item"
-          :class="{ active: activeWorkspace === workspace.id }"
-          type="button"
-          :data-workspace="workspace.id"
-          @click="goWorkspace(workspace.id)"
-        >
-          <span class="rail-label">{{ workspace.label }}</span>
-          <span class="rail-hint">{{ workspace.hint }}</span>
-        </button>
 
-        <div class="rail-title rail-title-mods">其他模组</div>
+    <nav
+      ref="railEl"
+      class="workspace-rail"
+      :class="{ collapsed: !railPinned && !railPeek, peek: railPeek, pinned: railPinned }"
+      aria-label="顶级工作区"
+      @mouseenter="onRailEnter"
+      @mouseleave="onRailLeave"
+    >
+      <div class="rail-head">
+        <span class="rail-title">工作区</span>
         <button
-          v-for="mod in mods"
-          :key="mod.id"
-          class="rail-item rail-item-mod"
-          :class="{ active: activeWorkspace === 'mods' && activeModId === mod.id }"
+          class="rail-toggle"
           type="button"
-          :data-mod-id="mod.id"
-          @click="goMod(mod)"
-        >
-          <span class="rail-label">{{ mod.label }}</span>
-          <span class="rail-hint">{{ mod.hint }}</span>
-        </button>
-        <p v-if="!mods.length" class="rail-empty">连接后显示有配置的模组</p>
-      </nav>
-
+          :aria-pressed="railPinned ? 'true' : 'false'"
+          :title="railPinned ? '收起工作区导航' : '固定工作区导航'"
+          @click="toggleRail"
+        >{{ railPinned ? '«' : '»' }}</button>
+      </div>
       <button
-        v-show="!railPinned && !railPeek"
-        ref="railHandle"
-        class="rail-handle"
+        v-for="workspace in baseWorkspaces"
+        :key="workspace.id"
+        class="rail-item"
+        :class="{ active: activeWorkspace === workspace.id }"
         type="button"
-        aria-label="展开工作区导航"
-        @mouseenter="onRailEnter"
-        @click="onRailEnter"
-      >工作区 ›</button>
+        :data-workspace="workspace.id"
+        @click="goWorkspace(workspace.id)"
+      >
+        <span class="rail-label">{{ workspace.label }}</span>
+        <span class="rail-hint">{{ workspace.hint }}</span>
+      </button>
 
+      <div class="rail-title rail-title-mods">其他模组</div>
+      <button
+        v-for="mod in mods"
+        :key="mod.id"
+        class="rail-item rail-item-mod"
+        :class="{ active: activeWorkspace === 'mods' && activeModId === mod.id }"
+        type="button"
+        :data-mod-id="mod.id"
+        @click="goMod(mod)"
+      >
+        <span class="rail-label">{{ mod.label }}</span>
+        <span class="rail-hint">{{ mod.hint }}</span>
+      </button>
+      <p v-if="!mods.length" class="rail-empty">连接后显示有配置的模组</p>
+    </nav>
+
+    <button
+      v-show="!railPinned && !railPeek"
+      ref="railHandle"
+      class="rail-handle"
+      type="button"
+      aria-label="展开工作区导航"
+      @mouseenter="onRailEnter"
+      @click="onRailEnter"
+    >工作区 ›</button>
+
+    <div class="ia-body">
       <div class="ia-main">
         <nav v-if="sections.length" class="section-tabs" aria-label="二级页面">
           <button
@@ -196,6 +197,19 @@
       </div>
     </div>
 
+    <div
+      ref="pageScrollbar"
+      class="page-scrollbar"
+      :class="{ visible: scrollbarVisible }"
+      @click="onScrollbarTrackClick"
+    >
+      <div
+        ref="pageScrollbarThumb"
+        class="page-scrollbar-thumb"
+        @pointerdown="onScrollbarPointerDown"
+      ></div>
+    </div>
+
     <div ref="overlayHost" class="ia-overlay-host"></div>
     <div v-if="loadError" class="container-message error" style="margin: 20px">
       {{ loadError }}
@@ -229,6 +243,9 @@ import ModConfigPage from '../pages/ModConfigPage.vue';
 const route = useRoute();
 const router = useRouter();
 const overlayHost = ref(null);
+const pageScrollbar = ref(null);
+const pageScrollbarThumb = ref(null);
+const scrollbarVisible = ref(false);
 const loadError = ref('');
 const mods = ref([]);
 const railPinned = ref(readRailPinned());
@@ -303,8 +320,16 @@ const crumbs = computed(() => {
     list.push(modDisplayName.value || activeModId.value || '其他模组');
     list.push(pageLabel.value || '配置文件');
   } else {
-    if (sectionLabel.value) list.push(sectionLabel.value);
-    if (pageLabel.value) list.push(pageLabel.value);
+    const section = sectionLabel.value;
+    const current = pageLabel.value;
+    // “RCON / RCON 控制台”这类父子同名面包屑合并成一项。
+    if (section && current
+        && (current.startsWith(section + ' ') || section.startsWith(current + ' '))) {
+      list.push(current);
+    } else {
+      if (section) list.push(section);
+      if (current) list.push(current);
+    }
   }
   return list;
 });
@@ -332,6 +357,13 @@ let modsRetry = 0;
 let legacyNavGuard = 0;
 let railTimer = 0;
 let railCloseTimer = 0;
+let scrollbarHideTimer = 0;
+let scrollbarDragging = false;
+let scrollbarStartY = 0;
+let scrollbarStartScroll = 0;
+let scrollbarTrackH = 0;
+let scrollbarThumbH = 0;
+let scrollbarObserver = null;
 
 function readRailPinned() {
   try {
@@ -459,6 +491,87 @@ async function loadMods() {
   }
 }
 
+function animateContent() {
+  const content = document.querySelector('.content');
+  if (!content) return;
+  content.classList.remove('page-enter');
+  // 强制回流，保证连续切页时动画可以重新触发。
+  void content.offsetWidth;
+  content.classList.add('page-enter');
+}
+
+function updatePageScrollbar() {
+  const bar = pageScrollbar.value;
+  const thumb = pageScrollbarThumb.value;
+  if (!bar || !thumb) return;
+  const doc = document.documentElement;
+  const viewH = window.innerHeight || doc.clientHeight;
+  const scrollH = doc.scrollHeight;
+  if (scrollH <= viewH + 1) {
+    scrollbarVisible.value = false;
+    return;
+  }
+  const trackH = Math.max(1, bar.clientHeight);
+  const thumbH = Math.max(36, Math.round(trackH * viewH / scrollH));
+  const maxTop = Math.max(1, trackH - thumbH);
+  const ratio = Math.min(1, Math.max(0, window.scrollY / Math.max(1, scrollH - viewH)));
+  thumb.style.height = thumbH + 'px';
+  thumb.style.transform = 'translateY(' + Math.round(ratio * maxTop) + 'px)';
+  scrollbarTrackH = trackH;
+  scrollbarThumbH = thumbH;
+}
+
+function showPageScrollbar() {
+  scrollbarVisible.value = true;
+  window.clearTimeout(scrollbarHideTimer);
+  scrollbarHideTimer = window.setTimeout(() => {
+    if (!scrollbarDragging) scrollbarVisible.value = false;
+  }, 1200);
+}
+
+function onPageScroll() {
+  updatePageScrollbar();
+  showPageScrollbar();
+}
+
+function onScrollbarPointerDown(event) {
+  if (!pageScrollbar.value || !pageScrollbarThumb.value) return;
+  scrollbarDragging = true;
+  scrollbarStartY = event.clientY;
+  scrollbarStartScroll = window.scrollY;
+  updatePageScrollbar();
+  pageScrollbarThumb.value.setPointerCapture?.(event.pointerId);
+  event.preventDefault();
+}
+
+function onScrollbarPointerMove(event) {
+  if (!scrollbarDragging) return;
+  const doc = document.documentElement;
+  const maxScroll = Math.max(1, doc.scrollHeight - window.innerHeight);
+  const maxTop = Math.max(1, scrollbarTrackH - scrollbarThumbH);
+  const delta = (event.clientY - scrollbarStartY) / maxTop * maxScroll;
+  window.scrollTo(0, Math.max(0, Math.min(maxScroll, scrollbarStartScroll + delta)));
+  updatePageScrollbar();
+  showPageScrollbar();
+}
+
+function onScrollbarPointerUp() {
+  if (!scrollbarDragging) return;
+  scrollbarDragging = false;
+  showPageScrollbar();
+}
+
+function onScrollbarTrackClick(event) {
+  if (event.target === pageScrollbarThumb.value) return;
+  const bar = pageScrollbar.value;
+  if (!bar) return;
+  const trackH = Math.max(1, bar.clientHeight);
+  const ratio = Math.min(1, Math.max(0, (event.clientY - bar.getBoundingClientRect().top) / trackH));
+  window.scrollTo(0,
+      ratio * Math.max(0, document.documentElement.scrollHeight - window.innerHeight));
+  showPageScrollbar();
+}
+
 onMounted(async () => {
   try {
     const doc = await loadLegacyDocument();
@@ -496,6 +609,15 @@ onMounted(async () => {
     window.addEventListener('scroll', scheduleMeasure, { passive: true });
     document.addEventListener('pointermove', onGlobalPointerMove, { passive: true });
     window.addEventListener('blur', onWindowBlur);
+    window.addEventListener('scroll', onPageScroll, { passive: true });
+    window.addEventListener('resize', updatePageScrollbar);
+    window.addEventListener('pointermove', onScrollbarPointerMove);
+    window.addEventListener('pointerup', onScrollbarPointerUp);
+    if (window.ResizeObserver) {
+      scrollbarObserver = new ResizeObserver(updatePageScrollbar);
+      scrollbarObserver.observe(document.body);
+    }
+    nextTick(updatePageScrollbar);
   } catch (error) {
     loadError.value = '管理端加载失败：' + (error?.message || error);
   }
@@ -506,19 +628,29 @@ onUnmounted(() => {
   window.removeEventListener('scroll', scheduleMeasure);
   document.removeEventListener('pointermove', onGlobalPointerMove);
   window.removeEventListener('blur', onWindowBlur);
+  window.removeEventListener('scroll', onPageScroll);
+  window.removeEventListener('resize', updatePageScrollbar);
+  window.removeEventListener('pointermove', onScrollbarPointerMove);
+  window.removeEventListener('pointerup', onScrollbarPointerUp);
+  scrollbarObserver?.disconnect();
   window.clearTimeout(railTimer);
   window.clearTimeout(railCloseTimer);
   window.clearTimeout(measureTimer);
   window.clearTimeout(navAlignTimer);
+  window.clearTimeout(scrollbarHideTimer);
 });
 
 watch(() => route.path, async () => {
   if (!started) return;
+  // 先同步 hero，再等旧 panel 激活；避免标题/按钮晚一步更新造成闪动。
+  syncHeroFromRoute();
   try {
     await nextTick();
     await waitForCurrentPanel();
     await applyRoute();
     measureChrome();
+    animateContent();
+    nextTick(updatePageScrollbar);
   } catch (error) {
     loadError.value = '页面切换失败：' + (error?.message || error);
   }
@@ -641,6 +773,69 @@ const HERO_HINTS = {
   inventory: '在线玩家可读可写；离线玩家只读，写入进入安全队列，登录或停服前应用。',
   'mod-config': '第三方模组配置；写入前预览并自动备份，保存后可热重载。',
 };
+
+const SERVER_HERO = {
+  'server-config-panel': {
+    title: '服务器配置',
+    hint: '保存会写入所有已修改文件并热重载；properties/eula 需重启',
+  },
+  'server-backup-panel': {
+    title: '存档备份',
+    hint: '时间线可回滚到任意节点；恢复后下一次备份从该点分出新分支',
+  },
+  'server-console-panel': {
+    title: 'RCON 控制台',
+    hint: '在服务器线程执行命令；stop 会关闭服务器',
+  },
+  'server-audit-panel': {
+    title: 'Web 审计（全部管理端写请求）',
+    hint: '覆盖 samsara、其他模组、服务器配置与 RCON；写前快照，配置类可回滚',
+  },
+};
+
+/** 路由变化时同步更新 hero，避免等内容 panel 激活后才更新造成闪动。 */
+function syncHeroFromRoute() {
+  const serverMode = workspace.value === 'vanilla' || page.value === 'server';
+  if (serverMode) {
+    showHero('server');
+    const panel = route.meta.serverPanel || 'server-config-panel';
+    const meta = SERVER_HERO[panel];
+    if (meta) {
+      const title = document.getElementById('server-action-title');
+      const hint = document.getElementById('server-action-hint');
+      if (title) title.textContent = meta.title;
+      if (hint) hint.textContent = meta.hint;
+    }
+    return;
+  }
+  if (workspace.value === 'mods') {
+    showHero('page', String(route.meta.title || '配置文件'), HERO_HINTS['mod-config']);
+    return;
+  }
+  const panel = route.meta.panel;
+  if (panel) {
+    const actions = window.SamsaraTabActions?.[panel];
+    if (actions) {
+      showHero('legacy');
+      const title = document.getElementById('action-title');
+      const hint = document.getElementById('action-hint');
+      if (title) title.textContent = actions.title || '';
+      if (hint) hint.textContent = actions.hint || '';
+      const save = document.getElementById('save');
+      if (save) {
+        save.textContent = actions.save || '保存并重载';
+        save.hidden = !actions.save;
+      }
+      const def = document.getElementById('action-default');
+      if (def) def.hidden = panel !== 'output';
+    } else {
+      showHero('page', String(route.meta.title || ''), '');
+    }
+    return;
+  }
+  showHero('page', String(route.meta.title || ''),
+      HERO_HINTS[String(route.meta.page || '')] || '');
+}
 
 /**
  * 统一顶部 hero 横幅：旧页面由 TAB_ACTIONS 写标题/说明并显示保存按钮；

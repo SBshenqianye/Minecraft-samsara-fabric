@@ -17,15 +17,17 @@
 }
 
 .workspace-rail {
-  position: sticky;
+  position: fixed;
+  left: 0;
   top: var(--ia-nav-top, calc(var(--header-h, 128px) + var(--ia-section-h, 56px) + 12px));
-  flex: 0 0 192px;
-  align-self: flex-start;
-  max-height: calc(100vh - var(--header-h, 128px) - 26px);
+  width: 192px;
+  max-height: calc(100vh - var(--ia-nav-top, 200px) - 12px);
   overflow-y: auto;
+  scrollbar-gutter: stable;
   padding: 10px;
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-left: 0;
+  border-radius: 0 14px 14px 0;
   background: var(--panel);
   box-shadow: var(--shadow-soft);
   transition: transform .22s ease, opacity .22s ease, box-shadow .22s ease;
@@ -170,6 +172,7 @@
 .ia-main {
   flex: 1 1 auto;
   min-width: 0;
+  margin-left: 206px;
   display: flex;
   flex-direction: column;
 }
@@ -261,6 +264,7 @@
   align-self: flex-start;
   max-height: calc(100vh - var(--ia-nav-top, 196px) - 12px);
   overflow-y: auto;
+  scrollbar-gutter: stable;
   scrollbar-width: thin;
   transition: top .18s ease;
 }
@@ -268,6 +272,8 @@
 .ia-side .side-nav {
   position: static;
   top: auto;
+  flex: 0 0 auto;
+  width: 100%;
   max-height: none;
   overflow: visible;
 }
@@ -510,6 +516,10 @@
   .rail-empty,
   .rail-handle {
     display: none;
+  }
+
+  .ia-main {
+    margin-left: 0;
   }
 
   .rail-item {

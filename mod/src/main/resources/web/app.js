@@ -3591,6 +3591,8 @@ const TAB_ACTIONS = {
   },
 };
 
+window.SamsaraTabActions = TAB_ACTIONS;
+
 function updateTabActions(name) {
   const config = TAB_ACTIONS[name] || TAB_ACTIONS.config;
   const title = $('action-title');

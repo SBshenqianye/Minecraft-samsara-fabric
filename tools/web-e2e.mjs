@@ -2111,6 +2111,19 @@ async function main() {
     check('本体工作区直接路由可用', iaVanilla.path === '/vanilla/config'
         && iaVanilla.panelVisible && iaVanilla.crumb === '服务器配置',
         JSON.stringify(iaVanilla));
+    const navFit = await evaluate(`(() => {
+      const side = document.querySelector('.ia-side');
+      const nav = document.querySelector('#global-nav');
+      if (!side || !nav) return { sideW: 0, navW: 0, navH: 0, navScrollH: 0 };
+      return {
+        sideW: Math.round(side.getBoundingClientRect().width),
+        navW: Math.round(nav.getBoundingClientRect().width),
+        navH: Math.round(nav.clientHeight),
+        navScrollH: nav.scrollHeight,
+      };
+    })()`);
+    check('本体页面导航宽度固定且背景覆盖内容', navFit.navW >= navFit.sideW - 12
+        && navFit.navH >= navFit.navScrollH - 2, JSON.stringify(navFit));
 
     await navigate(base + '/samsara/economy');
     await until("document.querySelector('.section-tab[data-section=\"sky\"]')",
@@ -2287,6 +2300,21 @@ async function main() {
         && stickyLayout.navTitle.top <= sectionBottom + 80,
         JSON.stringify({ navTitle: stickyLayout.navTitle, section: stickyLayout.section,
           cardTitle: stickyLayout.cardTitle }));
+    await evaluate("window.scrollBy(0, 2); true;");
+    await sleep(120);
+    const pageScrollbar = await evaluate(`(() => {
+      const bar = document.querySelector('.page-scrollbar');
+      const thumb = document.querySelector('.page-scrollbar-thumb');
+      return {
+        exists: !!bar,
+        visible: bar?.classList.contains('visible') === true,
+        thumbHeight: Math.round(thumb?.getBoundingClientRect().height || 0),
+        nativeWidth: window.innerWidth - document.documentElement.clientWidth,
+      };
+    })()`);
+    check('页面滚动条为浮层且不占布局宽度', pageScrollbar.exists
+        && pageScrollbar.visible && pageScrollbar.thumbHeight > 0
+        && pageScrollbar.nativeWidth === 0, JSON.stringify(pageScrollbar));
     const railHandle = await evaluate(`(() => {
       const node = document.querySelector('.rail-handle');
       const rail = document.querySelector('.workspace-rail');
