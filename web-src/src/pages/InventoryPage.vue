@@ -1,5 +1,5 @@
 <template>
-  <TabShell name="inventory" title="玩家背包" description="在线玩家可读可写；离线玩家只读，写入进入安全队列，登录或停服前应用。">
+  <TabShell name="inventory" title="玩家背包" description="地图选玩家；在线直接写入，离线进入安全队列；身份 data UUID 共用同一套编辑界面。">
     <section v-if="!connected" class="panel">
       <h3>连接管理端</h3>
       <p class="muted small">需要管理端 token；token 只保存在当前标签页的 sessionStorage。</p>
@@ -16,150 +16,129 @@
 
       <div class="inventory-layout">
         <aside class="panel inventory-side">
-          <h3>玩家</h3>
-          <el-input v-model="query" placeholder="搜索名字 / UUID" clearable />
-          <el-select v-model="scope" class="inventory-scope" @change="reload">
-            <el-option label="背包（主背包 + 盔甲 + 副手）" value="inventory" />
-            <el-option label="末影箱" value="ender" />
-            <el-option label="盔甲（只读分区）" value="armor" />
-          </el-select>
-          <div class="inventory-player-list">
-            <button
-              v-for="player in filteredPlayers"
-              :key="player.uuid"
-              class="inventory-player"
-              :class="{ active: selectedPlayer && selectedPlayer.uuid === player.uuid }"
-              type="button"
-              @click="selectPlayer(player)"
-            >
-              <span class="inventory-player-name">{{ player.name || player.uuid }}</span>
-              <span class="inventory-player-meta">
-                {{ player.online ? '当前在线' : '当前不在线' }}
-                <template v-if="player.lastSeen"> · {{ player.lastSeen }}</template>
-              </span>
-            </button>
-            <p v-if="!filteredPlayers.length" class="muted small">没有匹配的已知玩家。</p>
-          </div>
+          <template v-if="source === 'identity'">
+            <h3>身份 data UUID</h3>
+            <p class="muted small">从身份组详情进入时自动填入；也可以手动输入 data UUID。</p>
+            <el-input v-model="identityUuid" placeholder="data UUID" clearable />
+            <el-button type="primary" size="small" :loading="loading" @click="loadIdentity">读取身份背包</el-button>
+            <el-button size="small" @click="switchSource('player')">返回账号背包</el-button>
+          </template>
+          <template v-else>
+            <h3>玩家</h3>
+            <el-input v-model="query" placeholder="搜索名字 / UUID" clearable />
+            <el-select v-model="scope" class="inventory-scope" @change="reload">
+              <el-option label="背包（主背包 + 盔甲 + 副手）" value="inventory" />
+              <el-option label="末影箱" value="ender" />
+              <el-option label="盔甲（只读分区）" value="armor" />
+            </el-select>
+            <el-button size="small" @click="switchSource('identity')">按 data UUID 编辑身份背包</el-button>
+            <div class="inventory-player-list">
+              <button
+                v-for="player in filteredPlayers"
+                :key="player.uuid"
+                class="inventory-player"
+                :class="{ active: selectedPlayer && selectedPlayer.uuid === player.uuid }"
+                type="button"
+                @click="selectPlayer(player)"
+              >
+                <span class="inventory-player-name">{{ player.name || player.uuid }}</span>
+                <span class="inventory-player-meta">
+                  {{ player.online ? '当前在线' : '当前不在线' }}
+                  <template v-if="player.dimension"> · {{ shortDimension(player.dimension) }}</template>
+                  <template v-if="player.lastSeen"> · {{ player.lastSeen }}</template>
+                </span>
+              </button>
+              <p v-if="!filteredPlayers.length" class="muted small">没有匹配的已知玩家。</p>
+            </div>
+          </template>
         </aside>
 
         <section class="panel inventory-main">
-          <div v-if="!data" class="muted small">从左侧选择玩家后读取背包。</div>
+          <div v-if="source === 'player'" class="inventory-map-block">
+            <div class="inventory-map-head">
+              <h3>地图选玩家</h3>
+              <span class="muted small">在线玩家实时位置；离线玩家保留最后退出位置。</span>
+              <span class="spacer"></span>
+              <select v-model="mapDimension">
+                <option v-for="dimension in mapDimensions" :key="dimension.id" :value="dimension.id">
+                  {{ dimension.name }}（{{ dimension.id }}）
+                </option>
+              </select>
+            </div>
+            <MapPicker
+              :markers="playerMarkers"
+              :dimension="mapDimension"
+              :selected-id="selectedPlayer?.uuid || ''"
+              :height="300"
+              @select="selectMarker"
+            />
+          </div>
+
+          <div v-if="!data" class="muted small">
+            {{ source === 'identity' ? '输入 data UUID 后读取身份背包。' : '从地图或左侧列表选择玩家。' }}
+          </div>
           <template v-else>
             <div class="inventory-head">
               <div>
                 <h3>{{ data.player.name || data.player.uuid }}</h3>
                 <p class="muted small">
+                  <template v-if="source === 'identity'">身份数据 {{ data.data }} · </template>
                   {{ data.player.uuid }} · {{ scopeLabel }} · revision {{ revision }}
                 </p>
               </div>
               <div class="inventory-badges">
                 <el-tag :type="data.online ? 'success' : 'info'" size="small">
-                  {{ data.online ? '当前在线 · 直接写入' : '离线 · 安全队列写入' }}
+                  {{ data.online ? '在线 · 直接写入' : (source === 'identity' ? '身份数据 · 直接写入文件' : '离线 · 安全队列') }}
                 </el-tag>
                 <el-tag v-if="data.pendingWrite" type="warning" size="small">待写入队列</el-tag>
-                <el-tag v-if="dirty" type="danger" size="small">有未保存修改</el-tag>
+                <el-tag v-if="dirty" type="danger" size="small">有未提交修改</el-tag>
               </div>
             </div>
 
             <div class="inventory-actions">
-              <el-button size="small" @click="refresh">重新读取</el-button>
-              <el-button size="small" type="primary" :disabled="!dirty || saving" :loading="saving"
-                  @click="confirmSave">
-                保存{{ dirty ? ' *' : '' }}
+              <div class="mode-switch" role="group" aria-label="写入模式">
+                <button
+                  v-for="option in modeOptions"
+                  :key="option.id"
+                  type="button"
+                  :class="{ active: mode === option.id }"
+                  :title="option.hint"
+                  @click="setMode(option.id)"
+                >{{ option.label }}</button>
+              </div>
+              <el-button size="small" :disabled="saving" @click="refresh">重置 / 重新读取</el-button>
+              <el-button
+                v-if="mode !== 'simulate'"
+                size="small"
+                type="primary"
+                :disabled="!dirty || saving"
+                :loading="saving"
+                @click="confirmSave"
+              >
+                {{ mode === 'live' ? '立即写入' : '保存修改' }}{{ dirty ? ' *' : '' }}
               </el-button>
-              <span v-if="!data.online" class="muted small">
-                离线写入不会直接改运行中的 .dat，而是在玩家下次登录或停服前应用。
-              </span>
+              <span class="muted small">{{ currentModeHint }}</span>
             </div>
 
-            <div v-if="scope === 'inventory'" class="inventory-sections">
-              <div class="inventory-section">
-                <div class="inventory-section-title">主背包 0–35</div>
-                <ItemSlotGrid
-                  :slots="slots.slice(0, 36)"
-                  :items="itemsFor(0, 36)"
-                  :selected="selectedSlot !== null && selectedSlot < 36 ? selectedSlot : null"
-                  @select="selectSlot"
-                />
-              </div>
-              <div class="inventory-section">
-                <div class="inventory-section-title">盔甲 36–39</div>
-                <ItemSlotGrid
-                  :slots="slots.slice(36, 40)"
-                  :items="itemsFor(36, 40)"
-                  :selected="selectedSlot !== null && selectedSlot >= 36 && selectedSlot < 40 ? selectedSlot - 36 : null"
-                  :columns="4"
-                  @select="(index) => selectSlot(index + 36)"
-                />
-              </div>
-              <div class="inventory-section">
-                <div class="inventory-section-title">副手 40</div>
-                <ItemSlotGrid
-                  :slots="slots.slice(40, 41)"
-                  :items="itemsFor(40, 41)"
-                  :selected="selectedSlot === 40 ? 0 : null"
-                  :columns="1"
-                  @select="(index) => selectSlot(index + 40)"
-                />
-              </div>
-            </div>
+            <p v-if="!data.online && source !== 'identity'" class="muted small">
+              离线写入不会直接改运行中的 .dat，而是在玩家下次登录或停服前应用。
+            </p>
 
-            <ItemSlotGrid
-              v-else
+            <ItemWorkbench
               :slots="slots"
               :items="data.items || []"
-              :selected="selectedSlot"
-              :columns="scope === 'armor' ? 4 : 9"
-              @select="selectSlot"
+              :layout="layout"
+              :schema="schema"
+              :mode="mode"
+              item-endpoint="/api/inventory/item"
+              :revision="revision"
+              :disabled="saving"
+              @change="onWorkbenchChange"
             />
 
-            <div class="inventory-editor">
-              <template v-if="selectedSlot !== null">
-                <template v-if="itemAt(selectedSlot)">
-                  <label>
-                    槽位 {{ selectedSlot }} · {{ itemAt(selectedSlot).name }}
-                    <el-input-number v-model="editCount" :min="1"
-                        :max="itemAt(selectedSlot).maxStack || 64" />
-                  </label>
-                  <el-button type="primary" size="small" :loading="busy" @click="updateCount">
-                    更新数量
-                  </el-button>
-                  <el-button size="small" :loading="busy" @click="removeSlot">移除</el-button>
-                  <span class="muted small">{{ itemAt(selectedSlot).id }}</span>
-                </template>
-                <template v-else>
-                  <el-input v-model="searchQuery" placeholder="中文/英文/ID，如 diamond、钻石"
-                      style="max-width: 280px" @keyup.enter="searchItems" />
-                  <el-button size="small" :loading="searchLoading" @click="searchItems">搜索物品</el-button>
-                  <el-input-number v-if="newItem" v-model="newItemCount" :min="1" :max="newItem.maxStack || 99" />
-                  <el-button v-if="newItem" type="primary" size="small" :loading="busy" @click="addItem">
-                    添加 {{ newItem.zh || newItem.name }}
-                  </el-button>
-                </template>
-              </template>
-              <span v-else class="muted small">点击槽位编辑；离线写入会进入安全队列。</span>
-            </div>
-
-            <div v-if="searchResults.length && selectedSlot !== null && !itemAt(selectedSlot)"
-                class="inventory-search-results">
-              <button
-                v-for="item in searchResults"
-                :key="item.id"
-                class="inventory-search-row"
-                :class="{ active: newItem && newItem.id === item.id }"
-                type="button"
-                @click="chooseItem(item)"
-              >
-                <span><strong>{{ item.zh || item.name }}</strong> <span class="muted small">{{ item.id }}</span></span>
-                <span class="muted small">{{ item.value }} VP</span>
-              </button>
-            </div>
-
-            <details v-if="itemAt(selectedSlot)" class="inventory-detail">
-              <summary class="muted small">组件 / NBT 信息</summary>
-              <p class="container-detail">{{ itemAt(selectedSlot).components }}</p>
-              <p class="container-detail">{{ itemAt(selectedSlot).encoded }}</p>
-            </details>
+            <p v-if="data.pendingWrite" class="muted small">
+              当前显示安全队列中的内容；写入会更新队列，登录或停服前应用。
+            </p>
           </template>
         </section>
       </div>
@@ -169,16 +148,19 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue';
+import { useRoute } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import TabShell from '../components/TabShell.vue';
-import ItemSlotGrid from '../components/ItemSlotGrid.vue';
+import ItemWorkbench from '../components/ItemWorkbench.vue';
+import MapPicker from '../components/MapPicker.vue';
 
+const route = useRoute();
 const token = ref(sessionStorage.getItem('samsara-token') || '');
 const tokenInput = ref(token.value);
 const connected = ref(false);
 const connecting = ref(false);
+const loading = ref(false);
 const saving = ref(false);
-const busy = ref(false);
 const error = ref('');
 const message = ref('');
 const query = ref('');
@@ -188,14 +170,22 @@ const selectedPlayer = ref(null);
 const data = ref(null);
 const slots = ref([]);
 const revision = ref(0);
-const selectedSlot = ref(null);
-const editCount = ref(1);
-const searchQuery = ref('');
-const searchResults = ref([]);
-const searchLoading = ref(false);
-const newItem = ref(null);
-const newItemCount = ref(1);
 const dirty = ref(false);
+const mode = ref('simulate');
+const schema = ref({});
+const source = ref('player');
+const identityUuid = ref('');
+const mapDimension = ref('minecraft:overworld');
+let liveTimer = null;
+
+const modeOptions = [
+  { id: 'live', label: '实时', hint: '每次操作立即写入；离线玩家/未加载目标会排队。' },
+  { id: 'preset', label: '预设', hint: '本地编辑，点保存一次性提交；重置会丢弃未提交修改。' },
+  { id: 'simulate', label: '模拟', hint: '只在本地演练，不会写入服务器。' },
+];
+
+const currentModeHint = computed(() =>
+  modeOptions.find((option) => option.id === mode.value)?.hint || '');
 
 const scopeLabel = computed(() => {
   if (scope.value === 'ender') return '末影箱';
@@ -211,9 +201,63 @@ const filteredPlayers = computed(() => {
       || String(player.uuid || '').toLowerCase().includes(value));
 });
 
+const mapDimensions = computed(() => {
+  const seen = new Map();
+  const defaults = [
+    { id: 'minecraft:overworld', name: '主世界' },
+    { id: 'minecraft:the_nether', name: '下界' },
+    { id: 'minecraft:the_end', name: '末地' },
+  ];
+  for (const dimension of defaults) seen.set(dimension.id, dimension);
+  for (const player of players.value) {
+    if (player.dimension && !seen.has(player.dimension)) {
+      seen.set(player.dimension, { id: player.dimension, name: shortDimension(player.dimension) });
+    }
+  }
+  return [...seen.values()];
+});
+
+const playerMarkers = computed(() => players.value
+  .filter((player) => player.dimension && Number.isFinite(Number(player.x)))
+  .map((player) => ({
+    id: player.uuid,
+    x: Number(player.x),
+    z: Number(player.z),
+    dimension: player.dimension,
+    label: player.name || player.uuid.slice(0, 8),
+    sub: `${player.online ? '在线' : '离线'} · ${Math.round(player.x)}, ${Math.round(player.y)}, ${Math.round(player.z)}`,
+    kind: 'player',
+    online: player.online === true,
+  })));
+
+const layout = computed(() => {
+  if (scope.value === 'inventory') {
+    return [
+      { label: '主背包 0–35', start: 0, size: 36, columns: 9 },
+      { label: '盔甲 36–39', start: 36, size: 4, columns: 4 },
+      { label: '副手 40', start: 40, size: 1, columns: 1 },
+    ];
+  }
+  if (scope.value === 'armor') {
+    return [{ label: '盔甲 36–39', start: 0, size: 4, columns: 4 }];
+  }
+  return [{ label: '末影箱 0–26', start: 0, size: 27, columns: 9 }];
+});
+
 onMounted(() => {
+  const initialSource = route.query.source === 'identity' ? 'identity' : 'player';
+  source.value = initialSource;
+  identityUuid.value = String(route.query.data || '');
   if (token.value) connect();
 });
+
+function shortDimension(dimension) {
+  const value = String(dimension || '');
+  if (value.includes('nether')) return '下界';
+  if (value.endsWith('the_end') || value.includes('end')) return '末地';
+  if (value.includes('overworld')) return '主世界';
+  return value.replace('minecraft:', '');
+}
 
 async function api(path, options = {}) {
   const headers = Object.assign({ Authorization: 'Bearer ' + token.value }, options.headers || {});
@@ -244,7 +288,12 @@ async function connect() {
     if (result.status !== 200) throw new Error(result.data.error || ('连接失败：' + result.status));
     sessionStorage.setItem('samsara-token', value);
     connected.value = true;
-    await loadPlayers();
+    await loadSchema();
+    if (source.value === 'identity') {
+      if (identityUuid.value) await loadIdentity();
+    } else {
+      await loadPlayers();
+    }
   } catch (e) {
     error.value = e.message || String(e);
     connected.value = false;
@@ -253,7 +302,17 @@ async function connect() {
   }
 }
 
+async function loadSchema() {
+  try {
+    const result = await api('/api/items/schema');
+    if (result.status === 200 && result.data.ok) schema.value = result.data.schema || {};
+  } catch {
+    // schema 失败时仍可做数量编辑
+  }
+}
+
 async function loadPlayers() {
+  loading.value = true;
   try {
     const result = await api('/api/server/players');
     if (result.status !== 200) throw new Error(result.data.error || '读取玩家列表失败');
@@ -261,15 +320,61 @@ async function loadPlayers() {
     selectedPlayer.value = players.value.find((player) => player.online)
       || players.value[0]
       || null;
+    if (selectedPlayer.value?.dimension) mapDimension.value = selectedPlayer.value.dimension;
     if (selectedPlayer.value) await reload();
   } catch (e) {
     error.value = e.message || String(e);
+  } finally {
+    loading.value = false;
   }
 }
 
 async function selectPlayer(player) {
   selectedPlayer.value = player;
+  if (player.dimension) mapDimension.value = player.dimension;
   await reload();
+}
+
+function selectMarker(id) {
+  const player = players.value.find((candidate) => candidate.uuid === id);
+  if (player) selectPlayer(player);
+}
+
+async function switchSource(next) {
+  if (next === 'identity') {
+    source.value = 'identity';
+    data.value = null;
+    if (identityUuid.value) await loadIdentity();
+  } else {
+    source.value = 'player';
+    data.value = null;
+    if (!players.value.length) await loadPlayers();
+    else if (selectedPlayer.value) await reload();
+  }
+}
+
+async function loadIdentity() {
+  const uuid = identityUuid.value.trim();
+  if (!uuid) {
+    error.value = '请输入 data UUID';
+    return;
+  }
+  loading.value = true;
+  error.value = '';
+  message.value = '';
+  try {
+    const params = new URLSearchParams({ source: 'identity', data: uuid, scope: scope.value });
+    const result = await api('/api/inventory?' + params.toString());
+    if (result.status !== 200 || !result.data.ok) {
+      throw new Error(result.data.error || '读取身份背包失败');
+    }
+    applyInventoryData(result.data);
+  } catch (e) {
+    data.value = null;
+    error.value = e.message || String(e);
+  } finally {
+    loading.value = false;
+  }
 }
 
 async function reload() {
@@ -278,11 +383,13 @@ async function reload() {
 }
 
 async function refresh() {
-  await loadInventory();
+  if (source.value === 'identity') await loadIdentity();
+  else await loadInventory();
 }
 
 async function loadInventory() {
   if (!selectedPlayer.value) return;
+  loading.value = true;
   error.value = '';
   message.value = '';
   try {
@@ -294,214 +401,123 @@ async function loadInventory() {
     if (result.status !== 200 || !result.data.ok) {
       throw new Error(result.data.error || '读取背包失败');
     }
-    data.value = result.data;
-    slots.value = (result.data.slots || []).slice();
-    revision.value = result.data.revision;
-    selectedSlot.value = null;
-    dirty.value = false;
-    searchResults.value = [];
-    newItem.value = null;
+    applyInventoryData(result.data);
     if (result.data.pendingWrite) {
       message.value = '该玩家有待写入队列；当前显示队列中的内容，登录或停服前应用。';
     }
   } catch (e) {
     data.value = null;
     error.value = e.message || String(e);
-  }
-}
-
-function itemAt(index) {
-  if (!data.value) return null;
-  return (data.value.items || []).find((item) => item.slot === index) || null;
-}
-
-function itemsFor(start, end) {
-  return (data.value?.items || [])
-    .filter((item) => item.slot >= start && item.slot < end)
-    .map((item) => Object.assign({}, item, { slot: item.slot - start }));
-}
-
-function selectSlot(index) {
-  selectedSlot.value = index;
-  const item = itemAt(index);
-  editCount.value = item ? item.count : 1;
-  searchQuery.value = '';
-  searchResults.value = [];
-  newItem.value = null;
-  newItemCount.value = 1;
-}
-
-function chooseItem(item) {
-  newItem.value = item;
-  newItemCount.value = 1;
-}
-
-async function searchItems() {
-  const text = searchQuery.value.trim();
-  if (!text) {
-    searchResults.value = [];
-    return;
-  }
-  searchLoading.value = true;
-  error.value = '';
-  try {
-    const result = await api('/api/lottery/values?q=' + encodeURIComponent(text) + '&limit=20');
-    if (result.status !== 200) throw new Error(result.data.error || '物品搜索失败');
-    searchResults.value = (result.data.values || []).filter((item) => item.acceptable !== false);
-    if (!searchResults.value.length) {
-      message.value = '没有匹配的物品。';
-    }
-  } catch (e) {
-    error.value = e.message || String(e);
   } finally {
-    searchLoading.value = false;
+    loading.value = false;
   }
 }
 
-async function updateCount() {
-  const index = selectedSlot.value;
-  const item = itemAt(index);
-  if (!item) return;
-  const count = Number(editCount.value);
-  if (!Number.isFinite(count) || count < 1) {
-    error.value = '数量至少为 1';
-    return;
-  }
-  busy.value = true;
-  try {
-    const result = await api('/api/inventory/item', {
-      method: 'POST',
-      body: JSON.stringify({ encoded: slots.value[index], count }),
-    });
-    if (result.status !== 200 || !result.data.ok) {
-      throw new Error(result.data.error || '更新数量失败');
-    }
-    slots.value[index] = result.data.encoded;
-    data.value.items = data.value.items.map((row) => row.slot === index
-      ? Object.assign({}, row, {
-        count: result.data.count,
-        encoded: result.data.encoded,
-        components: result.data.components,
-      })
-      : row);
-    dirty.value = true;
-  } catch (e) {
-    error.value = e.message || String(e);
-  } finally {
-    busy.value = false;
-  }
+function applyInventoryData(payload) {
+  data.value = payload;
+  slots.value = (payload.slots || []).slice();
+  revision.value = payload.revision;
+  dirty.value = false;
+  message.value = '';
 }
 
-function removeSlot() {
-  const index = selectedSlot.value;
-  if (index === null) return;
-  slots.value[index] = '';
-  data.value.items = data.value.items.filter((row) => row.slot !== index);
+function onWorkbenchChange(payload) {
+  if (!data.value) return;
+  slots.value = payload.slots;
+  data.value = Object.assign({}, data.value, { items: payload.items });
   dirty.value = true;
+  if (mode.value !== 'live' || payload.pending) {
+    if (mode.value === 'live' && payload.pending) {
+      message.value = '光标上还有物品，放下后才会实时写入。';
+    }
+    return;
+  }
+  liveTimer && clearTimeout(liveTimer);
+  liveTimer = setTimeout(() => save(true), 450);
 }
 
-async function addItem() {
-  if (!newItem.value) return;
-  let index = selectedSlot.value;
-  if (index === null || slots.value[index]) {
-    index = slots.value.findIndex((slot) => !slot);
-  }
-  if (index < 0) {
-    error.value = scope.value === 'ender' ? '末影箱已满' : '背包已满，没有空槽位';
-    return;
-  }
-  const count = Number(newItemCount.value);
-  if (!Number.isFinite(count) || count < 1) {
-    error.value = '数量至少为 1';
-    return;
-  }
-  busy.value = true;
-  try {
-    const result = await api('/api/inventory/item', {
-      method: 'POST',
-      body: JSON.stringify({ id: newItem.value.id, count }),
-    });
-    if (result.status !== 200 || !result.data.ok) {
-      throw new Error(result.data.error || '添加物品失败');
+async function setMode(next) {
+  if (next === mode.value) return;
+  if (next === 'live' && dirty.value) {
+    try {
+      await ElMessageBox.confirm(
+        '切换到实时模式会立即把当前修改写入服务器。继续？',
+        '切换到实时模式',
+        { confirmButtonText: '切换并写入', cancelButtonText: '取消', type: 'warning' },
+      );
+    } catch {
+      return;
     }
-    slots.value[index] = result.data.encoded;
-    data.value.items = data.value.items
-      .filter((row) => row.slot !== index)
-      .concat([{
-        slot: index,
-        id: result.data.id,
-        icon: (result.data.id || '').split(':').pop(),
-        name: result.data.name,
-        count: result.data.count,
-        maxStack: 64,
-        encoded: result.data.encoded,
-        components: result.data.components,
-      }]);
-    selectedSlot.value = index;
-    newItem.value = null;
-    searchResults.value = [];
-    dirty.value = true;
-  } catch (e) {
-    error.value = e.message || String(e);
-  } finally {
-    busy.value = false;
   }
+  mode.value = next;
+  if (next === 'live' && dirty.value) await save(true);
 }
 
 async function confirmSave() {
   if (!data.value) return;
-  const label = data.value.online ? '直接写入在线玩家' : '写入离线安全队列';
+  const label = data.value.online
+    ? '直接写入在线玩家'
+    : (source.value === 'identity' ? '直接写入身份数据文件（写入前自动备份）' : '写入离线安全队列');
   try {
     await ElMessageBox.confirm(
-      `将${label}：${data.value.player.name || data.value.player.uuid} · ${scopeLabel.value}；` +
-      `当前 revision ${revision.value}。写入前会保存 Web 审计快照。`,
+      `将${label}：${data.value.player.name || data.value.player.uuid} · ${scopeLabel.value}；`
+        + `当前 revision ${revision.value}。写入前会保存 Web 审计快照。`,
       '确认写入玩家背包',
       { confirmButtonText: '确认写入', cancelButtonText: '取消', type: 'warning' },
     );
   } catch {
     return;
   }
-  await save();
+  await save(false);
 }
 
-async function save() {
+async function save(silent) {
+  if (saving.value || !data.value) return;
   saving.value = true;
   error.value = '';
   try {
+    const body = {
+      scope: scope.value,
+      revision: revision.value,
+      slots: slots.value,
+    };
+    if (source.value === 'identity') {
+      body.source = 'identity';
+      body.data = identityUuid.value.trim();
+    } else {
+      body.player = data.value.player.uuid;
+    }
     const result = await api('/api/inventory/write', {
       method: 'POST',
-      body: JSON.stringify({
-        player: data.value.player.uuid,
-        scope: scope.value,
-        revision: revision.value,
-        slots: slots.value,
-      }),
+      body: JSON.stringify(body),
     });
     if (result.status === 409) {
-      await loadInventory();
+      await refresh();
       throw new Error(result.data.error
-        ? result.data.error + '（当前 revision ' + revision.value + '，已重新读取）'
+        ? result.data.error + '（已重新读取）'
         : 'revision 冲突，已重新读取');
     }
     if (result.status !== 200 || !result.data.ok) {
       throw new Error(result.data.error || '写入失败');
     }
+    const queued = result.data.queued === true;
     data.value = Object.assign({}, data.value, result.data);
     slots.value = (result.data.slots || slots.value).slice();
     revision.value = result.data.revision;
     dirty.value = false;
-    selectedSlot.value = null;
-    if (result.data.queued) {
+    if (source.value === 'identity') {
+      message.value = result.data.online
+        ? '已写入在线玩家（同身份）；退出时会同步到身份数据。'
+        : '已写入身份数据文件，并已自动备份写入前版本。';
+    } else if (queued) {
       message.value = '玩家不在线，已写入安全队列；下次登录或停服前应用。';
-      ElMessage.success('已写入离线安全队列');
     } else {
       message.value = '已写入在线玩家背包与盔甲/副手。';
-      ElMessage.success('已写入在线玩家背包');
     }
-    await loadInventory();
+    if (!silent) ElMessage.success(message.value);
   } catch (e) {
     error.value = e.message || String(e);
-    ElMessage.error(error.value);
+    if (!silent) ElMessage.error(error.value);
   } finally {
     saving.value = false;
   }
@@ -537,7 +553,7 @@ async function save() {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-height: 460px;
+  max-height: 420px;
   overflow: auto;
 }
 
@@ -575,6 +591,33 @@ async function save() {
   font-size: 11px;
 }
 
+.inventory-map-block {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-bottom: 14px;
+}
+
+.inventory-map-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.inventory-map-head h3 {
+  margin: 0;
+}
+
+.inventory-map-head select {
+  padding: 4px 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-soft);
+  color: var(--fg);
+  font-size: 12px;
+}
+
 .inventory-head {
   display: flex;
   flex-wrap: wrap;
@@ -602,58 +645,27 @@ async function save() {
   margin-bottom: 12px;
 }
 
-.inventory-sections {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+.mode-switch {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel-soft);
 }
 
-.inventory-section-title {
-  margin-bottom: 6px;
+.mode-switch button {
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
   color: var(--muted);
   font-size: 12px;
-  font-weight: 600;
-}
-
-.inventory-editor {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  margin-top: 14px;
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
-}
-
-.inventory-search-results {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  max-height: 240px;
-  overflow: auto;
-  margin-top: 10px;
-}
-
-.inventory-search-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 7px 9px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: transparent;
-  color: inherit;
-  text-align: left;
   cursor: pointer;
 }
 
-.inventory-search-row.active {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-
-.inventory-detail {
-  margin-top: 12px;
+.mode-switch button.active {
+  background: var(--accent);
+  color: #fff;
 }
 
 @media (max-width: 900px) {

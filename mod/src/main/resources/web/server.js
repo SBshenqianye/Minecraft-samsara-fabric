@@ -586,6 +586,44 @@
 
   const GROUP_ORDER = ['网络与状态', '世界与玩法', '管理与 RCON', '性能与区块', '其他'];
 
+  // 原版 server.properties 默认值；用于“恢复默认”而不是恢复本次加载值。
+  const PROPERTY_DEFAULTS = {
+    'accepts-transfers': 'false', 'allow-flight': 'false',
+    'broadcast-console-to-ops': 'true', 'broadcast-rcon-to-ops': 'true',
+    'bug-report-link': '', 'chat-spam-threshold-seconds': '10',
+    'command-spam-threshold-seconds': '10', 'difficulty': 'easy',
+    'enable-code-of-conduct': 'false', 'enable-jmx-monitoring': 'false',
+    'enable-query': 'false', 'enable-rcon': 'false', 'enable-status': 'true',
+    'enforce-secure-profile': 'true', 'enforce-whitelist': 'false',
+    'entity-broadcast-range-percentage': '100', 'force-gamemode': 'false',
+    'function-permission-level': '2', 'gamemode': 'survival',
+    'generate-structures': 'true', 'generator-settings': '{}',
+    'hardcore': 'false', 'hide-online-players': 'false',
+    'initial-disabled-packs': '', 'initial-enabled-packs': 'vanilla',
+    'level-name': 'world', 'level-seed': '', 'level-type': 'minecraft\\:normal',
+    'log-ips': 'true', 'management-server-allowed-origins': '',
+    'management-server-enabled': 'false', 'management-server-host': 'localhost',
+    'management-server-port': '0', 'management-server-secret': '',
+    'management-server-tls-enabled': 'true',
+    'management-server-tls-keystore': '',
+    'management-server-tls-keystore-password': '',
+    'max-chained-neighbor-updates': '1000000', 'max-players': '20',
+    'max-tick-time': '60000', 'max-world-size': '29999984',
+    'motd': 'A Minecraft Server', 'network-compression-threshold': '256',
+    'online-mode': 'true', 'op-permission-level': '4',
+    'pause-when-empty-seconds': '60', 'player-idle-timeout': '0',
+    'prevent-proxy-connections': 'false', 'query.port': '25565',
+    'rate-limit': '0', 'rcon.password': '', 'rcon.port': '25575',
+    'region-file-compression': 'deflate', 'require-resource-pack': 'false',
+    'resource-pack': '', 'resource-pack-id': '', 'resource-pack-prompt': '',
+    'resource-pack-sha1': '', 'server-ip': '', 'server-port': '25565',
+    'simulation-distance': '10', 'spawn-protection': '16',
+    'status-heartbeat-interval': '0', 'sync-chunk-writes': 'true',
+    'text-filtering-config': '', 'text-filtering-version': '0',
+    'use-native-transport': 'true', 'view-distance': '10', 'white-list': 'false',
+    'eula': 'false',
+  };
+
   const PROPERTY_SPECS = {
     'accepts-transfers': { group: '网络与状态', type: 'bool', desc: '是否接受其它服务器通过 transfer 协议转入的玩家' },
     'allow-flight': { group: '世界与玩法', type: 'bool', desc: '允许生存模式飞行；关闭时飞行会被反作弊踢出' },
@@ -776,7 +814,7 @@
     return String(content || '').replace(/^\uFEFF/, '').split(/\r?\n/).map((line) => {
       if (line === '') return { type: 'blank', raw: '' };
       if (/^\s*[#!]/.test(line) || /^\s*\\[#!]/.test(line)) {
-        return { type: 'comment', raw: line.replace(/^\s*\\/, '') };
+        return { type: 'comment', raw: line };
       }
       const eq = line.indexOf('=');
       if (eq <= 0) return { type: 'raw', raw: line };
@@ -812,26 +850,48 @@
   }
 
   function markDirty(file, draft) {
-    draft.dirty = true;
+    // 每次都按“当前草稿 vs 文件原文”重新计算，避免改回原值后仍显示修改条目（假账）。
+    refreshDirty(file);
     updateDirtyIndicator();
   }
 
   function refreshDirty(file) {
     const draft = state.drafts.get(file.id);
     if (!draft) return;
-    const next = buildContent(draft);
     if (draft.kind === 'json') {
+      const next = buildContent(draft);
       try {
         draft.dirty = JSON.stringify(JSON.parse(next))
             !== JSON.stringify(JSON.parse(file.content || '[]'));
       } catch (e) {
         draft.dirty = true;
       }
+    } else if (draft.kind === 'lines') {
+      // 只比较“真正会写回的字段/注释原文”，避免 BOM、行尾或多出来的空白造成假修改。
+      draft.dirty = !samePropertyLines(draft.tokens, splitPropertyLines(file.content));
     } else {
-      const normalize = (text) => String(text || '').replace(/\r\n/g, '\n').replace(/\s+$/, '');
-      draft.dirty = normalize(next) !== normalize(file.content);
+      const normalize = (text) => String(text || '')
+          .replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\s+$/, '');
+      draft.dirty = normalize(buildContent(draft)) !== normalize(file.content);
     }
     updateDirtyIndicator();
+  }
+
+  function samePropertyLines(a, b) {
+    const left = a || [];
+    const right = b || [];
+    if (left.length !== right.length) return false;
+    for (let i = 0; i < left.length; i++) {
+      const x = left[i];
+      const y = right[i];
+      if (x.type !== y.type) return false;
+      if (x.type === 'prop') {
+        if (x.key !== y.key || String(x.value) !== String(y.value)) return false;
+      } else if ((x.raw || '') !== (y.raw || '')) {
+        return false;
+      }
+    }
+    return true;
   }
 
   function dirtyCount() {
@@ -1037,16 +1097,21 @@
     const actions = [];
     if (file.kind === 'properties') {
       const reset = KIT.button('恢复默认', 'ghost', () => {
-        // 恢复为本次加载时的值，并保留配置项；不要从文件里删除整条配置。
-        token.value = token.originalValue != null ? token.originalValue : '';
+        // 真正恢复为 Minecraft 原版默认值；保留配置项本身，不删除整行。
+        const fallback = token.originalValue != null ? token.originalValue : '';
+        token.value = Object.prototype.hasOwnProperty.call(PROPERTY_DEFAULTS, token.key)
+          ? PROPERTY_DEFAULTS[token.key] : fallback;
         markDirty(file, draft);
         renderConfig();
       });
-      reset.title = '恢复为本次加载时的值；保留配置项，不会删除这一条';
+      reset.title = Object.prototype.hasOwnProperty.call(PROPERTY_DEFAULTS, token.key)
+        ? '恢复为 Minecraft 原版默认值：' + (PROPERTY_DEFAULTS[token.key] || '（空）')
+        : '恢复为本次加载时的值；保留配置项，不会删除这一条';
       actions.push(reset);
     }
     return KIT.field({
       id,
+      className: spec.chat ? 'entry-wide' : '',
       label: token.key,
       description: spec.desc || '',
       badges,
@@ -1678,17 +1743,29 @@
     const text = document.createElement('span');
     text.textContent = '我确认：停服并重新启动后打包 world、服务器配置与 config/samsara；源 world 保持不变';
     confirm.append(check, text);
-    const run = KIT.button('确认创建（需重启）', 'primary', () => confirmCreate());
+
+    const noteField = document.createElement('label');
+    noteField.className = 'world-stack-note-field';
+    const noteLabel = document.createElement('span');
+    noteLabel.textContent = '备份说明（可选，显示在时间线上，方便以后辨认）';
+    const noteInput = document.createElement('input');
+    noteInput.type = 'text';
+    noteInput.maxLength = 120;
+    noteInput.placeholder = '例如：更新模组前、开新地图前、修复前';
+    noteField.append(noteLabel, noteInput);
+
+    const run = KIT.button('确认创建（需重启）', 'primary', () => confirmCreate(noteInput.value));
     run.disabled = true;
-    box.append(confirm, run);
+    box.append(confirm, noteField, run);
   }
 
-  async function confirmCreate() {
+  async function confirmCreate(note) {
     backupMessage('正在排队…', '');
+    const text = String(note || '').trim();
     try {
       const data = await UI.api('/api/server/backups', {
         method: 'POST',
-        body: JSON.stringify({ confirm: true }),
+        body: JSON.stringify({ confirm: true, note: text }),
       });
       backupMessage(data.message || '已排队，请停服并重新启动。', 'ok');
       const box = $('server-backup-preview');

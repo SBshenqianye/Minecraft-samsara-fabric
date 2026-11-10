@@ -40,7 +40,7 @@
   pointer-events: none;
 }
 
-.workspace-rail.collapsed:focus-within,
+.workspace-rail.collapsed:has(:focus-visible),
 .workspace-rail.peek,
 .workspace-rail.pinned {
   transform: translateX(0);

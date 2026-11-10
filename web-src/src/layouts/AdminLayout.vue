@@ -413,6 +413,11 @@ function openRail(pinned = false) {
 function collapseRail() {
   window.clearTimeout(railTimer);
   if (!railOpen.value && !railClosing.value) return;
+  // 点击页面后焦点可能还在导航按钮上；先移走焦点，避免 :focus-visible 把导航重新撑开。
+  const active = document.activeElement;
+  if (active && railEl.value && railEl.value.contains(active) && typeof active.blur === 'function') {
+    active.blur();
+  }
   railOpen.value = false;
   railPinned.value = false;
   storeRailPinned();

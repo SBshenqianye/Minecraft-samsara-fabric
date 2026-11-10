@@ -316,6 +316,9 @@ async function main() {
         twoLines: editor?.querySelectorAll('.server-list-line').length || 0,
         hasSignal: Boolean(editor?.querySelector('.server-list-signal')),
         plainToggle: Boolean(editor?.querySelector('.chat-text-toggle[aria-pressed]')),
+        lineWhiteSpace: editor?.querySelector('.server-list-line')
+          ? getComputedStyle(editor.querySelector('.server-list-line')).whiteSpace : '',
+        cardWidth: Math.round(editor?.querySelector('.server-list-card')?.getBoundingClientRect().width || 0),
         previewSpans: editor?.querySelectorAll('.chat-text-rendered span').length || 0 };
     })()`);
     check('MOTD 使用 4×4 固定色板', motdEditor.found && motdEditor.cells === 16,
@@ -325,6 +328,8 @@ async function main() {
     check('MOTD 预览为服务器列表样式', motdEditor.serverList === true
         && motdEditor.twoLines >= 1 && motdEditor.hasSignal === true
         && motdEditor.plainToggle === false, JSON.stringify(motdEditor));
+    check('MOTD 预览不自动换行且宽度充足', motdEditor.lineWhiteSpace === 'nowrap'
+        && motdEditor.cardWidth > 360, JSON.stringify(motdEditor));
 
     const propertyKeys = await evaluate(`(() => {
       const file = [...document.querySelectorAll('#server-config-files > details.file-block')]
@@ -350,6 +355,35 @@ async function main() {
         JSON.stringify(segmentedFit));
 
     // MOTD 测试会修改草稿；重新读取，避免影响后续“未保存计数”断言。
+    await evaluate(`(async () => {
+      if (window.SamsaraServer?.reload) await window.SamsaraServer.reload();
+      return true;
+    })()`);
+    await until("document.querySelectorAll('#server-config-files > details.file-block').length >= 6",
+        15000, '服务器配置重载');
+
+    const resetBehavior = await evaluate(`(async () => {
+      const find = (key) => [...document.querySelectorAll('#server-config-files .entry')]
+        .find((entry) => (entry.querySelector('.entry-key')?.textContent || '')
+          .trim().split(/\\s+/)[0] === key);
+      const resetOf = (entry) => [...(entry?.querySelectorAll('.entry-actions button') || [])]
+        .find((button) => button.textContent.trim() === '恢复默认');
+      const save = document.getElementById('server-save');
+      resetOf(find('motd'))?.click();
+      await new Promise((resolve) => setTimeout(resolve, 120));
+      const sameLabel = save.textContent;
+      const pauseBefore = find('pause-when-empty-seconds')?.querySelector('input')?.value || '';
+      resetOf(find('pause-when-empty-seconds'))?.click();
+      await new Promise((resolve) => setTimeout(resolve, 120));
+      const pauseAfter = find('pause-when-empty-seconds')?.querySelector('input')?.value || '';
+      return { sameLabel, pauseBefore, pauseAfter, changedLabel: save.textContent };
+    })()`);
+    check('恢复默认使用真实默认值', resetBehavior.pauseAfter === '60'
+        && resetBehavior.pauseAfter !== resetBehavior.pauseBefore, JSON.stringify(resetBehavior));
+    check('恢复默认无变化时不产生假修改', resetBehavior.sameLabel === '保存并重载',
+        JSON.stringify(resetBehavior));
+
+    // 恢复默认测试会修改草稿；再重载一次，避免影响后续断言。
     await evaluate(`(async () => {
       if (window.SamsaraServer?.reload) await window.SamsaraServer.reload();
       return true;
@@ -803,19 +837,23 @@ async function main() {
         .find((node) => node.textContent.includes('复制 UUID'));
       const backupButton = [...document.querySelectorAll('#identity-data-content button')]
         .find((node) => node.textContent.includes('备份数据'));
+      const editButton = [...document.querySelectorAll('#identity-data-content button')]
+        .find((node) => node.textContent.trim() === '编辑背包');
       const wasOpen = Boolean(dialog && dialog.open);
       if (dialog && dialog.open) dialog.close();
       return { open: wasOpen, text,
         hasCopy: Boolean(copyButton), hasBackup: Boolean(backupButton),
+        hasEdit: Boolean(editButton),
         hasInventory: text.includes('背包'), hasEnder: text.includes('末影箱'),
         hasAdvancements: text.includes('成就') };
     })()`);
     check('身份组 data UUID 可查看详情', identityData.open && identityData.hasInventory
         && identityData.hasEnder && identityData.hasAdvancements
-        && identityData.hasCopy && identityData.hasBackup,
+        && identityData.hasCopy && identityData.hasBackup && identityData.hasEdit,
         JSON.stringify({ open: identityData.open, hasInventory: identityData.hasInventory,
           hasEnder: identityData.hasEnder, hasAdvancements: identityData.hasAdvancements,
           hasCopy: identityData.hasCopy, hasBackup: identityData.hasBackup,
+          hasEdit: identityData.hasEdit,
           text: identityData.text.slice(0, 160) }));
     check('输出格式布尔改为按钮', mods.output === 2, 'buttons=' + mods.output);
     check('权限树布尔改为按钮', mods.permissions > 0, 'segmented=' + mods.permissions);
@@ -1827,6 +1865,36 @@ async function main() {
         && containerRead.container && containerRead.container.slots.length === 27
         && containerRead.container.slots[0].length > 0,
         JSON.stringify(containerRead));
+    const itemSearch = await fetch(base
+        + '/api/containers?dimension=minecraft:overworld&q=diamond',
+        { headers: authHeaders }).then((response) => response.json());
+    check('容器支持按物品 ID/名称搜索', itemSearch.ok === true && itemSearch.total >= 1
+        && (itemSearch.containers || []).some((row) => row.x === 8 && row.z === 8),
+        JSON.stringify({ total: itemSearch.total, q: itemSearch.q }));
+    const emptySearch = await fetch(base
+        + '/api/containers?dimension=minecraft:overworld&q=definitely-not-an-item',
+        { headers: authHeaders }).then((response) => response.json());
+    check('容器物品搜索无匹配时返回空', emptySearch.ok === true && emptySearch.total === 0,
+        JSON.stringify({ total: emptySearch.total }));
+
+    const itemSchema = await fetch(base + '/api/items/schema',
+        { headers: authHeaders }).then((response) => response.json());
+    check('物品结构化 schema 提供附魔/药水/属性枚举', itemSchema.ok === true
+        && (itemSchema.schema?.enchantments || []).length > 0
+        && (itemSchema.schema?.potions || []).length > 0
+        && (itemSchema.schema?.attributes || []).length > 0,
+        JSON.stringify({ enchant: itemSchema.schema?.enchantments?.length,
+          potion: itemSchema.schema?.potions?.length,
+          attribute: itemSchema.schema?.attributes?.length }));
+    const stoneDescribe = await fetch(base + '/api/items/describe', {
+      method: 'POST', headers: authHeaders,
+      body: JSON.stringify({ id: 'minecraft:stone', count: 1 }),
+    }).then((response) => response.json());
+    check('未附魔石头不发光且结构化字段完整', stoneDescribe.ok === true
+        && stoneDescribe.item?.glint === false && stoneDescribe.item?.id === 'minecraft:stone'
+        && Array.isArray(stoneDescribe.item?.enchantments)
+        && Array.isArray(stoneDescribe.item?.attributes),
+        JSON.stringify({ glint: stoneDescribe.item?.glint, id: stoneDescribe.item?.id }));
     const beforeWrite = containerRead.container;
     const movedSlots = beforeWrite.slots.slice();
     movedSlots[1] = movedSlots[0];
@@ -1952,12 +2020,13 @@ async function main() {
         && persistedGrid.legend.includes('开') && persistedGrid.stored === '1',
         JSON.stringify(persistedGrid));
 
-    // ---- 容器 Web UI（Vue）：路由、列表、槽位、改数量、保存 ----
+    // ---- 容器 Web UI（Vue）：路由、地图/列表、槽位、结构化编辑器、预设保存 ----
     await navigate(base + '/containers');
     await until("document.querySelector('.container-page')", 20000, '容器页');
     await until("document.querySelector('.container-row') || document.querySelector('.container-message.error')",
         30000, '容器列表');
     const containerUi = await evaluate(`(async () => {
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
       window.__containerErrors = [];
       window.addEventListener('error', (event) => window.__containerErrors.push(String(event.message)));
       window.addEventListener('unhandledrejection', (event) => window.__containerErrors.push(String(event.reason)));
@@ -1967,39 +2036,50 @@ async function main() {
       target.click();
       const deadline = Date.now() + 8000;
       while (!document.querySelector('.slot-grid') && Date.now() < deadline) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        await sleep(100);
       }
       const slots = document.querySelectorAll('.slot').length;
       const itemSlot = [...document.querySelectorAll('.slot')]
-        .find((slot) => slot.querySelector('.count'));
-      if (itemSlot) itemSlot.click();
-      await new Promise((resolve) => setTimeout(resolve, 200));
-      const editorInput = document.querySelector('.slot-editor input[type="number"]');
-      if (editorInput) {
-        editorInput.value = '4';
-        editorInput.dispatchEvent(new Event('input', { bubbles: true }));
-        const update = [...document.querySelectorAll('.slot-editor button')]
-          .find((button) => button.textContent.trim() === '更新数量');
-        update?.click();
-        await new Promise((resolve) => setTimeout(resolve, 900));
-      }
+        .find((slot) => slot.querySelector('.item-icon-view'));
+      const emptySlot = [...document.querySelectorAll('.slot')]
+        .find((slot) => !slot.querySelector('.item-icon-view'));
+      itemSlot?.click();
+      await sleep(700);
+      const editor = !!document.querySelector('.item-editor');
+      const editorInputs = document.querySelectorAll('.item-editor input, .item-editor textarea, .item-editor select').length;
+      const defaultMode = document.querySelector('.mode-switch button.active')?.textContent.trim() || '';
+      const preset = [...document.querySelectorAll('.mode-switch button')]
+        .find((button) => button.textContent.trim() === '预设');
+      preset?.click();
+      await sleep(250);
+      // 预设模式下用点击拿起/放下模拟游戏内搬运：第一次点击已经拿起，这里放到空槽。
+      emptySlot?.click();
+      await sleep(900);
       const save = [...document.querySelectorAll('button')]
-        .find((button) => button.textContent.trim().startsWith('保存'));
+        .find((button) => button.textContent.trim().startsWith('保存修改'));
+      const saveEnabled = !!save && !save.disabled;
       save?.click();
-      await new Promise((resolve) => setTimeout(resolve, 200));
-      const confirm = [...document.querySelectorAll('.modal-card button')]
-        .find((button) => button.textContent.trim() === '确认保存');
+      await sleep(500);
+      const confirm = [...document.querySelectorAll('.el-message-box__btns button')]
+        .find((button) => button.textContent.trim() === '确认写入');
       confirm?.click();
-      await new Promise((resolve) => setTimeout(resolve, 3500));
+      await sleep(4200);
       const messages = [...document.querySelectorAll('.container-message')]
         .map((node) => ({ cls: node.className, text: node.textContent }));
       return {
         rows: rows.length,
         slots,
         hasItem: !!itemSlot,
+        hasGlint: !!document.querySelector('.slot .item-icon-view.has-glint'),
+        map: !!document.querySelector('.map-picker'),
+        mapMarkers: document.querySelectorAll('.map-marker').length,
+        defaultMode,
+        editor,
+        editorInputs,
+        saveEnabled,
         message: document.querySelector('.container-message.ok')?.textContent || '',
         messages,
-        modalStillOpen: !!document.querySelector('.modal-card'),
+        modalStillOpen: !!document.querySelector('.el-message-box'),
         modalOpened: !!confirm,
         page: !!document.querySelector('.container-page'),
         errors: window.__containerErrors.slice(),
@@ -2007,10 +2087,20 @@ async function main() {
     })()`);
     check('容器页路由可打开并列出容器', containerUi.page === true && containerUi.rows >= 1,
         JSON.stringify(containerUi));
-    check('容器页显示 27 格槽位与物品', containerUi.slots === 27 && containerUi.hasItem === true,
+    check('容器页显示 27 格槽位与物品且无附魔物品不发光', containerUi.slots === 27
+        && containerUi.hasItem === true && containerUi.hasGlint === false,
         JSON.stringify(containerUi));
-    check('容器页改数量并保存成功', containerUi.modalOpened === true
-        && containerUi.message.includes('已保存'), JSON.stringify(containerUi));
+    check('容器页地图选择箱子并显示标记', containerUi.map === true
+        && containerUi.mapMarkers >= 1, JSON.stringify({ map: containerUi.map,
+          markers: containerUi.mapMarkers }));
+    check('容器页默认使用模拟模式', containerUi.defaultMode === '模拟',
+        JSON.stringify({ mode: containerUi.defaultMode }));
+    check('容器为主格显示结构化组件编辑器', containerUi.editor === true
+        && containerUi.editorInputs > 0 && containerUi.saveEnabled === true,
+        JSON.stringify(containerUi));
+    check('容器页预设模式点击搬运并保存成功', containerUi.modalOpened === true
+        && containerUi.modalStillOpen === false && containerUi.message.includes('已写入'),
+        JSON.stringify(containerUi));
     check('容器页没有未捕获脚本错误', (containerUi.errors || []).length === 0,
         (containerUi.errors || []).slice(0, 3).join(' | '));
     await fetch(base + '/api/server/console', {
@@ -2606,8 +2696,23 @@ async function main() {
       });
     }
 
+    // 浏览器极少数情况下会在重负载后丢掉 sessionStorage；这里显式补一次 token。
+    await evaluate(`sessionStorage.setItem('samsara-token', ${JSON.stringify(token)}); true`);
     await navigate(base + '/samsara/sky/inventory');
-    await until("document.querySelector('.inventory-layout')", 25000, '玩家背包页');
+    try {
+      await until("document.querySelector('.inventory-layout')", 40000, '玩家背包页');
+    } catch (e) {
+      const state = await evaluate(`(() => ({
+        path: location.pathname,
+        ready: document.readyState,
+        token: Boolean(sessionStorage.getItem('samsara-token')),
+        layout: Boolean(document.querySelector('.inventory-layout')),
+        connect: Boolean(document.querySelector('.inventory-connect')),
+        error: document.querySelector('.container-message.error')?.textContent || '',
+        text: document.body.innerText.slice(0, 400),
+      }))()`);
+      throw new Error('玩家背包页: ' + JSON.stringify(state));
+    }
     await until("document.querySelectorAll('.inventory-main .slot').length === 41",
         20000, '玩家背包槽位');
     const inventoryUi = await evaluate(`(() => ({
@@ -2615,12 +2720,19 @@ async function main() {
       slots: document.querySelectorAll('.inventory-main .slot').length,
       players: document.querySelectorAll('.inventory-player').length,
       scope: !!document.querySelector('.inventory-scope'),
+      defaultMode: document.querySelector('.inventory-main .mode-switch button.active')?.textContent.trim() || '',
+      map: !!document.querySelector('.inventory-map-block .map-picker'),
+      mapMarkers: document.querySelectorAll('.inventory-map-block .map-marker').length,
       section: document.querySelector('.section-tab.active')?.textContent.trim() || '',
       errors: window.__e2eErrors?.length || 0,
     }))()`);
     check('天网玩家背包页可打开', inventoryUi.page && inventoryUi.slots === 41
         && inventoryUi.players >= 1 && inventoryUi.scope === true
+        && inventoryUi.defaultMode === '模拟'
         && inventoryUi.section === '天网', JSON.stringify(inventoryUi));
+    check('玩家背包地图显示在线/离线玩家标记', inventoryUi.map === true
+        && inventoryUi.mapMarkers >= 1, JSON.stringify({ map: inventoryUi.map,
+          markers: inventoryUi.mapMarkers }));
 
     // ---- 天网：轨迹回看与 Diff 回看入口 ----
     const trackApi = await fetch(base + '/api/track?days=7&limit=5', { headers: authHeaders });

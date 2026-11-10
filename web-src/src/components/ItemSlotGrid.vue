@@ -1,19 +1,24 @@
 <template>
-  <div class="slot-grid" :style="{ '--slot-columns': columns }">
+  <div class="slot-grid" :class="{ 'has-cursor': hasCursor }" :style="{ '--slot-columns': columns }">
     <button
       v-for="(encoded, index) in slots"
       :key="index"
       class="slot"
-      :class="{ selected: selected === index }"
+      :class="{ selected: selected === index, filled: !!itemAt(index) }"
       type="button"
       :title="titleFor(index)"
       :aria-label="ariaFor(index)"
-      @click="$emit('select', index)"
+      :draggable="!!itemAt(index)"
+      @click.prevent="$emit('slot-click', { index, button: 0, shift: $event.shiftKey })"
+      @contextmenu.prevent="$emit('slot-click', { index, button: 2, shift: $event.shiftKey })"
+      @dragstart="$emit('drag-start', { index, event: $event })"
+      @dragend="$emit('drag-end', { index })"
+      @dragover.prevent
+      @drop.prevent="$emit('drop-slot', { index, event: $event })"
     >
       <ItemIcon
         v-if="itemAt(index)"
         :item="itemAt(index)"
-        :count="itemAt(index).count"
       />
       <span v-else class="empty-index">{{ index }}</span>
     </button>
@@ -30,9 +35,10 @@ const props = defineProps({
   selected: { type: Number, default: null },
   columns: { type: Number, default: 9 },
   iconBase: { type: String, default: '/items/' },
+  hasCursor: { type: Boolean, default: false },
 });
 
-defineEmits(['select']);
+defineEmits(['select', 'slot-click', 'drop-slot', 'drag-start', 'drag-end']);
 
 const itemMap = computed(() => {
   const map = new Map();

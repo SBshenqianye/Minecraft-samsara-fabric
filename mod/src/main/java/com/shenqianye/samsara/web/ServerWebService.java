@@ -5,6 +5,10 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.shenqianye.samsara.server.ServerBackup;
 import com.shenqianye.samsara.server.ServerConfigFiles;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.NbtAccounter;
+import net.minecraft.nbt.NbtIo;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.storage.LevelResource;
@@ -94,7 +98,7 @@ public class ServerWebService {
             out.put("error", "创建备份需要确认");
             return out;
         }
-        return ServerBackup.scheduleCreate(serverRoot);
+        return ServerBackup.scheduleCreate(serverRoot, str(body, "note"));
     }
 
     public Map<String, Object> previewRestore(Map<String, Object> body) {
@@ -142,6 +146,10 @@ public class ServerWebService {
                     row.put("name", player.getName().getString());
                     row.put("online", true);
                     row.put("lastSeen", "");
+                    row.put("dimension", player.level().dimension().identifier().toString());
+                    row.put("x", Math.round(player.getX() * 10.0) / 10.0);
+                    row.put("y", Math.round(player.getY() * 10.0) / 10.0);
+                    row.put("z", Math.round(player.getZ() * 10.0) / 10.0);
                     byUuid.put(uuid, row);
                 }
             } catch (RuntimeException ignored) {
@@ -208,6 +216,10 @@ public class ServerWebService {
             }
         }
         List<Map<String, Object>> list = new ArrayList<>(byUuid.values());
+        for (Map<String, Object> row : list) {
+            if (Boolean.TRUE.equals(row.get("online"))) continue;
+            decorateOfflinePosition(row, String.valueOf(row.get("uuid")));
+        }
         list.sort(Comparator
                 .comparing((Map<String, Object> row) -> Boolean.TRUE.equals(row.get("online")) ? 0 : 1)
                 .thenComparing(row -> String.valueOf(row.get("name")), String.CASE_INSENSITIVE_ORDER));
@@ -215,6 +227,36 @@ public class ServerWebService {
         out.put("ok", true);
         out.put("players", list);
         return out;
+    }
+
+    /** 离线玩家沿用最后退出的位置，地图上保留灰色图标。 */
+    private void decorateOfflinePosition(Map<String, Object> row, String uuid) {
+        if (uuid == null || uuid.isBlank()) return;
+        Path dir;
+        if (server != null) {
+            try {
+                dir = server.getWorldPath(LevelResource.PLAYER_DATA_DIR);
+            } catch (RuntimeException e) {
+                dir = worldDir().resolve("players").resolve("data");
+            }
+        } else {
+            dir = worldDir().resolve("players").resolve("data");
+        }
+        Path file = dir.resolve(uuid + ".dat");
+        if (!Files.isRegularFile(file)) return;
+        try {
+            CompoundTag tag = NbtIo.readCompressed(file, NbtAccounter.create(16L * 1024 * 1024));
+            String dimension = tag.getStringOr("Dimension", "");
+            ListTag pos = tag.getListOrEmpty("Pos");
+            if (pos.size() >= 3) {
+                row.put("dimension", dimension);
+                row.put("x", Math.round(pos.getDoubleOr(0, 0.0) * 10.0) / 10.0);
+                row.put("y", Math.round(pos.getDoubleOr(1, 0.0) * 10.0) / 10.0);
+                row.put("z", Math.round(pos.getDoubleOr(2, 0.0) * 10.0) / 10.0);
+            }
+        } catch (Exception ignored) {
+            // 数据文件不存在/版本不兼容时只显示玩家，不上地图。
+        }
     }
 
     public Path backupFile(String id) {

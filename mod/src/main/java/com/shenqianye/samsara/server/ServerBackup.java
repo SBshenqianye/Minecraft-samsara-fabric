@@ -133,6 +133,7 @@ public final class ServerBackup {
         public String id = "";
         public String jobId = "";
         public int keep = 5;
+        public String note = "";
         public long createdAt;
     }
 
@@ -165,6 +166,7 @@ public final class ServerBackup {
         public String parentId = "";
         public String branchId = "";
         public String message = "";
+        public String note = "";
         public long createdAt;
         public long restoredAt;
         public long zipBytes;
@@ -235,6 +237,8 @@ public final class ServerBackup {
             entry.data.put("error", info.error);
             entry.data.put("restoredAt", info.restoredAt);
             entry.data.put("pendingRestore", info.pendingRestore);
+            entry.data.put("note", info.note);
+            if (info.note != null && !info.note.isBlank()) entry.label = info.note;
             entries.add(entry);
         }
         State state = readState(serverRoot);
@@ -329,6 +333,7 @@ public final class ServerBackup {
             info.zipBytes = Files.size(zip);
             info.totalBytes = num(manifest.get("totalBytes"));
             info.fileCount = (int) num(manifest.get("fileCount"));
+            info.note = str(manifest.get("note"));
             return info;
         } catch (Exception e) {
             return null;
@@ -364,6 +369,10 @@ public final class ServerBackup {
     }
 
     public static synchronized Map<String, Object> scheduleCreate(Path serverRoot) {
+        return scheduleCreate(serverRoot, "");
+    }
+
+    public static synchronized Map<String, Object> scheduleCreate(Path serverRoot, String note) {
         Map<String, Object> out = new LinkedHashMap<>();
         if (pending(serverRoot)) {
             out.put("ok", false);
@@ -386,9 +395,11 @@ public final class ServerBackup {
         pending.id = newId("sb");
         pending.jobId = newId("sbjob");
         pending.keep = currentKeep();
+        pending.note = note == null ? "" : note.trim();
         pending.createdAt = System.currentTimeMillis();
         Job job = newJob(pending.jobId, "backup", pending.id);
-        job.message = "已排队：停服后、下次启动前创建本体备份 " + pending.id;
+        job.message = "已排队：停服后、下次启动前创建本体备份 " + pending.id
+                + (pending.note.isBlank() ? "" : "（" + pending.note + "）");
         writeJob(serverRoot, job);
         if (!write(serverRoot, pendingBackupFile(serverRoot), pending)) {
             out.put("ok", false);
@@ -652,9 +663,10 @@ public final class ServerBackup {
             }
             Files.createDirectories(root);
             Files.deleteIfExists(tmp);
-            Map<String, Object> manifest = createZip(serverRoot, world, tmp, job);
+            Map<String, Object> manifest = createZip(serverRoot, world, tmp, job, pending.note);
             manifest.put("id", pending.id);
             manifest.put("createdAt", pending.createdAt > 0 ? pending.createdAt : System.currentTimeMillis());
+            manifest.put("note", pending.note == null ? "" : pending.note);
             manifest.put("sha256", sha256(tmp));
             manifest.put("zipBytes", Files.size(tmp));
             // 重新写 manifest 需要重打包；这里把最新 manifest 写到 sidecar，
@@ -708,7 +720,10 @@ public final class ServerBackup {
             info.fileCount = (int) num(manifest.get("fileCount"));
             info.parentId = parentId;
             info.branchId = branchId;
-            info.message = parentId.isEmpty() ? "时间线起点" : "从 " + parentId + " 继续";
+            info.note = pending.note == null ? "" : pending.note;
+            info.message = info.note.isBlank()
+                    ? (parentId.isEmpty() ? "时间线起点" : "从 " + parentId + " 继续")
+                    : info.note;
             Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
             Files.writeString(sidecarFile(serverRoot, pending.id), GSON.toJson(info),
                     StandardCharsets.UTF_8);
@@ -903,13 +918,14 @@ public final class ServerBackup {
 
     // ---- zip ----
 
-    private static Map<String, Object> createZip(Path serverRoot, Path world, Path out, Job job)
-            throws IOException {
+    private static Map<String, Object> createZip(Path serverRoot, Path world, Path out, Job job,
+                                                String note) throws IOException {
         Map<String, Object> manifest = new LinkedHashMap<>();
         manifest.put("format", 1);
         manifest.put("worldName", world.getFileName().toString());
         manifest.put("mcVersion", mcVersion());
         manifest.put("modVersion", modVersion());
+        manifest.put("note", note == null ? "" : note);
         manifest.put("createdAt", System.currentTimeMillis());
         try {
             StackManifest stacks = StackManifest.load(world);

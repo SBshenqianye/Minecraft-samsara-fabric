@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
 import com.shenqianye.samsara.container.ContainerIndexService;
+import com.shenqianye.samsara.item.ItemStackModel;
 import com.shenqianye.samsara.lottery.LotteryItemCodec;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
@@ -44,7 +45,8 @@ public final class ContainerWebService {
         Integer z = intOrNull(query.get("z"));
         int radius = intParam(query, "radius", 64);
         String type = query.getOrDefault("type", "");
-        return onServer(() -> ContainerIndexService.getInstance().list(dimension, x, z, radius, type));
+        String q = query.getOrDefault("q", "");
+        return onServer(() -> ContainerIndexService.getInstance().list(dimension, x, z, radius, type, q));
     }
 
     public Map<String, Object> read(Map<String, String> query) {
@@ -149,13 +151,7 @@ public final class ContainerWebService {
             if (result.isBlank()) return error(500, "物品编码失败");
             Map<String, Object> out = new LinkedHashMap<>();
             out.put("ok", true);
-            out.put("encoded", result);
-            String itemId = String.valueOf(BuiltInRegistries.ITEM.getKey(stack.getItem()));
-            out.put("id", itemId);
-            out.put("icon", itemId.contains(":") ? itemId.substring(itemId.indexOf(':') + 1) : itemId);
-            out.put("name", stack.getHoverName().getString());
-            out.put("count", stack.getCount());
-            out.put("components", stack.getComponents().toString());
+            out.putAll(ItemStackModel.describe(stack, server.registryAccess(), result));
             return out;
         });
     }

@@ -63,12 +63,14 @@ public final class ContainerIndexService {
     private MinecraftServer server;
     private RegistryAccess registries;
     private Path root;
+    private Path pendingRoot;
     private ExecutorService io;
     private volatile boolean ready;
     private boolean flushScheduled;
     private long lastFlushAt;
     private long lastScanAt;
     private long lastScanQueued;
+    private long lastPendingAt;
 
     private ContainerIndexService() {
     }
@@ -87,6 +89,12 @@ public final class ContainerIndexService {
             this.server = server;
             this.registries = server.registryAccess();
             this.root = StoragePaths.get().worldDataRoot().resolve("containers");
+            this.pendingRoot = StoragePaths.get().worldDataRoot().resolve("container-pending");
+            try {
+                Files.createDirectories(pendingRoot);
+            } catch (IOException e) {
+                Samsara.LOGGER.warn("[container] 无法创建待写入队列目录: {}", e.getMessage());
+            }
             this.entries.clear();
             this.dirtyContainers.clear();
             this.dirtyShards.clear();
@@ -201,16 +209,26 @@ public final class ContainerIndexService {
                 lastFlushAt = now;
                 scheduleFlush();
             }
+            if (now - lastPendingAt >= 2000L) {
+                lastPendingAt = now;
+                applyPendingNow();
+            }
         }
     }
 
     // ---- 查询 ----
 
     public Map<String, Object> list(String dimension, Integer x, Integer z, int radius, String type) {
+        return list(dimension, x, z, radius, type, "");
+    }
+
+    public Map<String, Object> list(String dimension, Integer x, Integer z, int radius, String type,
+                                    String query) {
         synchronized (lock) {
             List<Map<String, Object>> rows = new ArrayList<>();
             String dimFilter = dimension == null || dimension.isBlank() ? null : dimension;
             String typeFilter = type == null || type.isBlank() ? null : type;
+            String itemQuery = query == null ? "" : query.trim().toLowerCase(java.util.Locale.ROOT);
             List<ContainerEntry> sorted = new ArrayList<>(entries.values());
             sorted.sort(Comparator.comparing((ContainerEntry e) -> e.dimension)
                     .thenComparingInt(e -> e.x)
@@ -224,6 +242,7 @@ public final class ContainerIndexService {
                     int r = Math.max(0, radius);
                     if (Math.abs(entry.x - x) > r || Math.abs(entry.z - z) > r) continue;
                 }
+                if (!itemQuery.isEmpty() && !matchesItem(entry, itemQuery)) continue;
                 rows.add(entry.toModel(false, sourceOf(entry)));
                 if (rows.size() >= MAX_LIST) break;
             }
@@ -232,11 +251,28 @@ public final class ContainerIndexService {
             out.put("dimension", dimFilter == null ? "" : dimFilter);
             out.put("radius", Math.max(0, radius));
             out.put("type", typeFilter == null ? "" : typeFilter);
+            out.put("q", query == null ? "" : query);
             out.put("total", rows.size());
             out.put("containers", rows);
             out.put("indexSize", entries.size());
             return out;
         }
+    }
+
+    /** 按物品 ID / 名称搜索容器内容；只解码到命中为止。 */
+    private boolean matchesItem(ContainerEntry entry, String query) {
+        for (String encoded : entry.slots) {
+            if (encoded == null || encoded.isBlank()) continue;
+            ItemStack stack = LotteryItemCodec.decode(encoded, registries);
+            if (stack.isEmpty()) continue;
+            String id = String.valueOf(BuiltInRegistries.ITEM.getKey(stack.getItem()));
+            String name = stack.getHoverName().getString();
+            if (id.toLowerCase(java.util.Locale.ROOT).contains(query)
+                    || name.toLowerCase(java.util.Locale.ROOT).contains(query)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public Map<String, Object> read(String dimension, int x, int y, int z) {
@@ -265,6 +301,19 @@ public final class ContainerIndexService {
             }
             if (cached == null) {
                 return error("容器不存在或尚未建立索引；可先执行 /api/containers/scan");
+            }
+            PendingWrite pending = loadPending(dimension, x, y, z);
+            if (pending != null && pending.slots != null
+                    && pending.slots.size() == cached.size) {
+                // 区块未加载但已有排队写入时，读取显示“目标内容”，避免重置后看到旧快照。
+                ContainerEntry merged = cached.copy();
+                merged.slots = new ArrayList<>(pending.slots);
+                int nonEmpty = 0;
+                for (String slot : merged.slots) {
+                    if (slot != null && !slot.isBlank()) nonEmpty++;
+                }
+                merged.nonEmpty = nonEmpty;
+                return okRead(merged, "pending");
             }
             return okRead(cached, "cache");
         }
@@ -317,22 +366,34 @@ public final class ContainerIndexService {
             if (level == null) {
                 return WriteResult.error(404, "维度不存在：" + dimension);
             }
-            BlockPos pos = new BlockPos(x, y, z);
-            LevelChunk chunk;
-            try {
-                // 只加载目标区块；不做批量区块加载。
-                chunk = level.getChunk(x >> 4, z >> 4);
-            } catch (RuntimeException e) {
-                return WriteResult.error(500, "目标区块加载失败：" + e.getMessage());
+            if (encodedSlots == null) {
+                return WriteResult.error(400, "缺少 slots");
             }
+            ContainerPos key = new ContainerPos(dimension, x, y, z);
+            LevelChunk chunk = level.getChunkSource().getChunkNow(x >> 4, z >> 4);
             if (chunk == null) {
-                return WriteResult.error(500, "目标区块不可用");
+                // 区块未加载：不强制加载，写入待处理队列，等区块加载/玩家上线后再应用。
+                ContainerEntry cached = entries.get(key);
+                if (cached == null) cached = loadEntryFromShard(key);
+                if (cached != null && expectedRevision >= 0 && expectedRevision != cached.revision) {
+                    return WriteResult.conflict(cached, "容器已被其他操作修改（revision " + cached.revision + "）");
+                }
+                if (cached != null && encodedSlots.size() != cached.size) {
+                    return WriteResult.error(400,
+                            "槽位数不匹配：容器有 " + cached.size + " 格，请求提供 " + encodedSlots.size() + " 格");
+                }
+                String invalid = validateSlots(encodedSlots);
+                if (invalid != null) return WriteResult.error(400, invalid);
+                if (!queuePending(dimension, x, y, z, expectedRevision, encodedSlots)) {
+                    return WriteResult.error(500, "区块未加载，写入队列保存失败");
+                }
+                return WriteResult.queued(cached, "区块未加载，已排队；区块加载后自动写入");
             }
-            BlockEntity entity = level.getBlockEntity(pos);
+            BlockEntity entity = level.getBlockEntity(new BlockPos(x, y, z));
             if (!(entity instanceof Container container)) {
                 return WriteResult.error(400, "该坐标没有可编辑的容器");
             }
-            ContainerPos key = new ContainerPos(dimension, x, y, z);
+            BlockPos pos = new BlockPos(x, y, z);
             ContainerEntry old = entries.get(key);
             if (old == null) {
                 old = snapshotNow(level, pos, entity, container, null);
@@ -341,9 +402,6 @@ public final class ContainerIndexService {
             }
             if (expectedRevision >= 0 && expectedRevision != old.revision) {
                 return WriteResult.conflict(old, "容器已被其他操作修改（revision " + old.revision + "）");
-            }
-            if (encodedSlots == null) {
-                return WriteResult.error(400, "缺少 slots");
             }
             int size = container.getContainerSize();
             if (encodedSlots.size() != size) {
@@ -376,6 +434,114 @@ public final class ContainerIndexService {
             entries.put(key, fresh);
             markShardDirty(fresh);
             return WriteResult.ok(fresh);
+        }
+    }
+
+    private String validateSlots(List<String> encodedSlots) {
+        for (int i = 0; i < encodedSlots.size(); i++) {
+            String encoded = encodedSlots.get(i);
+            if (encoded == null || encoded.isBlank()) continue;
+            ItemStack stack = LotteryItemCodec.decode(encoded, registries);
+            if (stack.isEmpty()) return "第 " + i + " 格物品编码无效";
+            if (stack.getCount() <= 0 || stack.getCount() > Math.max(1, stack.getMaxStackSize())) {
+                return "第 " + i + " 格数量超出上限";
+            }
+        }
+        return null;
+    }
+
+    // ---- 区块未加载时的待写入队列 ----
+
+    private boolean queuePending(String dimension, int x, int y, int z, long revision,
+                                 List<String> slots) {
+        if (pendingRoot == null) return false;
+        PendingWrite pending = new PendingWrite();
+        pending.dimension = dimension;
+        pending.x = x;
+        pending.y = y;
+        pending.z = z;
+        pending.revision = revision;
+        pending.slots = new ArrayList<>(slots);
+        pending.queuedAt = System.currentTimeMillis();
+        Path file = pendingPath(dimension, x, y, z);
+        try {
+            Files.createDirectories(file.getParent());
+            Path temp = file.resolveSibling(file.getFileName() + ".tmp");
+            Files.writeString(temp, GSON.toJson(pending), StandardCharsets.UTF_8);
+            Files.move(temp, file, StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE);
+            return true;
+        } catch (IOException e) {
+            Samsara.LOGGER.warn("[container] 保存待写入队列失败 {}: {}", file, e.getMessage());
+            return false;
+        }
+    }
+
+    /** 每 2 秒尝试消费待写入队列；只处理已加载区块，未加载的继续等待。 */
+    private void applyPendingNow() {
+        if (pendingRoot == null || !Files.isDirectory(pendingRoot)) return;
+        List<Path> files = new ArrayList<>();
+        try (var stream = Files.list(pendingRoot)) {
+            stream.filter(Files::isRegularFile)
+                    .filter(path -> path.getFileName().toString().endsWith(".json"))
+                    .sorted()
+                    .forEach(files::add);
+        } catch (IOException e) {
+            Samsara.LOGGER.warn("[container] 扫描待写入队列失败: {}", e.getMessage());
+            return;
+        }
+        for (Path file : files) {
+            PendingWrite pending;
+            try {
+                pending = GSON.fromJson(Files.readString(file, StandardCharsets.UTF_8),
+                        PendingWrite.class);
+            } catch (RuntimeException | IOException e) {
+                Samsara.LOGGER.warn("[container] 待写入队列文件无效，已删除 {}: {}", file, e.getMessage());
+                deleteQuietly(file);
+                continue;
+            }
+            if (pending == null || pending.dimension == null || pending.slots == null) {
+                deleteQuietly(file);
+                continue;
+            }
+            ServerLevel level = level(pending.dimension);
+            if (level == null) continue;
+            if (level.getChunkSource().getChunkNow(pending.x >> 4, pending.z >> 4) == null) continue;
+            // 队列代表管理员最终期望的整箱内容；应用时忽略 revision（缓存可能不是最新）。
+            WriteResult result = write(pending.dimension, pending.x, pending.y, pending.z, -1L,
+                    pending.slots);
+            if (result.ok() || result.status() == 400 || result.status() == 404) {
+                if (!result.ok()) {
+                    Samsara.LOGGER.warn("[container] 待写入队列应用失败，已丢弃 {}: {}",
+                            file.getFileName(), result.error());
+                }
+                deleteQuietly(file);
+            }
+        }
+    }
+
+    private void deleteQuietly(Path file) {
+        try {
+            Files.deleteIfExists(file);
+        } catch (IOException e) {
+            Samsara.LOGGER.warn("[container] 删除队列文件失败 {}: {}", file, e.getMessage());
+        }
+    }
+
+    private Path pendingPath(String dimension, int x, int y, int z) {
+        String folder = dimension.replaceAll("[^A-Za-z0-9_.-]", "_");
+        return pendingRoot.resolve(folder + "-" + x + "_" + y + "_" + z + ".json");
+    }
+
+    private PendingWrite loadPending(String dimension, int x, int y, int z) {
+        if (pendingRoot == null) return null;
+        Path file = pendingPath(dimension, x, y, z);
+        if (!Files.isRegularFile(file)) return null;
+        try {
+            return GSON.fromJson(Files.readString(file, StandardCharsets.UTF_8),
+                    PendingWrite.class);
+        } catch (RuntimeException | IOException e) {
+            return null;
         }
     }
 
@@ -691,17 +857,9 @@ public final class ContainerIndexService {
             if (encoded == null || encoded.isBlank()) continue;
             ItemStack stack = LotteryItemCodec.decode(encoded, registries);
             if (stack.isEmpty()) continue;
-            String id = String.valueOf(BuiltInRegistries.ITEM.getKey(stack.getItem()));
-            int colon = id.indexOf(':');
-            Map<String, Object> row = new LinkedHashMap<>();
+            Map<String, Object> row = new LinkedHashMap<>(
+                    com.shenqianye.samsara.item.ItemStackModel.compact(stack, encoded));
             row.put("slot", i);
-            row.put("id", id);
-            row.put("icon", colon >= 0 ? id.substring(colon + 1) : id);
-            row.put("name", stack.getHoverName().getString());
-            row.put("count", stack.getCount());
-            row.put("maxStack", stack.getMaxStackSize());
-            row.put("encoded", encoded);
-            row.put("components", stack.getComponents().toString());
             rows.add(row);
         }
         return rows;
@@ -740,6 +898,10 @@ public final class ContainerIndexService {
             return new WriteResult(true, 200, "", entry);
         }
 
+        static WriteResult queued(ContainerEntry entry, String message) {
+            return new WriteResult(true, 202, message, entry);
+        }
+
         static WriteResult conflict(ContainerEntry entry, String error) {
             return new WriteResult(false, 409, error, entry);
         }
@@ -751,11 +913,26 @@ public final class ContainerIndexService {
         public Map<String, Object> toModel() {
             Map<String, Object> out = new LinkedHashMap<>();
             out.put("ok", ok);
-            if (!ok) out.put("error", error);
+            out.put("queued", status == 202);
+            if (!error.isBlank()) {
+                if (ok) out.put("message", error);
+                else out.put("error", error);
+            }
             if (entry != null) {
-                out.put("container", entry.toModel(true, "loaded"));
+                out.put("container", entry.toModel(true, status == 202 ? "pending" : "loaded"));
             }
             return out;
         }
+    }
+
+    /** 区块未加载时的待写入条目，落盘到 world/samsara/container-pending/。 */
+    public static final class PendingWrite {
+        public String dimension;
+        public int x;
+        public int y;
+        public int z;
+        public long revision;
+        public List<String> slots;
+        public long queuedAt;
     }
 }

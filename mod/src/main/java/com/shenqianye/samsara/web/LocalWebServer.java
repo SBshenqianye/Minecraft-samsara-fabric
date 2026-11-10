@@ -56,6 +56,7 @@ public final class LocalWebServer {
     private final LotteryWebService lotteryService;
     private final ContainerWebService containerService;
     private final InventoryWebService inventoryService;
+    private final ItemWebService itemService;
     private final TrackWebService trackService;
     private final String token;
     private final int port;
@@ -194,6 +195,25 @@ public final class LocalWebServer {
                           InventoryWebService inventoryService,
                           TrackWebService trackService,
                           String token, int port) {
+        this(service, identityService, outputService, permissionService, mapService,
+                worldStackService, serverService, diffService, userService, lotteryService,
+                containerService, inventoryService, trackService, null, token, port);
+    }
+
+    public LocalWebServer(ConfigService service, IdentityWebService identityService,
+                          OutputWebService outputService,
+                          PermissionWebService permissionService,
+                          WebMapService mapService,
+                          WorldStackWebService worldStackService,
+                          ServerWebService serverService,
+                          ChunkDiffWebService diffService,
+                          WebUserService userService,
+                          LotteryWebService lotteryService,
+                          ContainerWebService containerService,
+                          InventoryWebService inventoryService,
+                          TrackWebService trackService,
+                          ItemWebService itemService,
+                          String token, int port) {
         this.service = service;
         this.identityService = identityService;
         this.outputService = outputService;
@@ -206,6 +226,7 @@ public final class LocalWebServer {
         this.lotteryService = lotteryService;
         this.containerService = containerService;
         this.inventoryService = inventoryService;
+        this.itemService = itemService;
         this.trackService = trackService;
         this.token = token == null ? "" : token;
         this.port = port;
@@ -266,6 +287,9 @@ public final class LocalWebServer {
         }
         if (inventoryService != null) {
             server.createContext("/api/inventory", this::handleInventory);
+        }
+        if (itemService != null) {
+            server.createContext("/api/items", this::handleItems);
         }
         if (trackService != null) {
             server.createContext("/api/track", this::handleTrack);
@@ -1660,6 +1684,53 @@ public final class LocalWebServer {
         }
     }
 
+    private void handleItems(HttpExchange exchange) throws IOException {
+        long start = System.currentTimeMillis();
+        int status = 200;
+        try {
+            int auth = authorize(exchange);
+            if (auth != 0) {
+                status = auth;
+                return;
+            }
+            String path = exchange.getRequestURI().getPath();
+            String method = exchange.getRequestMethod();
+            if ("GET".equals(method) && "/api/items/schema".equals(path)) {
+                Map<String, Object> result = itemService.schema();
+                status = result.get("ok") == Boolean.TRUE ? 200 : 400;
+                json(exchange, status, result);
+                return;
+            }
+            if ("POST".equals(method) && ("/api/items/describe".equals(path)
+                    || "/api/items/build".equals(path))) {
+                String body;
+                try {
+                    body = readBody(exchange);
+                } catch (BodyTooLarge e) {
+                    status = 413;
+                    json(exchange, status, Map.of("error", "请求体过大"));
+                    return;
+                }
+                Map<String, Object> result = "/api/items/describe".equals(path)
+                        ? itemService.describe(body) : itemService.build(body);
+                Object requested = result.get("status");
+                status = requested instanceof Number number ? number.intValue()
+                        : result.get("ok") == Boolean.TRUE ? 200 : 400;
+                json(exchange, status, result);
+                return;
+            }
+            status = 404;
+            json(exchange, status, Map.of("error", "未知物品接口"));
+        } catch (RuntimeException e) {
+            status = 500;
+            json(exchange, status, Map.of("error", errorDetail(e)));
+            LOG.warn("[web] 物品操作 {} 失败: {}", exchange.getRequestURI().getPath(),
+                    e.getMessage());
+        } finally {
+            log(exchange, status, start);
+        }
+    }
+
     private void handleStatus(HttpExchange exchange) throws IOException {        long start = System.currentTimeMillis();
         int status = 200;
         try {
@@ -1763,6 +1834,10 @@ public final class LocalWebServer {
         }
         if (path.startsWith("/api/inventory")) {
             return "GET".equals(method) ? AgentScope.READ : AgentScope.INVENTORY;
+        }
+        if (path.startsWith("/api/items")) {
+            return "GET".equals(method) || path.endsWith("/describe")
+                    ? AgentScope.READ : AgentScope.INVENTORY;
         }
         if (path.startsWith("/api/diff")) {
             return path.equals("/api/diff/view") ? AgentScope.READ : AgentScope.OPS;

@@ -111,13 +111,19 @@ public final class PlayerInventoryService {
     }
 
     public Map<String, Object> read(Map<String, String> query) {
-        String playerRef = query.getOrDefault("player", "").trim();
+        String source = query.getOrDefault("source", "player").trim();
         SlotSpec spec = SlotSpec.from(query.getOrDefault("scope", "inventory"));
-        if (playerRef.isEmpty()) {
-            return error(400, "需要 player=<uuid|name>");
-        }
         if (spec == null) {
             return error(400, "scope 必须是 inventory、ender 或 armor");
+        }
+        if ("identity".equals(source)) {
+            String dataRef = query.getOrDefault("data", "").trim();
+            if (dataRef.isEmpty()) return error(400, "需要 data=<data UUID>");
+            return onServer(() -> readIdentityOnThread(dataRef, spec));
+        }
+        String playerRef = query.getOrDefault("player", "").trim();
+        if (playerRef.isEmpty()) {
+            return error(400, "需要 player=<uuid|name>");
         }
         return onServer(() -> readOnThread(playerRef, spec));
     }
@@ -127,9 +133,8 @@ public final class PlayerInventoryService {
         if (request == null) {
             return error(400, "请求体应为 JSON 对象");
         }
-        String playerRef = string(request, "player");
+        String source = string(request, "source");
         SlotSpec spec = SlotSpec.from(string(request, "scope"));
-        if (playerRef.isBlank()) return error(400, "需要 player");
         if (spec == null) return error(400, "scope 必须是 inventory、ender 或 armor");
         long revision = longValue(request.get("revision"), -1L);
         List<String> slots = slots(request.get("slots"));
@@ -137,6 +142,13 @@ public final class PlayerInventoryService {
         if (slots.size() != spec.size) {
             return error(400, "slots 长度必须是 " + spec.size + "（" + spec.id + "）");
         }
+        if ("identity".equals(source)) {
+            String dataRef = string(request, "data");
+            if (dataRef.isBlank()) return error(400, "需要 data=<data UUID>");
+            return onServer(() -> writeIdentityOnThread(dataRef, spec, revision, slots, actor));
+        }
+        String playerRef = string(request, "player");
+        if (playerRef.isBlank()) return error(400, "需要 player");
         return onServer(() -> writeOnThread(playerRef, spec, revision, slots, actor));
     }
 
@@ -171,13 +183,8 @@ public final class PlayerInventoryService {
             if (result.isBlank()) return error(500, "物品编码失败");
             Map<String, Object> out = new LinkedHashMap<>();
             out.put("ok", true);
-            out.put("encoded", result);
-            String itemId = String.valueOf(BuiltInRegistries.ITEM.getKey(stack.getItem()));
-            out.put("id", itemId);
-            out.put("icon", itemId.contains(":") ? itemId.substring(itemId.indexOf(':') + 1) : itemId);
-            out.put("name", stack.getHoverName().getString());
-            out.put("count", stack.getCount());
-            out.put("components", stack.getComponents().toString());
+            out.putAll(com.shenqianye.samsara.item.ItemStackModel.describe(
+                    stack, registries, result));
             return out;
         });
     }
@@ -323,6 +330,201 @@ public final class PlayerInventoryService {
         return out;
     }
 
+    // ---- 身份 data UUID 背包（与账号背包共用 UI/槽位） ----
+
+    private Map<String, Object> readIdentityOnThread(String dataRef, SlotSpec spec) {
+        UUID data = parseUuid(dataRef);
+        if (data == null) return error(400, "data UUID 格式不正确");
+        com.shenqianye.samsara.identity.IdentityService identity =
+                com.shenqianye.samsara.identity.IdentityService.getInstance();
+        com.shenqianye.samsara.identity.IdentityDataSync sync = identity.dataSync();
+        if (sync == null) return error(503, "身份服务尚未初始化");
+        ServerPlayer online = identity.onlineFor(data);
+        Path file = sync.identityData(data);
+        List<String> slots;
+        boolean pendingWrite = false;
+        long diskRevision;
+        int dataVersion;
+        if (online != null) {
+            slots = encodeOnline(online, spec);
+            diskRevision = revisionOf(slots);
+            dataVersion = serverDataVersion();
+        } else {
+            if (!Files.isRegularFile(file)) {
+                return error(404, "该 data UUID 还没有玩家数据文件");
+            }
+            try {
+                CompoundTag tag = readTag(file);
+                dataVersion = tag.getIntOr("DataVersion", 0);
+                slots = decodeOffline(tag, spec);
+                diskRevision = revisionOf(slots);
+            } catch (IOException | RuntimeException e) {
+                return error(400, "读取身份数据失败：" + e.getMessage());
+            }
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ok", true);
+        out.put("source", "identity");
+        out.put("data", data.toString());
+        out.put("player", new PlayerRef(data, online == null
+                ? "" : online.getGameProfile().name(), online).model());
+        out.put("scope", spec.id);
+        out.put("online", online != null);
+        out.put("writable", true);
+        out.put("queueWritable", false);
+        out.put("pendingWrite", pendingWrite);
+        out.put("revision", revisionOf(slots));
+        out.put("diskRevision", diskRevision);
+        out.put("dataVersion", dataVersion);
+        out.put("serverDataVersion", serverDataVersion());
+        out.put("slots", slots);
+        out.put("items", items(slots, spec));
+        return out;
+    }
+
+    private Map<String, Object> writeIdentityOnThread(String dataRef, SlotSpec spec, long revision,
+                                                      List<String> slots, String actor) {
+        UUID data = parseUuid(dataRef);
+        if (data == null) return error(400, "data UUID 格式不正确");
+        String validation = validateSlots(slots, spec);
+        if (validation != null) return error(400, validation);
+        com.shenqianye.samsara.identity.IdentityService identity =
+                com.shenqianye.samsara.identity.IdentityService.getInstance();
+        com.shenqianye.samsara.identity.IdentityDataSync sync = identity.dataSync();
+        if (sync == null) return error(503, "身份服务尚未初始化");
+        ServerPlayer online = identity.onlineFor(data);
+        PlayerRef ref = new PlayerRef(data, online == null ? "" : online.getGameProfile().name(),
+                online);
+        if (online != null) {
+            List<String> current = encodeOnline(online, spec);
+            long currentRevision = revisionOf(current);
+            if (revision != currentRevision) {
+                Map<String, Object> conflict = error(409, "背包已被其他操作修改，请重新读取");
+                conflict.put("currentRevision", currentRevision);
+                return conflict;
+            }
+            WebAuditService.get().captureInventory("/api/inventory/identity/write", actor,
+                    "data=" + data + " " + spec.id + " revision=" + revision,
+                    GSON.toJson(snapshot(ref, spec, current)));
+            applyOnline(online, spec, slots);
+            List<String> after = encodeOnline(online, spec);
+            return identityWriteModel(ref, spec, after, true, false);
+        }
+
+        Path file = sync.identityData(data);
+        if (!Files.isRegularFile(file)) return error(404, "该 data UUID 还没有玩家数据文件");
+        CompoundTag tag;
+        List<String> disk;
+        int dataVersion;
+        try {
+            tag = readTag(file);
+            dataVersion = tag.getIntOr("DataVersion", 0);
+            disk = decodeOffline(tag, spec);
+        } catch (IOException | RuntimeException e) {
+            return error(400, "读取身份数据失败：" + e.getMessage());
+        }
+        int serverVersion = serverDataVersion();
+        if (dataVersion > 0 && serverVersion > 0 && dataVersion != serverVersion) {
+            WebAuditService.get().captureInventory("/api/inventory/identity/write/rejected", actor,
+                    "data=" + data + " " + spec.id + " DataVersion " + dataVersion
+                            + " != " + serverVersion, GSON.toJson(snapshot(ref, spec, disk)));
+            return error(409, "身份数据 DataVersion " + dataVersion
+                    + " 与服务器 " + serverVersion + " 不一致，已拒绝写入");
+        }
+        long currentRevision = revisionOf(disk);
+        if (revision != currentRevision) {
+            Map<String, Object> conflict = error(409, "身份数据已变化，请重新读取");
+            conflict.put("currentRevision", currentRevision);
+            return conflict;
+        }
+        Map<String, Object> backup = com.shenqianye.samsara.identity.IdentityDataInspector.backup(data);
+        if (backup.get("ok") != Boolean.TRUE) {
+            return error(500, "写入前备份失败：" + backup.getOrDefault("error", "未知错误"));
+        }
+        try {
+            applyOfflineToTag(tag, spec, slots);
+            Path temp = file.resolveSibling(file.getFileName() + ".web.tmp");
+            NbtIo.writeCompressed(tag, temp);
+            try {
+                Files.move(temp, file, StandardCopyOption.REPLACE_EXISTING,
+                        StandardCopyOption.ATOMIC_MOVE);
+            } catch (IOException atomic) {
+                Files.move(temp, file, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (IOException | RuntimeException e) {
+            return error(500, "写入身份数据失败：" + e.getMessage());
+        }
+        WebAuditService.get().captureInventory("/api/inventory/identity/write/file", actor,
+                "data=" + data + " " + spec.id + " revision=" + revision,
+                GSON.toJson(snapshot(ref, spec, disk)));
+        return identityWriteModel(ref, spec, slots, false, false);
+    }
+
+    private Map<String, Object> identityWriteModel(PlayerRef ref, SlotSpec spec, List<String> slots,
+                                                   boolean online, boolean queued) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ok", true);
+        out.put("status", 200);
+        out.put("queued", queued);
+        out.put("source", "identity");
+        out.put("data", ref.uuid.toString());
+        out.put("player", ref.model());
+        out.put("scope", spec.id);
+        out.put("online", online);
+        out.put("revision", revisionOf(slots));
+        out.put("slots", slots);
+        out.put("items", items(slots, spec));
+        return out;
+    }
+
+    /** 把槽位写回玩家 data 文件；保留不在本次编辑范围的其他槽位。 */
+    private void applyOfflineToTag(CompoundTag tag, SlotSpec spec, List<String> slots) {
+        RegistryOps<Tag> ops = RegistryOps.create(NbtOps.INSTANCE, registries);
+        if (spec == SlotSpec.ENDER) {
+            ListTag list = new ListTag();
+            for (int i = 0; i < spec.size; i++) {
+                ItemStack stack = decodeSlot(slots.get(i));
+                if (stack.isEmpty()) continue;
+                CompoundTag entry = encodeSlot(ops, stack);
+                if (entry == null) continue;
+                entry.putByte("Slot", (byte) i);
+                list.add(entry);
+            }
+            tag.put("EnderItems", list);
+            return;
+        }
+        ListTag old = tag.getListOrEmpty("Inventory");
+        ListTag list = new ListTag();
+        int min = spec.base;
+        int max = spec.base + spec.size;
+        for (int i = 0; i < old.size(); i++) {
+            CompoundTag entry = old.getCompoundOrEmpty(i);
+            int slot = entry.getByteOr("Slot", (byte) -1);
+            if (slot >= min && slot < max) continue;
+            list.add(entry.copy());
+        }
+        for (int i = 0; i < spec.size; i++) {
+            ItemStack stack = decodeSlot(slots.get(i));
+            if (stack.isEmpty()) continue;
+            CompoundTag entry = encodeSlot(ops, stack);
+            if (entry == null) continue;
+            entry.putByte("Slot", (byte) (spec.base + i));
+            list.add(entry);
+        }
+        tag.put("Inventory", list);
+    }
+
+    private ItemStack decodeSlot(String encoded) {
+        return encoded == null || encoded.isBlank()
+                ? ItemStack.EMPTY : LotteryItemCodec.decode(encoded, registries);
+    }
+
+    private CompoundTag encodeSlot(RegistryOps<Tag> ops, ItemStack stack) {
+        Tag encoded = ItemStack.CODEC.encodeStart(ops, stack).result().orElse(null);
+        if (encoded instanceof CompoundTag compound) return compound.copy();
+        return null;
+    }
+
     private void applyPending(ServerPlayer player, boolean stopping) {
         for (SlotSpec spec : SlotSpec.values()) {
             Path queue = queueFile(player.getUUID(), spec);
@@ -441,16 +643,11 @@ public final class PlayerInventoryService {
             ItemStack stack = LotteryItemCodec.decode(encoded, registries);
             if (stack.isEmpty()) continue;
             String id = String.valueOf(BuiltInRegistries.ITEM.getKey(stack.getItem()));
-            Map<String, Object> item = new LinkedHashMap<>();
+            Map<String, Object> item = new LinkedHashMap<>(
+                    com.shenqianye.samsara.item.ItemStackModel.compact(stack, encoded));
             item.put("slot", i);
             item.put("absoluteSlot", spec.base + i);
             item.put("id", id);
-            item.put("icon", id.contains(":") ? id.substring(id.indexOf(':') + 1) : id);
-            item.put("name", stack.getHoverName().getString());
-            item.put("count", stack.getCount());
-            item.put("maxStack", stack.getMaxStackSize());
-            item.put("encoded", encoded);
-            item.put("components", stack.getComponents().toString());
             out.add(item);
         }
         return out;

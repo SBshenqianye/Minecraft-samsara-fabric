@@ -42,13 +42,27 @@ const src = computed(() => '/items/' + icon.value + '.png');
 const components = computed(() => String(props.item.components || ''));
 
 const glint = computed(() => {
+  if (typeof props.item.glint === 'boolean') return props.item.glint;
   if (props.item.glint === true) return true;
-  return /enchantments|stored_enchantments|enchantment_glint_override\s*[=:]\s*(true|\{)/i
-    .test(components.value);
+  // 只匹配“非空”附魔表；空的 enchantments={} 不应该发光。
+  const text = components.value;
+  if (/enchantment_glint_override\s*[=:]\s*true/i.test(text)) return true;
+  if (/(?:^|[^a-z_])(stored_)?enchantments\s*[=:]\s*\{[^}]/i.test(text)) return true;
+  return false;
 });
 
 const tint = computed(() => {
-  if (props.item.tint) return String(props.item.tint);
+  const raw = props.item.tint;
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    return '#' + (raw & 0xFFFFFF).toString(16).padStart(6, '0');
+  }
+  if (raw) return String(raw);
+  if (props.item.color) {
+    const value = Number(props.item.color);
+    if (Number.isFinite(value)) {
+      return '#' + (value & 0xFFFFFF).toString(16).padStart(6, '0');
+    }
+  }
   const dyed = components.value.match(/dyed_color?\s*[=:]\s*(?:[^,}]*?rgb\s*[=:]\s*)?(-?\d+)/i);
   const potion = components.value.match(/custom_color\s*[=:]\s*(-?\d+)/i);
   const match = dyed || potion;

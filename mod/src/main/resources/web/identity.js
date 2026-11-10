@@ -389,7 +389,7 @@ function openDataDialog(uuid) {
     title.textContent = 'data UUID 详情';
     const sub = document.createElement('p');
     sub.className = 'dialog-sub';
-    sub.textContent = '只读查看身份数据文件；备份会复制到 identity/backups/data/。';
+    sub.textContent = '查看身份数据文件、成就与统计；可在详情页进入背包编辑，写入前自动备份。';
     titleBox.append(title, sub);
     const close = document.createElement('button');
     close.type = 'button';
@@ -426,7 +426,19 @@ function renderDataDetail(root, uuid, data) {
   const backup = dataNode('button', 'ghost', '备份数据');
   backup.type = 'button';
   backup.addEventListener('click', () => backupData(uuid));
-  head.append(dataNode('code', 'identity-data-uuid', uuid), copy, backup);
+  const edit = dataNode('button', 'primary', '编辑背包');
+  edit.type = 'button';
+  edit.addEventListener('click', () => {
+    if (window.SamsaraRouter?.push) {
+      document.getElementById('identity-data-dialog')?.close();
+      window.SamsaraRouter.push({ path: '/samsara/sky/inventory',
+        query: { source: 'identity', data: uuid } });
+    } else {
+      window.location.href = '/samsara/sky/inventory?source=identity&data='
+          + encodeURIComponent(uuid);
+    }
+  });
+  head.append(dataNode('code', 'identity-data-uuid', uuid), copy, edit, backup);
   root.append(head);
   if (!data.ok) {
     root.append(dataNode('p', 'message error', data.error || data.message || '读取失败'));

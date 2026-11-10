@@ -26,6 +26,7 @@ const LEGACY_HASH_ROUTES = {
 };
 
 const app = createApp(App).use(router);
+window.SamsaraRouter = router;
 const legacy = LEGACY_HASH_ROUTES[window.location.hash.replace(/^#/, '')];
 const boot = legacy ? router.replace(legacy) : Promise.resolve();
 boot.finally(() => app.mount('#app'));
