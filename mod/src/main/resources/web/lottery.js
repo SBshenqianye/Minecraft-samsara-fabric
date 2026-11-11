@@ -11,12 +11,12 @@
 
   const LOTTERY_PANELS = [
     'lottery-dashboard', 'lottery-overview', 'lottery-round-panel',
-    'lottery-values-panel', 'lottery-fund-panel', 'lottery-claims-panel',
+    'lottery-values-panel', 'lottery-claims-panel',
     'lottery-insurance-panel', 'lottery-history-panel',
   ];
   const LOTTERY_TABS = {
     overview: ['lottery-dashboard'],
-    fund: ['lottery-fund-panel', 'lottery-values-panel'],
+    fund: ['lottery-values-panel'],
     lottery: ['lottery-overview', 'lottery-round-panel', 'lottery-claims-panel',
       'lottery-history-panel'],
     insurance: ['lottery-insurance-panel'],
@@ -232,16 +232,6 @@
     renderItemCards('lottery-betting-pool', model.bettingPotItems, '下注轮还没有人投入物品。');
   }
 
-  function renderFund(model) {
-    const total = $('lottery-fund-total');
-    const fund = model.fund || {};
-    if (total) total.textContent = vp(fund.value);
-    renderItemCards('lottery-fund', fund.items, '基金为空。');
-    // 基金仓库已内嵌在本页下方（服务器基金 → 基金仓库工作台），不再需要跳转按钮。
-    const link = document.getElementById('lottery-fund-inventory-link');
-    if (link) link.remove();
-  }
-
   const STATUS = {
     ACTIVE: ['生效中', 'ok'],
     PENDING: ['待审核', 'warn'],
@@ -448,8 +438,8 @@
     renderStats(model);
     renderRound(model);
     renderPool(model);
+    // 基金实物列表已迁到基金仓库工作台（Vue），旧只读卡片不再渲染。
     renderClaims(model);
-    renderFund(model);
     renderInsurance(model);
     renderHistory(model);
     const pre = $('lottery-json');
@@ -543,7 +533,6 @@
       ['lottery-dashboard', '概览'],
       ['lottery-overview', '状态'],
       ['lottery-round-panel', '当前轮次'],
-      ['lottery-fund-panel', '服务器基金'],
       ['lottery-values-panel', '物品价值表'],
       ['lottery-claims-panel', '待领取'],
       ['lottery-insurance-panel', '保险'],

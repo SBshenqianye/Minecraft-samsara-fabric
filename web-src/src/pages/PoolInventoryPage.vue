@@ -21,12 +21,15 @@
           <p class="muted small">{{ description }}</p>
         </div>
         <span class="spacer"></span>
-        <span class="muted small">共 {{ nonEmpty }} 件物品 · {{ slots.length }} 格</span>
+        <span class="muted small">
+          共 {{ nonEmpty }} 件物品 · {{ slots.length }} 格<template v-if="kind === 'fund'">
+            · 实物总值 {{ formatValue(fundValue) }} VP</template>
+        </span>
         <button
           v-if="kind === 'fund'"
           class="ghost"
           type="button"
-          :disabled="loading || saving || dirty"
+          :disabled="loading || saving"
           @click="expandSlots"
         >＋ 扩充 9 格</button>
         <button class="ghost" type="button" :disabled="loading" @click="load">重新读取</button>
@@ -64,27 +67,10 @@
       </div>
 
       <div class="pool-actions">
-        <div class="mode-switch" role="group" aria-label="写入模式">
-          <button
-            v-for="option in modeOptions"
-            :key="option.id"
-            type="button"
-            :class="{ active: mode === option.id }"
-            :title="option.hint"
-            @click="setMode(option.id)"
-          >{{ option.label }}</button>
-        </div>
-        <button
-          v-if="mode !== 'simulate'"
-          class="primary"
-          type="button"
-          :disabled="!dirty || saving"
-          @click="confirmSave"
-        >
-          {{ saving ? '写入中…' : '保存修改' }}{{ dirty ? ' *' : '' }}
-        </button>
-        <button class="ghost" type="button" :disabled="loading || saving" @click="load">重置</button>
-        <span class="muted small">{{ modeHint }}</span>
+        <span class="muted small">
+          改动即时写入仓库；Web 只和自己交互，不需要预设/模拟，也不需要二次确认。
+        </span>
+        <span v-if="saving" class="muted small">写入中…</span>
       </div>
 
       <div class="panel">
@@ -93,7 +79,7 @@
           :items="items"
           :layout="layout"
           :schema="schema"
-          :mode="mode"
+          mode="live"
           item-endpoint="/api/inventory/item"
           :revision="revision"
           :disabled="saving"
@@ -108,7 +94,6 @@
 
 <script setup>
 import { computed, nextTick, onMounted, ref } from 'vue';
-import { ElMessage, ElMessageBox } from 'element-plus';
 import TabShell from '../components/TabShell.vue';
 import ItemWorkbench from '../components/ItemWorkbench.vue';
 import { useLiveRefresh } from '../composables/useLiveRefresh.js';
@@ -131,7 +116,7 @@ const baselineSlots = ref([]);
 const items = ref([]);
 const revision = ref(0);
 const dirty = ref(false);
-const mode = ref('simulate');
+const fundValue = ref(0);
 const schema = ref({});
 const cursorPending = ref(false);
 const itemQuery = ref('');
@@ -141,7 +126,7 @@ let liveTimer = null;
 
 const title = computed(() => props.kind === 'fund' ? '基金仓库' : 'Web 背包');
 const description = computed(() => props.kind === 'fund'
-  ? '服务器基金的实物仓库，和容器/玩家背包共用同一套槽位、组件编辑与写入模式；槽位可按需扩充，没有容量上限。'
+  ? '服务器基金的实物仓库，和容器/玩家背包共用同一套槽位与组件编辑；改动即时写入，槽位可按需扩充，没有容量上限。'
   : '幽灵管理员的 54 格 Web 仓库：装备栏、副手、主背包、快捷栏与仓库，共用容器工作台、调试方块页签和垃圾桶。');
 const readEndpoint = computed(() => props.kind === 'fund'
   ? '/api/lottery/fund' : '/api/inventory/web');
@@ -196,7 +181,7 @@ const filteredItems = computed(() => {
 });
 
 const liveState = useLiveRefresh({
-  mode: () => mode.value,
+  mode: () => 'live',
   key: () => `${props.kind}:${readEndpoint.value}`,
   canRefresh: () => connected.value && !dirty.value && !saving.value
     && !loading.value && !cursorPending.value,
@@ -210,18 +195,13 @@ const liveState = useLiveRefresh({
     const minimum = props.kind === 'fund' ? (snapshot.minSize || 54) : 54;
     while (incoming.length < minimum) incoming.push('');
     if (sameSlots(incoming, baselineSlots.value)) return false;
-    applyLoadedData(incoming, snapshot.items || []);
+    applyLoadedData(incoming, snapshot.items || [], snapshot.value);
     message.value = '检测到仓库内容变化，已同步最新内容。';
     return true;
   },
 });
 
-const modeOptions = [
-  { id: 'live', label: '实时', hint: '每次操作立即写入仓库。' },
-  { id: 'preset', label: '预设', hint: '本地编辑，点保存一次性写入。' },
-  { id: 'simulate', label: '模拟', hint: '只在本地演练，不会写入。' },
-];
-const modeHint = computed(() => modeOptions.find((option) => option.id === mode.value)?.hint || '');
+// 仓库与 Web 背包同源：所有改动即时落库，因此没有实时/预设/模拟分段。
 
 onMounted(() => {
   if (token.value) connect();
@@ -281,7 +261,7 @@ async function load() {
     const incoming = (result.data.slots || []).slice();
     const minimum = props.kind === 'fund' ? (result.data.minSize || 54) : 54;
     while (incoming.length < minimum) incoming.push('');
-    applyLoadedData(incoming, result.data.items || []);
+    applyLoadedData(incoming, result.data.items || [], result.data.value);
   } catch (e) {
     error.value = e.message || String(e);
   } finally {
@@ -289,10 +269,11 @@ async function load() {
   }
 }
 
-function applyLoadedData(incoming, incomingItems) {
+function applyLoadedData(incoming, incomingItems, value) {
   slots.value = incoming;
   baselineSlots.value = incoming.slice();
   items.value = incomingItems;
+  fundValue.value = Number(value || 0);
   revision.value = Date.now();
   dirty.value = false;
   cursorPending.value = false;
@@ -308,14 +289,15 @@ function sameSlots(a, b) {
   return true;
 }
 
-function expandSlots() {
-  if (dirty.value || saving.value) return;
+async function expandSlots() {
+  if (saving.value) return;
   const next = slots.value.slice();
   for (let i = 0; i < 9; i++) next.push('');
   slots.value = next;
   baselineSlots.value = next.slice();
   focusedSlot.value = null;
-  message.value = `仓库已扩充到 ${next.length} 格；保存后生效。`;
+  await save();
+  message.value = `仓库已扩充到 ${slots.value.length} 格。`;
 }
 
 async function focusSlot(slot) {
@@ -339,36 +321,15 @@ function onWorkbenchChange(payload) {
     liveTimer && clearTimeout(liveTimer);
     return;
   }
-  if (mode.value !== 'live' || payload.pending) return;
-  liveTimer && clearTimeout(liveTimer);
-  liveTimer = setTimeout(() => save(true), 450);
-}
-
-async function setMode(next) {
-  if (next === mode.value) return;
-  if (next === 'live' && dirty.value) {
-    try {
-      await ElMessageBox.confirm('切换到实时模式会立即把当前修改写入仓库。继续？', '切换到实时模式',
-        { confirmButtonText: '切换并写入', cancelButtonText: '取消', type: 'warning' });
-    } catch {
-      return;
-    }
-  }
-  mode.value = next;
-  if (next === 'live' && dirty.value) await save(true);
-}
-
-async function confirmSave() {
-  try {
-    await ElMessageBox.confirm('将当前仓库内容一次性写入服务器。', '确认写入仓库',
-      { confirmButtonText: '确认写入', cancelButtonText: '取消', type: 'warning' });
-  } catch {
+  if (payload.pending) {
+    message.value = '光标上还有物品，放下后才会写入仓库。';
     return;
   }
-  await save(false);
+  liveTimer && clearTimeout(liveTimer);
+  liveTimer = setTimeout(() => save(), 450);
 }
 
-async function save(silent) {
+async function save() {
   if (saving.value) return;
   saving.value = true;
   error.value = '';
@@ -384,12 +345,11 @@ async function save(silent) {
     slots.value = incoming;
     baselineSlots.value = incoming.slice();
     items.value = result.data.items || items.value;
+    fundValue.value = Number(result.data.value || 0);
     dirty.value = false;
     message.value = '已写入' + title.value + '。';
-    if (!silent) ElMessage.success(message.value);
   } catch (e) {
     error.value = e.message || String(e);
-    if (!silent) ElMessage.error(error.value);
   } finally {
     saving.value = false;
     liveState.invalidate();
@@ -485,26 +445,4 @@ async function save(silent) {
   margin-top: 10px;
 }
 
-.mode-switch {
-  display: inline-flex;
-  padding: 2px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--panel-soft);
-}
-
-.mode-switch button {
-  padding: 4px 10px;
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--muted);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.mode-switch button.active {
-  background: var(--accent);
-  color: #fff;
-}
 </style>

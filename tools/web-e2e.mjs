@@ -3063,17 +3063,19 @@ async function main() {
     await until("document.querySelector('.fund-inventory-embed .slot')", 30000, '服务器基金页内嵌基金仓库');
     const fundInventoryUi = await evaluate(`(() => ({
       embedded: !!document.querySelector('.fund-inventory-embed'),
-      legacyFund: !!document.getElementById('lottery-fund-panel'),
+      legacyValues: !!document.getElementById('lottery-values-panel'),
+      legacyReadonlyFund: !!document.getElementById('lottery-fund-panel'),
       slots: document.querySelectorAll('.fund-inventory-embed .slot').length,
-      mode: document.querySelector('.fund-inventory-embed .mode-switch button.active')?.textContent.trim() || '',
+      modeSwitch: !!document.querySelector('.fund-inventory-embed .mode-switch'),
       expand: !!document.querySelector('.fund-inventory-embed .pool-head button'),
       search: !!document.querySelector('.fund-inventory-embed .fund-search input'),
       sort: !!document.querySelector('.fund-inventory-embed .fund-search select'),
       nav: [...document.querySelectorAll('.subnav-item')].map((n) => n.textContent.trim()),
     }))()`);
-    check('基金仓库内嵌服务器基金页且可搜索排序扩容', fundInventoryUi.embedded === true
-        && fundInventoryUi.legacyFund === true && fundInventoryUi.slots >= 54
-        && fundInventoryUi.mode === '模拟' && fundInventoryUi.expand === true
+    check('基金仓库内嵌服务器基金页且可搜索排序扩容、无预设/模拟分段', fundInventoryUi.embedded === true
+        && fundInventoryUi.legacyValues === true && fundInventoryUi.legacyReadonlyFund === false
+        && fundInventoryUi.slots >= 54
+        && fundInventoryUi.modeSwitch === false && fundInventoryUi.expand === true
         && fundInventoryUi.search === true && fundInventoryUi.sort === true
         && !fundInventoryUi.nav.includes('基金仓库'), JSON.stringify(fundInventoryUi));
 
@@ -3086,19 +3088,36 @@ async function main() {
       method: 'POST', headers: authHeaders,
       body: JSON.stringify({ slots: externalSlots }),
     });
-    await evaluate(`(() => {
-      const live = [...document.querySelectorAll('.fund-inventory-embed .mode-switch button')]
-        .find((button) => button.textContent.trim() === '实时');
-      live?.click();
-      return !!live;
-    })()`);
     await sleep(2800);
     const liveSync = await evaluate(`(() => ({
       message: document.querySelector('.fund-inventory-embed .container-message.ok')?.textContent || '',
       filled: document.querySelectorAll('.fund-inventory-embed .slot.filled').length,
     }))()`);
-    check('实时模式检测到外部写入并自动同步仓库', liveSync.filled >= 1
+    check('基金仓库实时同步外部写入', liveSync.filled >= 1
         || liveSync.message.includes('同步'), JSON.stringify(liveSync));
+
+    // Web 内搬运同样实时落库：不需要保存按钮，也不需要二次确认。
+    const fundMove = await evaluate(`(() => {
+      const slots = [...document.querySelectorAll('.fund-inventory-embed .slot')];
+      const from = slots.findIndex((slot) => slot.classList.contains('filled'));
+      const to = slots.findIndex((slot, index) => index !== from && !slot.classList.contains('filled'));
+      if (from < 0 || to < 0) return null;
+      slots[from].click();
+      return { from, to };
+    })()`);
+    if (fundMove) {
+      await sleep(400);
+      await evaluate('document.querySelectorAll(\'.fund-inventory-embed .slot\')['
+        + fundMove.to + '].click(); true;');
+      await sleep(1500);
+      const afterMove = await fetch(base + '/api/lottery/fund', { headers: authHeaders })
+        .then((response) => response.json());
+      check('基金仓库槽位搬运实时写入且无确认弹窗',
+          (afterMove.slots?.[fundMove.from] || '') === ''
+          && (afterMove.slots?.[fundMove.to] || '') !== '',
+          JSON.stringify({ move: fundMove, from: afterMove.slots?.[fundMove.from],
+            to: afterMove.slots?.[fundMove.to] }));
+    }
     await fetch(base + '/api/lottery/fund/write', {
       method: 'POST', headers: authHeaders,
       body: JSON.stringify({ slots: beforeLive.slots || [] }),
