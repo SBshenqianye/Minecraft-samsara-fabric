@@ -92,3 +92,5 @@ Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
 - `Copy-Item` 在旧 Java 仍持锁时可能静默失败；复制后必须立刻校验目标哈希。
 - 生产 `Launch Server.bat` 是循环启动；直接替换 jar 前必须停循环或极快完成，否则会被旧进程锁住。
 - 不要在生产验证时执行写配置、回滚、删备份等有副作用操作。
+- 测试服 `server.properties` 与代码内置默认值不一致时，“恢复默认使用真实默认值”这类 E2E 断言会假失败（例：`pause-when-empty-seconds` 测试服为 0、默认 60）。先核对测试服配置，不要改代码去迎合环境。
+- Web 前端改动同样要 `cd web-src && npm run build`，产物才会进入 jar；只构建后端会发布旧前端。
