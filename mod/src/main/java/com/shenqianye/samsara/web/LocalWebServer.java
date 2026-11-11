@@ -763,6 +763,31 @@ public final class LocalWebServer {
                         result = backupIdentityData(body.get("uuid"));
                     }
                 }
+                case "/api/identity/data/list" -> {
+                    if (!"GET".equals(method)) {
+                        status = 405;
+                        result = Map.of("error", "Method Not Allowed");
+                    } else {
+                        result = identityService.dataList();
+                    }
+                }
+                case "/api/identity/data/backups" -> {
+                    if (!"GET".equals(method)) {
+                        status = 405;
+                        result = Map.of("error", "Method Not Allowed");
+                    } else {
+                        Map<String, String> query = parseQuery(exchange.getRequestURI().getRawQuery());
+                        result = identityService.dataBackups(query.get("uuid"));
+                    }
+                }
+                case "/api/identity/data/label" -> {
+                    if (!"POST".equals(method)) {
+                        status = 405;
+                        result = Map.of("error", "Method Not Allowed");
+                    } else {
+                        result = identityService.dataLabel(body);
+                    }
+                }
                 default -> {
                     status = 404;
                     result = Map.of("error", "Not Found");

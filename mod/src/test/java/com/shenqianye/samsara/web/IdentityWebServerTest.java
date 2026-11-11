@@ -141,6 +141,21 @@ class IdentityWebServerTest {
                     "offline", "4f1c2b8e-0000-0000-0000-000000000000",
                     "premiumNote", "");
         }
+
+        @Override
+        public Map<String, Object> dataList() {
+            return Map.of("ok", true, "data", java.util.List.of());
+        }
+
+        @Override
+        public Map<String, Object> dataBackups(String uuid) {
+            return Map.of("ok", true, "backups", java.util.List.of());
+        }
+
+        @Override
+        public Map<String, Object> dataLabel(Map<String, Object> body) {
+            return Map.of("ok", true);
+        }
     }
 
     private static final class FakeConfig implements ConfigService {

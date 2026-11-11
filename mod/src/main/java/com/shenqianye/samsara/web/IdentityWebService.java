@@ -22,4 +22,13 @@ public interface IdentityWebService {
 
     /** 名称/UUID 解析：名称 → 正版 + 离线 UUID；UUID → 名称（本地优先，必要时问 Mojang）。 */
     Map<String, Object> resolve(Map<String, Object> body);
+
+    /** 磁盘上所有 data UUID（含未分组），附带组名、元数据与备份数量。 */
+    Map<String, Object> dataList();
+
+    /** 某个 data UUID 的备份记录列表。 */
+    Map<String, Object> dataBackups(String uuid);
+
+    /** 修改 data UUID 的名称/备注；传空字符串清除。 */
+    Map<String, Object> dataLabel(Map<String, Object> body);
 }

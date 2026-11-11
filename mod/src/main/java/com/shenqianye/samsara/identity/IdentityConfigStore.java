@@ -164,6 +164,20 @@ public final class IdentityConfigStore {
                 }
             }
         }
+        Object labels = root.get("dataLabels");
+        if (labels instanceof List<?> list) {
+            for (Object item : list) {
+                if (!(item instanceof Map<?, ?> map)) {
+                    continue;
+                }
+                String uuid = text(map.get("uuid"));
+                if (uuid.isBlank()) {
+                    continue;
+                }
+                config.dataLabels.put(uuid,
+                        new IdentityConfig.Label(text(map.get("name")), text(map.get("note"))));
+            }
+        }
         Object groups = root.get("groups");
         if (groups instanceof List<?> list) {
             for (Object item : list) {
@@ -234,6 +248,23 @@ public final class IdentityConfigStore {
         out.append("pets:\n");
         out.append("  maxOwners: ").append(config.maxOwners)
                 .append("           # 单只宠物最多主人数量\n\n");
+        if (config.dataLabels == null || config.dataLabels.isEmpty()) {
+            out.append("dataLabels: []\n");
+            out.append("# dataLabels 只用于 Web 端辨识：- uuid / name / note，不参与身份解析。\n\n");
+        } else {
+            out.append("dataLabels:\n");
+            for (Map.Entry<String, IdentityConfig.Label> entry : config.dataLabels.entrySet()) {
+                if (entry.getKey() == null || entry.getValue() == null) {
+                    continue;
+                }
+                out.append("  - uuid: ").append(scalar(entry.getKey())).append("\n");
+                out.append("    name: ").append(scalar(entry.getValue().name)).append("\n");
+                if (entry.getValue().note != null && !entry.getValue().note.isBlank()) {
+                    out.append("    note: ").append(scalar(entry.getValue().note)).append("\n");
+                }
+            }
+            out.append("\n");
+        }
         if (config.groups == null || config.groups.isEmpty()) {
             out.append("groups: []\n");
             return out.toString();
@@ -302,6 +333,17 @@ public final class IdentityConfigStore {
             groups.add(item);
         }
         model.put("groups", groups);
+        Map<String, Map<String, String>> labels = new LinkedHashMap<>();
+        for (Map.Entry<String, IdentityConfig.Label> entry : config.dataLabels.entrySet()) {
+            if (entry.getKey() == null || entry.getValue() == null) {
+                continue;
+            }
+            Map<String, String> item = new LinkedHashMap<>();
+            item.put("name", entry.getValue().name);
+            item.put("note", entry.getValue().note);
+            labels.put(entry.getKey(), item);
+        }
+        model.put("dataLabels", labels);
         return model;
     }
 }

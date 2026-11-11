@@ -212,6 +212,7 @@
     </div>
 
     <div ref="overlayHost" class="ia-overlay-host"></div>
+    <IdentityInventoryDialog v-if="workspace === 'samsara'" />
     <div v-if="loadError" class="container-message error" style="margin: 20px">
       {{ loadError }}
     </div>
@@ -241,6 +242,7 @@ import WorldStackPage from '../pages/WorldStackPage.vue';
 import IdentityPage from '../pages/IdentityPage.vue';
 import ServerPage from '../pages/ServerPage.vue';
 import ModConfigPage from '../pages/ModConfigPage.vue';
+import IdentityInventoryDialog from '../components/IdentityInventoryDialog.vue';
 
 const route = useRoute();
 const router = useRouter();

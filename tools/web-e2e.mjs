@@ -829,7 +829,7 @@ async function main() {
 
     const identityData = await evaluate(`(async () => {
       window.SamsaraUI.setActiveTab('identity');
-      await new Promise((resolve) => setTimeout(resolve, 700));
+      await new Promise((resolve) => setTimeout(resolve, 900));
       const chip = document.querySelector('#panel-identity .uuid-chip.data');
       const detail = chip ? [...chip.querySelectorAll('.chip-action')]
         .find((node) => node.textContent.trim() === '详情') : null;
@@ -842,23 +842,40 @@ async function main() {
       const backupButton = [...document.querySelectorAll('#identity-data-content button')]
         .find((node) => node.textContent.includes('备份数据'));
       const editButton = [...document.querySelectorAll('#identity-data-content button')]
-        .find((node) => node.textContent.trim() === '编辑背包');
+        .find((node) => node.textContent.trim() === '编辑身份组背包');
       const wasOpen = Boolean(dialog && dialog.open);
+      if (editButton) editButton.click();
+      await new Promise((resolve) => setTimeout(resolve, 1600));
+      const bigDialog = document.querySelector('.identity-inventory-dialog');
+      const bigSlots = bigDialog ? bigDialog.querySelectorAll('.slot').length : 0;
+      const iframe = document.querySelector('#identity-data-content iframe');
+      const closeBig = bigDialog?.querySelector('.el-dialog__headerbtn');
+      if (closeBig) closeBig.click();
+      await new Promise((resolve) => setTimeout(resolve, 400));
       if (dialog && dialog.open) dialog.close();
       return { open: wasOpen, text,
         hasCopy: Boolean(copyButton), hasBackup: Boolean(backupButton),
-        hasEdit: Boolean(editButton),
+        hasEdit: Boolean(editButton), hasBackupList: text.includes('备份记录'),
+        bigSlots, hasIframe: Boolean(iframe),
+        cardButton: [...document.querySelectorAll('#panel-identity .card-actions button')]
+          .some((node) => node.textContent.trim() === '编辑身份组背包'),
         hasInventory: text.includes('背包'), hasEnder: text.includes('末影箱'),
         hasAdvancements: text.includes('成就') };
     })()`);
     check('身份组 data UUID 可查看详情', identityData.open && identityData.hasInventory
         && identityData.hasEnder && identityData.hasAdvancements
-        && identityData.hasCopy && identityData.hasBackup && identityData.hasEdit,
+        && identityData.hasCopy && identityData.hasBackup && identityData.hasEdit
+        && identityData.hasBackupList,
         JSON.stringify({ open: identityData.open, hasInventory: identityData.hasInventory,
           hasEnder: identityData.hasEnder, hasAdvancements: identityData.hasAdvancements,
           hasCopy: identityData.hasCopy, hasBackup: identityData.hasBackup,
-          hasEdit: identityData.hasEdit,
+          hasEdit: identityData.hasEdit, hasBackupList: identityData.hasBackupList,
           text: identityData.text.slice(0, 160) }));
+    check('身份组背包改用大窗口且不再使用 iframe',
+        identityData.cardButton === true && identityData.hasIframe === false
+        && identityData.bigSlots === 41,
+        JSON.stringify({ cardButton: identityData.cardButton,
+          hasIframe: identityData.hasIframe, bigSlots: identityData.bigSlots }));
     check('输出格式布尔改为按钮', mods.output === 2, 'buttons=' + mods.output);
     check('权限树布尔改为按钮', mods.permissions > 0, 'segmented=' + mods.permissions);
     check('配置页布尔改为按钮', mods.configBool > 0, 'segmented=' + mods.configBool);
@@ -1964,6 +1981,39 @@ async function main() {
       method: 'POST', headers: authHeaders,
       body: JSON.stringify({ slots: fundInv.slots || [] }),
     });
+
+    const identityList = await fetch(base + '/api/identity/data/list', { headers: authHeaders })
+      .then((response) => response.json());
+    check('data UUID 列表来自 identity/playerdata 磁盘扫描', identityList.ok === true
+        && Array.isArray(identityList.data)
+        && identityList.data.every((row) => typeof row.uuid === 'string'
+          && 'label' in row && 'group' in row && 'backups' in row),
+        JSON.stringify({ ok: identityList.ok, count: identityList.data?.length }));
+    const identityModel = await fetch(base + '/api/identity', { headers: authHeaders })
+      .then((response) => response.json());
+    const labelTarget = identityList.data?.[0]?.uuid
+      || identityModel.config?.groups?.find((group) => group.data)?.data;
+    if (labelTarget) {
+      const labelSet = await fetch(base + '/api/identity/data/label', {
+        method: 'POST', headers: authHeaders,
+        body: JSON.stringify({ uuid: labelTarget, name: 'E2E 临时命名', note: 'e2e' }),
+      }).then((response) => response.json());
+      const afterLabel = await fetch(base + '/api/identity', { headers: authHeaders })
+        .then((response) => response.json());
+      const saved = afterLabel.config?.dataLabels?.[labelTarget]?.name === 'E2E 临时命名';
+      await fetch(base + '/api/identity/data/label', {
+        method: 'POST', headers: authHeaders,
+        body: JSON.stringify({ uuid: labelTarget, name: '', note: '' }),
+      });
+      check('data UUID 名称/备注可保存并清除', labelSet.ok === true && saved === true,
+          JSON.stringify({ ok: labelSet.ok, saved }));
+      const backups = await fetch(
+          base + '/api/identity/data/backups?uuid=' + encodeURIComponent(labelTarget),
+          { headers: authHeaders }).then((response) => response.json());
+      check('data UUID 备份记录可列出', backups.ok === true
+          && Array.isArray(backups.backups) && typeof backups.root === 'string',
+          JSON.stringify({ ok: backups.ok, count: backups.backups?.length }));
+    }
 
     const auditPage = await fetch(base + '/api/audit?offset=0&limit=5',
         { headers: authHeaders }).then((response) => response.json());

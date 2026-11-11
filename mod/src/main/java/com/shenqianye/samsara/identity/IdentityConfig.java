@@ -1,7 +1,9 @@
 package com.shenqianye.samsara.identity;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -35,6 +37,32 @@ public final class IdentityConfig {
     public boolean syncPlayerData = true;
     public int maxOwners = DEFAULT_MAX_OWNERS;
     public List<Group> groups = new ArrayList<>();
+
+    /**
+     * data UUID 级别的管理员元数据（名称/备注）。
+     *
+     * <p>只用于 Web 端辨识，例如把某个 data UUID 标记成「小明 2026-01 的存档」，
+     * 避免账号 UUID 与 data UUID 混用、归还时拿错存档。不参与身份解析。
+     */
+    public Map<String, Label> dataLabels = new LinkedHashMap<>();
+
+    /** data UUID 的可编辑元数据。 */
+    public static final class Label {
+        public String name = "";
+        public String note = "";
+
+        public Label() {
+        }
+
+        public Label(String name, String note) {
+            this.name = name == null ? "" : name;
+            this.note = note == null ? "" : note;
+        }
+
+        public Label copy() {
+            return new Label(name, note);
+        }
+    }
 
     /** 一个身份组：显示名 + 数据 UUID + 最多一个正版账号/离线账号入口。 */
     public static final class Group {
@@ -105,6 +133,11 @@ public final class IdentityConfig {
         copy.enabled = enabled;
         copy.syncPlayerData = syncPlayerData;
         copy.maxOwners = maxOwners;
+        for (Map.Entry<String, Label> entry : dataLabels.entrySet()) {
+            if (entry.getKey() != null && entry.getValue() != null) {
+                copy.dataLabels.put(entry.getKey(), entry.getValue().copy());
+            }
+        }
         for (Group group : groups) {
             if (group != null) {
                 copy.groups.add(group.copy());

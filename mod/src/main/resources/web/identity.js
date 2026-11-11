@@ -9,6 +9,8 @@ const I = {
   settings: { enabled: false, sync: true, maxOwners: 32 },
   candidates: [],
   extraCandidates: [],
+  dataList: [],
+  labels: {},
   generated: [],
   names: {},
   types: {},
@@ -53,12 +55,76 @@ async function loadIdentity() {
   try {
     const model = await window.SamsaraUI.api('/api/identity');
     applyModel(model);
+    refreshDataList();
     identityMessage('已读取身份组配置', 'ok');
     return true;
   } catch (e) {
     identityMessage(window.SamsaraUI.authMessage(e, '读取身份组失败'), 'error');
     return false;
   }
+}
+
+/**
+ * 拉取磁盘上所有 data UUID。
+ *
+ * <p>这是「未分组 data UUID」的持久来源：文件在，列表就在；
+ * 不再依赖前端内存 I.generated，刷新页面也不会把闲置 data 弄丢。
+ */
+async function refreshDataList() {
+  try {
+    const list = await window.SamsaraUI.api('/api/identity/data/list');
+    I.dataList = Array.isArray(list.data) ? list.data : [];
+    renderPool();
+    renderDatalists();
+  } catch (e) {
+    // 老版本或身份服务未初始化时保持空列表，不影响卡片编辑。
+  }
+}
+
+function dataMeta(uuid) {
+  return I.labels[uuid] || null;
+}
+
+function dataDisplayName(uuid) {
+  const meta = dataMeta(uuid);
+  if (meta && meta.name) return meta.name;
+  const row = I.dataList.find((item) => item.uuid === uuid);
+  if (row && row.label) return row.label;
+  return '';
+}
+
+async function editDataLabel(uuid) {
+  const meta = dataMeta(uuid) || {};
+  const name = window.prompt('给这个 data UUID 起个名字（留空清除）\n'
+    + uuid + '\n格式建议：所有者 + 用途 + 日期，例如「小明 主号 2026-01」',
+  meta.name || dataDisplayName(uuid) || '');
+  if (name === null) return;
+  const note = window.prompt('备注（可留空）\n用于区分借出/归还记录', meta.note || '');
+  if (note === null) return;
+  try {
+    const result = await window.SamsaraUI.api('/api/identity/data/label', {
+      method: 'POST',
+      body: JSON.stringify({ uuid, name: name.trim(), note: note.trim() }),
+    });
+    if (!result.ok) throw new Error(result.error || '保存失败');
+    I.labels[uuid] = { name: name.trim(), note: note.trim() };
+    await refreshDataList();
+    renderGroups();
+    identityMessage(result.message || '已保存 data UUID 元数据', 'ok');
+  } catch (e) {
+    identityMessage(window.SamsaraUI.authMessage(e, '保存 data UUID 元数据失败'), 'error');
+  }
+}
+
+/** 打开全局 Vue 背包弹窗（身份组 data UUID）。 */
+function openGroupInventory(dataUuid, groupName) {
+  if (!dataUuid) {
+    identityMessage('该身份组还没有 data UUID', 'error');
+    return;
+  }
+  window.dispatchEvent(new CustomEvent('samsara:identity-inventory', {
+    detail: { data: dataUuid, name: groupName || '' },
+  }));
 }
 
 function ensureIdentityLoaded() {
@@ -83,6 +149,7 @@ function applyModel(model) {
     _originalName: group.name || '',
   }));
   I.candidates = model.candidates || [];
+  I.labels = config.dataLabels || {};
   I.dirty = false;
   renderAll();
 }
@@ -252,6 +319,12 @@ function groupCard(group, index) {
 
   const actions = document.createElement('div');
   actions.className = 'card-actions';
+  const inventory = document.createElement('button');
+  inventory.type = 'button';
+  inventory.className = 'ghost';
+  inventory.textContent = '编辑身份组背包';
+  inventory.title = '直接编辑该身份组 data UUID 的 41 格背包（大窗口，写入前自动备份）';
+  inventory.addEventListener('click', () => openGroupInventory(group.data, group.name));
   const preview = document.createElement('button');
   preview.type = 'button';
   preview.className = 'ghost';
@@ -267,7 +340,7 @@ function groupCard(group, index) {
     I.dirty = true;
     renderAll();
   });
-  actions.append(preview, remove);
+  actions.append(inventory, preview, remove);
 
   const previewOutput = document.createElement('pre');
   previewOutput.className = 'card-preview';
@@ -367,9 +440,62 @@ async function backupData(uuid) {
       method: 'POST',
       body: JSON.stringify({ uuid }),
     });
-    identityMessage(result.message || (result.ok ? '已备份' : result.error), result.ok ? 'ok' : 'error');
+    identityMessage((result.message || (result.ok ? '已备份' : result.error))
+      + (result.ok && result.path ? ' · ' + result.path : ''), result.ok ? 'ok' : 'error');
+    if (result.ok) {
+      const list = document.querySelector(
+        `.identity-backup-section[data-backup-for="${uuid}"] .identity-backup-list`);
+      if (list) fetchBackups(uuid, list);
+      refreshDataList();
+    }
   } catch (e) {
     identityMessage(window.SamsaraUI.authMessage(e, '备份失败'), 'error');
+  }
+}
+
+/** 备份记录：时间、大小、文件数、可复制路径。 */
+function backupSection(uuid) {
+  const box = dataNode('section', 'identity-data-section identity-backup-section');
+  box.dataset.backupFor = uuid;
+  box.append(dataNode('h4', null, '备份记录'));
+  const list = dataNode('div', 'identity-backup-list');
+  list.append(dataNode('p', 'muted small', '加载中…'));
+  box.append(list);
+  fetchBackups(uuid, list);
+  return box;
+}
+
+async function fetchBackups(uuid, list) {
+  list.replaceChildren();
+  try {
+    const result = await window.SamsaraUI.api(
+      '/api/identity/data/backups?uuid=' + encodeURIComponent(uuid));
+    const rows = Array.isArray(result.backups) ? result.backups : [];
+    if (!rows.length) {
+      list.append(dataNode('p', 'muted small',
+        '还没有备份。点「备份数据」会在 ' + (result.root || 'identity/backups/data/' + uuid) + ' 下生成一份。'));
+      return;
+    }
+    list.append(dataNode('p', 'muted small', '备份根目录：' + (result.root || '—')));
+    for (const row of rows) {
+      const line = dataNode('div', 'identity-backup-row');
+      line.append(dataNode('code', '', row.id));
+      line.append(dataNode('span', 'muted small',
+        ((Number(row.bytes) || 0) / 1024).toFixed(1) + ' KiB · '
+          + (row.files || []).length + ' 个文件'));
+      const copyPath = dataNode('button', 'chip-action', '复制路径');
+      copyPath.type = 'button';
+      copyPath.addEventListener('click', () => {
+        copyText(row.path);
+        identityMessage('已复制备份路径', 'ok');
+      });
+      line.append(copyPath);
+      line.append(dataNode('span', 'muted small', row.path));
+      list.append(line);
+    }
+  } catch (e) {
+    list.append(dataNode('p', 'message error',
+      window.SamsaraUI.authMessage(e, '读取备份失败')));
   }
 }
 
@@ -389,7 +515,7 @@ function openDataDialog(uuid) {
     title.textContent = 'data UUID 详情';
     const sub = document.createElement('p');
     sub.className = 'dialog-sub';
-    sub.textContent = '查看身份数据文件、成就与统计；可在详情页进入背包编辑，写入前自动备份。';
+    sub.textContent = '查看身份数据文件、成就、统计与备份位置；背包编辑在独立大窗口中完成。';
     titleBox.append(title, sub);
     const close = document.createElement('button');
     close.type = 'button';
@@ -426,38 +552,28 @@ function renderDataDetail(root, uuid, data) {
   const backup = dataNode('button', 'ghost', '备份数据');
   backup.type = 'button';
   backup.addEventListener('click', () => backupData(uuid));
-  const edit = dataNode('button', 'ghost identity-edit-link', '编辑背包');
+  const rename = dataNode('button', 'ghost', '命名/备注');
+  rename.type = 'button';
+  rename.addEventListener('click', () => editDataLabel(uuid));
+  const edit = dataNode('button', 'ghost identity-edit-link', '编辑身份组背包');
   edit.type = 'button';
-  edit.title = '需要更大空间时在新页面编辑该 data UUID 的背包';
+  edit.title = '在独立大窗口中编辑该 data UUID 的背包';
   edit.addEventListener('click', () => {
-    if (window.SamsaraRouter?.push) {
-      document.getElementById('identity-data-dialog')?.close();
-      window.SamsaraRouter.push({ path: '/samsara/sky/inventory',
-        query: { source: 'identity', data: uuid } });
-    } else {
-      window.location.href = '/samsara/sky/inventory?source=identity&data='
-          + encodeURIComponent(uuid);
-    }
+    document.getElementById('identity-data-dialog')?.close();
+    openGroupInventory(uuid, dataDisplayName(uuid));
   });
-  head.append(dataNode('code', 'identity-data-uuid', uuid), copy, edit, backup);
+  head.append(dataNode('code', 'identity-data-uuid', uuid), copy, rename, edit, backup);
   root.append(head);
   if (!data.ok) {
     root.append(dataNode('p', 'message error', data.error || data.message || '读取失败'));
     return;
   }
-  const inline = dataNode('section', 'identity-inline-inventory');
-  const inlineHead = dataNode('div', 'identity-inline-inventory-head');
-  inlineHead.append(
-    dataNode('strong', '', '背包编辑'),
-    dataNode('span', 'muted small', '详情内直接编辑；写入前自动备份，在线时直接写入同身份玩家。'),
-  );
-  const frame = document.createElement('iframe');
-  frame.className = 'identity-inventory-frame';
-  frame.loading = 'lazy';
-  frame.title = 'data UUID 背包编辑';
-  frame.src = '/identity-inventory?source=identity&data=' + encodeURIComponent(uuid) + '&embed=1';
-  inline.append(inlineHead, frame);
-  root.append(inline);
+  const meta = dataMeta(uuid) || {};
+  const metaLine = dataNode('p', 'muted small',
+    '名称：' + (meta.name || dataDisplayName(uuid) || '未命名')
+      + ' · 备注：' + (meta.note || '—'));
+  root.append(metaLine);
+  root.append(backupSection(uuid));
   const chips = dataNode('div', 'status-chips');
   const values = [
     ['数据文件', data.exists ? '存在' : '不存在'],
@@ -544,7 +660,9 @@ function uuidChip(uuid, role, groupId) {
   const name = document.createElement('span');
   name.className = 'uuid-name';
   name.dataset.nameFor = uuid;
-  name.textContent = I.names[uuid] || candidateName(uuid)
+  const custom = role === 'data' ? dataDisplayName(uuid) : '';
+  if (custom) name.dataset.labelLocked = '1';
+  name.textContent = custom || I.names[uuid] || candidateName(uuid)
       || (role === 'data' ? (group?.name ? group.name + ' · 数据' : '空白 data') : '未命名');
   const code = document.createElement('span');
   code.className = 'uuid-code';
@@ -568,6 +686,16 @@ function uuidChip(uuid, role, groupId) {
   });
   actions.append(copy);
   if (role === 'data') {
+    const rename = document.createElement('button');
+    rename.type = 'button';
+    rename.className = 'chip-action';
+    rename.textContent = '命名';
+    rename.title = '给这个 data UUID 起名/备注，避免和账号 UUID 混淆';
+    rename.addEventListener('click', (event) => {
+      event.stopPropagation();
+      editDataLabel(uuid);
+    });
+    actions.append(rename);
     const detail = document.createElement('button');
     detail.type = 'button';
     detail.className = 'chip-action';
@@ -891,6 +1019,25 @@ function renderPool() {
   const blankData = [...I.generated];
   for (const key of Object.keys(I.model?.states || {})) blankData.push(key);
   const q = I.pool.text.trim().toLowerCase();
+  // 磁盘上真实存在的 data UUID：未分组也一直在这里，刷新页面不会消失。
+  for (const row of I.dataList) {
+    const uuid = row.uuid;
+    if (!uuid || usedData.has(uuid) || dataSeen.has(uuid)) continue;
+    if (q && !String(row.label || '').toLowerCase().includes(q)
+        && !String(row.note || '').toLowerCase().includes(q)
+        && !uuid.toLowerCase().includes(q)) continue;
+    dataSeen.add(uuid);
+    dataPool.append(poolChip(uuid, row.label || (row.group ? '组 ' + row.group : '空白 data'),
+      I.online[uuid], row.group ? '已入组' : '未分组', {
+        assignRole: 'data',
+        type: 'data',
+        label: row.label || '',
+        badge: row.backups ? row.backups + ' 个备份' : '',
+        onLabel: () => editDataLabel(uuid),
+        onBackups: () => openDataDialog(uuid),
+      }));
+    dataCount++;
+  }
   for (const uuid of blankData) {
     if (!uuid || usedData.has(uuid) || dataSeen.has(uuid)) continue;
     if (q && !uuid.toLowerCase().includes(q)) continue;
@@ -935,7 +1082,8 @@ function poolChip(uuid, name, online, tag, options) {
   const label = document.createElement('span');
   label.className = 'uuid-name';
   label.dataset.nameFor = uuid;
-  label.textContent = name || (tag === 'data' ? '空白 data' : displayName(uuid));
+  if (opts.label) label.dataset.labelLocked = '1';
+  label.textContent = opts.label || name || (tag === 'data' ? '空白 data' : displayName(uuid));
   const code = document.createElement('span');
   code.className = 'uuid-code';
   code.textContent = shortUuid(uuid);
@@ -981,6 +1129,30 @@ function poolChip(uuid, name, online, tag, options) {
     identityMessage('已复制 ' + uuid, 'ok');
   });
   chip.append(copy);
+  if (typeof opts.onLabel === 'function') {
+    const rename = document.createElement('button');
+    rename.type = 'button';
+    rename.className = 'chip-action';
+    rename.textContent = '命名';
+    rename.title = '给这个 data UUID 起名/备注，避免和账号 UUID 混淆';
+    rename.addEventListener('click', (event) => {
+      event.stopPropagation();
+      opts.onLabel();
+    });
+    chip.append(rename);
+  }
+  if (typeof opts.onBackups === 'function') {
+    const backups = document.createElement('button');
+    backups.type = 'button';
+    backups.className = 'chip-action';
+    backups.textContent = '备份记录';
+    backups.title = '查看该 data UUID 的备份位置与时间';
+    backups.addEventListener('click', (event) => {
+      event.stopPropagation();
+      opts.onBackups();
+    });
+    chip.append(backups);
+  }
   if (typeof opts.onRemove === 'function') {
     const remove = document.createElement('button');
     remove.type = 'button';
@@ -1583,6 +1755,7 @@ function refreshNames() {
       Object.assign(I.types, result.types || {});
       Object.assign(I.online, result.online || {});
       for (const el of document.querySelectorAll('[data-name-for]')) {
+        if (el.dataset.labelLocked === '1') continue;
         const uuid = el.dataset.nameFor;
         const name = I.names[uuid];
         if (name) el.textContent = name;

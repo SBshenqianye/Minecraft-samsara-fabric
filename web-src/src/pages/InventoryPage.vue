@@ -31,7 +31,6 @@
               <el-option label="末影箱" value="ender" />
               <el-option label="盔甲（只读分区）" value="armor" />
             </el-select>
-            <el-button size="small" @click="switchSource('identity')">按 data UUID 编辑身份背包</el-button>
             <div class="inventory-player-list">
               <button
                 v-for="player in filteredPlayers"
@@ -280,9 +279,9 @@ const layout = computed(() => {
 });
 
 onMounted(() => {
-  const initialSource = route.query.source === 'identity' ? 'identity' : 'player';
-  source.value = initialSource;
-  identityUuid.value = String(route.query.data || '');
+  // 身份组背包已迁到全局大窗口，这里只处理真实玩家/离线安全队列。
+  source.value = 'player';
+  identityUuid.value = '';
   if (token.value) connect();
   playersTimer = window.setInterval(refreshPlayersQuietly, 4000);
 });

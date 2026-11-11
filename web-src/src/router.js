@@ -227,7 +227,8 @@ const routes = [
       ],
     },
     { path: '/containers', name: 'containers', component: ContainerPage },
-    { path: '/identity-inventory', name: 'identity-inventory', component: InventoryPage },
+    // 身份组背包已改为全局大窗口（IdentityInventoryDialog），不再有独立 iframe 页面。
+    { path: '/identity-inventory', redirect: '/samsara/community/identity' },
     { path: '/user', name: 'user', component: UserPage },
   { path: '/:pathMatch(.*)*', redirect: '/samsara/economy' },
 ];

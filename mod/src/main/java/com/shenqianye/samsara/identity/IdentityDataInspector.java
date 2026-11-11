@@ -30,6 +30,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 /** 只读查看某个 data UUID 的玩家数据与备份。 */
 public final class IdentityDataInspector {
@@ -115,6 +116,126 @@ public final class IdentityDataInspector {
         out.put("files", copied);
         out.put("message", "已备份 " + copied.size() + " 个文件到 " + dir.getFileName());
         return out;
+    }
+
+    /**
+     * 列出磁盘上所有身份 data UUID（{@code identity/playerdata/*.dat}）。
+     *
+     * <p>这是「未分组 data UUID 永久的候选池」：文件在就一直在，不依赖前端内存。
+     * 附带所属身份组、管理员元数据、文件大小与备份数量，供 Web 端辨识。
+     */
+    public static Map<String, Object> list(IdentityService service) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        if (service == null || service.identityRoot() == null) {
+            return error("身份服务尚未初始化");
+        }
+        Path dir = service.identityRoot().resolve("playerdata");
+        IdentityConfig config = service.config();
+        Map<String, IdentityConfig.Group> owners = new LinkedHashMap<>();
+        if (config != null) {
+            for (IdentityConfig.Group group : config.groups) {
+                if (group != null && group.dataUuid() != null) {
+                    owners.put(group.dataUuid().toString(), group);
+                }
+            }
+        }
+        List<Map<String, Object>> rows = new ArrayList<>();
+        try (Stream<Path> stream = Files.isDirectory(dir) ? Files.list(dir) : Stream.empty()) {
+            stream.filter(path -> path.getFileName().toString().endsWith(".dat"))
+                    .forEach(path -> {
+                        String file = path.getFileName().toString();
+                        String raw = file.substring(0, file.length() - 4);
+                        try {
+                            UUID.fromString(raw);
+                        } catch (RuntimeException e) {
+                            return;
+                        }
+                        Map<String, Object> row = new LinkedHashMap<>();
+                        row.put("uuid", raw);
+                        IdentityConfig.Group group = owners.get(raw);
+                        row.put("group", group == null ? null : group.name);
+                        IdentityConfig.Label label = config == null ? null
+                                : config.dataLabels.get(raw);
+                        row.put("label", label == null ? "" : label.name);
+                        row.put("note", label == null ? "" : label.note);
+                        try {
+                            row.put("bytes", Files.size(path));
+                            row.put("modified", Files.getLastModifiedTime(path).toMillis());
+                        } catch (IOException e) {
+                            row.put("bytes", 0);
+                            row.put("modified", 0);
+                        }
+                        row.put("backups", backupCount(service.identityRoot(), raw));
+                        rows.add(row);
+                    });
+        } catch (IOException e) {
+            return error("读取身份数据目录失败：" + e.getMessage());
+        }
+        rows.sort((left, right) -> Long.compare(
+                ((Number) right.get("modified")).longValue(),
+                ((Number) left.get("modified")).longValue()));
+        out.put("ok", true);
+        out.put("root", dir.toString());
+        out.put("data", rows);
+        return out;
+    }
+
+    /** 列出某个 data UUID 的备份记录（时间 / 大小 / 路径），最新在前。 */
+    public static Map<String, Object> backups(IdentityService service, UUID data) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        if (data == null) {
+            return error("缺少 data UUID");
+        }
+        if (service == null || service.identityRoot() == null) {
+            return error("身份服务尚未初始化");
+        }
+        Path dir = service.identityRoot().resolve("backups").resolve("data")
+                .resolve(data.toString());
+        List<Map<String, Object>> rows = new ArrayList<>();
+        try (Stream<Path> stream = Files.isDirectory(dir) ? Files.list(dir) : Stream.empty()) {
+            stream.filter(Files::isDirectory).forEach(path -> {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("id", path.getFileName().toString());
+                row.put("path", path.toString());
+                List<String> files = new ArrayList<>();
+                long bytes = 0;
+                try (Stream<Path> inner = Files.list(path)) {
+                    for (Path file : (Iterable<Path>) inner::iterator) {
+                        if (!Files.isRegularFile(file)) {
+                            continue;
+                        }
+                        files.add(file.getFileName().toString());
+                        bytes += Files.size(file);
+                    }
+                } catch (IOException ignored) {
+                    // 单个备份目录不可读时仍显示记录。
+                }
+                row.put("files", files);
+                row.put("bytes", bytes);
+                rows.add(row);
+            });
+        } catch (IOException e) {
+            return error("读取备份目录失败：" + e.getMessage());
+        }
+        rows.sort((left, right) -> String.valueOf(right.get("id"))
+                .compareTo(String.valueOf(left.get("id"))));
+        out.put("ok", true);
+        out.put("uuid", data.toString());
+        out.put("root", dir.toString());
+        out.put("backups", rows);
+        return out;
+    }
+
+    private static int backupCount(Path identityRoot, String uuid) {
+        Path dir = identityRoot.resolve("backups").resolve("data").resolve(uuid);
+        if (!Files.isDirectory(dir)) {
+            return 0;
+        }
+        try (Stream<Path> stream = Files.list(dir)) {
+            return (int) stream.filter(Files::isDirectory).count();
+        } catch (IOException e) {
+            return 0;
+        }
     }
 
     private static List<Map<String, Object>> items(MinecraftServer server, ListTag list) {

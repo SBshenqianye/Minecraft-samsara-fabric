@@ -63,7 +63,7 @@ public final class WebSecurity {
                  "/samsara/economy/history", "/samsara/economy/lottery",
                  "/samsara/sky", "/samsara/sky/track", "/samsara/sky/diff",
                  "/samsara/sky/containers", "/samsara/sky/inventory",
-                 "/samsara/sky/web-inventory", "/identity-inventory",
+                 "/samsara/sky/web-inventory",
                  "/samsara/config", "/samsara/config/editor", "/samsara/config/advanced",
                  "/samsara/config/claim-range", "/samsara/config/output",
                  "/samsara/config/permissions",

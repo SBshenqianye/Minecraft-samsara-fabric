@@ -282,6 +282,52 @@ public final class WebIdentityService implements IdentityWebService {
         return out;
     }
 
+    /** 磁盘上所有 data UUID（未分组也在列表里），供候选池与详情使用。 */
+    public Map<String, Object> dataList() {
+        return com.shenqianye.samsara.identity.IdentityDataInspector
+                .list(IdentityService.getInstance());
+    }
+
+    /** 某个 data UUID 的备份记录列表。 */
+    public Map<String, Object> dataBackups(String rawUuid) {
+        return com.shenqianye.samsara.identity.IdentityDataInspector.backups(
+                IdentityService.getInstance(), uuid(rawUuid));
+    }
+
+    /** 修改 data UUID 的名称/备注（只影响 Web 辨识，不动玩家数据）。 */
+    public Map<String, Object> dataLabel(Map<String, Object> body) {
+        IdentityService service = IdentityService.getInstance();
+        if (service.configStore() == null) {
+            service.initConfig();
+        }
+        UUID data = uuid(body.get("uuid"));
+        if (data == null) {
+            return fail("data UUID 格式不正确");
+        }
+        String name = text(body.get("name"));
+        String note = text(body.get("note"));
+        IdentityConfig next = service.config().copy();
+        if (name.isBlank() && note.isBlank()) {
+            next.dataLabels.remove(data.toString());
+        } else {
+            next.dataLabels.put(data.toString(), new IdentityConfig.Label(name, note));
+        }
+        IdentityConfigStore.SaveResult result = service.configStore().save(next);
+        if (!result.ok()) {
+            Map<String, Object> out = fail("data UUID 元数据保存失败");
+            out.put("errors", result.errors());
+            return out;
+        }
+        service.applySavedConfig(next);
+        com.shenqianye.samsara.identity.IdentityAudit.log(service.identityRoot(),
+                "web_data_label", "web", data, "name=" + name);
+        Map<String, Object> out = model();
+        out.put("ok", true);
+        out.put("message", name.isBlank() && note.isBlank()
+                ? "已清除该 data UUID 的元数据" : "已保存 data UUID 元数据");
+        return out;
+    }
+
     @Override
     public Map<String, Object> generate() {
         Map<String, Object> out = new LinkedHashMap<>();
