@@ -2,7 +2,7 @@
   <span
     class="item-icon-view"
     :class="['size-' + size, { 'has-glint': glint }]"
-    :title="tooltip"
+    :aria-label="label"
   >
     <img
       v-if="!failed"

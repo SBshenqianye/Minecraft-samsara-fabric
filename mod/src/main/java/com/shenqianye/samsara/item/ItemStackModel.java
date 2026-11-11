@@ -62,6 +62,7 @@ public final class ItemStackModel {
         out.put("id", id);
         out.put("icon", colon >= 0 ? id.substring(colon + 1) : id);
         out.put("name", stack.getHoverName().getString());
+        out.put("zh", ItemLang.zh(id));
         out.put("count", stack.getCount());
         out.put("maxStack", stack.getMaxStackSize());
         out.put("encoded", encoded == null ? "" : encoded);
@@ -106,6 +107,7 @@ public final class ItemStackModel {
         out.put("id", id);
         out.put("icon", colon >= 0 ? id.substring(colon + 1) : id);
         out.put("name", stack.getHoverName().getString());
+        out.put("zh", ItemLang.zh(id));
         out.put("count", stack.getCount());
         out.put("maxStack", stack.getMaxStackSize());
         out.put("encoded", encoded == null ? "" : encoded);

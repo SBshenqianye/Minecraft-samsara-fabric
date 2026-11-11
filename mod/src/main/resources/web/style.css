@@ -744,6 +744,17 @@ details.output-group > summary { padding: 3px 2px; }
 .uuid-chip.data { border-color: color-mix(in srgb, var(--accent) 34%, var(--line)); }
 .uuid-chip.premium { border-color: color-mix(in srgb, #60a5fa 40%, var(--line)); }
 .uuid-chip.offline { border-color: color-mix(in srgb, var(--amber) 40%, var(--line)); }
+/* 三类 UUID 用低饱和左侧细条区分，避免整块高亮刺眼 */
+.uuid-chip.role-data, .uuid-chip.role-premium, .uuid-chip.role-offline { border-left-width: 3px; }
+.uuid-chip.role-data { border-left-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: color-mix(in srgb, var(--accent) 5%, var(--panel-soft)); }
+.uuid-chip.role-premium { border-left-color: color-mix(in srgb, #60a5fa 45%, var(--line)); background: color-mix(in srgb, #60a5fa 5%, var(--panel-soft)); }
+.uuid-chip.role-offline { border-left-color: color-mix(in srgb, var(--amber) 45%, var(--line)); background: color-mix(in srgb, var(--amber) 5%, var(--panel-soft)); }
+.pool-section#identity-premium-section > summary { box-shadow: inset 3px 0 0 color-mix(in srgb, #60a5fa 42%, transparent); }
+.pool-section#identity-offline-section > summary { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--amber) 42%, transparent); }
+.pool-section#identity-data-section > summary { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--accent) 42%, transparent); }
+.uuid-zone[data-role="premium"] { border-left: 2px solid color-mix(in srgb, #60a5fa 32%, transparent); }
+.uuid-zone[data-role="offline"] { border-left: 2px solid color-mix(in srgb, var(--amber) 32%, transparent); }
+.uuid-zone[data-role="data"] { border-left: 2px solid color-mix(in srgb, var(--accent) 32%, transparent); }
 .chip-actions { display: inline-flex; gap: 2px; margin-left: 2px; }
 .chip-action { border: 0; background: transparent; color: var(--muted); padding: 0 3px; font-size: 11px; min-width: 16px; }
 .chip-action:hover { color: var(--fg); background: var(--panel); }

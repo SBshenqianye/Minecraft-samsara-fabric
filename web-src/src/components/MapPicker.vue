@@ -2,18 +2,29 @@
   <div class="map-picker" :style="{ height: height + 'px' }">
     <div ref="viewport" class="map-viewport" @pointerdown="startPan" @wheel.prevent="onWheel">
       <div class="map-layer">
-        <img
-          v-for="tile in tiles"
-          v-show="!tile.failed"
-          :key="tile.key"
-          class="map-tile"
-          :src="tile.src"
-          :style="{ left: tile.left + 'px', top: tile.top + 'px', width: tile.size + 'px', height: tile.size + 'px' }"
-          alt=""
-          draggable="false"
-          @load="tile.loaded = true"
-          @error="tile.failed = true"
-        />
+        <template v-for="tile in tiles" :key="tile.key">
+          <img
+            v-if="tile.src"
+            class="map-tile"
+            :src="tile.src"
+            :style="{ left: tile.left + 'px', top: tile.top + 'px', width: tile.size + 'px', height: tile.size + 'px' }"
+            alt=""
+            draggable="false"
+          />
+        </template>
+        <svg
+          v-if="trailsVisible && trailPaths.length"
+          class="map-trails"
+          :viewBox="'0 0 ' + viewW + ' ' + viewH"
+          preserveAspectRatio="none"
+        >
+          <polyline
+            v-for="line in trailPaths"
+            :key="line.id"
+            :points="line.points"
+            :stroke="line.color"
+          />
+        </svg>
         <button
           v-for="marker in visibleMarkers"
           :key="marker.id"
@@ -39,13 +50,21 @@
         </button>
       </div>
       <div class="map-controls">
-        <button type="button" class="ghost tiny" title="放大（滚轮向上）" @click.stop="zoom(1)">＋</button>
-        <button type="button" class="ghost tiny" title="缩小（滚轮向下）" @click.stop="zoom(-1)">－</button>
+        <button type="button" class="ghost tiny" title="放大（滚轮向上）" @click.stop="zoom(-1)">＋</button>
+        <button type="button" class="ghost tiny" title="缩小（滚轮向下）" @click.stop="zoom(1)">－</button>
         <button type="button" class="ghost tiny" title="回到标记" @click.stop="centerOnMarkers">◎</button>
+        <button
+          type="button"
+          class="ghost tiny"
+          :class="{ on: trailsVisible }"
+          title="显示/隐藏玩家轨迹"
+          @click.stop="trailsVisible = !trailsVisible"
+        >轨迹</button>
       </div>
       <div class="map-foot">
-        <span>{{ dimensionLabel }} · 缩放 1/{{ scale }} · 拖动平移</span>
-        <span v-if="!tiles.length" class="muted">该区域没有地形缓存</span>
+        <span>{{ dimensionLabel }} · {{ scale }} 格/像素 · 拖动平移</span>
+        <span v-if="trailPlayers.length" class="muted">玩家轨迹 {{ trailPlayers.length }} 人</span>
+        <span v-else-if="!tiles.length" class="muted">该区域没有地形缓存</span>
       </div>
     </div>
   </div>
@@ -59,9 +78,16 @@ const props = defineProps({
   markers: { type: Array, default: () => [] },
   dimension: { type: String, default: 'minecraft:overworld' },
   selectedId: { type: String, default: '' },
-  height: { type: Number, default: 380 },
+  height: { type: Number, default: 440 },
+  showTrails: { type: Boolean, default: true },
 });
 defineEmits(['select']);
+
+// 与世界地图 map.js 同一套缩放档位与「格/像素」口径；交互实现彼此独立。
+const SCALES = [0.0625, 0.125, 0.25, 0.5, 1, 2, 4, 8, 16];
+const MIN_SCALE = 0.0625;
+const MAX_SCALE = 16;
+const TRAIL_COLORS = ['#60a5fa', '#f0c674', '#7ad7a8', '#c792ea', '#f38ba8', '#89ddff'];
 
 const viewport = ref(null);
 const model = ref(null);
@@ -69,35 +95,66 @@ const stackId = ref('');
 const shortDim = ref('overworld');
 const centerX = ref(0);
 const centerZ = ref(0);
-const scale = ref(2);
+const scale = ref(4);
 const viewW = ref(600);
-const viewH = ref(380);
+const viewH = ref(440);
 const tiles = ref([]);
+const tileCache = new Map();
+let tilesRequest = 0;
+const trailPlayers = ref([]);
+const trailsVisible = ref(props.showTrails);
 const avatarUrls = reactive({});
 const avatarLoading = new Set();
 const avatarCache = new Map();
 const dragging = ref(false);
+const centeredOnMarkers = ref(false);
 let dragStart = null;
+let trailTimer = null;
+let observer = null;
 
 const dimensionLabel = computed(() => {
   const row = findDimension();
   return row?.name || props.dimension;
 });
 
-const visibleMarkers = computed(() => {
-  const ppb = 1 / scale.value;
+function projection() {
   const left = centerX.value - viewW.value * scale.value / 2;
   const top = centerZ.value - viewH.value * scale.value / 2;
+  return { left, top, ppb: 1 / scale.value };
+}
+
+const visibleMarkers = computed(() => {
+  const { left, top, ppb } = projection();
   return props.markers
     .filter((marker) => !marker.dimension || marker.dimension === props.dimension)
     .map((marker) => ({
       ...marker,
       kind: marker.kind || 'container',
-      left: (Number(marker.x) - left) * ppb,
-      top: (Number(marker.z) - top) * ppb,
+      // 取整像素，避免 transform: translate(-50%,-50%) 下的亚像素抖动。
+      left: Math.round((Number(marker.x) - left) * ppb),
+      top: Math.round((Number(marker.z) - top) * ppb),
     }))
     .filter((marker) => marker.left > -80 && marker.left < viewW.value + 80
       && marker.top > -40 && marker.top < viewH.value + 40);
+});
+
+const trailPaths = computed(() => {
+  if (!trailsVisible.value) return [];
+  const { left, top, ppb } = projection();
+  return trailPlayers.value
+    .filter((player) => !player.dimensionId || player.dimensionId === props.dimension)
+    .map((player, index) => {
+      const points = (player.trail || [])
+        .map((point) => Math.round((Number(point.x) - left) * ppb)
+          + ',' + Math.round((Number(point.z) - top) * ppb))
+        .join(' ');
+      return {
+        id: String(player.uuid || player.name || index),
+        points,
+        color: TRAIL_COLORS[index % TRAIL_COLORS.length],
+      };
+    })
+    .filter((line) => line.points.split(' ').length > 1);
 });
 
 function findDimension() {
@@ -123,6 +180,20 @@ async function loadModel() {
   }
 }
 
+async function loadTrails() {
+  try {
+    const token = sessionStorage.getItem('samsara-token') || '';
+    const response = await fetch('/api/map/player-trails?limit=400', {
+      headers: { Authorization: 'Bearer ' + token },
+    });
+    if (!response.ok) return;
+    const data = await response.json();
+    if (Array.isArray(data.players)) trailPlayers.value = data.players;
+  } catch {
+    // 轨迹不可用时不打断地图
+  }
+}
+
 function applyStack() {
   const found = findDimension();
   const stack = found
@@ -132,7 +203,6 @@ function applyStack() {
   const dimension = stack?.dimensions?.find((row) => row.id === props.dimension);
   shortDim.value = dimension?.dim || shortName(props.dimension);
   centerOnMarkers();
-  rebuildTiles();
 }
 
 function shortName(dimension) {
@@ -147,6 +217,7 @@ function centerOnMarkers() {
   if (rows.length) {
     centerX.value = rows.reduce((sum, row) => sum + Number(row.x), 0) / rows.length;
     centerZ.value = rows.reduce((sum, row) => sum + Number(row.z), 0) / rows.length;
+    centeredOnMarkers.value = true;
   } else {
     const bounds = findDimension()?.bounds;
     if (bounds && Number.isFinite(bounds.minX)) {
@@ -157,15 +228,17 @@ function centerOnMarkers() {
   rebuildTiles();
 }
 
+// 瓦片先由 new Image() 预加载成功才进入 DOM；失败瓦片永不渲染 <img>，
+// 因此缩放/平移时不会出现浏览器破图标志（世界地图用 canvas 也是同样效果）。
 function rebuildTiles() {
   if (!stackId.value) {
     tiles.value = [];
     return;
   }
-  const ppb = 1 / scale.value;
+  const request = ++tilesRequest;
+  const tileScale = Math.min(8, Math.max(1, scale.value));
+  const { left, top, ppb } = projection();
   const size = 512 / scale.value;
-  const left = centerX.value - viewW.value * scale.value / 2;
-  const top = centerZ.value - viewH.value * scale.value / 2;
   const minRx = Math.floor(left / 512);
   const maxRx = Math.floor((left + viewW.value * scale.value) / 512);
   const minRz = Math.floor(top / 512);
@@ -173,34 +246,63 @@ function rebuildTiles() {
   const out = [];
   for (let rx = minRx; rx <= maxRx; rx++) {
     for (let rz = minRz; rz <= maxRz; rz++) {
+      const key = [stackId.value, props.dimension, rx, rz, tileScale, 1].join('|');
+      const url = '/api/user/map/tile?stack=' + encodeURIComponent(stackId.value)
+        + '&dim=' + encodeURIComponent(props.dimension)
+        + '&rx=' + rx + '&rz=' + rz + '&scale=' + tileScale + '&shade=1';
+      const cached = tileCache.get(key);
       out.push({
-        key: rx + ',' + rz + ',' + scale.value,
-        src: '/api/user/map/tile?stack=' + encodeURIComponent(stackId.value)
-          + '&dim=' + encodeURIComponent(props.dimension)
-          + '&rx=' + rx + '&rz=' + rz + '&scale=' + scale.value + '&shade=1',
+        key,
+        src: cached && cached.ok ? cached.url : '',
         left: (rx * 512 - left) * ppb,
         top: (rz * 512 - top) * ppb,
         size,
-        loaded: false,
-        failed: false,
       });
+      if (cached && (cached.ok || Date.now() - cached.at < 60_000)) continue;
+      const image = new Image();
+      image.onload = () => {
+        tileCache.set(key, { ok: true, url, at: Date.now() });
+        if (request !== tilesRequest) return;
+        const current = tiles.value.find((row) => row.key === key);
+        if (current) current.src = url;
+      };
+      image.onerror = () => {
+        tileCache.set(key, { ok: false, url, at: Date.now() });
+      };
+      image.src = url;
     }
   }
   tiles.value = out;
 }
 
-function zoom(direction) {
-  const values = [1, 2, 4, 8];
-  const index = values.indexOf(scale.value);
-  const next = Math.max(0, Math.min(values.length - 1, index + direction));
-  if (values[next] === scale.value) return;
-  scale.value = values[next];
+function setScale(next, px, py) {
+  const clamped = Math.max(MIN_SCALE, Math.min(MAX_SCALE, next));
+  if (clamped === scale.value) return;
+  const ax = px == null ? viewW.value / 2 : px;
+  const ay = py == null ? viewH.value / 2 : py;
+  const worldX = centerX.value + (ax - viewW.value / 2) * scale.value;
+  const worldZ = centerZ.value + (ay - viewH.value / 2) * scale.value;
+  scale.value = clamped;
+  centerX.value = worldX - (ax - viewW.value / 2) * clamped;
+  centerZ.value = worldZ - (ay - viewH.value / 2) * clamped;
   rebuildTiles();
 }
 
+function zoom(direction) {
+  let index = SCALES.indexOf(scale.value);
+  if (index < 0) index = SCALES.findIndex((value) => value >= scale.value);
+  const next = Math.max(0, Math.min(SCALES.length - 1, index + direction));
+  setScale(SCALES[next]);
+}
+
 function onWheel(event) {
-  // 滚轮向上放大（scale 数字变小），滚轮向下缩小。
-  zoom(event.deltaY < 0 ? -1 : 1);
+  const rect = viewport.value?.getBoundingClientRect();
+  const px = rect ? event.clientX - rect.left : viewW.value / 2;
+  const py = rect ? event.clientY - rect.top : viewH.value / 2;
+  const raw = event.deltaY < 0 ? scale.value / 2 : scale.value * 2;
+  const snapped = SCALES.reduce((best, value) =>
+    Math.abs(value - raw) < Math.abs(best - raw) ? value : best, SCALES[0]);
+  setScale(snapped, px, py);
 }
 
 function startPan(event) {
@@ -285,10 +387,13 @@ function prepareMarkers() {
   }
 }
 
-let observer = null;
 onMounted(() => {
   loadModel();
   prepareMarkers();
+  if (props.showTrails) {
+    loadTrails();
+    trailTimer = window.setInterval(loadTrails, 2000);
+  }
   if (viewport.value) {
     viewW.value = viewport.value.clientWidth || 600;
     viewH.value = viewport.value.clientHeight || props.height;
@@ -304,6 +409,8 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   observer?.disconnect();
+  trailTimer && window.clearInterval(trailTimer);
+  tilesRequest++;
   window.removeEventListener('pointermove', onPan);
 });
 
@@ -312,8 +419,9 @@ watch(() => props.dimension, () => {
 }, { immediate: false });
 
 watch(() => props.markers, () => {
+  // 玩家状态每 4 秒刷新；这里不能重建瓦片，否则整张地图会随标记更新闪烁。
   prepareMarkers();
-  rebuildTiles();
+  if (!centeredOnMarkers.value && props.markers.length) centerOnMarkers();
 }, { deep: false });
 </script>
 
@@ -353,6 +461,23 @@ watch(() => props.markers, () => {
   user-select: none;
 }
 
+.map-trails {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.map-trails polyline {
+  fill: none;
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  stroke-opacity: .8;
+}
+
 .map-marker {
   position: absolute;
   z-index: 4;
@@ -369,10 +494,12 @@ watch(() => props.markers, () => {
   white-space: nowrap;
   cursor: pointer;
   box-shadow: 0 2px 8px rgba(0, 0, 0, .35);
+  /* 只过渡颜色，不重复布局；位置取整后点击选中不再出现像素级抖动 */
+  transition: border-color .2s ease, box-shadow .2s ease, background-color .2s ease, color .2s ease;
 }
 
 .map-marker.player {
-  border-color: #7ad7a8;
+  border-color: #4ade80;
   color: #d6ffe9;
 }
 
@@ -381,6 +508,10 @@ watch(() => props.markers, () => {
   background: rgba(20, 50, 90, .94);
   color: #d8ecff;
   box-shadow: 0 0 0 2px rgba(88, 166, 255, .35), 0 2px 8px rgba(0, 0, 0, .35);
+}
+
+.map-marker:active {
+  transform: translate(-50%, -50%) scale(.97);
 }
 
 .map-marker.offline {
@@ -398,7 +529,15 @@ watch(() => props.markers, () => {
   background-color: #263241;
   background-repeat: no-repeat;
   image-rendering: pixelated;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .18);
+  transition: box-shadow .18s ease;
+}
+
+.map-marker.player:not(.offline) .marker-head {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .2), 0 0 0 1.5px #4ade80;
+}
+
+.map-marker.offline .marker-head {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .12), 0 0 0 1px #6e7681;
 }
 
 .marker-initial {
@@ -434,6 +573,11 @@ watch(() => props.markers, () => {
   border-color: rgba(255, 255, 255, .2);
   background: rgba(18, 22, 30, .85);
   color: #dbe4f0;
+}
+
+.map-controls button.on {
+  border-color: #4ade80;
+  color: #b7f7cf;
 }
 
 .map-foot {

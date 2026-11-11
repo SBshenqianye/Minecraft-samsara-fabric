@@ -2127,10 +2127,12 @@ async function main() {
       await sleep(150);
       const tooltip = document.querySelector('.mc-item-tooltip');
       const tooltipText = tooltip?.textContent || '';
+      const nativeTitles = document.querySelectorAll('.item-icon-view[title]').length;
       itemSlot?.click();
-      await sleep(700);
+      await sleep(900);
       const editor = !!document.querySelector('.item-editor');
       const editorInputs = document.querySelectorAll('.item-editor input, .item-editor textarea, .item-editor select').length;
+      const rawSnbt = document.querySelector('.editor-raw textarea')?.value || '';
       const floating = !!document.querySelector('.workbench-floating-cursor');
       // 预设模式下用点击拿起/放下模拟游戏内搬运：第一次点击已经拿起，这里放到空槽。
       emptySlot?.click();
@@ -2160,10 +2162,16 @@ async function main() {
         mapMarkers: document.querySelectorAll('.map-marker').length,
         mapTiles: [...document.querySelectorAll('.map-picker .map-tile')]
           .filter((img) => img.complete && img.naturalWidth > 0).length,
+        mapBrokenTiles: [...document.querySelectorAll('.map-picker .map-tile')]
+          .filter((img) => img.complete && img.naturalWidth === 0).length,
+        mapHeight: document.querySelector('.map-picker')?.clientHeight || 0,
+        mapFoot: document.querySelector('.map-picker .map-foot')?.textContent || '',
         defaultMode,
         emptyDirty,
         tooltip: Boolean(tooltip),
         tooltipText,
+        nativeTitles,
+        rawSnbt,
         floating,
         editor,
         editorInputs,
@@ -2194,6 +2202,18 @@ async function main() {
     check('槽位悬停显示 MC 风格 tooltip', containerUi.tooltip === true
         && containerUi.tooltipText.includes('minecraft:'),
         JSON.stringify({ tooltip: containerUi.tooltip, text: containerUi.tooltipText.slice(0, 120) }));
+    check('物品 tooltip 中文且不再被原生 NBT 文本覆盖', containerUi.nativeTitles === 0
+        && /[\u4e00-\u9fff]/.test(containerUi.tooltipText),
+        JSON.stringify({ nativeTitles: containerUi.nativeTitles,
+          text: containerUi.tooltipText.slice(0, 160) }));
+    check('原始 SNBT 编辑框预填物品原本组件', containerUi.rawSnbt.includes('id')
+        && containerUi.rawSnbt.length > 12,
+        JSON.stringify({ rawSnbt: containerUi.rawSnbt.slice(0, 160) }));
+    check('容器地图与世界地图同缩放口径、更高且无裂图瓦片',
+        containerUi.mapFoot.includes('格/像素') && containerUi.mapHeight >= 440
+        && containerUi.mapBrokenTiles === 0,
+        JSON.stringify({ foot: containerUi.mapFoot, height: containerUi.mapHeight,
+          broken: containerUi.mapBrokenTiles }));
     check('拿起物品后光标物品跟随鼠标', containerUi.floating === true,
         JSON.stringify({ floating: containerUi.floating }));
     check('确认弹窗为固定遮罩而不是页面底部元素', containerUi.modalFixed === true
@@ -2880,6 +2900,15 @@ async function main() {
         && trackBody.tracks.every((track) => String(track.command || '').startsWith('/samsara track view')),
         JSON.stringify({ status: trackApi.status, count: trackBody.count,
           first: trackBody.tracks?.[0]?.command }));
+    const skyTrailApi = await fetch(base + '/api/map/player-trails?limit=120', { headers: authHeaders });
+    const skyTrailBody = await skyTrailApi.json();
+    check('天网玩家长轨迹 API 只返回玩家且带长窗口', skyTrailApi.status === 200
+        && skyTrailBody.ok === true && Array.isArray(skyTrailBody.players)
+        && skyTrailBody.windowMs >= 3600000
+        && skyTrailBody.players.every((player) => Array.isArray(player.trail)
+          && player.trail.length <= 120),
+        JSON.stringify({ status: skyTrailApi.status, windowMs: skyTrailBody.windowMs,
+          players: skyTrailBody.players?.length }));
     const diffStatusApi = await fetch(base + '/api/diff/view/status', { headers: authHeaders });
     const diffStatusBody = await diffStatusApi.json();
     check('Diff 回看状态 API 可用', diffStatusApi.status === 200 && diffStatusBody.ok === true,

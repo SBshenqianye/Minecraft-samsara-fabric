@@ -27,6 +27,9 @@ import java.util.concurrent.TimeUnit;
  * <p>轨迹只存在内存中（每个实体最多 48 个点、约 2 分钟），不写存档；实体枚举只覆盖
  * 当前已加载的 {@link ServerLevel}，未加载区块中的实体不可见。HTTP 线程通过
  * {@link MinecraftServer#execute} 切到服务器线程读取，避免并发访问实体。
+ *
+ * <p>天网（容器/玩家背包地图）另用一套「玩家长轨迹」：只记录玩家、采样更疏、窗口 3 小时，
+ * 与世界地图实时层互不干扰；响应按点上限均匀抽样，避免长轨迹拖慢 Web。
  */
 public final class MapLiveService {
     private static final int MAX_ENTITIES = 1200;
@@ -35,9 +38,15 @@ public final class MapLiveService {
     private static final long TRAIL_FORGET_MS = 120_000;
     private static final double MIN_MOVE = 0.6;
 
+    private static final long SKY_TRAIL_SAMPLE_MS = 2_000;
+    private static final int SKY_MAX_TRAIL_POINTS = 5_400;
+    private static final long SKY_TRAIL_FORGET_MS = 3 * 60 * 60 * 1000L;
+
     private final MinecraftServer server;
     private final Map<String, Trail> trails = new HashMap<>();
+    private final Map<String, Trail> skyTrails = new HashMap<>();
     private long lastSampleAt;
+    private long lastSkySampleAt;
 
     private static final int MAX_CHAT = 120;
     private static final Deque<Map<String, Object>> CHAT = new ArrayDeque<>();
@@ -150,6 +159,120 @@ public final class MapLiveService {
         return out;
     }
 
+    /**
+     * 天网地图专用：只返回在线/近期玩家的长轨迹（含离线后尚未遗忘的轨迹）。
+     * 每条轨迹最多 {@code maxPoints} 个点，均匀抽样保留首尾，避免 3 小时窗口撑爆 HTTP 响应。
+     */
+    public Map<String, Object> playerTrails(int maxPoints) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ok", true);
+        out.put("generatedAt", System.currentTimeMillis());
+        out.put("windowMs", SKY_TRAIL_FORGET_MS);
+        out.put("players", List.of());
+        out.put("maxPoints", Math.max(2, maxPoints));
+        if (server == null) return out;
+        try {
+            if (server.isSameThread()) {
+                return playerTrailsOnServer(Math.max(2, maxPoints));
+            }
+            CompletableFuture<Map<String, Object>> future = new CompletableFuture<>();
+            server.execute(() -> {
+                try {
+                    future.complete(playerTrailsOnServer(Math.max(2, maxPoints)));
+                } catch (Throwable t) {
+                    future.completeExceptionally(t);
+                }
+            });
+            return future.get(4, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            com.shenqianye.samsara.Samsara.LOGGER.warn("[web] 天网玩家轨迹读取失败: {}", e.toString());
+            return out;
+        }
+    }
+
+    private Map<String, Object> playerTrailsOnServer(int maxPoints) {
+        long now = System.currentTimeMillis();
+        boolean sample = now - lastSkySampleAt >= SKY_TRAIL_SAMPLE_MS;
+        if (sample) lastSkySampleAt = now;
+        Map<String, Long> seen = new HashMap<>();
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            String dim = StackPaths.dimensionOf(player.level().dimension());
+            if (dim == null) continue;
+            String key = "s:" + player.getUUID() + ":" + player.level().dimension().identifier();
+            seen.put(key, now);
+            recordSkyTrail(key, player.getUUID().toString(), player.getName().getString(),
+                    player.level().dimension().identifier().toString(),
+                    player.getX(), player.getZ(), now, sample);
+        }
+        forgetSkyOld(seen, now);
+        List<Map<String, Object>> players = new ArrayList<>();
+        for (Map.Entry<String, Trail> entry : skyTrails.entrySet()) {
+            Trail trail = entry.getValue();
+            if (trail.points.isEmpty()) continue;
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("uuid", trail.uuid);
+            row.put("name", trail.name);
+            row.put("dimensionId", trail.dimensionId);
+            row.put("trail", samplePoints(trail.points, maxPoints));
+            players.add(row);
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ok", true);
+        out.put("generatedAt", now);
+        out.put("windowMs", SKY_TRAIL_FORGET_MS);
+        out.put("maxPoints", maxPoints);
+        out.put("players", players);
+        return out;
+    }
+
+    private void recordSkyTrail(String key, String uuid, String name, String dimensionId,
+                                double x, double z, long now, boolean sample) {
+        Trail trail = skyTrails.computeIfAbsent(key, ignored -> new Trail());
+        trail.uuid = uuid;
+        trail.name = name;
+        trail.dimensionId = dimensionId;
+        if (sample && (trail.points.isEmpty()
+                || Math.hypot(x - trail.lastX, z - trail.lastZ) >= MIN_MOVE
+                || now - trail.lastAt >= 10_000)) {
+            trail.points.addLast(new Point(round(x), round(z), now));
+            while (trail.points.size() > SKY_MAX_TRAIL_POINTS) trail.points.removeFirst();
+            trail.lastX = x;
+            trail.lastZ = z;
+            trail.lastAt = now;
+        }
+    }
+
+    private void forgetSkyOld(Map<String, Long> seen, long now) {
+        Iterator<Map.Entry<String, Trail>> it = skyTrails.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry<String, Trail> entry = it.next();
+            long last = Math.max(seen.getOrDefault(entry.getKey(), 0L), entry.getValue().lastAt);
+            if (now - last > SKY_TRAIL_FORGET_MS) it.remove();
+        }
+    }
+
+    private static List<Map<String, Object>> samplePoints(Deque<Point> points, int maxPoints) {
+        List<Point> all = new ArrayList<>(points);
+        List<Map<String, Object>> out = new ArrayList<>();
+        if (all.size() <= maxPoints) {
+            for (Point point : all) out.add(pointMap(point));
+            return out;
+        }
+        double step = (double) (all.size() - 1) / (maxPoints - 1);
+        for (int i = 0; i < maxPoints; i++) {
+            out.add(pointMap(all.get((int) Math.round(i * step))));
+        }
+        return out;
+    }
+
+    private static Map<String, Object> pointMap(Point point) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("x", point.x);
+        row.put("z", point.z);
+        row.put("t", point.t);
+        return row;
+    }
+
     private Map<String, Object> snapshotOnServer(boolean includeSensitive) {
         long now = System.currentTimeMillis();
         boolean sample = now - lastSampleAt >= TRAIL_SAMPLE_MS;
@@ -165,6 +288,13 @@ public final class MapLiveService {
             String key = "p:" + player.getUUID();
             seen.put(key, now);
             List<Map<String, Object>> trail = trail(key, player.getX(), player.getZ(), now, sample);
+            // 天网长轨迹与世界地图实时层共用同一次服务器线程采样，互不覆盖数据。
+            boolean skySample = now - lastSkySampleAt >= SKY_TRAIL_SAMPLE_MS;
+            if (skySample) lastSkySampleAt = now;
+            recordSkyTrail("s:" + player.getUUID() + ":" + player.level().dimension().identifier(),
+                    player.getUUID().toString(), player.getName().getString(),
+                    player.level().dimension().identifier().toString(),
+                    player.getX(), player.getZ(), now, skySample);
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("kind", "player");
             item.put("name", player.getName().getString());
@@ -307,6 +437,9 @@ public final class MapLiveService {
         double lastX;
         double lastZ;
         long lastAt;
+        String uuid;
+        String name;
+        String dimensionId;
     }
 
     private record Point(double x, double z, long t) {

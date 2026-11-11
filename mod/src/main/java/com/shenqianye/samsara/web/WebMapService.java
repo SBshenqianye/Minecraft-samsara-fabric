@@ -119,6 +119,11 @@ public class WebMapService {
         return liveService.snapshot(true);
     }
 
+    /** 天网地图：只含玩家的长轨迹（3 小时窗口，按调用方上限抽样）。 */
+    public Map<String, Object> playerTrails(int maxPoints) {
+        return liveService.playerTrails(maxPoints);
+    }
+
     private List<Map<String, Object>> playerSnapshot() {
         MinecraftServer current = server;
         if (current == null) {

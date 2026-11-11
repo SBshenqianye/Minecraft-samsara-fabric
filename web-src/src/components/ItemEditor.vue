@@ -160,13 +160,18 @@
       <summary>原始 NBT / 编码（可编辑）</summary>
       <label class="raw-field">
         <span>完整物品 SNBT（id / count / components）</span>
-        <textarea v-model="form.rawSnbt" rows="7" spellcheck="false"></textarea>
+        <textarea
+          v-model="form.rawSnbt"
+          rows="7"
+          spellcheck="false"
+          :placeholder="snbtLoading ? '正在读取物品原本的组件…' : '当前物品没有额外组件'"
+        ></textarea>
       </label>
       <div class="raw-actions">
         <button class="ghost tiny" type="button" :disabled="applying" @click="applyRawSnbt">
           应用原始 NBT
         </button>
-        <button class="ghost tiny" type="button" @click="form.rawSnbt = item.snbt || ''">还原 NBT</button>
+        <button class="ghost tiny" type="button" @click="form.rawSnbt = originalSnbt">还原 NBT</button>
       </div>
       <label class="raw-field">
         <span>物品编码（Base64 NBT）</span>
@@ -198,8 +203,11 @@ const form = reactive(emptyForm());
 const applying = ref(false);
 const dirty = ref(false);
 const editorError = ref('');
+const originalSnbt = ref('');
+const snbtLoading = ref(false);
 let timer = null;
 let lastEncoded = '';
+let snbtRequest = 0;
 
 watch(() => props.item, (value) => {
   if (!value || value.encoded === lastEncoded) return;
@@ -268,8 +276,35 @@ function sync(item) {
   }));
   form.rawSnbt = item.snbt || '';
   form.rawEncoded = item.encoded || '';
+  originalSnbt.value = item.snbt || '';
   dirty.value = false;
   editorError.value = '';
+  ensureSnbt(item);
+}
+
+// 槽位列表返回的是轻量模型，不含完整 SNBT；选中物品时按编码补读一次，
+// 让「原始 NBT」编辑框一开始就显示物品原本的 id/count/components。
+async function ensureSnbt(item) {
+  const request = ++snbtRequest;
+  if (item.snbt || !item.encoded) {
+    snbtLoading.value = false;
+    return;
+  }
+  snbtLoading.value = true;
+  try {
+    const body = await postJson('/api/items/describe', {
+      encoded: item.encoded,
+      count: item.count || 1,
+    });
+    if (request !== snbtRequest || props.item?.encoded !== item.encoded) return;
+    const snbt = body.item?.snbt || '';
+    originalSnbt.value = snbt;
+    if (!form.rawSnbt) form.rawSnbt = snbt;
+  } catch {
+    // 读取失败时保留空框，不影响结构化编辑与其他字段。
+  } finally {
+    if (request === snbtRequest) snbtLoading.value = false;
+  }
 }
 
 function intToHex(value) {

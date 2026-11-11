@@ -37,12 +37,12 @@
                 v-for="player in filteredPlayers"
                 :key="player.uuid"
                 class="inventory-player"
-                :class="{ active: selectedPlayer && selectedPlayer.uuid === player.uuid }"
+                :class="{ active: selectedPlayer && selectedPlayer.uuid === player.uuid, online: player.online }"
                 type="button"
                 @click="selectPlayer(player)"
               >
                 <span class="inventory-player-name">{{ player.name || player.uuid }}</span>
-                <span class="inventory-player-meta">
+                <span class="inventory-player-meta" :class="{ 'is-online': player.online }">
                   {{ player.online ? '当前在线' : '当前不在线' }}
                   <template v-if="player.dimension"> · {{ shortDimension(player.dimension) }}</template>
                   <template v-if="player.lastSeen"> · {{ player.lastSeen }}</template>
@@ -70,7 +70,7 @@
               :markers="playerMarkers"
               :dimension="mapDimension"
               :selected-id="selectedPlayer?.uuid || ''"
-              :height="300"
+              :height="480"
               @select="selectMarker"
             />
           </div>
@@ -647,6 +647,14 @@ async function save(silent) {
   background: var(--accent-soft);
 }
 
+.inventory-player.online {
+  border-color: color-mix(in srgb, #4ade80 42%, var(--line));
+}
+
+.inventory-player.online.active {
+  border-color: var(--accent);
+}
+
 .inventory-player-name {
   font-weight: 600;
 }
@@ -654,6 +662,11 @@ async function save(silent) {
 .inventory-player-meta {
   color: var(--muted);
   font-size: 11px;
+}
+
+.inventory-player-meta.is-online {
+  color: #3fbf72;
+  font-weight: 600;
 }
 
 .inventory-map-block {

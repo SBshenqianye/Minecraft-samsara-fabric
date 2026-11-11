@@ -6,8 +6,12 @@
       :class="'rarity-' + rarity"
       :style="{ left: itemTooltip.x + 'px', top: itemTooltip.y + 'px' }"
     >
-      <div class="mc-tooltip-name">{{ item.customName || item.name || item.id }}</div>
-      <div class="mc-tooltip-id">{{ item.id }}</div>
+      <div class="mc-tooltip-name" :class="{ renamed: !!item.customName }">
+        {{ displayName }}
+      </div>
+      <div v-if="item.customName && baseName && baseName !== displayName" class="mc-tooltip-basename">
+        {{ baseName }}
+      </div>
 
       <div v-if="lore.length" class="mc-tooltip-lore">
         <div v-for="(line, index) in lore" :key="'lore-' + index" class="mc-tooltip-lore-line">
@@ -17,14 +21,14 @@
 
       <div v-if="enchantments.length" class="mc-tooltip-ench">
         <div v-for="row in enchantments" :key="'ench-' + row.id" class="mc-tooltip-line">
-          <span>{{ row.name || row.id }}</span>
+          <span>{{ row.label }}</span>
           <span class="mc-tooltip-level">{{ roman(row.level) }}</span>
         </div>
       </div>
 
       <div v-if="potionEffects.length" class="mc-tooltip-potion">
         <div v-for="row in potionEffects" :key="'effect-' + row.id" class="mc-tooltip-line">
-          <span>{{ row.name || row.id }}</span>
+          <span>{{ row.label }}</span>
           <span class="mc-tooltip-muted">{{ effectTime(row) }}</span>
         </div>
       </div>
@@ -36,14 +40,29 @@
             <span :class="row.positive ? 'mc-tooltip-positive' : 'mc-tooltip-negative'">
               {{ row.text }}
             </span>
-            <span class="mc-tooltip-muted">{{ row.name }}</span>
+            <span class="mc-tooltip-muted">{{ row.operation }}</span>
           </div>
         </div>
       </div>
 
-      <div v-if="durability" class="mc-tooltip-durability">{{ durability }}</div>
+      <div v-if="item.unbreakable" class="mc-tooltip-unbreakable">不可破坏</div>
+
+      <div v-if="durability" class="mc-tooltip-durability">
+        <span>耐久度：{{ durability.left }} / {{ durability.max }}</span>
+        <span class="mc-tooltip-durability-bar">
+          <span
+            class="mc-tooltip-durability-fill"
+            :style="{ width: durability.percent + '%', background: durability.color }"
+          ></span>
+        </span>
+      </div>
+
+      <div class="mc-tooltip-footer">
+        <span class="mc-tooltip-id">{{ item.id }}</span>
+        <span v-if="rarityLabel" class="mc-tooltip-rarity">{{ rarityLabel }}</span>
+      </div>
       <div v-if="item.componentCount > 0" class="mc-tooltip-components">
-        {{ item.componentCount }} 个组件
+        {{ item.componentCount }} 个数据组件
       </div>
     </div>
   </Teleport>
@@ -52,6 +71,7 @@
 <script setup>
 import { computed } from 'vue';
 import { itemTooltip } from './itemTooltip.js';
+import { zhAttribute, zhEffect, zhEnchantment, zhRarity } from './itemZh.js';
 
 const item = computed(() => itemTooltip.item || {});
 
@@ -60,16 +80,25 @@ const rarity = computed(() => {
   return ['common', 'uncommon', 'rare', 'epic'].includes(value) ? value : 'common';
 });
 
+const rarityLabel = computed(() => zhRarity(rarity.value));
+
+const displayName = computed(() =>
+  item.value.customName || item.value.zh || item.value.name || item.value.id || '');
+const baseName = computed(() => item.value.zh || item.value.name || item.value.id || '');
+
 const lore = computed(() => Array.isArray(item.value.lore) ? item.value.lore : []);
 
 const enchantments = computed(() => {
   const rows = Array.isArray(item.value.enchantments) ? item.value.enchantments : [];
-  return rows.slice().sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id)));
+  return rows
+    .map((row) => ({ ...row, label: zhEnchantment(row.id, row.name) }))
+    .sort((a, b) => a.label.localeCompare(b.label, 'zh-CN'));
 });
 
 const potionEffects = computed(() => {
   const potion = item.value.potion || {};
-  return Array.isArray(potion.effects) ? potion.effects : [];
+  const rows = Array.isArray(potion.effects) ? potion.effects : [];
+  return rows.map((row) => ({ ...row, label: zhEffect(row.id, row.name) }));
 });
 
 const attributeGroups = computed(() => {
@@ -81,20 +110,23 @@ const attributeGroups = computed(() => {
     const amount = Number(row.amount || 0);
     const operation = String(row.operation || 'add_value');
     const positive = amount >= 0;
+    const name = zhAttribute(row.id, row.name);
     const text = operation === 'add_value'
-      ? formatAmount(amount) + ' ' + (row.name || row.id)
-      : formatPercent(amount) + ' ' + (row.name || row.id);
-    groups.get(slot).rows.push({ name: operationLabel(operation), text, positive });
+      ? formatAmount(amount) + ' ' + name
+      : formatPercent(amount) + ' ' + name;
+    groups.get(slot).rows.push({ operation: operationLabel(operation), text, positive });
   }
   return [...groups.values()];
 });
 
 const durability = computed(() => {
   const max = Number(item.value.maxDamage || 0);
-  if (max <= 0) return '';
+  if (max <= 0) return null;
   const damage = Number(item.value.damage || 0);
   const left = Math.max(0, max - damage);
-  return '耐久度: ' + left + ' / ' + max;
+  const percent = Math.max(0, Math.min(100, Math.round(left / max * 100)));
+  const hue = Math.round(percent * 1.2);
+  return { left, max, percent, color: `hsl(${hue} 85% 48%)` };
 });
 
 function slotLabel(slot) {
@@ -131,8 +163,8 @@ function effectTime(row) {
   const seconds = Math.max(0, Math.round(duration / 20));
   const time = seconds >= 60
     ? Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0')
-    : seconds + 's';
-  return time + (amplifier > 0 ? ' · ' + roman(amplifier + 1) : '');
+    : seconds + ' 秒';
+  return time + (amplifier > 0 ? ' · ' + roman(amplifier + 1) + ' 级' : '');
 }
 
 function roman(value) {
@@ -147,16 +179,17 @@ function roman(value) {
   position: fixed;
   z-index: 99999;
   width: 306px;
-  max-height: 420px;
+  max-height: 460px;
   overflow: hidden;
-  padding: 10px 12px 9px;
-  border: 2px solid #2b0a4a;
-  border-radius: 4px;
+  padding: 8px 10px 8px;
+  border: 1px solid #2b0a4a;
+  border-radius: 2px;
   background:
-    linear-gradient(180deg, rgba(24, 8, 32, .97), rgba(12, 4, 18, .98)),
+    linear-gradient(180deg, rgba(16, 0, 16, .96), rgba(12, 2, 16, .98)),
     repeating-linear-gradient(0deg, rgba(255, 255, 255, .015) 0 1px, transparent 1px 3px);
   box-shadow:
-    0 0 0 1px rgba(255, 255, 255, .08) inset,
+    0 0 0 1px #190033 inset,
+    0 3px 0 1px rgba(30, 6, 50, .9),
     0 10px 28px rgba(0, 0, 0, .55);
   color: #d8d8d8;
   font: 13px/1.42 'Minecraft', 'Microsoft YaHei', system-ui, sans-serif;
@@ -170,20 +203,24 @@ function roman(value) {
   font-weight: 700;
 }
 
+.mc-tooltip-name.renamed {
+  font-style: italic;
+}
+
 .rarity-common .mc-tooltip-name { color: #ffffff; }
 .rarity-uncommon .mc-tooltip-name { color: #ffff55; }
 .rarity-rare .mc-tooltip-name { color: #55ffff; }
 .rarity-epic .mc-tooltip-name { color: #ff55ff; }
 
-.mc-tooltip-id {
-  color: #7b86d9;
-  font-size: 12px;
-  word-break: break-all;
+.mc-tooltip-basename {
+  color: #9a9a9a;
+  font-size: 11px;
 }
 
 .mc-tooltip-lore {
   margin-top: 5px;
   color: #b78bff;
+  font-style: italic;
 }
 
 .mc-tooltip-ench,
@@ -232,14 +269,54 @@ function roman(value) {
   color: #ff5555;
 }
 
+.mc-tooltip-unbreakable {
+  margin-top: 5px;
+  color: #7ec6ff;
+}
+
 .mc-tooltip-durability {
   margin-top: 6px;
   color: #d8d8d8;
 }
 
-.mc-tooltip-components {
-  margin-top: 4px;
+.mc-tooltip-durability-bar {
+  display: block;
+  height: 4px;
+  margin-top: 3px;
+  border: 1px solid #000;
+  background: #1a1a1a;
+}
+
+.mc-tooltip-durability-fill {
+  display: block;
+  height: 100%;
+}
+
+.mc-tooltip-footer {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 7px;
+  padding-top: 5px;
+  border-top: 1px solid rgba(255, 255, 255, .08);
+}
+
+.mc-tooltip-id {
   color: #777777;
+  font-size: 11px;
+  word-break: break-all;
+}
+
+.mc-tooltip-rarity {
+  color: #8a8a8a;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.mc-tooltip-components {
+  margin-top: 2px;
+  color: #6a6a6a;
   font-size: 11px;
 }
 </style>

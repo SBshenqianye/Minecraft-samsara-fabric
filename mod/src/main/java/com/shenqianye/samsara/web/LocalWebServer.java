@@ -1071,6 +1071,12 @@ public final class LocalWebServer {
                 json(exchange, 200, mapService.live());
                 return;
             }
+            if ("/api/map/player-trails".equals(path)) {
+                Integer limit = intParam(query.get("limit"));
+                int maxPoints = limit == null ? 400 : Math.max(2, Math.min(2000, limit));
+                json(exchange, 200, mapService.playerTrails(maxPoints));
+                return;
+            }
             if ("/api/map/tile".equals(path)) {
                 String stack = query.getOrDefault("stack", "");
                 String dimension = query.getOrDefault("dim", "");

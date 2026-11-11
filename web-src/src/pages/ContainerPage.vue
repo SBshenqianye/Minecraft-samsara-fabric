@@ -57,7 +57,7 @@
           :markers="markers"
           :dimension="filters.dimension || dimensions[0]?.id || 'minecraft:overworld'"
           :selected-id="selectedMarkerId"
-          :height="360"
+          :height="480"
           @select="selectMarker"
         />
 

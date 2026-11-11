@@ -928,7 +928,8 @@ function renderPool() {
 function poolChip(uuid, name, online, tag, options) {
   const opts = options || {};
   const chip = document.createElement('span');
-  chip.className = 'uuid-chip';
+  const chipRole = opts.assignRole || (tag === 'data' ? 'data' : '');
+  chip.className = 'uuid-chip' + (chipRole ? ' role-' + chipRole : '');
   chip.draggable = true;
   chip.title = '拖到卡片的 数据 UUID / 正版账号 / 离线账号 区域 · ' + uuid;
   const label = document.createElement('span');

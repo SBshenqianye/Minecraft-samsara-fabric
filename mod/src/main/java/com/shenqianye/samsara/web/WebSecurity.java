@@ -146,6 +146,7 @@ public final class WebSecurity {
                 || "/api/map".equals(path)
                 || "/api/map/players".equals(path)
                 || "/api/map/live".equals(path)
+                || "/api/map/player-trails".equals(path)
                 || "/api/map/tile".equals(path)
                 || "/api/diff".equals(path)
                 || "/api/diff/chunk".equals(path)
