@@ -63,6 +63,7 @@ public final class WebSecurity {
                  "/samsara/economy/history", "/samsara/economy/lottery",
                  "/samsara/sky", "/samsara/sky/track", "/samsara/sky/diff",
                  "/samsara/sky/containers", "/samsara/sky/inventory",
+                 // 旧 Web 背包链接：仍返回 SPA，由前端路由重定向到玩家背包。
                  "/samsara/sky/web-inventory",
                  "/samsara/config", "/samsara/config/editor", "/samsara/config/advanced",
                  "/samsara/config/claim-range", "/samsara/config/output",

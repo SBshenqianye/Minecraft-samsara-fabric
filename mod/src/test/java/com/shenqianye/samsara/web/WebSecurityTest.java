@@ -29,6 +29,8 @@ class WebSecurityTest {
         assertEquals("/web/vue/index.html", WebSecurity.staticResource("/config-editor"));
         assertEquals("/web/vue/index.html", WebSecurity.staticResource("/map"));
         assertEquals("/web/vue/index.html", WebSecurity.staticResource("/server/console"));
+        // 旧 Web 背包链接仍需返回 SPA，由前端路由重定向到玩家背包。
+        assertEquals("/web/vue/index.html", WebSecurity.staticResource("/samsara/sky/web-inventory"));
         assertEquals("/web/index.html", WebSecurity.staticResource("/legacy.html"));
         assertEquals("/web/user.html", WebSecurity.staticResource("/legacy-user.html"));
         assertEquals("/web/vue/assets/index-abc.js", WebSecurity.staticResource("/vue/assets/index-abc.js"));
