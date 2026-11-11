@@ -26,30 +26,77 @@
           />
         </svg>
         <button
-          v-for="marker in visibleMarkers"
-          :key="marker.id"
+          v-for="cluster in visibleClusters"
+          :key="cluster.id"
           type="button"
           class="map-marker"
-          :class="{ active: marker.id === selectedId, offline: marker.online === false, player: marker.kind === 'player' }"
-          :style="{ left: marker.left + 'px', top: marker.top + 'px' }"
-          :title="marker.label + (marker.sub ? ' · ' + marker.sub : '')"
+          :class="{ active: cluster.active, offline: cluster.offline, player: cluster.player, clustered: cluster.markers.length > 1 }"
+          :style="{ left: cluster.left + 'px', top: cluster.top + 'px' }"
+          :title="cluster.title"
           @pointerdown.stop
-          @click.stop="$emit('select', marker.id)"
+          @click.stop="onMarkerClick(cluster)"
         >
-          <span v-if="marker.kind === 'player'" class="marker-head" :style="avatarStyle(marker)">
-            <span v-if="!avatarUrls[marker.id]" class="marker-initial">{{ initialOf(marker) }}</span>
-          </span>
-          <ItemIcon
-            v-else
-            class="marker-item"
-            :item="{ id: marker.icon || 'chest', name: marker.label, count: 1 }"
-            size="sm"
-            :show-count="false"
-          />
-          <span class="marker-label">{{ marker.label }}</span>
+          <template v-if="cluster.markers.length > 1">
+            <span class="cluster-count">{{ cluster.markers.length }}</span>
+            <span class="marker-label">{{ cluster.label }}</span>
+          </template>
+          <template v-else>
+            <span v-if="cluster.marker.kind === 'player'" class="marker-head" :style="avatarStyle(cluster.marker)">
+              <span v-if="!avatarUrls[cluster.marker.id]" class="marker-initial">{{ initialOf(cluster.marker) }}</span>
+            </span>
+            <ItemIcon
+              v-else
+              class="marker-item"
+              :item="{ id: cluster.marker.icon || 'chest', name: cluster.marker.label, count: 1 }"
+              size="sm"
+              :show-count="false"
+            />
+            <span class="marker-label">{{ cluster.marker.label }}</span>
+          </template>
         </button>
       </div>
-      <div class="map-controls">
+      <div
+        v-if="clusterPopup"
+        class="cluster-popup"
+        :style="{ left: clusterPopup.left + 'px', top: clusterPopup.top + 'px' }"
+        @pointerdown.stop
+        @click.stop
+      >
+        <div class="cluster-popup-head">
+          <strong>{{ clusterPopup.markers.length }} 个目标</strong>
+          <span class="spacer"></span>
+          <button class="ghost tiny" type="button" title="关闭" @click="clusterPopup = null">×</button>
+        </div>
+        <div
+          class="cluster-grid"
+          :style="{ gridTemplateColumns: 'repeat(' + clusterPopup.columns + ', minmax(0, 1fr))' }"
+        >
+          <button
+            v-for="marker in clusterPopup.markers"
+            :key="marker.id"
+            type="button"
+            class="cluster-cell"
+            :class="{ active: marker.id === selectedId }"
+            :title="marker.label + (marker.sub ? ' · ' + marker.sub : '')"
+            @click="chooseClusterMarker(marker)"
+          >
+            <ItemIcon
+              v-if="marker.kind !== 'player'"
+              :item="{ id: marker.icon || 'chest', name: marker.label }"
+              size="sm"
+              :show-count="false"
+            />
+            <span v-else class="marker-head" :style="avatarStyle(marker)">
+              <span v-if="!avatarUrls[marker.id]" class="marker-initial">{{ initialOf(marker) }}</span>
+            </span>
+            <span class="cluster-cell-text">
+              <span class="cluster-cell-label">{{ marker.label }}</span>
+              <span class="muted small">{{ marker.sub }}</span>
+            </span>
+          </button>
+        </div>
+      </div>
+      <div class="map-controls" @pointerdown.stop @click.stop>
         <button type="button" class="ghost tiny" title="放大（滚轮向上）" @click.stop="zoom(-1)">＋</button>
         <button type="button" class="ghost tiny" title="缩小（滚轮向下）" @click.stop="zoom(1)">－</button>
         <button type="button" class="ghost tiny" title="回到标记" @click.stop="centerOnMarkers">◎</button>
@@ -81,7 +128,7 @@ const props = defineProps({
   height: { type: Number, default: 440 },
   showTrails: { type: Boolean, default: true },
 });
-defineEmits(['select']);
+const emit = defineEmits(['select']);
 
 // 与世界地图 map.js 同一套缩放档位与「格/像素」口径；交互实现彼此独立。
 const SCALES = [0.0625, 0.125, 0.25, 0.5, 1, 2, 4, 8, 16];
@@ -137,6 +184,76 @@ const visibleMarkers = computed(() => {
     .filter((marker) => marker.left > -80 && marker.left < viewW.value + 80
       && marker.top > -40 && marker.top < viewH.value + 40);
 });
+
+const CLUSTER_DISTANCE = 52;
+const clusterPopup = ref(null);
+
+const visibleClusters = computed(() => {
+  const source = visibleMarkers.value;
+  const clusters = [];
+  for (const marker of source) {
+    let target = null;
+    for (const cluster of clusters) {
+      const dx = cluster.left - marker.left;
+      const dy = cluster.top - marker.top;
+      if (dx * dx + dy * dy <= CLUSTER_DISTANCE * CLUSTER_DISTANCE) {
+        target = cluster;
+        break;
+      }
+    }
+    if (!target) {
+      target = { left: marker.left, top: marker.top, markers: [] };
+      clusters.push(target);
+    }
+    target.markers.push(marker);
+    target.left = target.markers.reduce((sum, row) => sum + row.left, 0) / target.markers.length;
+    target.top = target.markers.reduce((sum, row) => sum + row.top, 0) / target.markers.length;
+  }
+  return clusters.map((cluster) => {
+    const rows = cluster.markers.slice().sort((a, b) =>
+      (Number(a.z) - Number(b.z)) || (Number(a.x) - Number(b.x)));
+    const first = rows[0];
+    const everyPlayer = rows.every((row) => row.kind === 'player');
+    const everyOffline = rows.every((row) => row.online === false);
+    return {
+      id: rows.map((row) => row.id).sort().join('|'),
+      left: Math.round(cluster.left),
+      top: Math.round(cluster.top),
+      markers: rows,
+      marker: first,
+      active: rows.some((row) => row.id === props.selectedId),
+      offline: everyOffline,
+      player: everyPlayer,
+      label: rows.length > 1
+        ? (everyPlayer ? '玩家' : '容器')
+        : first.label,
+      title: rows.length > 1
+        ? rows.length + ' 个目标，点击展开'
+        : first.label + (first.sub ? ' · ' + first.sub : ''),
+    };
+  });
+});
+
+function onMarkerClick(cluster) {
+  if (cluster.markers.length === 1) {
+    emit('select', cluster.markers[0].id);
+    return;
+  }
+  const columns = Math.min(6, Math.max(2, Math.ceil(Math.sqrt(cluster.markers.length))));
+  const width = 300;
+  const height = Math.min(340, 52 + Math.ceil(cluster.markers.length / columns) * 46);
+  clusterPopup.value = {
+    markers: cluster.markers,
+    columns,
+    left: Math.max(8, Math.min(cluster.left + 14, viewW.value - width - 8)),
+    top: Math.max(8, Math.min(cluster.top + 14, viewH.value - height - 8)),
+  };
+}
+
+function chooseClusterMarker(marker) {
+  emit('select', marker.id);
+  clusterPopup.value = null;
+}
 
 const trailPaths = computed(() => {
   if (!trailsVisible.value) return [];
@@ -283,6 +400,7 @@ function setScale(next, px, py) {
   const worldX = centerX.value + (ax - viewW.value / 2) * scale.value;
   const worldZ = centerZ.value + (ay - viewH.value / 2) * scale.value;
   scale.value = clamped;
+  clusterPopup.value = null;
   centerX.value = worldX - (ax - viewW.value / 2) * clamped;
   centerZ.value = worldZ - (ay - viewH.value / 2) * clamped;
   rebuildTiles();
@@ -307,6 +425,7 @@ function onWheel(event) {
 
 function startPan(event) {
   if (event.button !== 0) return;
+  clusterPopup.value = null;
   dragging.value = true;
   dragStart = { x: event.clientX, y: event.clientY, cx: centerX.value, cz: centerZ.value };
   viewport.value?.setPointerCapture?.(event.pointerId);
@@ -420,6 +539,7 @@ watch(() => props.dimension, () => {
 
 watch(() => props.markers, () => {
   // 玩家状态每 4 秒刷新；这里不能重建瓦片，否则整张地图会随标记更新闪烁。
+  clusterPopup.value = null;
   prepareMarkers();
   if (!centeredOnMarkers.value && props.markers.length) centerOnMarkers();
 }, { deep: false });
@@ -594,4 +714,82 @@ watch(() => props.markers, () => {
   font-size: 10px;
   pointer-events: none;
 }
+
+.cluster-count {
+  display: grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #f0c674;
+  color: #2b210f;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.map-marker.clustered {
+  border-color: #ffd47a;
+  background: rgba(46, 36, 18, .94);
+}
+
+.cluster-popup {
+  position: absolute;
+  z-index: 8;
+  width: 300px;
+  max-height: 340px;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: rgba(16, 21, 28, .97);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .5);
+}
+
+.cluster-popup-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  font-size: 11px;
+}
+
+.cluster-grid {
+  display: grid;
+  gap: 4px;
+}
+
+.cluster-cell {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 3px 5px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, .03);
+  color: var(--fg);
+  text-align: left;
+  cursor: pointer;
+}
+
+.cluster-cell:hover,
+.cluster-cell.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.cluster-cell-text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.cluster-cell-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
 </style>

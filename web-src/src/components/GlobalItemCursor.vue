@@ -1,0 +1,45 @@
+<template>
+  <Teleport to="body">
+    <div
+      v-if="itemCursor.item"
+      class="global-item-cursor workbench-floating-cursor"
+      :style="{ left: pointerX + 'px', top: pointerY + 'px' }"
+      aria-hidden="true"
+    >
+      <ItemIcon :item="itemCursor.item" size="lg" :show-count="true" />
+    </div>
+  </Teleport>
+</template>
+
+<script setup>
+import { onBeforeUnmount, onMounted, ref } from 'vue';
+import ItemIcon from './ItemIcon.vue';
+import { itemCursor } from '../composables/itemCursor.js';
+
+const pointerX = ref(12);
+const pointerY = ref(12);
+
+function onPointerMove(event) {
+  pointerX.value = event.clientX + 12;
+  pointerY.value = event.clientY + 12;
+}
+
+onMounted(() => {
+  window.addEventListener('pointermove', onPointerMove, { passive: true });
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('pointermove', onPointerMove);
+});
+</script>
+
+<style scoped>
+.global-item-cursor {
+  position: fixed;
+  z-index: 100000;
+  pointer-events: none;
+  filter: drop-shadow(0 6px 8px rgba(0, 0, 0, .45));
+  transform: scale(1.08);
+  transform-origin: top left;
+}
+</style>

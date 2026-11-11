@@ -1,14 +1,14 @@
 <template>
   <div class="container-page" :class="{ embedded }">
     <header v-if="!embedded">
-      <h1>容器</h1>
-      <span class="muted small">地图选箱 / 按物品找箱；点击拾取、右键分半，实时或预设写入。</span>
+      <h1>天网</h1>
+      <span class="muted small">地图选箱 / 按物品找箱</span>
       <span class="spacer"></span>
       <a class="user-view-link" href="/">返回管理端</a>
       <button v-if="connected" class="ghost" type="button" @click="logout">断开</button>
     </header>
     <section v-if="embedded" class="container-context">
-      <span class="muted small">天网 · 容器 · 地图选箱 / 按物品找箱；写入前会保存审计快照。</span>
+      <span class="muted small">天网 · 容器 / 玩家</span>
       <span class="spacer"></span>
       <button v-if="connected" class="ghost" type="button" @click="logout">断开</button>
     </section>
@@ -36,39 +36,49 @@
         <div class="container-filters">
           <label>
             维度
-            <select v-model="filters.dimension" @change="search">
+            <select v-model="filters.dimension" :disabled="allDimensions" @change="search">
               <option v-for="dimension in dimensions" :key="dimension.id" :value="dimension.id">
                 {{ dimension.name }}（{{ dimension.id }}）
               </option>
             </select>
           </label>
+          <label class="dimension-toggle" title="同时搜索所有维度">
+            <input v-model="allDimensions" type="checkbox" @change="toggleAllDimensions" />
+            全维度
+          </label>
           <label class="grow">
             按物品找箱
-            <input v-model="filters.q" type="text" placeholder="物品 ID / 名称，如 diamond、钻石" @keyup.enter="search" />
+            <input v-model="filters.q" type="text" placeholder="物品 ID / 名称，如 diamond、钻石"
+              @input="queueSearch" @keyup.enter="search" />
           </label>
-          <button class="primary" type="button" :disabled="loading" @click="search">搜索</button>
-          <button class="ghost" type="button" :disabled="scanning" @click="scan">刷新索引</button>
-          <button class="ghost" type="button" :disabled="loading" @click="searchAllDimensions">
-            {{ filters.dimension ? '全维度搜索' : '按当前维度' }}
-          </button>
+          <button
+            class="icon-button"
+            type="button"
+            :disabled="scanning"
+            title="刷新索引（重新扫描已加载区块）"
+            aria-label="刷新索引"
+            @click="scan"
+          >↻</button>
         </div>
 
-        <MapPicker
-          :markers="markers"
-          :dimension="filters.dimension || dimensions[0]?.id || 'minecraft:overworld'"
-          :selected-id="selectedMarkerId"
-          :height="480"
-          @select="selectMarker"
-        />
+        <div class="container-map">
+          <MapPicker
+            :markers="markers"
+            :dimension="filters.dimension || dimensions[0]?.id || 'minecraft:overworld'"
+            :selected-id="selectedMarkerId"
+            :height="520"
+            @select="selectMarker"
+          />
+        </div>
 
         <div class="container-result-head">
           <span class="muted small">
-            索引 {{ indexSize }} 个容器；当前结果 {{ containers.length }} 个。未加载区块显示缓存，已加载区块实时。
+            索引 {{ indexSize }} 个容器 · 当前 {{ containers.length }} 个
           </span>
           <span class="spacer"></span>
           <span class="muted small">{{ loading ? '读取中…' : '' }}</span>
         </div>
-        <div v-if="containers.length" class="container-list compact">
+        <div v-if="containers.length" class="container-list compact list-narrow">
           <button
             v-for="row in containers"
             :key="rowKey(row)"
@@ -88,62 +98,57 @@
         <p v-else class="muted small">{{ loading ? '读取中…' : '没有找到容器；可输入物品名找箱，或点“刷新索引”。' }}</p>
       </section>
 
-      <section v-if="selected" class="container-card">
-        <div class="container-filters">
-          <div>
-            <h2>{{ typeLabel(selected.container.type) }}</h2>
-            <p class="muted small">
-              {{ selected.container.dimension }} · {{ selected.container.x }}, {{ selected.container.y }}, {{ selected.container.z }}
-              · revision {{ revision }} · {{ selected.container.source === 'loaded' ? '实时容器' : selected.container.source === 'pending' ? '排队写入中' : '磁盘缓存' }}
-            </p>
-          </div>
-          <span class="spacer"></span>
-          <div class="mode-switch" role="group" aria-label="写入模式">
-            <button
-              v-for="option in modeOptions"
-              :key="option.id"
-              type="button"
-              :class="{ active: mode === option.id }"
-              :title="option.hint"
-              @click="setMode(option.id)"
-            >{{ option.label }}</button>
-          </div>
-          <button class="ghost" type="button" :disabled="saving" @click="reloadContainer">重置</button>
-          <button
-            v-if="mode !== 'simulate'"
-            class="primary"
-            type="button"
-            :disabled="!dirty || saving"
-            @click="confirmSave"
-          >
-            {{ saving ? '写入中…' : (mode === 'live' ? '立即写入' : '保存修改') }}{{ dirty ? ' *' : '' }}
-          </button>
-        </div>
-
-        <p class="mode-note">{{ currentModeHint }}</p>
-
-        <ItemWorkbench
-          :slots="slots"
-          :items="items"
-          :layout="layout"
-          :schema="schema"
-          :mode="mode"
-          item-endpoint="/api/containers/item"
-          :revision="revision"
-          :disabled="saving"
-          @change="onWorkbenchChange"
-        />
-      </section>
     </template>
+
+    <Teleport to="body">
+      <FloatingWindow
+        v-for="win in visibleWindows"
+        :key="win.key"
+        :title="win.title"
+        :subtitle="win.subtitle"
+        :width="win.width"
+        :height="win.height"
+        :x="win.x"
+        :y="win.y"
+        :z="win.pinned ? 900 + win.z : win.z"
+        :pinned="win.pinned"
+        :active="activeWindow === win.key"
+        @focus="focusWindow(win)"
+        @pin="toggleWindowPin(win)"
+        @minimize="minimizeWindow(win)"
+        @close="closeWindow(win)"
+      >
+        <InventoryWindow :kind="win.kind" :target="win.target" />
+      </FloatingWindow>
+    </Teleport>
+
+    <GlobalItemCursor v-if="!embedded" />
+
+    <Teleport to="body">
+      <div v-if="minimizedWindows.length" class="window-dock" aria-label="最小化的窗口">
+        <span class="window-dock-title">窗口</span>
+        <button
+          v-for="win in minimizedWindows"
+          :key="win.key"
+          type="button"
+          class="window-dock-tab"
+          :title="win.subtitle"
+          @click="restoreWindow(win)"
+        >{{ win.title }}</button>
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import ItemWorkbench from '../components/ItemWorkbench.vue';
+import FloatingWindow from '../components/FloatingWindow.vue';
+import GlobalItemCursor from '../components/GlobalItemCursor.vue';
+import InventoryWindow from '../components/InventoryWindow.vue';
 import MapPicker from '../components/MapPicker.vue';
 import { useLiveRefresh } from '../composables/useLiveRefresh.js';
+import { itemCursor } from '../composables/itemCursor.js';
 
 const props = defineProps({ embedded: { type: Boolean, default: false } });
 const embedded = computed(() => props.embedded);
@@ -164,6 +169,16 @@ const dimensions = ref([
   { id: 'minecraft:the_end', name: '末地' },
 ]);
 const filters = reactive({ dimension: 'minecraft:overworld', q: '' });
+const windows = ref([]);
+const players = ref([]);
+const selectedPlayerId = ref('');
+let playersTimer = null;
+const activeWindow = ref('');
+let windowZ = 90;
+let windowCascade = 0;
+const allDimensions = ref(false);
+const lastDimension = ref('minecraft:overworld');
+let searchTimer = null;
 const containers = ref([]);
 const indexSize = ref(0);
 const selected = ref(null);
@@ -174,11 +189,11 @@ const revision = ref(0);
 const dirty = ref(false);
 const mode = ref('simulate');
 const schema = ref({});
-const cursorPending = ref(false);
+const cursorPending = computed(() => !!itemCursor.item);
 let liveTimer = null;
 
 const liveState = useLiveRefresh({
-  mode: () => mode.value,
+  mode: () => 'simulate',
   key: () => selected.value
     ? `${selected.value.container?.dimension}:${selected.value.container?.x},${selected.value.container?.y},${selected.value.container?.z}`
     : '',
@@ -225,26 +240,61 @@ const layout = computed(() => [{
     ? Math.max(1, selected.value?.container?.size || 1) : 9,
 }]);
 
-const markers = computed(() => containers.value
-  .filter((row) => !filters.dimension || row.dimension === filters.dimension)
-  .slice(0, 300)
-  .map((row) => ({
-    id: rowKey(row),
-    x: row.x,
-    z: row.z,
-    dimension: row.dimension,
-    label: typeLabel(row.type),
-    sub: `${row.x}, ${row.y}, ${row.z} · ${row.nonEmpty}/${row.size}`,
-    kind: 'container',
-    icon: row.type,
-  })));
+const markers = computed(() => {
+  const rows = containers.value
+    .filter((row) => !filters.dimension || row.dimension === filters.dimension)
+    .slice(0, 300)
+    .map((row) => ({
+      id: rowKey(row),
+      x: row.x,
+      z: row.z,
+      dimension: row.dimension,
+      label: typeLabel(row.type),
+      sub: row.x + ', ' + row.y + ', ' + row.z + ' · ' + row.nonEmpty + '/' + row.size,
+      kind: 'container',
+      icon: row.type,
+    }));
+  const people = players.value
+    .filter((player) => player.dimension && Number.isFinite(Number(player.x)))
+    .filter((player) => !filters.dimension || player.dimension === filters.dimension)
+    .map((player) => ({
+      id: 'player:' + player.uuid,
+      uuid: player.uuid,
+      x: Number(player.x),
+      z: Number(player.z),
+      dimension: player.dimension,
+      label: player.name || String(player.uuid).slice(0, 8),
+      sub: (player.online ? '在线' : '离线') + ' · '
+        + Math.round(player.x) + ', ' + Math.round(player.y) + ', ' + Math.round(player.z),
+      kind: 'player',
+      online: player.online !== false,
+    }));
+  return rows.concat(people);
+});
 
 const selectedMarkerId = computed(() =>
-  selected.value ? rowKey(selected.value.container) : '');
+  selectedPlayerId.value || (selected.value ? rowKey(selected.value.container) : ''));
 
 onMounted(() => {
   if (token.value) connect();
 });
+
+onBeforeUnmount(() => {
+  window.clearTimeout(searchTimer);
+  if (playersTimer) window.clearInterval(playersTimer);
+});
+
+async function loadPlayers() {
+  try {
+    const result = await api('/api/server/players');
+    if (result.status === 200 && result.data.ok) {
+      players.value = result.data.players || [];
+    }
+  } catch {
+    // 玩家位置不可用时只显示容器。
+  }
+}
+
 
 function typeLabel(type) {
   const key = String(type || '');
@@ -298,8 +348,9 @@ async function connect() {
     if (result.status !== 200) throw new Error(result.data.error || ('连接失败：' + result.status));
     sessionStorage.setItem('samsara-token', value);
     connected.value = true;
-    await Promise.all([loadDimensions(), loadSchema()]);
+    await Promise.all([loadDimensions(), loadSchema(), loadPlayers()]);
     await search();
+    if (!playersTimer) playersTimer = window.setInterval(loadPlayers, 4000);
   } catch (e) {
     error.value = e.message || String(e);
     connected.value = false;
@@ -335,6 +386,7 @@ async function loadDimensions() {
     if (list.length) {
       dimensions.value = list;
       if (!seen.has(filters.dimension)) filters.dimension = list[0].id;
+      if (allDimensions.value) filters.dimension = '';
     }
   } catch {
     // 保留默认三维度
@@ -380,6 +432,21 @@ async function search() {
   }
 }
 
+function queueSearch() {
+  window.clearTimeout(searchTimer);
+  searchTimer = window.setTimeout(search, 320);
+}
+
+function toggleAllDimensions() {
+  if (allDimensions.value) {
+    lastDimension.value = filters.dimension || lastDimension.value;
+    filters.dimension = '';
+  } else {
+    filters.dimension = lastDimension.value || dimensions.value[0]?.id || 'minecraft:overworld';
+  }
+  search();
+}
+
 async function searchAllDimensions() {
   if (filters.dimension) {
     filters.dimension = '';
@@ -416,32 +483,103 @@ async function scan() {
 }
 
 function selectMarker(id) {
+  if (String(id).startsWith('player:')) {
+    const player = players.value.find((row) => 'player:' + row.uuid === id);
+    if (player) openPlayerWindow(player);
+    return;
+  }
   const row = containers.value.find((candidate) => rowKey(candidate) === id);
   if (row) openContainer(row);
 }
 
-async function openContainer(row) {
-  error.value = '';
-  message.value = '';
-  liveTimer && clearTimeout(liveTimer);
-  try {
-    const params = new URLSearchParams({
-      dimension: row.dimension,
-      x: String(row.x),
-      y: String(row.y),
-      z: String(row.z),
-    });
-    const result = await api('/api/containers/read?' + params.toString());
-    if (result.status !== 200 || !result.data.ok) throw new Error(result.data.error || '读取容器失败');
-    selected.value = result.data;
-    slots.value = (result.data.container.slots || []).slice();
-    baselineSlots.value = slots.value.slice();
-    items.value = (result.data.items || []).slice();
-    revision.value = result.data.container.revision;
-    dirty.value = false;
-  } catch (e) {
-    error.value = e.message || String(e);
+function openPlayerWindow(player) {
+  selectedPlayerId.value = 'player:' + player.uuid;
+  const key = selectedPlayerId.value;
+  const existing = windows.value.find((win) => win.key === key);
+  if (existing) {
+    existing.minimized = false;
+    focusWindow(existing);
+    return;
   }
+  windowCascade = (windowCascade + 1) % 7;
+  windows.value.push({
+    key,
+    kind: 'player',
+    target: { uuid: player.uuid, name: player.name, online: player.online },
+    title: player.name || String(player.uuid).slice(0, 8),
+    subtitle: (player.online ? '在线' : '离线') + ' · ' + player.uuid,
+    width: 760,
+    height: 680,
+    x: 180 + windowCascade * 28,
+    y: 88 + windowCascade * 22,
+    z: ++windowZ,
+    pinned: false,
+    minimized: false,
+  });
+  activeWindow.value = key;
+}
+
+function openContainer(row) {
+  selectedPlayerId.value = '';
+  selected.value = { container: row };
+  openWindow(row);
+}
+
+function openWindow(row) {
+  const key = rowKey(row);
+  const existing = windows.value.find((win) => win.key === key);
+  if (existing) {
+    existing.minimized = false;
+    focusWindow(existing);
+    return;
+  }
+  windowCascade = (windowCascade + 1) % 7;
+  windows.value.push({
+    key,
+    kind: 'container',
+    target: Object.assign({}, row),
+    title: typeLabel(row.type),
+    subtitle: row.dimension + ' · ' + row.x + ', ' + row.y + ', ' + row.z,
+    width: 820,
+    height: 640,
+    x: 120 + windowCascade * 28,
+    y: 96 + windowCascade * 22,
+    z: ++windowZ,
+    pinned: false,
+    minimized: false,
+  });
+  activeWindow.value = key;
+}
+
+const visibleWindows = computed(() => windows.value.filter((win) => !win.minimized));
+const minimizedWindows = computed(() => windows.value.filter((win) => win.minimized));
+
+function focusWindow(win) {
+  windowZ += 1;
+  win.z = windowZ;
+  activeWindow.value = win.key;
+}
+
+function toggleWindowPin(win) {
+  win.pinned = !win.pinned;
+  if (win.pinned) focusWindow(win);
+}
+
+function minimizeWindow(win) {
+  win.minimized = true;
+  if (activeWindow.value === win.key) activeWindow.value = '';
+}
+
+function restoreWindow(win) {
+  win.minimized = false;
+  focusWindow(win);
+}
+
+function closeWindow(win) {
+  windows.value = windows.value.filter((row) => row.key !== win.key);
+  if (activeWindow.value === win.key) activeWindow.value = '';
+  if (selected.value && rowKey(selected.value.container) === win.key) selected.value = null;
+  if (selectedPlayerId.value === win.key) selectedPlayerId.value = '';
 }
 
 async function reloadContainer() {
@@ -467,7 +605,6 @@ function sameSlots(a, b) {
 
 function onWorkbenchChange(payload) {
   if (!selected.value) return;
-  cursorPending.value = !!payload.pending;
   slots.value = payload.slots;
   items.value = payload.items;
   dirty.value = !sameSlots(payload.slots, baselineSlots.value);
@@ -635,4 +772,82 @@ async function save(silent) {
   color: var(--muted);
   font-size: 11px;
 }
+
+.container-map {
+  margin-top: 12px;
+}
+
+.list-narrow {
+  max-width: 760px;
+}
+
+.dimension-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.icon-button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.icon-button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--fg);
+}
+
+
+.window-dock {
+  position: fixed;
+  right: 0;
+  top: 30%;
+  z-index: 880;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+  padding: 6px 5px;
+  border: 1px solid var(--line);
+  border-right: 0;
+  border-radius: 9px 0 0 9px;
+  background: var(--panel);
+  box-shadow: -8px 0 24px rgba(0, 0, 0, .35);
+}
+
+.window-dock-title {
+  color: var(--muted);
+  font-size: 9px;
+  text-align: center;
+}
+
+.window-dock-tab {
+  max-width: 108px;
+  padding: 4px 7px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-soft);
+  color: var(--fg);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.window-dock-tab:hover {
+  border-color: var(--accent);
+}
+
 </style>

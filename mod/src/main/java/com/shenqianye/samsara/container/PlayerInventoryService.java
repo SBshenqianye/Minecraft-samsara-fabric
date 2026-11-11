@@ -159,6 +159,7 @@ public final class PlayerInventoryService {
         String encoded = string(request, "encoded");
         String id = string(request, "id");
         int count = intValue(request.get("count"), 1);
+        boolean unlimited = Boolean.TRUE.equals(request.get("unlimited"));
         if (count < 1) return error(400, "数量至少为 1");
         return onServer(() -> {
             if (server == null) return error(503, "服务器未启动");
@@ -176,7 +177,7 @@ public final class PlayerInventoryService {
                 }
                 stack = new ItemStack(item, count);
             }
-            if (stack.getCount() > stack.getMaxStackSize()) {
+            if (!unlimited && stack.getCount() > stack.getMaxStackSize()) {
                 return error(400, "数量超过最大堆叠数 " + stack.getMaxStackSize());
             }
             String result = LotteryItemCodec.encode(stack, registries);

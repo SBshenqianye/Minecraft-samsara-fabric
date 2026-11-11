@@ -4,73 +4,72 @@
       v-show="!open"
       class="global-inventory-tab"
       type="button"
-      :class="{ active: open, pinned }"
+      :class="{ active: open }"
       :aria-expanded="open ? 'true' : 'false'"
       title="Web 背包 + 创造物品库（E）"
-      @mouseenter="onEnter"
-      @click="togglePin"
+      @click="openWindow"
     >
       <span>背包</span>
       <span class="global-inventory-tab-key">E</span>
     </button>
 
-    <transition name="inventory-slide">
-      <section
-        v-if="open"
-        class="global-inventory-panel"
-        aria-label="Web 背包与创造物品库"
-        @mouseenter="onEnter"
-        @mouseleave="onLeave"
-      >
-        <header class="global-inventory-head">
-          <div>
-            <h3>Web 背包</h3>
-            <p class="muted small">幽灵管理员的 54 格仓库；每次改动即时写入，和创造物品库一起随时存取。</p>
-          </div>
-          <span class="spacer"></span>
-          <span v-if="saving" class="muted small">写入中…</span>
-          <span v-else-if="dirty" class="muted small">待写入…</span>
-          <button class="ghost" type="button" title="收起" @click="close">×</button>
-        </header>
-
-        <p v-if="error" class="container-message error">{{ error }}</p>
-        <p v-if="message" class="container-message ok">{{ message }}</p>
-
-        <div v-if="!connected" class="global-inventory-connect">
-          <p class="muted small">需要管理端 token；请先在任意管理页连接。</p>
+    <FloatingWindow
+      v-if="open"
+      class="global-inventory-panel"
+      title="Web 背包"
+      subtitle="54 格 · 创造物品库（E）"
+      :width="980"
+      :height="680"
+      :x="initialX"
+      :y="72"
+      :z="1200"
+      :pinned="pinned"
+      :active="true"
+      @close="close"
+      @minimize="minimize"
+      @pin="pinned = !pinned"
+    >
+      <div class="global-inventory-status">
+        <span v-if="saving" class="muted small">写入中…</span>
+        <span v-else-if="dirty" class="muted small">待写入…</span>
+        <span class="muted small">改动即时写入</span>
+      </div>
+      <p v-if="error" class="container-message error">{{ error }}</p>
+      <p v-if="message" class="container-message ok">{{ message }}</p>
+      <div v-if="!connected" class="global-inventory-connect">
+        <p class="muted small">需要管理端 token；请先在任意管理页连接。</p>
+      </div>
+      <div v-else class="global-inventory-body">
+        <div class="global-inventory-slots">
+          <ItemWorkbench
+            ref="workbench"
+            :slots="slots"
+            :items="items"
+            :layout="layout"
+            :schema="schema"
+            mode="live"
+            item-endpoint="/api/inventory/item"
+            :revision="revision"
+            :disabled="saving"
+            :trash="false"
+            @change="onChange"
+          />
         </div>
-
-        <div v-else class="global-inventory-body">
-          <div class="global-inventory-slots">
-            <ItemWorkbench
-              ref="workbench"
-              :slots="slots"
-              :items="items"
-              :layout="layout"
-              :schema="schema"
-              mode="live"
-              item-endpoint="/api/inventory/item"
-              :revision="revision"
-              :disabled="saving"
-              :web-deposit="false"
-              :web-withdraw="false"
-              @change="onChange"
-            />
-          </div>
-          <CreativeLibrary class="global-inventory-library" @pick="onPick" />
-        </div>
-      </section>
-    </transition>
+        <CreativeLibrary class="global-inventory-library" @pick="onPick" />
+      </div>
+    </FloatingWindow>
   </div>
 </template>
 
 <script setup>
 import { onBeforeUnmount, onMounted, ref } from 'vue';
+import FloatingWindow from './FloatingWindow.vue';
 import ItemWorkbench from './ItemWorkbench.vue';
 import CreativeLibrary from './CreativeLibrary.vue';
 
 const open = ref(false);
 const pinned = ref(false);
+const initialX = Math.max(60, window.innerWidth - 1020);
 const loading = ref(false);
 const saving = ref(false);
 const connected = ref(false);
@@ -84,7 +83,6 @@ const dirty = ref(false);
 const schema = ref({});
 const workbench = ref(null);
 let token = '';
-let closeTimer = null;
 let liveTimer = null;
 
 const layout = [
@@ -102,7 +100,6 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown);
-  window.clearTimeout(closeTimer);
   window.clearTimeout(liveTimer);
 });
 
@@ -117,7 +114,7 @@ function onKeydown(event) {
   // 大弹窗/确认框真正可见时不抢 E（Element Plus 关闭的弹层仍留在 DOM 里）。
   if (dialogBlocking()) return;
   event.preventDefault();
-  togglePin();
+  toggleWindow();
 }
 
 function dialogBlocking() {
@@ -132,36 +129,28 @@ function dialogBlocking() {
   });
 }
 
-function onEnter() {
-  window.clearTimeout(closeTimer);
+function openWindow() {
   open.value = true;
+  pinned.value = true;
   if (!slots.value.length && !loading.value && !error.value) bootstrap();
 }
 
-function onLeave() {
-  if (pinned.value) return;
-  window.clearTimeout(closeTimer);
-  closeTimer = window.setTimeout(() => {
-    if (!pinned.value) open.value = false;
-  }, 260);
-}
-
-function togglePin() {
-  window.clearTimeout(closeTimer);
-  if (open.value && pinned.value) {
-    pinned.value = false;
-    open.value = false;
-    return;
-  }
-  pinned.value = true;
-  open.value = true;
-  if (!slots.value.length && !loading.value) bootstrap();
+function minimize() {
+  open.value = false;
 }
 
 function close() {
   pinned.value = false;
   open.value = false;
   window.clearTimeout(liveTimer);
+}
+
+function toggleWindow() {
+  if (open.value) {
+    open.value = false;
+    return;
+  }
+  openWindow();
 }
 
 async function bootstrap() {
@@ -241,10 +230,6 @@ function onChange(payload) {
     window.clearTimeout(liveTimer);
     return;
   }
-  if (payload.pending) {
-    message.value = '光标上还有物品，放下后才会写入。';
-    return;
-  }
   window.clearTimeout(liveTimer);
   liveTimer = window.setTimeout(() => save(), 450);
 }
@@ -277,7 +262,7 @@ async function save() {
   }
 }
 
-defineExpose({ open: () => togglePin() });
+defineExpose({ open: () => openWindow() });
 </script>
 
 <style scoped>
@@ -317,36 +302,10 @@ defineExpose({ open: () => togglePin() });
   writing-mode: horizontal-tb;
 }
 
-.global-inventory-panel {
-  position: fixed;
-  right: 0;
-  top: 96px;
-  bottom: 24px;
-  z-index: 59;
-  width: min(1080px, 92vw);
-  padding: 14px;
-  overflow: auto;
-  border: 1px solid var(--line);
-  border-right: 0;
-  border-radius: 14px 0 0 14px;
-  background: var(--panel);
-  box-shadow: -12px 0 36px rgba(0, 0, 0, .35);
-}
-
-.global-inventory-head {
+.global-inventory-status {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
   gap: 8px;
-  margin-bottom: 8px;
-}
-
-.global-inventory-head h3 {
-  margin: 0 0 2px;
-}
-
-.global-inventory-head .spacer {
-  flex: 1 1 auto;
+  margin-bottom: 6px;
 }
 
 .global-inventory-body {

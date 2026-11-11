@@ -4,28 +4,12 @@
       <div class="workbench-mode">
         <span class="mode-dot" :class="mode"></span>
         <strong>{{ modeLabel }}</strong>
-        <span class="muted small">{{ modeHint }}</span>
+        <span v-if="modeHint" class="mode-flag" :title="modeHint" :aria-label="modeHint">!</span>
       </div>
       <div class="spacer"></div>
-      <span class="workbench-hover-hint">悬停槽位查看完整 tooltip；点槽位右上角 ✎ 可直接编辑组件，不会拿起物品。</span>
       <span v-if="busy" class="muted small">处理中…</span>
       <button
-        v-if="webDeposit"
-        class="ghost tiny"
-        type="button"
-        :disabled="busy || !selectedItem"
-        title="把当前选中的物品存入 Web 幽灵背包"
-        @click="depositToWeb"
-      >存入 Web 背包</button>
-      <button
-        v-if="webWithdraw"
-        class="ghost tiny"
-        type="button"
-        :disabled="busy"
-        title="从 Web 幽灵背包取出一件物品放到光标"
-        @click="openWebPicker"
-      >从 Web 背包取回</button>
-      <button
+        v-if="trash"
         class="workbench-trash"
         :class="{ armed: !!cursor }"
         type="button"
@@ -33,52 +17,27 @@
         @click="trashCursor"
         @dragover.prevent
         @drop.prevent="trashDrop"
-      >🗑 垃圾桶</button>
+      >🗑</button>
       <span v-if="cursor" class="cursor-chip">
         光标：<ItemIcon :item="cursor" size="sm" :show-count="false" />
         <span>{{ cursor.name }} ×{{ cursor.count }}</span>
-        <button class="ghost tiny" type="button" :disabled="busy" @click="returnCursor">放回</button>
+        <span v-if="!ownsCursor" class="muted small">（来自其他背包）</span>
+        <button v-if="ownsCursor" class="ghost tiny" type="button" :disabled="busy" @click="returnCursor">放回</button>
       </span>
     </div>
 
-    <Teleport to="body">
-      <div
-        v-if="cursor"
-        class="workbench-floating-cursor"
-        :style="{ left: pointerX + 'px', top: pointerY + 'px' }"
-      >
-        <ItemIcon :item="cursor" size="lg" :show-count="true" />
-      </div>
-    </Teleport>
-
+    
     <p v-if="workbenchError" class="container-message error">{{ workbenchError }}</p>
     <p v-if="workbenchMessage" class="container-message ok">{{ workbenchMessage }}</p>
 
-    <div v-if="webPickerOpen" class="workbench-web-picker">
-      <div class="workbench-web-picker-head">
-        <strong>Web 背包</strong>
-        <span class="muted small">{{ webItems.length }} 件</span>
-        <span class="spacer"></span>
-        <button class="ghost tiny" type="button" @click="webPickerOpen = false">关闭</button>
-      </div>
-      <div v-if="webItems.length" class="workbench-web-list">
-        <button
-          v-for="row in webItems"
-          :key="row.slot"
-          type="button"
-          class="workbench-web-row"
-          @click="takeWebItem(row)"
-        >
-          <ItemIcon :item="row" size="sm" :show-count="true" />
-          <span class="workbench-web-name">{{ row.name }} ×{{ row.count }}</span>
-          <span class="muted small">槽位 {{ row.slot }}</span>
-        </button>
-      </div>
-      <p v-else class="muted small">Web 背包是空的。</p>
-    </div>
 
     <div class="workbench-body">
-      <div class="workbench-grids">
+      <div
+        ref="gridsEl"
+        class="workbench-grids"
+        :class="{ 'workbench-grids-lazy': hasMore }"
+        @scroll.passive="onGridsScroll"
+      >
         <div
           v-for="(row, rowIndex) in layoutRows"
           :key="'row-' + rowIndex"
@@ -120,6 +79,7 @@
           <ItemEditor
             :item="selectedItem"
             :schema="schema"
+            :unlimited-stack="unlimitedStack"
             @update="applyEditorItem"
           />
         </div>
@@ -132,11 +92,12 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import ItemEditor from './ItemEditor.vue';
 import ItemIcon from './ItemIcon.vue';
 import ItemSlotGrid from './ItemSlotGrid.vue';
-import { hideItemTooltip, itemTooltip, moveItemTooltip, showItemTooltip } from './itemTooltip.js';
+import { hideItemTooltip, showItemTooltip } from './itemTooltip.js';
+import { clearItemCursor, itemCursor, nextWorkbenchId } from '../composables/itemCursor.js';
 
 const props = defineProps({
   slots: { type: Array, default: () => [] },
@@ -147,23 +108,44 @@ const props = defineProps({
   itemEndpoint: { type: String, default: '/api/containers/item' },
   revision: { type: Number, default: 0 },
   disabled: { type: Boolean, default: false },
-  webDeposit: { type: Boolean, default: true },
-  webWithdraw: { type: Boolean, default: true },
+  trash: { type: Boolean, default: true },
+  unlimitedStack: { type: Boolean, default: false },
+  hasMore: { type: Boolean, default: false },
 });
-const emit = defineEmits(['change', 'select']);
+const emit = defineEmits(['change', 'select', 'need-more']);
+const sourceId = nextWorkbenchId();
+const gridsEl = ref(null);
 
 const localSlots = ref([...(props.slots || [])]);
 const localItems = ref([...(props.items || [])]);
 const selectedIndex = ref(null);
-const cursor = ref(null);
-const cursorOrigin = ref(null);
+// 光标是全局共享的：在这里拿起后，可以在任意其他物品栏里点击放下。
+const cursor = computed({
+  get: () => itemCursor.item,
+  set: (value) => {
+    if (!value) {
+      clearItemCursor();
+      return;
+    }
+    itemCursor.item = value;
+    if (!itemCursor.sourceId) itemCursor.sourceId = sourceId;
+  },
+});
+const cursorOrigin = computed({
+  get: () => (itemCursor.item && itemCursor.sourceId === sourceId ? itemCursor.sourceIndex : null),
+  set: (value) => {
+    if (value === null || value === undefined) {
+      if (itemCursor.sourceId === sourceId) itemCursor.sourceIndex = null;
+      return;
+    }
+    itemCursor.sourceId = sourceId;
+    itemCursor.sourceIndex = value;
+  },
+});
+const ownsCursor = computed(() => !!cursor.value && itemCursor.sourceId === sourceId);
 const busy = ref(false);
 const workbenchError = ref('');
-const pointerX = ref(12);
-const pointerY = ref(12);
 const workbenchMessage = ref('');
-const webPickerOpen = ref(false);
-const webItems = ref([]);
 let dragSource = null;
 
 
@@ -217,8 +199,6 @@ const selectedItem = computed(() => {
 watch(() => props.slots, (value) => {
   if (!sameList(value, localSlots.value)) {
     localSlots.value = [...(value || [])];
-    cursor.value = null;
-    cursorOrigin.value = null;
   }
 });
 watch(() => props.items, (value) => {
@@ -255,7 +235,7 @@ function commit(reason) {
   emit('change', {
     slots: [...localSlots.value],
     items: [...localItems.value],
-    pending: !!cursor.value,
+    pending: false,
     reason,
     revision: props.revision,
   });
@@ -286,7 +266,7 @@ async function withCount(item, count) {
   if (item.encoded && Number(item.count) === count) return item;
   const data = await api(props.itemEndpoint, {
     method: 'POST',
-    body: JSON.stringify({ encoded: item.encoded, count }),
+    body: JSON.stringify({ encoded: item.encoded, count, unlimited: props.unlimitedStack }),
   });
   return Object.assign({}, item, data, { count });
 }
@@ -327,18 +307,9 @@ function onSlotLeave() {
   hideItemTooltip();
 }
 
-function onPointerMove(event) {
-  pointerX.value = event.clientX + 10;
-  pointerY.value = event.clientY + 10;
-  if (itemTooltip.visible) moveItemTooltip(event);
-}
 
-onMounted(() => {
-  window.addEventListener('pointermove', onPointerMove, { passive: true });
-});
 
 onBeforeUnmount(() => {
-  window.removeEventListener('pointermove', onPointerMove);
   hideItemTooltip();
 });
 
@@ -373,7 +344,9 @@ async function onSlotClick({ index, button, shift }) {
       if (!cursor.value) cursorOrigin.value = null;
       changed = true;
     } else if (sameSignature(slotItem, cursor.value)) {
-      const max = Math.min(slotItem.maxStack || 64, cursor.value.maxStack || 64);
+      const max = props.unlimitedStack
+        ? Number.MAX_SAFE_INTEGER
+        : Math.min(slotItem.maxStack || 64, cursor.value.maxStack || 64);
       const space = max - slotItem.count;
       if (space <= 0) return;
       const place = button === 2 ? 1 : Math.min(space, cursor.value.count);
@@ -406,7 +379,8 @@ async function quickMove(index) {
       row.slot !== index && sameSignature(row, item)
         && Number(row.count) < Number(row.maxStack || 64));
     if (target) {
-      const space = Number(target.maxStack || 64) - Number(target.count);
+      const space = (props.unlimitedStack ? Number.MAX_SAFE_INTEGER
+      : Number(target.maxStack || 64)) - Number(target.count);
       const move = Math.min(space, Number(item.count));
       setSlot(target.slot, await withCount(target, Number(target.count) + move));
       setSlot(index, move >= Number(item.count) ? null : await withCount(item, Number(item.count) - move));
@@ -551,81 +525,12 @@ function resetSelection() {
   cursorOrigin.value = null;
   workbenchError.value = '';
   workbenchMessage.value = '';
-  webPickerOpen.value = false;
 }
 
-async function depositToWeb() {
-  if (props.disabled || busy.value) return;
-  const item = selectedItem.value || cursor.value;
-  if (!item || !item.encoded) {
-    workbenchError.value = '请先选中一个有物品的槽位（或拿起物品）。';
-    workbenchMessage.value = '';
-    return;
-  }
-  busy.value = true;
-  workbenchError.value = '';
-  workbenchMessage.value = '';
-  try {
-    await api('/api/inventory/web/deposit', {
-      method: 'POST',
-      body: JSON.stringify({ encoded: item.encoded }),
-    });
-    if (cursor.value && cursorOrigin.value === selectedIndex.value) {
-      cursor.value = null;
-      cursorOrigin.value = null;
-    } else if (selectedIndex.value !== null && localSlots.value[selectedIndex.value]) {
-      setSlot(selectedIndex.value, null);
-    } else if (cursor.value) {
-      cursor.value = null;
-      cursorOrigin.value = null;
-    }
-    workbenchMessage.value = '已存入 Web 背包。';
-    commit('interact');
-  } catch (e) {
-    workbenchError.value = e.message || String(e);
-  } finally {
-    busy.value = false;
-  }
-}
-
-async function openWebPicker() {
-  if (props.disabled || busy.value) return;
-  busy.value = true;
-  workbenchError.value = '';
-  workbenchMessage.value = '';
-  try {
-    const data = await api('/api/inventory/web', {});
-    webItems.value = Array.isArray(data.items) ? data.items : [];
-    webPickerOpen.value = true;
-  } catch (e) {
-    workbenchError.value = e.message || String(e);
-  } finally {
-    busy.value = false;
-  }
-}
-
-async function takeWebItem(row) {
-  if (props.disabled || busy.value) return;
-  busy.value = true;
-  workbenchError.value = '';
-  workbenchMessage.value = '';
-  try {
-    const data = await api('/api/inventory/web/withdraw', {
-      method: 'POST',
-      body: JSON.stringify({ index: row.slot, count: row.count }),
-    });
-    if (!data.item) throw new Error('未返回物品');
-    cursor.value = data.item;
-    cursorOrigin.value = null;
-    selectedIndex.value = null;
-    webPickerOpen.value = false;
-    workbenchMessage.value = '已从 Web 背包取出 ' + (data.item.name || data.item.id) + '，点击槽位放下。';
-    commit('interact');
-  } catch (e) {
-    workbenchError.value = e.message || String(e);
-  } finally {
-    busy.value = false;
-  }
+function onGridsScroll() {
+  const node = gridsEl.value;
+  if (!node || !props.hasMore) return;
+  if (node.scrollTop + node.clientHeight >= node.scrollHeight - 48) emit('need-more');
 }
 
 defineExpose({ resetSelection, pickFromLibrary: libraryPick });
@@ -726,6 +631,10 @@ defineExpose({ resetSelection, pickFromLibrary: libraryPick });
   border-radius: 12px;
   background: linear-gradient(160deg, var(--panel-soft), var(--panel));
   overflow: auto;
+}
+
+.workbench-grids-lazy {
+  max-height: 58vh;
 }
 
 .workbench-row {

@@ -2731,7 +2731,7 @@ async function main() {
       if (row) {
         row.click();
         const deadline = Date.now() + 8000;
-        while (!document.querySelector('.container-page.embedded .slot-grid')
+        while (!document.querySelector('.slot-grid')
             && Date.now() < deadline) {
           await new Promise((resolve) => setTimeout(resolve, 100));
         }
@@ -2739,8 +2739,8 @@ async function main() {
       return {
         embedded: !!document.querySelector('.container-page.embedded'),
         rows: rows.length,
-        slots: document.querySelectorAll('.container-page.embedded .slot').length,
-        grid: !!document.querySelector('.container-page.embedded .slot-grid'),
+        slots: document.querySelectorAll('.slot').length,
+        grid: !!document.querySelector('.slot-grid'),
         section: document.querySelector('.section-tab.active')?.textContent.trim() || '',
       };
     })()`);
@@ -3073,16 +3073,24 @@ async function main() {
       legacyReadonlyFund: !!document.getElementById('lottery-fund-panel'),
       slots: document.querySelectorAll('.fund-inventory-embed .slot').length,
       modeSwitch: !!document.querySelector('.fund-inventory-embed .mode-switch'),
-      expand: !!document.querySelector('.fund-inventory-embed .pool-head button'),
+      reload: [...document.querySelectorAll('.fund-inventory-embed .pool-head button')]
+        .some((button) => button.title === '重新读取'),
+      expandButton: [...document.querySelectorAll('.fund-inventory-embed .pool-head button')]
+        .some((button) => button.textContent.includes('扩充')),
       search: !!document.querySelector('.fund-inventory-embed .fund-search input'),
       sort: !!document.querySelector('.fund-inventory-embed .fund-search select'),
+      sortOptions: [...document.querySelectorAll('.fund-inventory-embed .fund-search select option')]
+        .map((option) => option.textContent.trim()),
       nav: [...document.querySelectorAll('.subnav-item')].map((n) => n.textContent.trim()),
     }))()`);
-    check('基金仓库内嵌服务器基金页且可搜索排序扩容、无预设/模拟分段', fundInventoryUi.embedded === true
+    check('基金仓库内嵌服务器基金页、自动扩容、可搜索排序、无预设/模拟分段', fundInventoryUi.embedded === true
         && fundInventoryUi.legacyValues === true && fundInventoryUi.legacyReadonlyFund === false
         && fundInventoryUi.slots >= 54
-        && fundInventoryUi.modeSwitch === false && fundInventoryUi.expand === true
+        && fundInventoryUi.modeSwitch === false && fundInventoryUi.reload === true
+        && fundInventoryUi.expandButton === false
         && fundInventoryUi.search === true && fundInventoryUi.sort === true
+        && fundInventoryUi.sortOptions.includes('按添加顺序')
+        && fundInventoryUi.sortOptions.includes('按 NBT 组件数')
         && !fundInventoryUi.nav.includes('基金仓库'), JSON.stringify(fundInventoryUi));
 
     // 实时模式：外部写入后 Web 应自动同步；模拟/预设不覆盖本地未提交修改。

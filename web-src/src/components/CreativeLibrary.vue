@@ -57,6 +57,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue';
 import ItemIcon from './ItemIcon.vue';
+import { filterItems } from '../composables/itemSearch.js';
 import { hideItemTooltip, itemTooltip, moveItemTooltip, showItemTooltip } from './itemTooltip.js';
 
 const emit = defineEmits(['pick']);
@@ -144,10 +145,7 @@ const filtered = computed(() => {
   if (category.value !== 'all' && category.value !== 'debug') {
     rows = rows.filter((row) => row._tab === category.value);
   }
-  if (text) {
-    rows = rows.filter((row) => [row.zh, row.name, row.id, row.py, row.initials]
-      .some((value) => String(value || '').toLowerCase().includes(text)));
-  }
+  if (text) rows = filterItems(rows, text);
   const sorted = rows.slice();
   if (sort.value === 'value-desc') sorted.sort((a, b) => (b.value || 0) - (a.value || 0));
   else if (sort.value === 'value-asc') sorted.sort((a, b) => (a.value || 0) - (b.value || 0));

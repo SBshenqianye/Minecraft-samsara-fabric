@@ -213,6 +213,7 @@
     <div ref="overlayHost" class="ia-overlay-host"></div>
     <IdentityInventoryDialog v-if="workspace === 'samsara'" />
     <GlobalInventoryDrawer v-if="workspace === 'samsara'" />
+    <GlobalItemCursor />
     <div v-if="loadError" class="container-message error" style="margin: 20px">
       {{ loadError }}
     </div>
@@ -244,6 +245,7 @@ import ServerPage from '../pages/ServerPage.vue';
 import ModConfigPage from '../pages/ModConfigPage.vue';
 import IdentityInventoryDialog from '../components/IdentityInventoryDialog.vue';
 import GlobalInventoryDrawer from '../components/GlobalInventoryDrawer.vue';
+import GlobalItemCursor from '../components/GlobalItemCursor.vue';
 
 const route = useRoute();
 const router = useRouter();

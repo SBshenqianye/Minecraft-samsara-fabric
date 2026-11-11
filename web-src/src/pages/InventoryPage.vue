@@ -1,5 +1,5 @@
 <template>
-  <TabShell name="inventory" title="玩家背包" description="地图选玩家；在线直接写入，离线进入安全队列；身份 data UUID 共用同一套编辑界面。">
+  <TabShell name="inventory" title="玩家背包" description="地图选玩家">
     <section v-if="!connected" class="panel">
       <h3>连接管理端</h3>
       <p class="muted small">需要管理端 token；token 只保存在当前标签页的 sessionStorage。</p>
@@ -65,13 +65,15 @@
                 </option>
               </select>
             </div>
-            <MapPicker
-              :markers="playerMarkers"
-              :dimension="mapDimension"
-              :selected-id="selectedPlayer?.uuid || ''"
-              :height="480"
-              @select="selectMarker"
-            />
+            <div class="inventory-map">
+              <MapPicker
+                :markers="playerMarkers"
+                :dimension="mapDimension"
+                :selected-id="selectedPlayer?.uuid || ''"
+                :height="520"
+                @select="selectMarker"
+              />
+            </div>
           </div>
 
           <div v-if="!data" class="muted small">
@@ -117,7 +119,6 @@
               >
                 {{ mode === 'live' ? '立即写入' : '保存修改' }}{{ dirty ? ' *' : '' }}
               </el-button>
-              <span class="muted small">{{ currentModeHint }}</span>
             </div>
 
             <p v-if="!data.online && source !== 'identity'" class="muted small">
@@ -154,6 +155,7 @@ import TabShell from '../components/TabShell.vue';
 import ItemWorkbench from '../components/ItemWorkbench.vue';
 import MapPicker from '../components/MapPicker.vue';
 import { useLiveRefresh } from '../composables/useLiveRefresh.js';
+import { itemCursor } from '../composables/itemCursor.js';
 
 const route = useRoute();
 const token = ref(sessionStorage.getItem('samsara-token') || '');
@@ -206,7 +208,7 @@ const filteredPlayers = computed(() => {
       || String(player.uuid || '').toLowerCase().includes(value));
 });
 
-const cursorPending = ref(false);
+const cursorPending = computed(() => !!itemCursor.item);
 
 const liveState = useLiveRefresh({
   mode: () => mode.value,
@@ -502,7 +504,6 @@ function sameSlots(a, b) {
 
 function onWorkbenchChange(payload) {
   if (!data.value) return;
-  cursorPending.value = !!payload.pending;
   slots.value = payload.slots;
   data.value = Object.assign({}, data.value, { items: payload.items });
   dirty.value = !sameSlots(payload.slots, baselineSlots.value);
@@ -783,5 +784,8 @@ async function save(silent) {
   .inventory-player-list {
     max-height: 220px;
   }
+}
+.inventory-map {
+  margin-top: 12px;
 }
 </style>

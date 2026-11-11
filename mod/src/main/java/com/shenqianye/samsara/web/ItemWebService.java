@@ -78,7 +78,8 @@ public final class ItemWebService {
             }
             int count = intOr(request.get("count"), stack.getCount());
             if (count < 1) count = 1;
-            stack.setCount(Math.min(count, Math.max(1, stack.getMaxStackSize())));
+            boolean unlimited = Boolean.TRUE.equals(request.get("unlimited"));
+            stack.setCount(unlimited ? count : Math.min(count, Math.max(1, stack.getMaxStackSize())));
             @SuppressWarnings("unchecked")
             Map<String, Object> patch = request.get("patch") instanceof Map<?, ?>
                     ? (Map<String, Object>) request.get("patch") : request;
@@ -104,7 +105,8 @@ public final class ItemWebService {
             if (stack.isEmpty()) return error(400, "SNBT 无法解析为物品");
             int count = intOr(request.get("count"), stack.getCount());
             if (count < 1) count = 1;
-            stack.setCount(Math.min(count, Math.max(1, stack.getMaxStackSize())));
+            boolean unlimited = Boolean.TRUE.equals(request.get("unlimited"));
+            stack.setCount(unlimited ? count : Math.min(count, Math.max(1, stack.getMaxStackSize())));
             String encoded = LotteryItemCodec.encode(stack, registries);
             if (encoded.isBlank()) return error(500, "物品编码失败");
             Map<String, Object> out = new LinkedHashMap<>();

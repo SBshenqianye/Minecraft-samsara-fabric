@@ -196,6 +196,7 @@ import ItemIcon from './ItemIcon.vue';
 const props = defineProps({
   item: { type: Object, default: null },
   schema: { type: Object, default: () => ({}) },
+  unlimitedStack: { type: Boolean, default: false },
 });
 const emit = defineEmits(['update']);
 
@@ -434,6 +435,7 @@ async function applyRawSnbt() {
     const body = await postJson('/api/items/raw', {
       snbt: form.rawSnbt,
       count: props.item.count,
+      unlimited: props.unlimitedStack,
     });
     applyItem(body.item);
   } catch (e) {
@@ -451,6 +453,7 @@ async function applyRawEncoded() {
     const body = await postJson('/api/items/describe', {
       encoded: form.rawEncoded.trim(),
       count: props.item.count,
+      unlimited: props.unlimitedStack,
     });
     applyItem(body.item);
   } catch (e) {
@@ -470,6 +473,7 @@ async function applyNow(force) {
     const body = await postJson('/api/items/build', {
       encoded: props.item.encoded,
       count: props.item.count,
+      unlimited: props.unlimitedStack,
       patch: buildPatch(),
     });
     if (Array.isArray(body.errors) && body.errors.length) {

@@ -127,6 +127,7 @@ public final class ContainerWebService {
         String encoded = string(request, "encoded");
         String id = string(request, "id");
         int count = intOrNull(request.get("count")) == null ? 1 : intOrNull(request.get("count"));
+        boolean unlimited = Boolean.TRUE.equals(request.get("unlimited"));
         if (count < 1) {
             return error(400, "数量至少为 1");
         }
@@ -144,7 +145,7 @@ public final class ContainerWebService {
                 if (item == null || item == Items.AIR) return error(400, "未知物品：" + id);
                 stack = new ItemStack(item, count);
             }
-            if (stack.getCount() > stack.getMaxStackSize()) {
+            if (!unlimited && stack.getCount() > stack.getMaxStackSize()) {
                 return error(400, "数量超过最大堆叠数 " + stack.getMaxStackSize());
             }
             String result = LotteryItemCodec.encode(stack, server.registryAccess());

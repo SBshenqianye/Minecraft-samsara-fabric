@@ -472,6 +472,7 @@ public final class LotteryService {
             if (stack.isEmpty()) continue;
             Map<String, Object> row = new LinkedHashMap<>(
                     com.shenqianye.samsara.item.ItemStackModel.compact(stack, encoded));
+            row.put("value", ItemValueService.getInstance().valueOf(stack));
             row.put("slot", i);
             items.add(row);
         }
@@ -502,9 +503,9 @@ public final class LotteryService {
                 return Map.of("ok", false, "status", 400,
                         "error", "第 " + i + " 格物品编码无效");
             }
-            if (stack.getCount() <= 0 || stack.getCount() > Math.max(1, stack.getMaxStackSize())) {
+            if (stack.getCount() <= 0) {
                 return Map.of("ok", false, "status", 400,
-                        "error", "第 " + i + " 格数量超出上限");
+                        "error", "第 " + i + " 格数量无效");
             }
         }
         fund = normalized;

@@ -59,6 +59,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import ItemWorkbench from './ItemWorkbench.vue';
+import { itemCursor } from '../composables/itemCursor.js';
 
 const visible = ref(false);
 const loading = ref(false);
@@ -72,7 +73,7 @@ const baselineSlots = ref([]);
 const items = ref([]);
 const revision = ref(0);
 const dirty = ref(false);
-const cursorPending = ref(false);
+const cursorPending = computed(() => !!itemCursor.item);
 const mode = ref('simulate');
 const schema = ref({});
 let token = '';
@@ -162,8 +163,7 @@ async function load() {
     items.value = (result.data.items || []).slice();
     revision.value = result.data.revision || 0;
     dirty.value = false;
-    cursorPending.value = false;
-    message.value = result.data.online
+      message.value = result.data.online
       ? '该身份当前有账号在线：写入会直接写到在线玩家，退出时同步到身份数据。'
       : '写入前会自动备份身份数据文件。';
   } catch (e) {
@@ -184,7 +184,6 @@ function sameSlots(a, b) {
 }
 
 function onChange(payload) {
-  cursorPending.value = !!payload.pending;
   slots.value = payload.slots;
   items.value = payload.items;
   dirty.value = !sameSlots(payload.slots, baselineSlots.value);
