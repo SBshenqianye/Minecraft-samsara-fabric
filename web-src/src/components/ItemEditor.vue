@@ -241,7 +241,7 @@ function sync(item) {
   Object.assign(form, emptyForm());
   form.customName = item.customName || '';
   form.loreText = (item.lore || []).join('\n');
-  form.rarity = item.rarity || '';
+  form.rarity = item.rarityComponent || '';
   form.glintOverride = item.glintOverride === true ? 'true' : item.glintOverride === false ? 'false' : 'default';
   form.unbreakable = item.unbreakable === true;
   form.damage = Number(item.damage || 0);

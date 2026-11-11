@@ -87,7 +87,10 @@ public final class ItemStackModel {
         out.put("unbreakable", stack.has(DataComponents.UNBREAKABLE));
         out.put("damage", stack.getDamageValue());
         out.put("maxDamage", stack.getMaxDamage());
-        out.put("rarity", stack.get(DataComponents.RARITY) == null
+        // 与原版 ItemStack#getRarity 一致：附魔会把普通/罕见抬到稀有，稀有抬到史诗。
+        out.put("rarity", stack.getRarity().getSerializedName());
+        // 编辑器只认显式组件，避免把“默认/附魔推导”的稀有度写死进物品。
+        out.put("rarityComponent", stack.get(DataComponents.RARITY) == null
                 ? "" : stack.get(DataComponents.RARITY).getSerializedName());
         out.put("glintOverride", stack.get(DataComponents.ENCHANTMENT_GLINT_OVERRIDE));
         out.put("dye", dye(stack));
@@ -127,8 +130,7 @@ public final class ItemStackModel {
         out.put("unbreakable", stack.has(DataComponents.UNBREAKABLE));
         out.put("damage", stack.getDamageValue());
         out.put("maxDamage", stack.getMaxDamage());
-        out.put("rarity", stack.get(DataComponents.RARITY) == null
-                ? "" : stack.get(DataComponents.RARITY).getSerializedName());
+        out.put("rarity", stack.getRarity().getSerializedName());
         out.put("attributes", attributes(stack.get(DataComponents.ATTRIBUTE_MODIFIERS)));
         out.put("potion", potion(stack.get(DataComponents.POTION_CONTENTS)));
         return out;
