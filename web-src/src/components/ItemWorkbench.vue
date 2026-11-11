@@ -112,51 +112,6 @@
       </div>
 
       <aside class="workbench-side">
-        <div v-if="showLibrary" class="workbench-panel">
-          <h4>物品库</h4>
-          <div class="workbench-library-tabs">
-            <button type="button" :class="{ active: !debugVisible }" @click="debugVisible = false">搜索物品</button>
-            <button type="button" :class="{ active: debugVisible }" @click="debugVisible = true">调试方块</button>
-          </div>
-          <div v-if="!debugVisible" class="workbench-search">
-            <input
-              v-model="searchQuery"
-              type="text"
-              placeholder="中文 / 英文 / ID，如 diamond、钻石"
-              @keyup.enter="searchItems"
-            />
-            <button class="ghost tiny" type="button" :disabled="searchLoading" @click="searchItems">搜索</button>
-          </div>
-          <div v-if="debugVisible" class="library-list">
-            <button
-              v-for="row in DEBUG_ITEMS"
-              :key="row.id"
-              type="button"
-              class="library-row"
-              @click="libraryPick(row)"
-            >
-              <span class="library-name">{{ row.name }}</span>
-              <span class="library-id">{{ row.id }}</span>
-            </button>
-          </div>
-          <div v-else-if="searchResults.length" class="library-list">
-            <button
-              v-for="row in searchResults"
-              :key="row.id"
-              type="button"
-              class="library-row"
-              @click="libraryPick(row)"
-              @mouseenter="showItemTooltip(row, $event)"
-              @mousemove="moveItemTooltip($event)"
-              @mouseleave="hideItemTooltip"
-            >
-              <span class="library-name">{{ row.zh || row.name || row.id }}</span>
-              <span class="library-id">{{ row.id }}</span>
-            </button>
-          </div>
-          <p v-else class="muted small">{{ searchLoading ? '搜索中…' : '搜索后点击物品放到光标或当前空槽。' }}</p>
-        </div>
-
         <div v-if="selectedItem" class="workbench-panel workbench-editor-panel">
           <div class="workbench-panel-head">
             <h4>槽位 {{ selectedIndex }} · 组件编辑</h4>
@@ -194,7 +149,6 @@ const props = defineProps({
   disabled: { type: Boolean, default: false },
   webDeposit: { type: Boolean, default: true },
   webWithdraw: { type: Boolean, default: true },
-  showLibrary: { type: Boolean, default: true },
 });
 const emit = defineEmits(['change', 'select']);
 
@@ -205,10 +159,6 @@ const cursor = ref(null);
 const cursorOrigin = ref(null);
 const busy = ref(false);
 const workbenchError = ref('');
-const searchQuery = ref('');
-const searchResults = ref([]);
-const searchLoading = ref(false);
-const debugVisible = ref(false);
 const pointerX = ref(12);
 const pointerY = ref(12);
 const workbenchMessage = ref('');
@@ -216,22 +166,6 @@ const webPickerOpen = ref(false);
 const webItems = ref([]);
 let dragSource = null;
 
-const DEBUG_ITEMS = [
-  { id: 'minecraft:command_block', name: '命令方块' },
-  { id: 'minecraft:chain_command_block', name: '连锁命令方块' },
-  { id: 'minecraft:repeating_command_block', name: '循环命令方块' },
-  { id: 'minecraft:structure_block', name: '结构方块' },
-  { id: 'minecraft:jigsaw', name: '拼图方块' },
-  { id: 'minecraft:barrier', name: '屏障' },
-  { id: 'minecraft:light', name: '光源方块' },
-  { id: 'minecraft:structure_void', name: '结构空位' },
-  { id: 'minecraft:debug_stick', name: '调试棒' },
-  { id: 'minecraft:spawner', name: '刷怪笼' },
-  { id: 'minecraft:bedrock', name: '基岩' },
-  { id: 'minecraft:end_portal_frame', name: '末地传送门框架' },
-  { id: 'minecraft:command_block_minecart', name: '命令方块矿车' },
-  { id: 'minecraft:knowledge_book', name: '知识之书' },
-];
 
 const modeLabel = computed(() => {
   if (props.mode === 'live') return '实时';
@@ -587,24 +521,6 @@ async function libraryPick(row) {
   }
 }
 
-async function searchItems() {
-  const query = searchQuery.value.trim();
-  if (!query) {
-    searchResults.value = [];
-    return;
-  }
-  searchLoading.value = true;
-  workbenchError.value = '';
-  try {
-    const data = await api('/api/lottery/values?q=' + encodeURIComponent(query) + '&limit=20', {});
-    searchResults.value = (data.values || []).filter((row) => row.acceptable !== false);
-  } catch (e) {
-    workbenchError.value = e.message || String(e);
-  } finally {
-    searchLoading.value = false;
-  }
-}
-
 function applyEditorItem(item) {
   if (selectedIndex.value === null) return;
   if (!localSlots.value[selectedIndex.value] && cursor.value
@@ -635,7 +551,6 @@ function resetSelection() {
   cursorOrigin.value = null;
   workbenchError.value = '';
   workbenchMessage.value = '';
-  searchResults.value = [];
   webPickerOpen.value = false;
 }
 
@@ -879,86 +794,6 @@ defineExpose({ resetSelection, pickFromLibrary: libraryPick });
 
 .workbench-panel-head h4 {
   margin: 0;
-}
-
-.workbench-search {
-  display: flex;
-  gap: 6px;
-}
-
-.workbench-library-tabs {
-  display: flex;
-  gap: 3px;
-  margin-bottom: 7px;
-  padding: 2px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel-soft);
-}
-
-.workbench-library-tabs button {
-  flex: 1;
-  padding: 3px 6px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--muted);
-  font-size: 11px;
-  cursor: pointer;
-}
-
-.workbench-library-tabs button.active {
-  background: var(--accent);
-  color: #fff;
-}
-
-.workbench-search input {
-  flex: 1;
-  min-width: 0;
-  padding: 5px 7px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--panel-soft);
-  color: var(--fg);
-  font-size: 12px;
-}
-
-.library-list {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  max-height: 240px;
-  margin-top: 7px;
-  overflow: auto;
-}
-
-.library-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 5px 7px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: transparent;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.library-row:hover {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-
-.library-name {
-  font-size: 12px;
-}
-
-.library-id {
-  color: var(--muted);
-  font-size: 10px;
-  white-space: nowrap;
 }
 
 .workbench-tip {

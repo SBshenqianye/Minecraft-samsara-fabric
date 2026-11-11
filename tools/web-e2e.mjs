@@ -3010,6 +3010,10 @@ async function main() {
         saveButton: [...document.querySelectorAll('.global-inventory-panel button')]
           .some((button) => button.textContent.trim().startsWith('保存')),
         library: !!document.querySelector('.global-inventory-panel .creative-library .creative-slot'),
+        debugTab: [...document.querySelectorAll('.global-inventory-panel .creative-tabs button')]
+          .some((button) => button.textContent.trim() === '调试方块'),
+        workbenchLibrary: !!document.querySelector('.global-inventory-panel .workbench-side h4'),
+        noLibraryElsewhere: !document.querySelector('.workbench-library-tabs'),
         tabInDom: !!document.querySelector('.global-inventory-tab'),
         tabVisible: (() => {
           const tab = document.querySelector('.global-inventory-tab');
@@ -3022,6 +3026,7 @@ async function main() {
         webInventoryUi.panel === true && webInventoryUi.slots === 54
         && webInventoryUi.modeSwitch === false && webInventoryUi.saveButton === false
         && webInventoryUi.library === true && webInventoryUi.tabVisible === false
+        && webInventoryUi.debugTab === true && webInventoryUi.noLibraryElsewhere === true
         && !webInventoryUi.nav.includes('Web 背包'),
         JSON.stringify(webInventoryUi));
 

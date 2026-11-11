@@ -52,7 +52,6 @@
               item-endpoint="/api/inventory/item"
               :revision="revision"
               :disabled="saving"
-              :show-library="false"
               :web-deposit="false"
               :web-withdraw="false"
               @change="onChange"

@@ -73,7 +73,26 @@ const tabs = [
   { id: 'combat', label: '战斗' },
   { id: 'brewing', label: '酿造' },
   { id: 'misc', label: '杂项' },
+  { id: 'debug', label: '调试方块' },
 ];
+
+// 调试方块原本挂在各页面工作台的物品库里；现在只在 Web 背包物品库保留一份。
+const DEBUG_ITEMS = [
+  { id: 'minecraft:command_block', name: '命令方块' },
+  { id: 'minecraft:chain_command_block', name: '连锁命令方块' },
+  { id: 'minecraft:repeating_command_block', name: '循环命令方块' },
+  { id: 'minecraft:structure_block', name: '结构方块' },
+  { id: 'minecraft:jigsaw', name: '拼图方块' },
+  { id: 'minecraft:barrier', name: '屏障' },
+  { id: 'minecraft:light', name: '光源方块' },
+  { id: 'minecraft:structure_void', name: '结构空位' },
+  { id: 'minecraft:debug_stick', name: '调试棒' },
+  { id: 'minecraft:spawner', name: '刷怪笼' },
+  { id: 'minecraft:bedrock', name: '基岩' },
+  { id: 'minecraft:end_portal_frame', name: '末地传送门框架' },
+  { id: 'minecraft:command_block_minecart', name: '命令方块矿车' },
+  { id: 'minecraft:knowledge_book', name: '知识之书' },
+].map((row) => Object.assign({}, row, { zh: row.name, _tab: 'debug' }));
 
 const all = ref([]);
 const loading = ref(false);
@@ -121,8 +140,10 @@ function classify(id) {
 
 const filtered = computed(() => {
   const text = query.value.trim().toLowerCase();
-  let rows = all.value;
-  if (category.value !== 'all') rows = rows.filter((row) => row._tab === category.value);
+  let rows = category.value === 'debug' ? DEBUG_ITEMS : all.value;
+  if (category.value !== 'all' && category.value !== 'debug') {
+    rows = rows.filter((row) => row._tab === category.value);
+  }
   if (text) {
     rows = rows.filter((row) => [row.zh, row.name, row.id, row.py, row.initials]
       .some((value) => String(value || '').toLowerCase().includes(text)));
