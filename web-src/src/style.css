@@ -112,14 +112,19 @@
 
 .slot-grid {
   display: grid;
-  grid-template-columns: repeat(9, minmax(0, 1fr));
+  /* 列数由 ItemSlotGrid 的 columns 传入：装备/副手为 1 列，容器/背包为 9 列。
+     轨道用固定 --slot-size，保证任何分区的格子都与主背包完全等宽等高。 */
+  grid-template-columns: repeat(var(--slot-columns, 9), var(--slot-size, 58px));
   gap: 6px;
   margin-top: 12px;
 }
 
 .slot {
   position: relative;
-  min-height: 62px;
+  width: var(--slot-size, 58px);
+  height: var(--slot-size, 58px);
+  min-height: 0;
+  box-sizing: border-box;
   border: 1px solid var(--line, #d7dde5);
   border-radius: 8px;
   background: #f8fafc;
@@ -282,7 +287,7 @@
 
 @media (max-width: 720px) {
   .slot-grid {
-    grid-template-columns: repeat(9, minmax(38px, 1fr));
+    --slot-size: 46px;
     overflow-x: auto;
   }
   .container-row {

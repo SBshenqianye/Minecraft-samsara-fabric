@@ -2928,6 +2928,15 @@ async function main() {
           && hotbar.getBoundingClientRect().top > main.getBoundingClientRect().bottom;
       })(),
       section: document.querySelector('.section-tab.active')?.textContent.trim() || '',
+      // 所有分区格子必须与主背包等宽：装备/副手曾经被压成 9 列平分。
+      gearSlotWidth: document.querySelector('.inventory-main .workbench-row-gear .slot')
+        ?.getBoundingClientRect().width || 0,
+      mainSlotWidth: document.querySelector('.inventory-main .workbench-row-main .slot')
+        ?.getBoundingClientRect().width || 0,
+      gearColumns: (() => {
+        const grid = document.querySelector('.inventory-main .workbench-row-gear .slot-grid');
+        return grid ? getComputedStyle(grid).gridTemplateColumns.split(' ').length : 0;
+      })(),
       errors: window.__e2eErrors?.length || 0,
       });
     })()`);
@@ -2944,6 +2953,11 @@ async function main() {
         && inventoryUi.rows.some((row) => row.includes('workbench-row-gap')),
         JSON.stringify({ rows: inventoryUi.rows, gearTop: inventoryUi.gearTop,
           hotbarBelow: inventoryUi.hotbarBelow }));
+    check('玩家背包装备/副手格子与主背包等宽且不再平分成 9 列',
+        inventoryUi.gearColumns === 1 && inventoryUi.gearSlotWidth >= 40
+        && Math.abs(inventoryUi.gearSlotWidth - inventoryUi.mainSlotWidth) <= 1,
+        JSON.stringify({ gearColumns: inventoryUi.gearColumns,
+          gear: inventoryUi.gearSlotWidth, main: inventoryUi.mainSlotWidth }));
 
     // Web 背包已改为 samsara 全局浮窗（右侧「背包」标签 / E 键），旧路由重定向回玩家背包。
     await navigate(base + '/samsara/sky/web-inventory');

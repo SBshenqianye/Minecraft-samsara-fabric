@@ -340,7 +340,7 @@ defineExpose({ open: () => togglePin() });
   top: 96px;
   bottom: 24px;
   z-index: 59;
-  width: min(980px, 88vw);
+  width: min(1080px, 92vw);
   padding: 14px;
   overflow: auto;
   border: 1px solid var(--line);
