@@ -1,6 +1,7 @@
 <template>
   <div class="global-inventory">
     <button
+      v-show="!open"
       class="global-inventory-tab"
       type="button"
       :class="{ active: open, pinned }"
@@ -24,27 +25,11 @@
         <header class="global-inventory-head">
           <div>
             <h3>Web 背包</h3>
-            <p class="muted small">幽灵管理员的 54 格仓库；与创造物品库一起，随时存取。</p>
+            <p class="muted small">幽灵管理员的 54 格仓库；每次改动即时写入，和创造物品库一起随时存取。</p>
           </div>
           <span class="spacer"></span>
-          <div class="mode-switch" role="group" aria-label="写入模式">
-            <button
-              v-for="option in modeOptions"
-              :key="option.id"
-              type="button"
-              :class="{ active: mode === option.id }"
-              :title="option.hint"
-              @click="setMode(option.id)"
-            >{{ option.label }}</button>
-          </div>
-          <button
-            v-if="mode !== 'simulate'"
-            class="primary"
-            type="button"
-            :disabled="!dirty || saving"
-            @click="save"
-          >{{ saving ? '写入中…' : '保存' }}{{ dirty ? ' *' : '' }}</button>
-          <button class="ghost" type="button" :disabled="loading || saving" @click="load">重置</button>
+          <span v-if="saving" class="muted small">写入中…</span>
+          <span v-else-if="dirty" class="muted small">待写入…</span>
           <button class="ghost" type="button" title="收起" @click="close">×</button>
         </header>
 
@@ -63,7 +48,7 @@
               :items="items"
               :layout="layout"
               :schema="schema"
-              :mode="mode"
+              mode="live"
               item-endpoint="/api/inventory/item"
               :revision="revision"
               :disabled="saving"
@@ -82,7 +67,6 @@
 
 <script setup>
 import { onBeforeUnmount, onMounted, ref } from 'vue';
-import { ElMessage } from 'element-plus';
 import ItemWorkbench from './ItemWorkbench.vue';
 import CreativeLibrary from './CreativeLibrary.vue';
 
@@ -98,11 +82,11 @@ const baselineSlots = ref([]);
 const items = ref([]);
 const revision = ref(0);
 const dirty = ref(false);
-const mode = ref('simulate');
 const schema = ref({});
 const workbench = ref(null);
 let token = '';
 let closeTimer = null;
+let liveTimer = null;
 
 const layout = [
   { label: '装备 0–3', start: 0, size: 4, columns: 1, row: 'gear', zone: 'gear' },
@@ -110,11 +94,6 @@ const layout = [
   { label: '主背包 5–31', start: 5, size: 27, columns: 9, row: 'main', zone: 'main' },
   { label: '快捷栏 32–40', start: 32, size: 9, columns: 9, row: 'hotbar', zone: 'hotbar', gap: true },
   { label: '仓库 41–53', start: 41, size: 13, columns: 9, row: 'storage', zone: 'storage', gap: true },
-];
-const modeOptions = [
-  { id: 'live', label: '实时', hint: '每次操作立即写入 Web 仓库。' },
-  { id: 'preset', label: '预设', hint: '本地编辑，点保存一次性写入。' },
-  { id: 'simulate', label: '模拟', hint: '只在本地演练，不会写入。' },
 ];
 onMounted(() => {
   token = sessionStorage.getItem('samsara-token') || '';
@@ -125,6 +104,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown);
   window.clearTimeout(closeTimer);
+  window.clearTimeout(liveTimer);
 });
 
 function onKeydown(event) {
@@ -182,6 +162,7 @@ function togglePin() {
 function close() {
   pinned.value = false;
   open.value = false;
+  window.clearTimeout(liveTimer);
 }
 
 async function bootstrap() {
@@ -256,19 +237,24 @@ function onChange(payload) {
   slots.value = payload.slots;
   items.value = payload.items;
   dirty.value = !sameSlots(payload.slots, baselineSlots.value);
+  // Web 背包只和自己交互，没有“和玩家抢东西”的风险，所以一律实时写入。
+  if (!dirty.value) {
+    window.clearTimeout(liveTimer);
+    return;
+  }
+  if (payload.pending) {
+    message.value = '光标上还有物品，放下后才会写入。';
+    return;
+  }
+  window.clearTimeout(liveTimer);
+  liveTimer = window.setTimeout(() => save(), 450);
 }
 
 function onPick(row) {
   workbench.value?.pickFromLibrary(row);
 }
 
-async function setMode(next) {
-  if (next === mode.value) return;
-  mode.value = next;
-  if (next === 'live' && dirty.value) await save(true);
-}
-
-async function save(silent) {
+async function save() {
   if (saving.value) return;
   saving.value = true;
   error.value = '';
@@ -285,10 +271,8 @@ async function save(silent) {
     items.value = result.data.items || items.value;
     dirty.value = false;
     message.value = '已写入 Web 背包。';
-    if (!silent) ElMessage.success(message.value);
   } catch (e) {
     error.value = e.message || String(e);
-    if (!silent) ElMessage.error(error.value);
   } finally {
     saving.value = false;
   }
@@ -390,29 +374,6 @@ defineExpose({ open: () => togglePin() });
 .inventory-slide-leave-to {
   transform: translateX(24px);
   opacity: 0;
-}
-
-.mode-switch {
-  display: inline-flex;
-  padding: 2px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--panel-soft);
-}
-
-.mode-switch button {
-  padding: 4px 10px;
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--muted);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.mode-switch button.active {
-  background: var(--accent);
-  color: #fff;
 }
 
 @media (max-width: 900px) {

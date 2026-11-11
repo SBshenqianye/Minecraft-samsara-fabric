@@ -2966,6 +2966,17 @@ async function main() {
     check('旧 Web 背包链接重定向到玩家背包', legacyPath === '/samsara/sky/inventory', legacyPath);
 
     await until("document.querySelector('.inventory-layout')", 30000, '玩家背包页');
+    // 预置 1 件物品，用于验证浮窗内搬运会实时写入（无需保存/确认）。
+    const drawerSeed = await (await fetch(base + '/api/inventory/item', {
+      method: 'POST', headers: authHeaders,
+      body: JSON.stringify({ id: 'minecraft:stone', count: 1 }),
+    })).json();
+    const drawerSeedSlots = Array(54).fill('');
+    drawerSeedSlots[0] = drawerSeed.encoded;
+    await fetch(base + '/api/inventory/web/write', {
+      method: 'POST', headers: authHeaders,
+      body: JSON.stringify({ slots: drawerSeedSlots }),
+    });
     await evaluate(`(() => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'e', bubbles: true }));
       return true;
@@ -2995,17 +3006,58 @@ async function main() {
       return ({
         panel: !!document.querySelector('.global-inventory-panel'),
         slots: document.querySelectorAll('.global-inventory-panel .slot').length,
-        mode: document.querySelector('.global-inventory-panel .mode-switch button.active')?.textContent.trim() || '',
+        modeSwitch: !!document.querySelector('.global-inventory-panel .mode-switch'),
+        saveButton: [...document.querySelectorAll('.global-inventory-panel button')]
+          .some((button) => button.textContent.trim().startsWith('保存')),
         library: !!document.querySelector('.global-inventory-panel .creative-library .creative-slot'),
-        tab: !!document.querySelector('.global-inventory-tab'),
+        tabInDom: !!document.querySelector('.global-inventory-tab'),
+        tabVisible: (() => {
+          const tab = document.querySelector('.global-inventory-tab');
+          return !!tab && tab.offsetParent !== null;
+        })(),
         nav: [...document.querySelectorAll('.subnav-item')].map((n) => n.textContent.trim()),
       });
     })()`);
-    check('Web 幽灵背包为全局浮窗：E 键唤起、54 格 + 创造物品库，导航不再有独立入口',
+    check('Web 幽灵背包为全局浮窗：E 键唤起、54 格 + 创造物品库，无预设/模拟，浮窗打开时标签隐藏',
         webInventoryUi.panel === true && webInventoryUi.slots === 54
-        && webInventoryUi.mode === '模拟' && webInventoryUi.library === true
-        && webInventoryUi.tab === true && !webInventoryUi.nav.includes('Web 背包'),
+        && webInventoryUi.modeSwitch === false && webInventoryUi.saveButton === false
+        && webInventoryUi.library === true && webInventoryUi.tabVisible === false
+        && !webInventoryUi.nav.includes('Web 背包'),
         JSON.stringify(webInventoryUi));
+
+    // 浮窗内搬运必须实时落库：点起 → 放下 → 服务端立刻可见，不需要保存按钮或确认弹窗。
+    await evaluate(`(() => {
+      document.querySelectorAll('.global-inventory-panel .slot')[0].click();
+      return true;
+    })()`);
+    await sleep(400);
+    await evaluate(`(() => {
+      document.querySelectorAll('.global-inventory-panel .slot')[1].click();
+      return true;
+    })()`);
+    await sleep(1500);
+    const drawerLive = await fetch(base + '/api/inventory/web', { headers: authHeaders })
+      .then((response) => response.json());
+    check('Web 背包槽位搬运实时写入且无确认弹窗',
+        (drawerLive.slots?.[0] || '') === '' && (drawerLive.slots?.[1] || '') !== '',
+        JSON.stringify({ first: drawerLive.slots?.[0], second: drawerLive.slots?.[1] }));
+    await fetch(base + '/api/inventory/web/write', {
+      method: 'POST', headers: authHeaders,
+      body: JSON.stringify({ slots: Array(54).fill('') }),
+    });
+
+    // 收起浮窗后标签必须重新出现（标签与页面互斥）。
+    await evaluate(`(() => {
+      [...document.querySelectorAll('.global-inventory-panel button')]
+        .find((button) => button.textContent.trim() === '×')?.click();
+      return true;
+    })()`);
+    await sleep(500);
+    const drawerTabBack = await evaluate(`(() => {
+      const tab = document.querySelector('.global-inventory-tab');
+      return !!tab && tab.offsetParent !== null;
+    })()`);
+    check('收起 Web 背包浮窗后右侧背包标签重新出现', drawerTabBack === true, String(drawerTabBack));
 
     await navigate(base + '/samsara/economy/fund');
     await until("document.querySelector('.fund-inventory-embed .slot')", 30000, '服务器基金页内嵌基金仓库');
