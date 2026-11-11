@@ -87,10 +87,12 @@ Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
 
 ## 坑
 
+- **绝不能用 `fabric-server-launch.jar` 单条件匹配 java 进程**：测试服和生产服命令行都带它。测试服是 `jdk-26.0.2.1\bin\java.exe -Djava.awt.headless=true`，生产是 Mojang `runtime\java-runtime-epsilon\bin\java.exe -server`。按「jdk 路径 + 端口 8722」认测试服，按「java-runtime-epsilon + 端口 8720」认生产；批量 kill 前先打印候选 PID 数量，必须恰好 1 个才动手。
 - 测试服/生产服的 `stop` 有时不会真正退出；不要只信 API，查端口和 PID，必要时 `taskkill`。
 - `Start-Process -RedirectStandardOutput` 指向旧进程占用的日志会失败且无输出。
 - `Copy-Item` 在旧 Java 仍持锁时可能静默失败；复制后必须立刻校验目标哈希。
 - 生产 `Launch Server.bat` 是循环启动；直接替换 jar 前必须停循环或极快完成，否则会被旧进程锁住。
+- 本环境禁止 WMI `Win32_Process.Create` 与 `Start-Process cmd.exe`，只能 `Start-Process` 具体 exe。要在生产上「跑 bat」只能用 `Start-Process 'Launch Server.bat'`（可能被静默阻止，返回空输出即视为未启动），否则退化为直接起 bat 里那行 java 命令：`-server -XX:+UseG1GC -Xmx4096M -Xms1024M -XX:+UseCompressedOops -Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8 -jar fabric-server-launch.jar`，代价是失去自动重启循环，要告知用户下次用 bat 重启。
 - 不要在生产验证时执行写配置、回滚、删备份等有副作用操作。
 - 测试服 `server.properties` 与代码内置默认值不一致时，“恢复默认使用真实默认值”这类 E2E 断言会假失败（例：`pause-when-empty-seconds` 测试服为 0、默认 60）。先核对测试服配置，不要改代码去迎合环境。
 - Web 前端改动同样要 `cd web-src && npm run build`，产物才会进入 jar；只构建后端会发布旧前端。
