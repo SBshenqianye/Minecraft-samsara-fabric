@@ -2470,8 +2470,8 @@ async function main() {
         .filter((node) => !node.classList.contains('ia-crumb-sep'))
         .map((node) => node.textContent.trim()),
     }))()`);
-    check('天网三级导航为轨迹/Diff/容器/玩家背包/Web 背包',
-        subnavSky.items.join('|') === '轨迹回看|Diff 回看|容器|玩家背包|Web 背包'
+    check('天网三级导航为轨迹/Diff/容器/玩家背包（Web 背包已并入全局浮窗）',
+        subnavSky.items.join('|') === '轨迹回看|Diff 回看|容器|玩家背包'
         && subnavSky.section === '天网', JSON.stringify(subnavSky));
     check('面包屑为 samsara / 天网 / 轨迹回看',
         subnavSky.crumb.join('|') === 'samsara|天网|轨迹回看', JSON.stringify(subnavSky));
@@ -2945,20 +2945,53 @@ async function main() {
         JSON.stringify({ rows: inventoryUi.rows, gearTop: inventoryUi.gearTop,
           hotbarBelow: inventoryUi.hotbarBelow }));
 
+    // Web 背包已改为 samsara 全局浮窗（右侧「背包」标签 / E 键），旧路由重定向回玩家背包。
     await navigate(base + '/samsara/sky/web-inventory');
-    await until("document.querySelector('.pool-head') && document.querySelectorAll('.slot').length === 54",
-        30000, 'Web 背包页');
-    const webInventoryUi = await evaluate(`(() => ({
-      page: !!document.querySelector('[data-page="pool-inventory"]'),
-      slots: document.querySelectorAll('.slot').length,
-      mode: document.querySelector('.mode-switch button.active')?.textContent.trim() || '',
-      debugTab: [...document.querySelectorAll('.workbench-library-tabs button')]
-        .some((button) => button.textContent.includes('调试方块')),
-      section: document.querySelector('.section-tab.active')?.textContent.trim() || '',
-    }))()`);
-    check('Web 幽灵背包页可打开并显示 54 格', webInventoryUi.page === true
-        && webInventoryUi.slots === 54 && webInventoryUi.mode === '模拟'
-        && webInventoryUi.debugTab === true, JSON.stringify(webInventoryUi));
+    await sleep(800);
+    const legacyPath = await evaluate('location.pathname');
+    check('旧 Web 背包链接重定向到玩家背包', legacyPath === '/samsara/sky/inventory', legacyPath);
+
+    await until("document.querySelector('.inventory-layout')", 30000, '玩家背包页');
+    await evaluate(`(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'e', bubbles: true }));
+      return true;
+    })()`);
+    try {
+      await until("document.querySelector('.global-inventory-panel')"
+          + " && document.querySelectorAll('.global-inventory-panel .slot').length === 54",
+          30000, '全局背包浮窗');
+    } catch (e) {
+      const state = await evaluate(`(() => ({
+        tab: !!document.querySelector('.global-inventory-tab'),
+        panel: !!document.querySelector('.global-inventory-panel'),
+        slots: document.querySelectorAll('.global-inventory-panel .slot').length,
+        overlay: !!document.querySelector('.el-overlay'),
+        dialog: !!document.querySelector('dialog[open]'),
+        token: Boolean(sessionStorage.getItem('samsara-token')),
+        message: document.querySelector('.global-inventory-panel .container-message')?.textContent || '',
+        connect: !!document.querySelector('.global-inventory-connect'),
+        text: document.body.innerText.slice(0, 160),
+      }))()`);
+      throw new Error('全局背包浮窗: ' + JSON.stringify(state));
+    }
+    await until("document.querySelector('.global-inventory-panel .creative-library .creative-slot')",
+        20000, '浮窗创造物品库');
+    const webInventoryUi = await evaluate(`(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      return ({
+        panel: !!document.querySelector('.global-inventory-panel'),
+        slots: document.querySelectorAll('.global-inventory-panel .slot').length,
+        mode: document.querySelector('.global-inventory-panel .mode-switch button.active')?.textContent.trim() || '',
+        library: !!document.querySelector('.global-inventory-panel .creative-library .creative-slot'),
+        tab: !!document.querySelector('.global-inventory-tab'),
+        nav: [...document.querySelectorAll('.subnav-item')].map((n) => n.textContent.trim()),
+      });
+    })()`);
+    check('Web 幽灵背包为全局浮窗：E 键唤起、54 格 + 创造物品库，导航不再有独立入口',
+        webInventoryUi.panel === true && webInventoryUi.slots === 54
+        && webInventoryUi.mode === '模拟' && webInventoryUi.library === true
+        && webInventoryUi.tab === true && !webInventoryUi.nav.includes('Web 背包'),
+        JSON.stringify(webInventoryUi));
 
     await navigate(base + '/samsara/economy/fund');
     await until("document.querySelector('.fund-inventory-embed .slot')", 30000, '服务器基金页内嵌基金仓库');
