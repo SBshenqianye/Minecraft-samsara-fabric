@@ -89,9 +89,12 @@ public final class ItemStackModel {
         out.put("maxDamage", stack.getMaxDamage());
         // 与原版 ItemStack#getRarity 一致：附魔会把普通/罕见抬到稀有，稀有抬到史诗。
         out.put("rarity", stack.getRarity().getSerializedName());
-        // 编辑器只认显式组件，避免把“默认/附魔推导”的稀有度写死进物品。
-        out.put("rarityComponent", stack.get(DataComponents.RARITY) == null
-                ? "" : stack.get(DataComponents.RARITY).getSerializedName());
+        // 编辑器只认“显式覆盖”的组件，避免把物品默认值或附魔推导值写死进物品。
+        Rarity explicitRarity = stack.get(DataComponents.RARITY);
+        Rarity defaultRarity = stack.getPrototype() == null
+                ? null : stack.getPrototype().get(DataComponents.RARITY);
+        out.put("rarityComponent", explicitRarity == null || explicitRarity == defaultRarity
+                ? "" : explicitRarity.getSerializedName());
         out.put("glintOverride", stack.get(DataComponents.ENCHANTMENT_GLINT_OVERRIDE));
         out.put("dye", dye(stack));
         out.put("tint", tint(stack));

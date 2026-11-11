@@ -1042,8 +1042,8 @@ async function main() {
       return [...document.querySelectorAll('#global-nav .nav-item')]
         .map((node) => node.textContent.trim());
     })()`);
-    check('经济业务服务器基金页包含物品价值表', fundNav.includes('服务器基金')
-        && fundNav.includes('物品价值表'), JSON.stringify(fundNav));
+    check('经济业务服务器基金页包含物品价值表且不再有只读基金面板', 
+        fundNav.includes('物品价值表') && !fundNav.includes('服务器基金'), JSON.stringify(fundNav));
 
     // ---- 权限分段控件：保存 deny → 回显 → 恢复原等级 ----
     const permLevels = await evaluate(`(async () => {
@@ -3016,8 +3016,9 @@ async function main() {
         noLibraryElsewhere: !document.querySelector('.workbench-library-tabs'),
         tabInDom: !!document.querySelector('.global-inventory-tab'),
         tabVisible: (() => {
+          // 固定定位元素的 offsetParent 恒为 null，改用几何尺寸判断。
           const tab = document.querySelector('.global-inventory-tab');
-          return !!tab && tab.offsetParent !== null;
+          return !!tab && tab.getBoundingClientRect().width > 0;
         })(),
         nav: [...document.querySelectorAll('.subnav-item')].map((n) => n.textContent.trim()),
       });
@@ -3060,7 +3061,7 @@ async function main() {
     await sleep(500);
     const drawerTabBack = await evaluate(`(() => {
       const tab = document.querySelector('.global-inventory-tab');
-      return !!tab && tab.offsetParent !== null;
+      return !!tab && tab.getBoundingClientRect().width > 0;
     })()`);
     check('收起 Web 背包浮窗后右侧背包标签重新出现', drawerTabBack === true, String(drawerTabBack));
 
@@ -3093,11 +3094,17 @@ async function main() {
       method: 'POST', headers: authHeaders,
       body: JSON.stringify({ slots: externalSlots }),
     });
-    await sleep(2800);
-    const liveSync = await evaluate(`(() => ({
+    const readFundUi = () => evaluate(`(() => ({
       message: document.querySelector('.fund-inventory-embed .container-message.ok')?.textContent || '',
       filled: document.querySelectorAll('.fund-inventory-embed .slot.filled').length,
+      hidden: document.hidden,
+      visibility: document.visibilityState,
     }))()`);
+    let liveSync = await readFundUi();
+    for (let i = 0; i < 24 && !(liveSync.filled >= 1 || liveSync.message.includes('同步')); i++) {
+      await sleep(500);
+      liveSync = await readFundUi();
+    }
     check('基金仓库实时同步外部写入', liveSync.filled >= 1
         || liveSync.message.includes('同步'), JSON.stringify(liveSync));
 
