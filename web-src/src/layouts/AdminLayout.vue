@@ -182,7 +182,6 @@
             <ContainerPage v-if="page === 'containers'" embedded />
             <InventoryPage v-if="page === 'inventory'" />
             <PoolInventoryPage v-if="page === 'web-inventory'" kind="web" />
-            <PoolInventoryPage v-if="page === 'fund-inventory'" kind="fund" />
             <ConfigEditorPage v-if="page === 'config-editor'" />
             <ConfigPage v-show="page === 'config'" />
             <ClaimRangePage v-show="page === 'claim-range'" />

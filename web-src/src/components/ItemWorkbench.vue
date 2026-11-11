@@ -79,24 +79,35 @@
 
     <div class="workbench-body">
       <div class="workbench-grids">
-        <section v-for="section in layout" :key="section.label + section.start" class="workbench-section">
-          <div v-if="section.label" class="workbench-section-title">{{ section.label }}</div>
-          <ItemSlotGrid
-            :slots="slotsFor(section)"
-            :items="itemsFor(section)"
-            :selected="selectedIndex !== null && selectedIndex >= section.start
-              && selectedIndex < section.start + section.size ? selectedIndex - section.start : null"
-            :columns="section.columns || 9"
-            :has-cursor="!!cursor"
-            @slot-click="onSectionClick(section, $event)"
-            @slot-edit="onSectionEdit(section, $event)"
-            @slot-hover="onSlotHover"
-            @slot-leave="onSlotLeave"
-            @drag-start="onSectionDragStart(section, $event)"
-            @drag-end="onDragEnd"
-            @drop-slot="onSectionDrop(section, $event)"
-          />
-        </section>
+        <div
+          v-for="(row, rowIndex) in layoutRows"
+          :key="'row-' + rowIndex"
+          class="workbench-row"
+          :class="['workbench-row-' + row.zone, { 'workbench-row-gap': row.gap }]"
+        >
+          <section
+            v-for="section in row.sections"
+            :key="section.label + section.start"
+            class="workbench-section"
+          >
+            <div v-if="section.label" class="workbench-section-title">{{ section.label }}</div>
+            <ItemSlotGrid
+              :slots="slotsFor(section)"
+              :items="itemsFor(section)"
+              :selected="selectedIndex !== null && selectedIndex >= section.start
+                && selectedIndex < section.start + section.size ? selectedIndex - section.start : null"
+              :columns="section.columns || 9"
+              :has-cursor="!!cursor"
+              @slot-click="onSectionClick(section, $event)"
+              @slot-edit="onSectionEdit(section, $event)"
+              @slot-hover="onSlotHover"
+              @slot-leave="onSlotLeave"
+              @drag-start="onSectionDragStart(section, $event)"
+              @drag-end="onDragEnd"
+              @drop-slot="onSectionDrop(section, $event)"
+            />
+          </section>
+        </div>
         <p v-if="!layout.length" class="muted small">没有可显示的槽位。</p>
       </div>
 
@@ -236,6 +247,28 @@ const itemMap = computed(() => {
   const map = new Map();
   for (const item of localItems.value) map.set(item.slot, item);
   return map;
+});
+
+// 同一个 row 的分区横向并排；未声明 row 的分区保持原来的逐行堆叠，
+// 这样容器/基金仓库等旧布局不受影响，玩家背包可以还原游戏内 GUI 的相对位置。
+const layoutRows = computed(() => {
+  const rows = [];
+  for (const section of props.layout) {
+    const name = section.row || '';
+    const last = rows[rows.length - 1];
+    if (name && last && last.name === name) {
+      last.sections.push(section);
+      last.gap = last.gap || !!section.gap;
+    } else {
+      rows.push({
+        name,
+        zone: section.zone || (name || 'plain'),
+        gap: !!section.gap,
+        sections: [section],
+      });
+    }
+  }
+  return rows;
 });
 const selectedItem = computed(() => {
   if (selectedIndex.value === null) return null;
@@ -777,6 +810,36 @@ defineExpose({ resetSelection });
   border-radius: 12px;
   background: linear-gradient(160deg, var(--panel-soft), var(--panel));
   overflow: auto;
+}
+
+.workbench-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* 玩家背包 GUI：装备/副手在上，主背包居中，快捷栏在下并留间隔。 */
+.workbench-row-gear {
+  align-items: flex-end;
+  gap: 18px;
+  padding-left: 4px;
+}
+
+.workbench-row-gear .workbench-section:last-child {
+  margin-bottom: 2px;
+}
+
+.workbench-row-main {
+  margin-top: 6px;
+}
+
+.workbench-row-hotbar,
+.workbench-row-gap {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--line);
 }
 
 .workbench-section-title {

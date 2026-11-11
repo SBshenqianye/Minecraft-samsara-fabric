@@ -1942,8 +1942,9 @@ async function main() {
 
     const fundInv = await fetch(base + '/api/lottery/fund', { headers: authHeaders })
       .then((response) => response.json());
-    check('基金仓库可读取且固定 54 格', fundInv.ok === true
-        && fundInv.size === 54 && fundInv.slots?.length === 54, JSON.stringify({ size: fundInv.size }));
+    check('基金仓库可读取且至少 54 格', fundInv.ok === true
+        && fundInv.size >= 54 && fundInv.slots?.length >= 54 && fundInv.minSize === 54,
+        JSON.stringify({ size: fundInv.size, minSize: fundInv.minSize }));
     const fundWrite = await fetch(base + '/api/lottery/fund/write', {
       method: 'POST', headers: authHeaders,
       body: JSON.stringify({ slots: fundInv.slots || [] }),
@@ -1951,6 +1952,18 @@ async function main() {
     check('基金仓库可写回且保持编码', fundWrite.ok === true
         && (fundInv.slots || []).every((slot, index) => (fundWrite.slots?.[index] || '') === (slot || '')),
         JSON.stringify({ ok: fundWrite.ok }));
+    const expanded = (fundInv.slots || []).concat(Array(9).fill(''));
+    const fundExpand = await fetch(base + '/api/lottery/fund/write', {
+      method: 'POST', headers: authHeaders,
+      body: JSON.stringify({ slots: expanded }),
+    }).then((response) => response.json());
+    check('基金仓库没有 54 格硬上限（可扩容）', fundExpand.ok === true
+        && fundExpand.size === expanded.length,
+        JSON.stringify({ ok: fundExpand.ok, size: fundExpand.size }));
+    await fetch(base + '/api/lottery/fund/write', {
+      method: 'POST', headers: authHeaders,
+      body: JSON.stringify({ slots: fundInv.slots || [] }),
+    });
 
     const auditPage = await fetch(base + '/api/audit?offset=0&limit=5',
         { headers: authHeaders }).then((response) => response.json());
@@ -2375,8 +2388,8 @@ async function main() {
       active: document.querySelector('.section-subnav .subnav-item.active')
         ?.textContent.trim() || '',
     }))()`);
-    check('经济业务二级 Tab 为概览/服务器基金/基金仓库/死人乐透/保险',
-        economyTabs.items.join('|') === '概览|服务器基金|基金仓库|死人乐透|保险'
+    check('经济业务二级 Tab 为概览/服务器基金/死人乐透/保险',
+        economyTabs.items.join('|') === '概览|服务器基金|死人乐透|保险'
         && economyTabs.active === '概览', JSON.stringify(economyTabs));
     const economyLayout = await evaluate(`(() => {
       const panel = document.getElementById('panel-lottery');
@@ -2851,6 +2864,19 @@ async function main() {
       mapMarkers: document.querySelectorAll('.inventory-map-block .map-marker').length,
       mapTiles: [...document.querySelectorAll('.inventory-map-block .map-tile')]
         .filter((img) => img.complete && img.naturalWidth > 0).length,
+      rows: [...document.querySelectorAll('.inventory-main .workbench-row')]
+        .map((row) => row.className.replace('workbench-row ', '').trim()),
+      gearTop: (() => {
+        const gear = document.querySelector('.inventory-main .workbench-row-gear');
+        const main = document.querySelector('.inventory-main .workbench-row-main');
+        return !!gear && !!main && gear.getBoundingClientRect().top < main.getBoundingClientRect().top;
+      })(),
+      hotbarBelow: (() => {
+        const main = document.querySelector('.inventory-main .workbench-row-main');
+        const hotbar = document.querySelector('.inventory-main .workbench-row-hotbar');
+        return !!main && !!hotbar
+          && hotbar.getBoundingClientRect().top > main.getBoundingClientRect().bottom;
+      })(),
       section: document.querySelector('.section-tab.active')?.textContent.trim() || '',
       errors: window.__e2eErrors?.length || 0,
       });
@@ -2863,6 +2889,11 @@ async function main() {
         && inventoryUi.mapMarkers >= 1 && inventoryUi.mapTiles >= 1,
         JSON.stringify({ map: inventoryUi.map, markers: inventoryUi.mapMarkers,
           tiles: inventoryUi.mapTiles }));
+    check('玩家背包按游戏 GUI 排布：装备在上、快捷栏在下且留间隔',
+        inventoryUi.gearTop === true && inventoryUi.hotbarBelow === true
+        && inventoryUi.rows.some((row) => row.includes('workbench-row-gap')),
+        JSON.stringify({ rows: inventoryUi.rows, gearTop: inventoryUi.gearTop,
+          hotbarBelow: inventoryUi.hotbarBelow }));
 
     await navigate(base + '/samsara/sky/web-inventory');
     await until("document.querySelector('.pool-head') && document.querySelectorAll('.slot').length === 54",
@@ -2879,18 +2910,50 @@ async function main() {
         && webInventoryUi.slots === 54 && webInventoryUi.mode === '模拟'
         && webInventoryUi.debugTab === true, JSON.stringify(webInventoryUi));
 
-    await navigate(base + '/samsara/economy/fund-inventory');
-    await until("document.querySelector('.pool-head') && document.querySelectorAll('.slot').length === 54",
-        30000, '基金仓库页');
+    await navigate(base + '/samsara/economy/fund');
+    await until("document.querySelector('.fund-inventory-embed .slot')", 30000, '服务器基金页内嵌基金仓库');
     const fundInventoryUi = await evaluate(`(() => ({
-      page: !!document.querySelector('[data-page="pool-inventory"]'),
-      slots: document.querySelectorAll('.slot').length,
-      mode: document.querySelector('.mode-switch button.active')?.textContent.trim() || '',
-      section: document.querySelector('.section-tab.active')?.textContent.trim() || '',
+      embedded: !!document.querySelector('.fund-inventory-embed'),
+      legacyFund: !!document.getElementById('lottery-fund-panel'),
+      slots: document.querySelectorAll('.fund-inventory-embed .slot').length,
+      mode: document.querySelector('.fund-inventory-embed .mode-switch button.active')?.textContent.trim() || '',
+      expand: !!document.querySelector('.fund-inventory-embed .pool-head button'),
+      search: !!document.querySelector('.fund-inventory-embed .fund-search input'),
+      sort: !!document.querySelector('.fund-inventory-embed .fund-search select'),
+      nav: [...document.querySelectorAll('.subnav-item')].map((n) => n.textContent.trim()),
     }))()`);
-    check('基金仓库页可打开并复用工作台', fundInventoryUi.page === true
-        && fundInventoryUi.slots === 54 && fundInventoryUi.mode === '模拟'
-        && fundInventoryUi.section === '经济业务', JSON.stringify(fundInventoryUi));
+    check('基金仓库内嵌服务器基金页且可搜索排序扩容', fundInventoryUi.embedded === true
+        && fundInventoryUi.legacyFund === true && fundInventoryUi.slots >= 54
+        && fundInventoryUi.mode === '模拟' && fundInventoryUi.expand === true
+        && fundInventoryUi.search === true && fundInventoryUi.sort === true
+        && !fundInventoryUi.nav.includes('基金仓库'), JSON.stringify(fundInventoryUi));
+
+    // 实时模式：外部写入后 Web 应自动同步；模拟/预设不覆盖本地未提交修改。
+    const beforeLive = await fetch(base + '/api/lottery/fund', { headers: authHeaders })
+        .then((response) => response.json());
+    const externalSlots = (beforeLive.slots || []).slice();
+    externalSlots[0] = 'CgMABWNvdW50AAAABQgAAmlkABFtaW5lY3JhZnQ6ZGlhbW9uZAA=';
+    await fetch(base + '/api/lottery/fund/write', {
+      method: 'POST', headers: authHeaders,
+      body: JSON.stringify({ slots: externalSlots }),
+    });
+    await evaluate(`(() => {
+      const live = [...document.querySelectorAll('.fund-inventory-embed .mode-switch button')]
+        .find((button) => button.textContent.trim() === '实时');
+      live?.click();
+      return !!live;
+    })()`);
+    await sleep(2800);
+    const liveSync = await evaluate(`(() => ({
+      message: document.querySelector('.fund-inventory-embed .container-message.ok')?.textContent || '',
+      filled: document.querySelectorAll('.fund-inventory-embed .slot.filled').length,
+    }))()`);
+    check('实时模式检测到外部写入并自动同步仓库', liveSync.filled >= 1
+        || liveSync.message.includes('同步'), JSON.stringify(liveSync));
+    await fetch(base + '/api/lottery/fund/write', {
+      method: 'POST', headers: authHeaders,
+      body: JSON.stringify({ slots: beforeLive.slots || [] }),
+    });
 
     // ---- 天网：轨迹回看与 Diff 回看入口 ----
     const trackApi = await fetch(base + '/api/track?days=7&limit=5', { headers: authHeaders });

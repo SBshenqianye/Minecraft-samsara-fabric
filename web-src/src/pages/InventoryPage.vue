@@ -154,6 +154,7 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import TabShell from '../components/TabShell.vue';
 import ItemWorkbench from '../components/ItemWorkbench.vue';
 import MapPicker from '../components/MapPicker.vue';
+import { useLiveRefresh } from '../composables/useLiveRefresh.js';
 
 const route = useRoute();
 const token = ref(sessionStorage.getItem('samsara-token') || '');
@@ -206,6 +207,31 @@ const filteredPlayers = computed(() => {
       || String(player.uuid || '').toLowerCase().includes(value));
 });
 
+const cursorPending = ref(false);
+
+const liveState = useLiveRefresh({
+  mode: () => mode.value,
+  key: () => `${source.value}:${selectedPlayer.value?.uuid || identityUuid.value}:${scope.value}`,
+  canRefresh: () => connected.value && !!data.value && !dirty.value
+    && !saving.value && !loading.value && !cursorPending.value,
+  fetchSnapshot: async (signal) => {
+    const params = source.value === 'identity'
+      ? new URLSearchParams({ source: 'identity', data: identityUuid.value, scope: scope.value })
+      : new URLSearchParams({ player: selectedPlayer.value?.uuid || '', scope: scope.value });
+    const result = await api('/api/inventory?' + params.toString(), { signal });
+    return result.status === 200 && result.data.ok ? result.data : null;
+  },
+  applySnapshot: (snapshot) => {
+    // 双检：请求在途期间用户一旦开始编辑就丢弃这次服务端快照。
+    if (dirty.value || saving.value || cursorPending.value || !data.value) return false;
+    const incoming = (snapshot.slots || []).slice();
+    if (sameSlots(incoming, baselineSlots.value)) return false;
+    applyInventoryData(snapshot);
+    message.value = '检测到游戏内背包变化，已同步最新内容。';
+    return true;
+  },
+});
+
 const mapDimensions = computed(() => {
   const seen = new Map();
   const defaults = [
@@ -239,14 +265,16 @@ const playerMarkers = computed(() => players.value
 
 const layout = computed(() => {
   if (scope.value === 'inventory') {
+    // 对齐游戏内背包 GUI：装备/副手在上，主背包 9–35 居中，快捷栏 0–8 在下并留间隔。
     return [
-      { label: '主背包 0–35', start: 0, size: 36, columns: 9 },
-      { label: '盔甲 36–39', start: 36, size: 4, columns: 4 },
-      { label: '副手 40', start: 40, size: 1, columns: 1 },
+      { label: '盔甲 36–39', start: 36, size: 4, columns: 1, row: 'gear', zone: 'gear' },
+      { label: '副手 40', start: 40, size: 1, columns: 1, row: 'gear', zone: 'gear' },
+      { label: '主背包 9–35', start: 9, size: 27, columns: 9, row: 'main', zone: 'main' },
+      { label: '快捷栏 0–8', start: 0, size: 9, columns: 9, row: 'hotbar', zone: 'hotbar', gap: true },
     ];
   }
   if (scope.value === 'armor') {
-    return [{ label: '盔甲 36–39', start: 0, size: 4, columns: 4 }];
+    return [{ label: '盔甲 36–39', start: 0, size: 4, columns: 1 }];
   }
   return [{ label: '末影箱 0–26', start: 0, size: 27, columns: 9 }];
 });
@@ -475,6 +503,7 @@ function sameSlots(a, b) {
 
 function onWorkbenchChange(payload) {
   if (!data.value) return;
+  cursorPending.value = !!payload.pending;
   slots.value = payload.slots;
   data.value = Object.assign({}, data.value, { items: payload.items });
   dirty.value = !sameSlots(payload.slots, baselineSlots.value);
@@ -577,6 +606,7 @@ async function save(silent) {
     if (!silent) ElMessage.error(error.value);
   } finally {
     saving.value = false;
+    liveState.invalidate();
   }
 }
 </script>

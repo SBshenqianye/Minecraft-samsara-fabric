@@ -1,5 +1,5 @@
 <template>
-  <TabShell name="pool-inventory" :title="title" :description="description">
+  <component :is="embedded ? 'div' : TabShell" v-bind="embedded ? {} : { name: 'pool-inventory', title, description }">
     <section v-if="!connected" class="panel">
       <h3>连接管理端</h3>
       <p class="muted small">需要管理端 token；token 只保存在当前标签页的 sessionStorage。</p>
@@ -14,14 +14,53 @@
       <p v-if="error" class="container-message error">{{ error }}</p>
       <p v-if="message" class="container-message ok">{{ message }}</p>
 
-      <div class="pool-head">
+      <div class="pool-head" :class="{ 'pool-head-embedded': embedded }">
         <div>
-          <h3>{{ title }}</h3>
+          <h3 v-if="!embedded">{{ title }}</h3>
+          <h4 v-else>{{ title }}</h4>
           <p class="muted small">{{ description }}</p>
         </div>
         <span class="spacer"></span>
-        <span class="muted small">共 {{ nonEmpty }} 件物品</span>
+        <span class="muted small">共 {{ nonEmpty }} 件物品 · {{ slots.length }} 格</span>
+        <button
+          v-if="kind === 'fund'"
+          class="ghost"
+          type="button"
+          :disabled="loading || saving || dirty"
+          @click="expandSlots"
+        >＋ 扩充 9 格</button>
         <button class="ghost" type="button" :disabled="loading" @click="load">重新读取</button>
+      </div>
+
+      <div v-if="kind === 'fund'" class="fund-search">
+        <input
+          v-model="itemQuery"
+          type="search"
+          placeholder="搜索仓库物品（中文 / 英文 / ID）"
+          aria-label="搜索仓库物品"
+        />
+        <select v-model="itemSort" aria-label="仓库物品排序">
+          <option value="slot">按槽位</option>
+          <option value="name">按名称</option>
+          <option value="count">按数量</option>
+          <option value="value">按价值</option>
+        </select>
+        <span class="muted small">{{ filteredItems.length }} / {{ items.length }} 条</span>
+      </div>
+      <div v-if="kind === 'fund' && filteredItems.length" class="fund-item-list">
+        <button
+          v-for="row in filteredItems"
+          :key="row.slot"
+          type="button"
+          class="fund-item-row"
+          :class="{ active: focusedSlot === row.slot }"
+          @click="focusSlot(row.slot)"
+        >
+          <span class="fund-item-slot">{{ row.slot }}</span>
+          <span class="fund-item-name">{{ row.zh || row.name || row.id }}</span>
+          <span class="muted small">×{{ row.count }}</span>
+          <span v-if="row.value" class="fund-item-value">{{ formatValue(row.value) }}</span>
+        </button>
       </div>
 
       <div class="pool-actions">
@@ -64,17 +103,19 @@
         />
       </div>
     </template>
-  </TabShell>
+  </component>
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { computed, nextTick, onMounted, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import TabShell from '../components/TabShell.vue';
 import ItemWorkbench from '../components/ItemWorkbench.vue';
+import { useLiveRefresh } from '../composables/useLiveRefresh.js';
 
 const props = defineProps({
   kind: { type: String, default: 'web' },
+  embedded: { type: Boolean, default: false },
 });
 
 const token = ref(sessionStorage.getItem('samsara-token') || '');
@@ -92,11 +133,15 @@ const revision = ref(0);
 const dirty = ref(false);
 const mode = ref('simulate');
 const schema = ref({});
+const cursorPending = ref(false);
+const itemQuery = ref('');
+const itemSort = ref('slot');
+const focusedSlot = ref(null);
 let liveTimer = null;
 
 const title = computed(() => props.kind === 'fund' ? '基金仓库' : 'Web 背包');
 const description = computed(() => props.kind === 'fund'
-  ? '服务器基金的实物仓库，和容器/玩家背包共用同一套槽位、组件编辑与写入模式；支持垃圾桶。'
+  ? '服务器基金的实物仓库，和容器/玩家背包共用同一套槽位、组件编辑与写入模式；槽位可按需扩充，没有容量上限。'
   : '幽灵管理员的 54 格 Web 仓库：装备栏、副手、主背包、快捷栏与仓库，共用容器工作台、调试方块页签和垃圾桶。');
 const readEndpoint = computed(() => props.kind === 'fund'
   ? '/api/lottery/fund' : '/api/inventory/web');
@@ -104,15 +149,72 @@ const writeEndpoint = computed(() => props.kind === 'fund'
   ? '/api/lottery/fund/write' : '/api/inventory/web/write');
 const nonEmpty = computed(() => (slots.value || []).filter((value) => value).length);
 
-const layout = computed(() => props.kind === 'web'
-  ? [
-      { label: '装备 0–3', start: 0, size: 4, columns: 4 },
-      { label: '副手 4', start: 4, size: 1, columns: 1 },
-      { label: '主背包 5–31', start: 5, size: 27, columns: 9 },
-      { label: '快捷栏 32–40', start: 32, size: 9, columns: 9 },
-      { label: '仓库 41–53', start: 41, size: 13, columns: 9 },
-    ]
-  : [{ label: '基金仓库 0–53', start: 0, size: 54, columns: 9 }]);
+const layout = computed(() => {
+  if (props.kind === 'fund') {
+    // 每 9 格一行、每 54 格一块；扩容后自动生成新块，不截断已有物品。
+    const rows = [];
+    for (let start = 0; start < slots.value.length; start += 54) {
+      rows.push({
+        label: `基金仓库 ${start}–${Math.min(slots.value.length, start + 54) - 1}`,
+        start,
+        size: Math.min(54, slots.value.length - start),
+        columns: 9,
+        zone: 'plain',
+      });
+    }
+    return rows;
+  }
+  // Web 背包与玩家背包同一套相对布局。
+  return [
+    { label: '装备 0–3', start: 0, size: 4, columns: 1, row: 'gear', zone: 'gear' },
+    { label: '副手 4', start: 4, size: 1, columns: 1, row: 'gear', zone: 'gear' },
+    { label: '主背包 5–31', start: 5, size: 27, columns: 9, row: 'main', zone: 'main' },
+    { label: '快捷栏 32–40', start: 32, size: 9, columns: 9, row: 'hotbar', zone: 'hotbar', gap: true },
+    { label: '仓库 41–53', start: 41, size: 13, columns: 9, row: 'storage', zone: 'storage', gap: true },
+  ];
+});
+
+const filteredItems = computed(() => {
+  const query = itemQuery.value.trim().toLowerCase();
+  let rows = (items.value || []).filter((row) => {
+    if (!query) return true;
+    return [row.zh, row.name, row.id].some((value) =>
+      String(value || '').toLowerCase().includes(query));
+  });
+  rows = rows.slice();
+  if (itemSort.value === 'name') {
+    rows.sort((a, b) => String(a.zh || a.name || a.id || '')
+      .localeCompare(String(b.zh || b.name || b.id || ''), 'zh-CN'));
+  } else if (itemSort.value === 'count') {
+    rows.sort((a, b) => (Number(b.count) || 0) - (Number(a.count) || 0));
+  } else if (itemSort.value === 'value') {
+    rows.sort((a, b) => (Number(b.value) || 0) - (Number(a.value) || 0));
+  } else {
+    rows.sort((a, b) => (Number(a.slot) || 0) - (Number(b.slot) || 0));
+  }
+  return rows;
+});
+
+const liveState = useLiveRefresh({
+  mode: () => mode.value,
+  key: () => `${props.kind}:${readEndpoint.value}`,
+  canRefresh: () => connected.value && !dirty.value && !saving.value
+    && !loading.value && !cursorPending.value,
+  fetchSnapshot: async (signal) => {
+    const result = await api(readEndpoint.value, { signal });
+    return result.status === 200 && result.data.ok ? result.data : null;
+  },
+  applySnapshot: (snapshot) => {
+    if (dirty.value || saving.value || cursorPending.value) return false;
+    const incoming = (snapshot.slots || []).slice();
+    const minimum = props.kind === 'fund' ? (snapshot.minSize || 54) : 54;
+    while (incoming.length < minimum) incoming.push('');
+    if (sameSlots(incoming, baselineSlots.value)) return false;
+    applyLoadedData(incoming, snapshot.items || []);
+    message.value = '检测到仓库内容变化，已同步最新内容。';
+    return true;
+  },
+});
 
 const modeOptions = [
   { id: 'live', label: '实时', hint: '每次操作立即写入仓库。' },
@@ -176,17 +278,24 @@ async function load() {
   try {
     const result = await api(readEndpoint.value);
     if (result.status !== 200 || !result.data.ok) throw new Error(result.data.error || '读取仓库失败');
-    slots.value = (result.data.slots || []).slice();
-    while (slots.value.length < 54) slots.value.push('');
-    baselineSlots.value = slots.value.slice();
-    items.value = result.data.items || [];
-    revision.value = Date.now();
-    dirty.value = false;
+    const incoming = (result.data.slots || []).slice();
+    const minimum = props.kind === 'fund' ? (result.data.minSize || 54) : 54;
+    while (incoming.length < minimum) incoming.push('');
+    applyLoadedData(incoming, result.data.items || []);
   } catch (e) {
     error.value = e.message || String(e);
   } finally {
     loading.value = false;
   }
+}
+
+function applyLoadedData(incoming, incomingItems) {
+  slots.value = incoming;
+  baselineSlots.value = incoming.slice();
+  items.value = incomingItems;
+  revision.value = Date.now();
+  dirty.value = false;
+  cursorPending.value = false;
 }
 
 function sameSlots(a, b) {
@@ -199,7 +308,30 @@ function sameSlots(a, b) {
   return true;
 }
 
+function expandSlots() {
+  if (dirty.value || saving.value) return;
+  const next = slots.value.slice();
+  for (let i = 0; i < 9; i++) next.push('');
+  slots.value = next;
+  baselineSlots.value = next.slice();
+  focusedSlot.value = null;
+  message.value = `仓库已扩充到 ${next.length} 格；保存后生效。`;
+}
+
+async function focusSlot(slot) {
+  focusedSlot.value = slot;
+  await nextTick();
+  const node = document.querySelector(`.workbench-section .slot[aria-label^="槽位 ${slot} "]`);
+  node?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function formatValue(value) {
+  const number = Number(value) || 0;
+  return number >= 1000 ? (Math.round(number / 100) / 10) + 'k' : String(number);
+}
+
 function onWorkbenchChange(payload) {
+  cursorPending.value = !!payload.pending;
   slots.value = payload.slots;
   items.value = payload.items;
   dirty.value = !sameSlots(payload.slots, baselineSlots.value);
@@ -246,9 +378,11 @@ async function save(silent) {
       body: JSON.stringify({ slots: slots.value }),
     });
     if (result.status !== 200 || !result.data.ok) throw new Error(result.data.error || '写入失败');
-    slots.value = (result.data.slots || slots.value).slice();
-    while (slots.value.length < 54) slots.value.push('');
-    baselineSlots.value = slots.value.slice();
+    const incoming = (result.data.slots || slots.value).slice();
+    const minimum = props.kind === 'fund' ? (result.data.minSize || 54) : 54;
+    while (incoming.length < minimum) incoming.push('');
+    slots.value = incoming;
+    baselineSlots.value = incoming.slice();
     items.value = result.data.items || items.value;
     dirty.value = false;
     message.value = '已写入' + title.value + '。';
@@ -258,6 +392,7 @@ async function save(silent) {
     if (!silent) ElMessage.error(error.value);
   } finally {
     saving.value = false;
+    liveState.invalidate();
   }
 }
 </script>
@@ -271,8 +406,68 @@ async function save(silent) {
   margin-bottom: 10px;
 }
 
-.pool-head h3 {
+.pool-head h3,
+.pool-head h4 {
   margin: 0 0 3px;
+}
+
+.pool-head-embedded {
+  margin-top: 4px;
+}
+
+.fund-search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.fund-search input[type='search'] {
+  flex: 1 1 220px;
+  min-width: 160px;
+  padding: 5px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  color: var(--fg);
+}
+
+.fund-item-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 132px;
+  overflow: auto;
+  margin-bottom: 12px;
+}
+
+.fund-item-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  color: var(--fg);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.fund-item-row.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.fund-item-slot {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.fund-item-value {
+  color: var(--amber);
+  font-variant-numeric: tabular-nums;
 }
 
 .pool-actions {

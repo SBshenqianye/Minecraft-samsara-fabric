@@ -143,6 +143,7 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import ItemWorkbench from '../components/ItemWorkbench.vue';
 import MapPicker from '../components/MapPicker.vue';
+import { useLiveRefresh } from '../composables/useLiveRefresh.js';
 
 const props = defineProps({ embedded: { type: Boolean, default: false } });
 const embedded = computed(() => props.embedded);
@@ -173,7 +174,39 @@ const revision = ref(0);
 const dirty = ref(false);
 const mode = ref('simulate');
 const schema = ref({});
+const cursorPending = ref(false);
 let liveTimer = null;
+
+const liveState = useLiveRefresh({
+  mode: () => mode.value,
+  key: () => selected.value
+    ? `${selected.value.container?.dimension}:${selected.value.container?.x},${selected.value.container?.y},${selected.value.container?.z}`
+    : '',
+  canRefresh: () => connected.value && !!selected.value && !dirty.value
+    && !saving.value && !loading.value && !cursorPending.value,
+  fetchSnapshot: async (signal) => {
+    const row = selected.value?.container;
+    if (!row) return null;
+    const params = new URLSearchParams({
+      dimension: row.dimension, x: String(row.x), y: String(row.y), z: String(row.z),
+    });
+    const result = await api('/api/containers/read?' + params.toString(), { signal });
+    return result.status === 200 && result.data.ok ? result.data : null;
+  },
+  applySnapshot: (snapshot) => {
+    if (dirty.value || saving.value || cursorPending.value || !selected.value) return false;
+    const incoming = (snapshot.container?.slots || []).slice();
+    if (sameSlots(incoming, baselineSlots.value)) return false;
+    selected.value = snapshot;
+    slots.value = incoming;
+    baselineSlots.value = incoming.slice();
+    items.value = (snapshot.items || []).slice();
+    revision.value = snapshot.container?.revision || revision.value;
+    message.value = '检测到容器内物品变化，已同步最新内容。';
+    messageKind.value = 'ok';
+    return true;
+  },
+});
 
 const modeOptions = [
   { id: 'live', label: '实时', hint: '每次操作立即写入；未加载区块会排队，加载后应用。' },
@@ -434,6 +467,7 @@ function sameSlots(a, b) {
 
 function onWorkbenchChange(payload) {
   if (!selected.value) return;
+  cursorPending.value = !!payload.pending;
   slots.value = payload.slots;
   items.value = payload.items;
   dirty.value = !sameSlots(payload.slots, baselineSlots.value);
@@ -538,6 +572,7 @@ async function save(silent) {
     if (!silent) ElMessage.error(error.value);
   } finally {
     saving.value = false;
+    liveState.invalidate();
   }
 }
 </script>

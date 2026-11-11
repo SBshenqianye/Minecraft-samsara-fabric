@@ -102,7 +102,6 @@ export const SECTION_NAV = {
   economy: [
     { id: 'overview', label: '概览', target: '/samsara/economy' },
     { id: 'fund', label: '服务器基金', target: '/samsara/economy/fund' },
-    { id: 'fund-inventory', label: '基金仓库', target: '/samsara/economy/fund-inventory' },
     { id: 'lottery', label: '死人乐透', target: '/samsara/economy/lottery' },
     { id: 'insurance', label: '保险', target: '/samsara/economy/insurance' },
   ],
@@ -154,11 +153,8 @@ const routes = [
           path: 'samsara/economy/fund',
           alias: ['samsara/economy/values'],
         },
-        {
-          ...samsara('economy', 'fund-inventory', PoolInventoryPage, '基金仓库', null),
-          path: 'samsara/economy/fund-inventory',
-          props: { kind: 'fund' },
-        },
+        // 基金仓库已内嵌到「服务器基金」页下方；旧链接保留重定向，避免书签 404。
+        { path: 'samsara/economy/fund-inventory', redirect: '/samsara/economy/fund' },
         {
           ...samsara('economy', 'lottery', LotteryPage, '死人乐透', 'lottery',
               { subpage: 'lottery' }),

@@ -46,6 +46,8 @@ public final class LotteryService {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final String SCHEMA = "1";
     private static final long QUOTE_TTL_MS = 60_000L;
+    private static final int MIN_FUND_SLOTS = 54;
+    private static final int MAX_FUND_SLOTS = 5400;
 
     private static LotteryService instance;
 
@@ -458,10 +460,10 @@ public final class LotteryService {
         return out;
     }
 
-    /** 基金仓库：固定 54 格，供 Web 复用容器工作台。 */
+    /** 基金仓库：至少 54 格，按 Web 提交的槽位数自动扩容，无硬上限。 */
     public synchronized Map<String, Object> fundInventory() {
         List<String> slots = new ArrayList<>(fund);
-        while (slots.size() < 54) slots.add("");
+        while (slots.size() < MIN_FUND_SLOTS) slots.add("");
         List<Map<String, Object>> items = new ArrayList<>();
         for (int i = 0; i < slots.size(); i++) {
             String encoded = slots.get(i);
@@ -475,7 +477,8 @@ public final class LotteryService {
         }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("ok", true);
-        out.put("size", 54);
+        out.put("size", slots.size());
+        out.put("minSize", MIN_FUND_SLOTS);
         out.put("slots", slots);
         out.put("items", items);
         out.put("value", ItemValueService.getInstance()
@@ -483,13 +486,14 @@ public final class LotteryService {
         return out;
     }
 
-    /** 写回基金仓库；空白槽会被剔除，只保留实际物品。 */
+    /** 写回基金仓库；槽位数不设上限，提交更短的数组即可缩容回最小 54 格。 */
     public synchronized Map<String, Object> writeFundInventory(List<String> slots) {
-        if (slots == null || slots.size() > 54) {
-            return Map.of("ok", false, "status", 400, "error", "基金仓库最多 54 格");
+        if (slots == null || slots.size() > MAX_FUND_SLOTS) {
+            return Map.of("ok", false, "status", 400,
+                    "error", "基金仓库单次提交不能超过 " + MAX_FUND_SLOTS + " 格");
         }
         List<String> normalized = new ArrayList<>(slots);
-        while (normalized.size() < 54) normalized.add("");
+        while (normalized.size() < MIN_FUND_SLOTS) normalized.add("");
         for (int i = 0; i < normalized.size(); i++) {
             String encoded = normalized.get(i);
             if (encoded == null || encoded.isBlank()) continue;
