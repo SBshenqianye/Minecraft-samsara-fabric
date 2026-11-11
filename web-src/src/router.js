@@ -79,7 +79,6 @@ export const SECTION_NAV = {
     { id: 'diff', label: 'Diff 回看', target: '/samsara/sky/diff' },
     { id: 'containers', label: '容器', target: '/samsara/sky/containers' },
     { id: 'inventory', label: '玩家背包', target: '/samsara/sky/inventory' },
-    { id: 'web-inventory', label: 'Web 背包', target: '/samsara/sky/web-inventory' },
   ],
   world: [
     { id: 'map', label: '地图', target: '/samsara/world/map' },
@@ -189,11 +188,8 @@ const routes = [
           path: 'samsara/sky/inventory',
           alias: ['inventory'],
         },
-        {
-          ...samsara('sky', 'web-inventory', PoolInventoryPage, 'Web 背包', null),
-          path: 'samsara/sky/web-inventory',
-          props: { kind: 'web' },
-        },
+        // Web 背包已改为 samsara 全局浮窗（右侧「背包」标签 / E 键）；旧链接保留重定向。
+        { path: 'samsara/sky/web-inventory', redirect: '/samsara/sky/inventory' },
 
         // ---- samsara / 配置 ----
         legacyConfig('samsara/config/editor', ['config-editor'], ConfigEditorPage, 'config-editor', '配置编辑', 'config-editor'),

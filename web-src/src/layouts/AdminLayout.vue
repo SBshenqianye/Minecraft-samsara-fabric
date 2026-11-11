@@ -181,7 +181,6 @@
             <DiffPage v-if="page === 'diff'" />
             <ContainerPage v-if="page === 'containers'" embedded />
             <InventoryPage v-if="page === 'inventory'" />
-            <PoolInventoryPage v-if="page === 'web-inventory'" kind="web" />
             <ConfigEditorPage v-if="page === 'config-editor'" />
             <ConfigPage v-show="page === 'config'" />
             <ClaimRangePage v-show="page === 'claim-range'" />
@@ -213,6 +212,7 @@
 
     <div ref="overlayHost" class="ia-overlay-host"></div>
     <IdentityInventoryDialog v-if="workspace === 'samsara'" />
+    <GlobalInventoryDrawer v-if="workspace === 'samsara'" />
     <div v-if="loadError" class="container-message error" style="margin: 20px">
       {{ loadError }}
     </div>
@@ -243,6 +243,7 @@ import IdentityPage from '../pages/IdentityPage.vue';
 import ServerPage from '../pages/ServerPage.vue';
 import ModConfigPage from '../pages/ModConfigPage.vue';
 import IdentityInventoryDialog from '../components/IdentityInventoryDialog.vue';
+import GlobalInventoryDrawer from '../components/GlobalInventoryDrawer.vue';
 
 const route = useRoute();
 const router = useRouter();

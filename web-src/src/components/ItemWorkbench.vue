@@ -112,7 +112,7 @@
       </div>
 
       <aside class="workbench-side">
-        <div class="workbench-panel">
+        <div v-if="showLibrary" class="workbench-panel">
           <h4>物品库</h4>
           <div class="workbench-library-tabs">
             <button type="button" :class="{ active: !debugVisible }" @click="debugVisible = false">搜索物品</button>
@@ -194,6 +194,7 @@ const props = defineProps({
   disabled: { type: Boolean, default: false },
   webDeposit: { type: Boolean, default: true },
   webWithdraw: { type: Boolean, default: true },
+  showLibrary: { type: Boolean, default: true },
 });
 const emit = defineEmits(['change', 'select']);
 
@@ -712,7 +713,7 @@ async function takeWebItem(row) {
   }
 }
 
-defineExpose({ resetSelection });
+defineExpose({ resetSelection, pickFromLibrary: libraryPick });
 </script>
 
 <style scoped>
