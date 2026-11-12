@@ -114,20 +114,21 @@
   display: grid;
   /* 列数由 ItemSlotGrid 的 columns 传入：装备/副手为 1 列，容器/背包为 9 列。
      轨道用固定 --slot-size，保证任何分区的格子都与主背包完全等宽等高。 */
-  grid-template-columns: repeat(var(--slot-columns, 9), var(--slot-size, 58px));
-  gap: 6px;
-  margin-top: 12px;
+  grid-template-columns: repeat(var(--slot-columns, 9), var(--slot-size, 48px));
+  gap: 2px;
+  margin-top: 8px;
 }
 
 .slot {
   position: relative;
-  width: var(--slot-size, 58px);
-  height: var(--slot-size, 58px);
+  width: var(--slot-size, 48px);
+  height: var(--slot-size, 48px);
   min-height: 0;
   box-sizing: border-box;
-  border: 1px solid var(--line, #d7dde5);
-  border-radius: 8px;
-  background: #f8fafc;
+  border: 0;
+  border-radius: 0;
+  background: #8b8b8b url('/ui/slot.png') center / 100% 100% no-repeat;
+  image-rendering: pixelated;
   padding: 4px;
   display: flex;
   flex-direction: column;
@@ -137,8 +138,11 @@
 }
 
 .slot.selected {
-  border-color: #0d9488;
-  background: #ecfdf5;
+  box-shadow: inset 0 0 0 2px #ffffff;
+}
+
+.slot:hover {
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .55);
 }
 
 .slot img {
@@ -151,9 +155,10 @@
   position: absolute;
   right: 3px;
   bottom: 2px;
+  color: #fff;
   font-size: 11px;
   font-weight: 700;
-  text-shadow: 0 0 3px #fff;
+  text-shadow: 1px 1px 0 #3f3f3f;
 }
 
 .slot .fallback {
@@ -163,8 +168,9 @@
 }
 
 .slot .empty-index {
+  color: #cfcfcf;
   font-size: 10px;
-  color: #94a3b8;
+  text-shadow: 1px 1px 0 #3f3f3f;
 }
 
 .slot-edit {

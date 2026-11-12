@@ -182,8 +182,8 @@ public final class WebInventoryService {
             if (encoded == null || encoded.isBlank()) continue;
             ItemStack stack = decode(encoded);
             if (stack.isEmpty()) return "第 " + i + " 格物品编码无效";
-            if (stack.getCount() <= 0 || stack.getCount() > Math.max(1, stack.getMaxStackSize())) {
-                return "第 " + i + " 格数量超出上限";
+            if (stack.getCount() <= 0) {
+                return "第 " + i + " 格数量无效";
             }
         }
         return null;

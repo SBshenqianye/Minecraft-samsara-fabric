@@ -472,6 +472,7 @@ public final class LotteryService {
             if (stack.isEmpty()) continue;
             Map<String, Object> row = new LinkedHashMap<>(
                     com.shenqianye.samsara.item.ItemStackModel.compact(stack, encoded));
+            row.put("value", ItemValueService.getInstance().valueOf(stack));
             row.put("slot", i);
             items.add(row);
         }
@@ -488,9 +489,8 @@ public final class LotteryService {
 
     /** 写回基金仓库；槽位数不设上限，提交更短的数组即可缩容回最小 54 格。 */
     public synchronized Map<String, Object> writeFundInventory(List<String> slots) {
-        if (slots == null || slots.size() > MAX_FUND_SLOTS) {
-            return Map.of("ok", false, "status", 400,
-                    "error", "基金仓库单次提交不能超过 " + MAX_FUND_SLOTS + " 格");
+        if (slots == null) {
+            return Map.of("ok", false, "status", 400, "error", "缺少 slots");
         }
         List<String> normalized = new ArrayList<>(slots);
         while (normalized.size() < MIN_FUND_SLOTS) normalized.add("");
@@ -502,9 +502,9 @@ public final class LotteryService {
                 return Map.of("ok", false, "status", 400,
                         "error", "第 " + i + " 格物品编码无效");
             }
-            if (stack.getCount() <= 0 || stack.getCount() > Math.max(1, stack.getMaxStackSize())) {
+            if (stack.getCount() <= 0) {
                 return Map.of("ok", false, "status", 400,
-                        "error", "第 " + i + " 格数量超出上限");
+                        "error", "第 " + i + " 格数量无效");
             }
         }
         fund = normalized;

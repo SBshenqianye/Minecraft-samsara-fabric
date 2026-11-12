@@ -77,8 +77,7 @@ export const SECTION_NAV = {
   sky: [
     { id: 'track', label: '轨迹回看', target: '/samsara/sky/track' },
     { id: 'diff', label: 'Diff 回看', target: '/samsara/sky/diff' },
-    { id: 'containers', label: '容器', target: '/samsara/sky/containers' },
-    { id: 'inventory', label: '玩家背包', target: '/samsara/sky/inventory' },
+    { id: 'sky', label: '天网', target: '/samsara/sky/containers' },
   ],
   world: [
     { id: 'map', label: '地图', target: '/samsara/world/map' },
@@ -178,18 +177,15 @@ const routes = [
           alias: ['diff'],
         },
         {
-          ...samsara('sky', 'containers', ContainerPage, '容器', null),
+          ...samsara('sky', 'containers', ContainerPage, '天网', null),
           path: 'samsara/sky/containers',
           alias: ['sky/containers'],
           props: { embedded: true },
         },
-        {
-          ...samsara('sky', 'inventory', InventoryPage, '玩家背包', null),
-          path: 'samsara/sky/inventory',
-          alias: ['inventory'],
-        },
+        // 天网玩家已并入统一地图：旧页面只保留重定向，避免书签 404。
+        { path: 'samsara/sky/inventory', alias: ['inventory'], redirect: '/samsara/sky/containers' },
         // Web 背包已改为 samsara 全局浮窗（右侧「背包」标签 / E 键）；旧链接保留重定向。
-        { path: 'samsara/sky/web-inventory', redirect: '/samsara/sky/inventory' },
+        { path: 'samsara/sky/web-inventory', redirect: '/samsara/sky/containers' },
 
         // ---- samsara / 配置 ----
         legacyConfig('samsara/config/editor', ['config-editor'], ConfigEditorPage, 'config-editor', '配置编辑', 'config-editor'),

@@ -78,9 +78,11 @@ const tooltip = computed(() => {
   return parts.filter(Boolean).join('\n');
 });
 
-watch(() => props.item, () => {
+// 只有图标地址真正变化时才重试；地图拖动会不断重建 marker 对象，
+// 按对象深度监听会把失败的图标反复重置，表现为闪烁 / 破图。
+watch(src, () => {
   failed.value = false;
-}, { deep: true });
+});
 </script>
 
 <style scoped>

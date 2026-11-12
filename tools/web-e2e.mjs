@@ -2167,6 +2167,8 @@ async function main() {
       while (!document.querySelector('.slot-grid') && Date.now() < deadline) {
         await sleep(100);
       }
+      // 窗口内物品与分段按钮是异步渲染，给一次稳定帧再采集。
+      await sleep(650);
       const slots = document.querySelectorAll('.slot').length;
       const itemSlot = [...document.querySelectorAll('.slot')]
         .find((slot) => slot.querySelector('.item-icon-view'));
@@ -2269,9 +2271,9 @@ async function main() {
         && /[\u4e00-\u9fff]/.test(containerUi.tooltipText),
         JSON.stringify({ nativeTitles: containerUi.nativeTitles,
           text: containerUi.tooltipText.slice(0, 160) }));
-    check('原始 SNBT 编辑框预填物品原本组件', containerUi.rawSnbt.includes('id')
-        && containerUi.rawSnbt.length > 12,
-        JSON.stringify({ rawSnbt: containerUi.rawSnbt.slice(0, 160) }));
+    check('结构编辑只在 Web 背包：容器窗口无 SNBT 编辑框', containerUi.rawSnbt === ''
+        && containerUi.editor === false,
+        JSON.stringify({ rawSnbt: containerUi.rawSnbt, editor: containerUi.editor }));
     check('容器地图与世界地图同缩放口径、更高且无裂图瓦片',
         containerUi.mapFoot.includes('格/像素') && containerUi.mapHeight >= 440
         && containerUi.mapBrokenTiles === 0,
@@ -2282,8 +2284,8 @@ async function main() {
     check('确认弹窗为固定遮罩而不是页面底部元素', containerUi.modalFixed === true
         && containerUi.modalVisible === true,
         JSON.stringify({ fixed: containerUi.modalFixed, visible: containerUi.modalVisible }));
-    check('容器为主格显示结构化组件编辑器', containerUi.editor === true
-        && containerUi.editorInputs > 0 && containerUi.saveEnabled === true,
+    check('组件编辑只在 Web 背包：容器窗口无结构编辑器', containerUi.editor === false
+        && containerUi.editorInputs === 0 && containerUi.saveEnabled === true,
         JSON.stringify(containerUi));
     check('容器页预设模式点击搬运并保存成功', containerUi.modalOpened === true
         && containerUi.modalStillOpen === false && containerUi.message.includes('已写入'),
@@ -2460,7 +2462,7 @@ async function main() {
 
     // 三级子页导航：天网 / 世界 / 配置 / 社区
     await navigate(base + '/samsara/sky/track');
-    await until("document.querySelector('.section-subnav [data-subnav=\"inventory\"]')",
+    await until("document.querySelector('.section-subnav [data-subnav=\"sky\"]')",
         20000, '天网三级导航');
     const subnavSky = await evaluate(`(() => ({
       items: [...document.querySelectorAll('.section-subnav .subnav-item')]
@@ -2470,8 +2472,8 @@ async function main() {
         .filter((node) => !node.classList.contains('ia-crumb-sep'))
         .map((node) => node.textContent.trim()),
     }))()`);
-    check('天网三级导航为轨迹/Diff/容器/玩家背包（Web 背包已并入全局浮窗）',
-        subnavSky.items.join('|') === '轨迹回看|Diff 回看|容器|玩家背包'
+    check('天网三级导航只保留轨迹/Diff/天网（容器与玩家背包已合并）',
+        subnavSky.items.join('|') === '轨迹回看|Diff 回看|天网'
         && subnavSky.section === '天网', JSON.stringify(subnavSky));
     check('面包屑为 samsara / 天网 / 轨迹回看',
         subnavSky.crumb.join('|') === 'samsara|天网|轨迹回看', JSON.stringify(subnavSky));
@@ -2540,6 +2542,9 @@ async function main() {
       type: 'mouseWheel', x: 720, y: 520, deltaX: 0, deltaY: 520,
     });
     await sleep(700);
+    // headless 下鼠标滚轮偶发不触发页面滚动；用 JS 滚动兜底，并等待平滑滚动结束。
+    await evaluate("window.scrollTo({ top: 520, behavior: 'instant' }); true");
+    await sleep(1200);
     const stickyLayout = await evaluate(`(() => {
       const box = (selector) => {
         const node = document.querySelector(selector);
@@ -2731,7 +2736,7 @@ async function main() {
       if (row) {
         row.click();
         const deadline = Date.now() + 8000;
-        while (!document.querySelector('.container-page.embedded .slot-grid')
+        while (!document.querySelector('.slot-grid')
             && Date.now() < deadline) {
           await new Promise((resolve) => setTimeout(resolve, 100));
         }
@@ -2739,8 +2744,8 @@ async function main() {
       return {
         embedded: !!document.querySelector('.container-page.embedded'),
         rows: rows.length,
-        slots: document.querySelectorAll('.container-page.embedded .slot').length,
-        grid: !!document.querySelector('.container-page.embedded .slot-grid'),
+        slots: document.querySelectorAll('.slot').length,
+        grid: !!document.querySelector('.slot-grid'),
         section: document.querySelector('.section-tab.active')?.textContent.trim() || '',
       };
     })()`);
@@ -2885,87 +2890,94 @@ async function main() {
 
     // 浏览器极少数情况下会在重负载后丢掉 sessionStorage；这里显式补一次 token。
     await evaluate(`sessionStorage.setItem('samsara-token', ${JSON.stringify(token)}); true`);
-    await navigate(base + '/samsara/sky/inventory');
-    try {
-      await until("document.querySelector('.inventory-layout')", 40000, '玩家背包页');
-    } catch (e) {
-      const state = await evaluate(`(() => ({
+    // 天网容器与玩家背包已合并为单一页面；玩家背包通过地图聚合网格里的玩家头像打开浮窗。
+    await navigate(base + '/samsara/sky/containers');
+    await until("document.querySelector('.container-page.embedded')", 40000, '天网统一页');
+    await until("document.querySelectorAll('.map-marker').length >= 1", 30000, '天网地图标记');
+    const skyUnified = await evaluate(`(async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      let opened = false;
+      for (let attempt = 0; attempt < 3 && !opened; attempt++) {
+        for (const marker of [...document.querySelectorAll('.map-marker')]) {
+          marker.click();
+          await sleep(250);
+          const cell = [...document.querySelectorAll('.cluster-cell')]
+            .find((n) => n.querySelector('.marker-head'));
+          if (cell) {
+            cell.click();
+            opened = true;
+            break;
+          }
+          if (document.querySelector('.floating-window .inventory-window-player')) {
+            opened = true;
+            break;
+          }
+        }
+        if (!opened) await sleep(1200);
+      }
+      const deadline = Date.now() + 15000;
+      while (!document.querySelector('.floating-window .inventory-window-player')
+          && Date.now() < deadline) {
+        await sleep(150);
+      }
+      const win = [...document.querySelectorAll('.floating-window')]
+        .find((w) => w.querySelector('.inventory-window-player'));
+      const rows = win ? [...win.querySelectorAll('.workbench-row')]
+        .map((r) => r.className.replace('workbench-row ', '').trim()) : [];
+      const gear = win?.querySelector('.workbench-row-gear');
+      const main = win?.querySelector('.workbench-row-main');
+      const hotbar = win?.querySelector('.workbench-row-hotbar');
+      return {
+        opened,
         path: location.pathname,
-        ready: document.readyState,
-        token: Boolean(sessionStorage.getItem('samsara-token')),
-        layout: Boolean(document.querySelector('.inventory-layout')),
-        connect: Boolean(document.querySelector('.inventory-connect')),
-        error: document.querySelector('.container-message.error')?.textContent || '',
-        text: document.body.innerText.slice(0, 400),
-      }))()`);
-      throw new Error('玩家背包页: ' + JSON.stringify(state));
-    }
-    await until("document.querySelectorAll('.inventory-main .slot').length === 41",
-        20000, '玩家背包槽位');
-    const inventoryUi = await evaluate(`(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 900));
-      return ({
-      page: !!document.querySelector('[data-page="inventory"]'),
-      slots: document.querySelectorAll('.inventory-main .slot').length,
-      players: document.querySelectorAll('.inventory-player').length,
-      scope: !!document.querySelector('.inventory-scope'),
-      defaultMode: document.querySelector('.inventory-main .mode-switch button.active')?.textContent.trim() || '',
-      map: !!document.querySelector('.inventory-map-block .map-picker'),
-      mapMarkers: document.querySelectorAll('.inventory-map-block .map-marker').length,
-      mapTiles: [...document.querySelectorAll('.inventory-map-block .map-tile')]
-        .filter((img) => img.complete && img.naturalWidth > 0).length,
-      rows: [...document.querySelectorAll('.inventory-main .workbench-row')]
-        .map((row) => row.className.replace('workbench-row ', '').trim()),
-      gearTop: (() => {
-        const gear = document.querySelector('.inventory-main .workbench-row-gear');
-        const main = document.querySelector('.inventory-main .workbench-row-main');
-        return !!gear && !!main && gear.getBoundingClientRect().top < main.getBoundingClientRect().top;
-      })(),
-      hotbarBelow: (() => {
-        const main = document.querySelector('.inventory-main .workbench-row-main');
-        const hotbar = document.querySelector('.inventory-main .workbench-row-hotbar');
-        return !!main && !!hotbar
-          && hotbar.getBoundingClientRect().top > main.getBoundingClientRect().bottom;
-      })(),
-      section: document.querySelector('.section-tab.active')?.textContent.trim() || '',
-      // 所有分区格子必须与主背包等宽：装备/副手曾经被压成 9 列平分。
-      gearSlotWidth: document.querySelector('.inventory-main .workbench-row-gear .slot')
-        ?.getBoundingClientRect().width || 0,
-      mainSlotWidth: document.querySelector('.inventory-main .workbench-row-main .slot')
-        ?.getBoundingClientRect().width || 0,
-      gearColumns: (() => {
-        const grid = document.querySelector('.inventory-main .workbench-row-gear .slot-grid');
-        return grid ? getComputedStyle(grid).gridTemplateColumns.split(' ').length : 0;
-      })(),
-      errors: window.__e2eErrors?.length || 0,
-      });
+        section: document.querySelector('.section-tab.active')?.textContent.trim() || '',
+        nav: [...document.querySelectorAll('.section-subnav .subnav-item')]
+          .map((n) => n.textContent.trim()),
+        windows: document.querySelectorAll('.floating-window').length,
+        slots: win ? win.querySelectorAll('.slot').length : 0,
+        doll: !!(win && win.querySelector('.pm3d-model')),
+        dollInGear: !!(gear && gear.querySelector('.pm3d')),
+        ender: rows.some((r) => r.includes('workbench-row-ender')),
+        trash: win ? win.querySelectorAll('.workbench-trash').length : 0,
+        noImmediateWrite: ![...(win?.querySelectorAll('button') || [])]
+          .some((b) => b.textContent.includes('立即写入')),
+        gearTop: !!gear && !!main
+          && gear.getBoundingClientRect().top < main.getBoundingClientRect().top,
+        hotbarBelow: !!main && !!hotbar
+          && hotbar.getBoundingClientRect().top > main.getBoundingClientRect().bottom,
+        gearSlotWidth: gear?.querySelector('.slot')?.getBoundingClientRect().width || 0,
+        mainSlotWidth: main?.querySelector('.slot')?.getBoundingClientRect().width || 0,
+        gearColumns: (() => {
+          const g = gear?.querySelector('.slot-grid');
+          return g ? getComputedStyle(g).gridTemplateColumns.split(' ').length : 0;
+        })(),
+        errors: window.__e2eErrors?.length || 0,
+      };
     })()`);
-    check('天网玩家背包页可打开', inventoryUi.page && inventoryUi.slots === 41
-        && inventoryUi.players >= 1 && inventoryUi.scope === true
-        && inventoryUi.defaultMode === '模拟'
-        && inventoryUi.section === '天网', JSON.stringify(inventoryUi));
-    check('玩家背包地图显示在线/离线玩家标记', inventoryUi.map === true
-        && inventoryUi.mapMarkers >= 1 && inventoryUi.mapTiles >= 1,
-        JSON.stringify({ map: inventoryUi.map, markers: inventoryUi.mapMarkers,
-          tiles: inventoryUi.mapTiles }));
-    check('玩家背包按游戏 GUI 排布：装备在上、快捷栏在下且留间隔',
-        inventoryUi.gearTop === true && inventoryUi.hotbarBelow === true
-        && inventoryUi.rows.some((row) => row.includes('workbench-row-gap')),
-        JSON.stringify({ rows: inventoryUi.rows, gearTop: inventoryUi.gearTop,
-          hotbarBelow: inventoryUi.hotbarBelow }));
-    check('玩家背包装备/副手格子与主背包等宽且不再平分成 9 列',
-        inventoryUi.gearColumns === 1 && inventoryUi.gearSlotWidth >= 40
-        && Math.abs(inventoryUi.gearSlotWidth - inventoryUi.mainSlotWidth) <= 1,
-        JSON.stringify({ gearColumns: inventoryUi.gearColumns,
-          gear: inventoryUi.gearSlotWidth, main: inventoryUi.mainSlotWidth }));
+    check('天网只保留一个页面，玩家背包浮窗为 68 格且合并末影箱',
+        skyUnified.path === '/samsara/sky/containers'
+        && skyUnified.section === '天网'
+        && skyUnified.nav.join('|') === '轨迹回看|Diff 回看|天网'
+        && skyUnified.opened === true && skyUnified.slots === 68
+        && skyUnified.ender === true && skyUnified.trash === 0
+        && skyUnified.noImmediateWrite === true,
+        JSON.stringify(skyUnified));
+    check('玩家窗口 3D 纸盒人在装备行，装备/主背包等宽且快捷栏在下',
+        skyUnified.doll === true && skyUnified.dollInGear === true
+        && skyUnified.gearTop === true && skyUnified.hotbarBelow === true
+        && skyUnified.gearColumns === 1 && skyUnified.gearSlotWidth >= 40
+        && Math.abs(skyUnified.gearSlotWidth - skyUnified.mainSlotWidth) <= 1,
+        JSON.stringify({ doll: skyUnified.doll, dollInGear: skyUnified.dollInGear,
+          gearTop: skyUnified.gearTop, hotbarBelow: skyUnified.hotbarBelow,
+          gear: skyUnified.gearSlotWidth, main: skyUnified.mainSlotWidth }));
 
     // Web 背包已改为 samsara 全局浮窗（右侧「背包」标签 / E 键），旧路由重定向回玩家背包。
     await navigate(base + '/samsara/sky/web-inventory');
     await sleep(800);
     const legacyPath = await evaluate('location.pathname');
-    check('旧 Web 背包链接重定向到玩家背包', legacyPath === '/samsara/sky/inventory', legacyPath);
+    check('旧 Web 背包链接重定向到天网统一页', legacyPath === '/samsara/sky/containers', legacyPath);
 
-    await until("document.querySelector('.inventory-layout')", 30000, '玩家背包页');
+    await until("document.querySelector('.container-page.embedded')", 30000, '天网统一页');
     // 预置 1 件物品，用于验证浮窗内搬运会实时写入（无需保存/确认）。
     const drawerSeed = await (await fetch(base + '/api/inventory/item', {
       method: 'POST', headers: authHeaders,
@@ -3065,6 +3077,62 @@ async function main() {
     })()`);
     check('收起 Web 背包浮窗后右侧背包标签重新出现', drawerTabBack === true, String(drawerTabBack));
 
+    // 组件编辑只在 Web 背包，且有独立专用面板（不遮挡槽位）。
+    await fetch(base + '/api/inventory/item', {
+      method: 'POST', headers: authHeaders,
+      body: JSON.stringify({ id: 'minecraft:stone', count: 1 }),
+    }).then((response) => response.json()).then(async (seed) => {
+      const one = Array(54).fill('');
+      one[0] = seed.encoded || '';
+      await fetch(base + '/api/inventory/web/write', {
+        method: 'POST', headers: authHeaders,
+        body: JSON.stringify({ slots: one }),
+      });
+    });
+    await evaluate(`(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'e', bubbles: true }));
+      return true;
+    })()`);
+    await until("document.querySelector('.global-inventory-panel .slot')", 20000, 'Web 背包再次打开');
+    await evaluate(`(() => {
+      document.querySelectorAll('.global-inventory-panel .slot')[0].click();
+      return true;
+    })()`);
+    await until("document.querySelector('.global-inventory-editor .item-editor')", 20000, '专用组件编辑面板');
+    const dedicatedEditor = await evaluate(`(() => {
+      const panel = document.querySelector('.global-inventory-editor');
+      const grid = document.querySelector('.global-inventory-panel .slot-grid');
+      return {
+        panel: !!panel,
+        dedicated: !!panel && getComputedStyle(panel).position !== 'absolute',
+        inputs: panel ? panel.querySelectorAll('input, textarea, select').length : 0,
+        gridW: grid ? Math.round(grid.getBoundingClientRect().width) : 0,
+        chips: document.querySelectorAll('.global-inventory-panel .cursor-chip').length,
+        trash: document.querySelectorAll('.global-inventory-panel .creative-trash').length,
+      };
+    })()`);
+    check('组件编辑使用 Web 背包专用面板、无光标 chip、垃圾桶在原版位置',
+        dedicatedEditor.panel === true && dedicatedEditor.dedicated === true
+        && dedicatedEditor.inputs > 0 && dedicatedEditor.chips === 0
+        && dedicatedEditor.trash === 1, JSON.stringify(dedicatedEditor));
+    // 还原：关闭编辑、放回物品、清空背包、收起浮窗
+    await evaluate(`(() => {
+      [...document.querySelectorAll('.global-inventory-editor button')]
+        .find((b) => b.textContent.trim() === '×')?.click();
+      document.querySelectorAll('.global-inventory-panel .slot')[0].click();
+      return true;
+    })()`);
+    await sleep(500);
+    await fetch(base + '/api/inventory/web/write', {
+      method: 'POST', headers: authHeaders,
+      body: JSON.stringify({ slots: Array(54).fill('') }),
+    });
+    await evaluate(`(() => {
+      [...document.querySelectorAll('.global-inventory-panel button')]
+        .find((b) => b.textContent.trim() === '×')?.click();
+      return true;
+    })()`);
+
     await navigate(base + '/samsara/economy/fund');
     await until("document.querySelector('.fund-inventory-embed .slot')", 30000, '服务器基金页内嵌基金仓库');
     const fundInventoryUi = await evaluate(`(() => ({
@@ -3073,16 +3141,30 @@ async function main() {
       legacyReadonlyFund: !!document.getElementById('lottery-fund-panel'),
       slots: document.querySelectorAll('.fund-inventory-embed .slot').length,
       modeSwitch: !!document.querySelector('.fund-inventory-embed .mode-switch'),
-      expand: !!document.querySelector('.fund-inventory-embed .pool-head button'),
+      reload: [...document.querySelectorAll('.fund-inventory-embed .pool-head button')]
+        .some((button) => button.title === '重新读取'),
+      expandButton: [...document.querySelectorAll('.fund-inventory-embed .pool-head button')]
+        .some((button) => button.textContent.includes('扩充')),
       search: !!document.querySelector('.fund-inventory-embed .fund-search input'),
-      sort: !!document.querySelector('.fund-inventory-embed .fund-search select'),
+      sort: !!document.querySelector('.fund-inventory-embed .fund-sort'),
+      sortOptions: [...document.querySelectorAll('.fund-inventory-embed .fund-sort-segment')]
+        .map((option) => option.textContent.trim()),
+      sortDir: !!document.querySelector('.fund-inventory-embed .fund-sort-dir'),
+      columns: (() => {
+        const grid = document.querySelector('.fund-inventory-embed .slot-grid');
+        return grid ? getComputedStyle(grid).gridTemplateColumns.split(' ').length : 0;
+      })(),
       nav: [...document.querySelectorAll('.subnav-item')].map((n) => n.textContent.trim()),
     }))()`);
-    check('基金仓库内嵌服务器基金页且可搜索排序扩容、无预设/模拟分段', fundInventoryUi.embedded === true
+    check('基金仓库内嵌服务器基金页、自动扩容、可搜索排序、无预设/模拟分段', fundInventoryUi.embedded === true
         && fundInventoryUi.legacyValues === true && fundInventoryUi.legacyReadonlyFund === false
-        && fundInventoryUi.slots >= 54
-        && fundInventoryUi.modeSwitch === false && fundInventoryUi.expand === true
+        && fundInventoryUi.slots > 0 && fundInventoryUi.columns >= 3
+        && fundInventoryUi.modeSwitch === false && fundInventoryUi.reload === true
+        && fundInventoryUi.expandButton === false
         && fundInventoryUi.search === true && fundInventoryUi.sort === true
+        && fundInventoryUi.sortDir === true
+        && fundInventoryUi.sortOptions.includes('添加顺序')
+        && fundInventoryUi.sortOptions.includes('NBT')
         && !fundInventoryUi.nav.includes('基金仓库'), JSON.stringify(fundInventoryUi));
 
     // 实时模式：外部写入后 Web 应自动同步；模拟/预设不覆盖本地未提交修改。

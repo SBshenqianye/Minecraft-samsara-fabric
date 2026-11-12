@@ -35,9 +35,10 @@ public class CommandsMixin {
             CommandSourceStack source = parse.getContext().getSource();
             if (source.getEntity() instanceof net.minecraft.server.level.ServerPlayer player
                     && com.shenqianye.samsara.opauth.OpAuthService.getInstance().isPending(player)
-                    && !com.shenqianye.samsara.opauth.OpAuthService.isAuthCommand(command)) {
+                    && !com.shenqianye.samsara.opauth.OpAuthService.isAuthCommand(command)
+                    && requiresElevatedPermission(parse)) {
                 source.sendFailure(Component.literal(
-                        "请先 /login <密码>，或用 /register <注册码> <密码> <密码> 注册。"));
+                        "该命令需要 OP/owner 权限，请输入 /login <密码> 解锁（答错不会被踢出，可继续游玩）。"));
                 ci.cancel();
                 return;
             }
@@ -54,6 +55,23 @@ public class CommandsMixin {
         if (IncompleteCommandHandler.tryHandle(parse, command)) {
             ci.cancel();
         }
+    }
+
+    /**
+     * pending 玩家只缺 OP/owner 权限，不缺游玩权限：用「普通玩家」级别的
+     * CommandSourceStack 复测解析出的每个命令节点，只有需要更高权限的命令才拦。
+     */
+    private static boolean requiresElevatedPermission(ParseResults<CommandSourceStack> parse) {
+        CommandSourceStack source = parse.getContext().getSource();
+        CommandSourceStack downgraded = source.withPermission(
+                net.minecraft.server.permissions.LevelBasedPermissionSet.forLevel(
+                        net.minecraft.server.permissions.PermissionLevel.ALL));
+        for (var parsed : parse.getContext().getNodes()) {
+            if (!parsed.getNode().getRequirement().test(downgraded)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

@@ -107,6 +107,11 @@ public final class WebSecurity {
                 if (path.matches("^/items/[a-z0-9_]+\\.png$")) {
                     yield "/web" + path;
                 }
+                // 原版 GUI 精灵图 / 垃圾桶图标 / 箱子与盔甲贴图：来自客户端副本，只读静态资源。
+                if (path.matches("^/ui/[a-z0-9_]+\\.png$")
+                        || path.matches("^/armor/[a-z0-9_]+\\.png$")) {
+                    yield "/web" + path;
+                }
                 if (path.startsWith("/vue/") && path.matches("^/vue/[A-Za-z0-9_./-]+$")
                         && !path.contains("..")) {
                     yield "/web" + path;

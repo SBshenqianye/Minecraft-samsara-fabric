@@ -1012,6 +1012,17 @@ public final class LocalWebServer {
                 sendBytes(exchange, 200, skin.mime(), skin.bytes());
                 return;
             }
+            if ("/api/user/map/body".equals(path)) {
+                MojangSkinService.Skin skin = userService.body(
+                        query.getOrDefault("uuid", ""), query.getOrDefault("name", ""));
+                if (skin == null) {
+                    status = 404;
+                    json(exchange, status, Map.of("error", "没有可用的 3D 皮肤"));
+                    return;
+                }
+                sendBytes(exchange, 200, skin.mime(), skin.bytes());
+                return;
+            }
             if ("/api/user/map".equals(path)) {
                 json(exchange, 200, userService.mapModel());
                 return;

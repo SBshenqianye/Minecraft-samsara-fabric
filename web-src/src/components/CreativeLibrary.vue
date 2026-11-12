@@ -50,13 +50,13 @@
     </div>
 
     <p v-if="error" class="container-message error">{{ error }}</p>
-    <p class="muted small creative-hint">点击物品放到光标；按住 Shift 点击可连续取用。物品无限，不消耗。</p>
   </section>
 </template>
 
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue';
 import ItemIcon from './ItemIcon.vue';
+import { filterItems } from '../composables/itemSearch.js';
 import { hideItemTooltip, itemTooltip, moveItemTooltip, showItemTooltip } from './itemTooltip.js';
 
 const emit = defineEmits(['pick']);
@@ -144,10 +144,7 @@ const filtered = computed(() => {
   if (category.value !== 'all' && category.value !== 'debug') {
     rows = rows.filter((row) => row._tab === category.value);
   }
-  if (text) {
-    rows = rows.filter((row) => [row.zh, row.name, row.id, row.py, row.initials]
-      .some((value) => String(value || '').toLowerCase().includes(text)));
-  }
+  if (text) rows = filterItems(rows, text);
   const sorted = rows.slice();
   if (sort.value === 'value-desc') sorted.sort((a, b) => (b.value || 0) - (a.value || 0));
   else if (sort.value === 'value-asc') sorted.sort((a, b) => (a.value || 0) - (b.value || 0));
@@ -292,7 +289,7 @@ defineExpose({ reload: ensureAll });
 
 .creative-grid {
   display: grid;
-  grid-template-columns: repeat(9, 32px);
+  grid-template-columns: repeat(auto-fill, minmax(32px, 1fr));
   gap: 3px;
   align-content: start;
   min-height: 200px;
@@ -307,8 +304,9 @@ defineExpose({ reload: ensureAll });
 .creative-slot {
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: 100%;
+  min-height: 32px;
+  aspect-ratio: 1;
   padding: 0;
   border: 1px solid #3a3a3a;
   border-radius: 4px;

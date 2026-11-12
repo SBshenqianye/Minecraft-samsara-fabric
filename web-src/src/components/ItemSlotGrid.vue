@@ -24,7 +24,7 @@
       />
       <span v-else class="empty-index">{{ index }}</span>
       <span
-        v-if="itemAt(index)"
+        v-if="editable && itemAt(index)"
         class="slot-edit"
         role="button"
         tabindex="0"
@@ -47,6 +47,7 @@ const props = defineProps({
   columns: { type: Number, default: 9 },
   iconBase: { type: String, default: '/items/' },
   hasCursor: { type: Boolean, default: false },
+  editable: { type: Boolean, default: true },
 });
 
 defineEmits(['select', 'slot-click', 'slot-edit', 'drop-slot', 'drag-start',

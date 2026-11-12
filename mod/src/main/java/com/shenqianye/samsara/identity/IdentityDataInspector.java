@@ -5,7 +5,11 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.google.gson.reflect.TypeToken;
 import com.shenqianye.samsara.lottery.ItemValueService;
+import net.minecraft.advancements.AdvancementHolder;
+import net.minecraft.advancements.AdvancementNode;
+import net.minecraft.advancements.DisplayInfo;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
@@ -14,11 +18,15 @@ import net.minecraft.nbt.NbtAccounter;
 import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.NbtOps;
 import net.minecraft.nbt.Tag;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.contents.TranslatableContents;
 import net.minecraft.resources.RegistryOps;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.item.ItemStack;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -34,7 +42,31 @@ import java.util.stream.Stream;
 
 /** 只读查看某个 data UUID 的玩家数据与备份。 */
 public final class IdentityDataInspector {
-    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
+    private static final Gson GSON = new GsonBuilder()
+            .setPrettyPrinting().disableHtmlEscaping().create();
+
+    private static final Map<String, String> ADV_ZH = loadAdvZh();
+
+    private static Map<String, String> loadAdvZh() {
+        try (InputStream in = IdentityDataInspector.class.getResourceAsStream(
+                "/assets/samsara/lang/advancements_zh_cn.json")) {
+            if (in == null) return Map.of();
+            return GSON.fromJson(new InputStreamReader(in, StandardCharsets.UTF_8),
+                    new TypeToken<Map<String, String>>() { }.getType());
+        } catch (RuntimeException | IOException e) {
+            return Map.of();
+        }
+    }
+
+    private static String advText(Component component) {
+        if (component == null) return "";
+        if (component.getContents() instanceof TranslatableContents text) {
+            String zh = ADV_ZH.get(text.getKey());
+            if (zh != null) return zh;
+        }
+        return component.getString();
+    }
+
     private static final DateTimeFormatter STAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS");
 
     private IdentityDataInspector() {
@@ -81,7 +113,7 @@ public final class IdentityDataInspector {
             out.put("message", "读取玩家数据失败：" + e.getMessage());
             return out;
         }
-        out.put("advancements", advancements(advancementsFile));
+        out.put("advancements", advancements(advancementsFile, server));
         out.put("stats", stats(statsFile));
         return out;
     }
@@ -284,7 +316,7 @@ public final class IdentityDataInspector {
         return out;
     }
 
-    private static Map<String, Object> advancements(Path file) {
+    private static Map<String, Object> advancements(Path file, MinecraftServer server) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("exists", Files.isRegularFile(file));
         if (!Files.isRegularFile(file)) {
@@ -294,17 +326,44 @@ public final class IdentityDataInspector {
             JsonObject root = JsonParser.parseString(Files.readString(file, StandardCharsets.UTF_8)).getAsJsonObject();
             int done = 0;
             List<String> ids = new ArrayList<>();
+            java.util.Set<String> doneIds = new java.util.HashSet<>();
             for (Map.Entry<String, JsonElement> entry : root.entrySet()) {
                 if (entry.getValue().isJsonObject()
                         && entry.getValue().getAsJsonObject().has("done")
                         && entry.getValue().getAsJsonObject().get("done").getAsBoolean()) {
                     done++;
+                    doneIds.add(entry.getKey());
                     if (ids.size() < 80) ids.add(entry.getKey());
                 }
             }
             out.put("total", root.size());
             out.put("done", done);
             out.put("ids", ids);
+            if (server != null) {
+                List<Map<String, Object>> nodes = new ArrayList<>();
+                for (AdvancementNode node : server.getAdvancements().tree().nodes()) {
+                    AdvancementHolder holder = node.holder();
+                    DisplayInfo display = holder.value().display().orElse(null);
+                    if (display == null || display.hidden()) {
+                        continue;
+                    }
+                    String id = holder.id().toString();
+                    ItemStack icon = display.icon().create();
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("id", id);
+                    row.put("title", advText(display.title()));
+                    row.put("description", advText(display.description()));
+                    row.put("icon", BuiltInRegistries.ITEM.getKey(icon.getItem()).getPath());
+                    row.put("frame", display.type().getSerializedName());
+                    row.put("x", node.x());
+                    row.put("y", node.y());
+                    row.put("parent", node.parent() == null ? ""
+                            : node.parent().holder().id().toString());
+                    row.put("done", doneIds.contains(id));
+                    nodes.add(row);
+                }
+                out.put("nodes", nodes);
+            }
         } catch (IOException | RuntimeException e) {
             out.put("error", e.getMessage());
         }

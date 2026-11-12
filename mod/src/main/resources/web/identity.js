@@ -433,6 +433,139 @@ function dataNode(tag, className, text) {
   return node;
 }
 
+function advancementTree(adv) {
+  const nodes = Array.isArray(adv.nodes) ? adv.nodes.slice() : [];
+  const box = dataNode('div', 'identity-adv-tree');
+  const bar = dataNode('div', 'identity-adv-bar');
+  bar.append(dataNode('span', 'muted small', '拖动平移 · 滚轮缩放 · 点击节点查看说明'));
+  bar.append(dataNode('span', 'identity-adv-spacer'));
+  const reset = dataNode('button', 'ghost tiny', '重置视图');
+  bar.append(reset);
+  const viewport = dataNode('div', 'identity-adv-viewport');
+  const canvas = dataNode('div', 'identity-adv-canvas');
+  const doneNodes = nodes.filter((row) => row.done).length;
+  const footer = dataNode('div', 'identity-adv-footer muted small',
+    '共 ' + nodes.length + ' 个成就节点，已获得 ' + doneNodes + ' 个。');
+
+  const xs = nodes.map((row) => Number(row.x) || 0);
+  const ys = nodes.map((row) => Number(row.y) || 0);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const UNIT = 72;
+  const PAD = 34;
+  const width = Math.max(320, (maxX - minX) * UNIT + PAD * 2);
+  const height = Math.max(260, (maxY - minY) * UNIT + PAD * 2);
+  canvas.style.width = width + 'px';
+  canvas.style.height = height + 'px';
+
+  const position = (row) => ({
+    x: (Number(row.x) - minX) * UNIT + PAD,
+    y: (Number(row.y) - minY) * UNIT + PAD,
+  });
+  const byId = new Map();
+  for (const row of nodes) byId.set(row.id, row);
+
+  const svgNs = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(svgNs, 'svg');
+  svg.setAttribute('class', 'identity-adv-lines');
+  svg.setAttribute('width', String(width));
+  svg.setAttribute('height', String(height));
+  for (const row of nodes) {
+    if (!row.parent || !byId.has(row.parent)) continue;
+    const from = position(byId.get(row.parent));
+    const to = position(row);
+    const line = document.createElementNS(svgNs, 'line');
+    line.setAttribute('x1', String(from.x));
+    line.setAttribute('y1', String(from.y));
+    line.setAttribute('x2', String(to.x));
+    line.setAttribute('y2', String(to.y));
+    line.setAttribute('class', row.done ? 'done' : 'todo');
+    svg.append(line);
+  }
+  canvas.append(svg);
+
+  for (const row of nodes) {
+    const point = position(row);
+    const node = dataNode('button', 'identity-adv-node '
+      + (row.done ? 'done' : 'todo') + ' frame-' + (row.frame || 'task'));
+    node.style.left = (point.x - 22) + 'px';
+    node.style.top = (point.y - 22) + 'px';
+    node.title = (row.title || row.id) + String.fromCharCode(10)
+      + (row.description || '') + String.fromCharCode(10)
+      + (row.done ? '已完成' : '未完成');
+    const icon = document.createElement('img');
+    icon.src = '/items/' + (row.icon || 'stone') + '.png';
+    icon.alt = '';
+    icon.loading = 'lazy';
+    icon.onerror = () => {
+      icon.style.display = 'none';
+      if (!node.querySelector('.identity-adv-fallback')) {
+        node.append(dataNode('span', 'identity-adv-fallback',
+          String(row.title || row.id || '?').slice(0, 1)));
+      }
+    };
+    node.append(icon);
+    node.append(dataNode('span', 'identity-adv-label', row.title || row.id));
+    node.addEventListener('pointerdown', (event) => event.stopPropagation());
+    node.addEventListener('click', () => {
+      footer.textContent = (row.title || row.id) + ' · '
+        + (row.done ? '已完成' : '未完成') + ' · ' + (row.description || '');
+    });
+    canvas.append(node);
+  }
+
+  let tx = 18;
+  let ty = 18;
+  let scale = 1;
+  let drag = null;
+  const apply = () => {
+    canvas.style.transform = 'translate(' + tx + 'px, ' + ty + 'px) scale(' + scale + ')';
+  };
+  viewport.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0) return;
+    drag = { x: event.clientX, y: event.clientY, tx, ty };
+    try { viewport.setPointerCapture?.(event.pointerId); } catch { /* 合成事件没有真实 pointer */ }
+    viewport.classList.add('dragging');
+  });
+  viewport.addEventListener('pointermove', (event) => {
+    if (!drag) return;
+    tx = drag.tx + event.clientX - drag.x;
+    ty = drag.ty + event.clientY - drag.y;
+    apply();
+  });
+  const stop = () => {
+    drag = null;
+    viewport.classList.remove('dragging');
+  };
+  viewport.addEventListener('pointerup', stop);
+  viewport.addEventListener('pointercancel', stop);
+  viewport.addEventListener('wheel', (event) => {
+    event.preventDefault();
+    const rect = viewport.getBoundingClientRect();
+    const px = event.clientX - rect.left;
+    const py = event.clientY - rect.top;
+    const next = Math.max(0.45, Math.min(2, scale * (event.deltaY < 0 ? 1.1 : 0.9)));
+    tx = px - (px - tx) * (next / scale);
+    ty = py - (py - ty) * (next / scale);
+    scale = next;
+    apply();
+  }, { passive: false });
+  reset.addEventListener('click', () => {
+    tx = 18;
+    ty = 18;
+    scale = 1;
+    apply();
+    footer.textContent = '共 ' + nodes.length + ' 个成就节点，已获得 ' + doneNodes + ' 个。';
+  });
+
+  apply();
+  viewport.append(canvas);
+  box.append(bar, viewport, footer);
+  return box;
+}
+
 async function backupData(uuid) {
   if (!window.confirm('备份 data UUID ' + uuid + ' 的玩家数据、成就与统计？')) return;
   try {
@@ -596,8 +729,18 @@ function renderDataDetail(root, uuid, data) {
   root.append(itemSection('末影箱', data.enderItems));
   const adv = data.advancements || {};
   const advBox = dataNode('div', 'identity-data-section');
-  advBox.append(dataNode('h4', null, '成就 · ' + (adv.done || 0) + ' / ' + (adv.total || 0)));
-  if (Array.isArray(adv.ids) && adv.ids.length) {
+  const displayedDone = Array.isArray(adv.nodes)
+    ? adv.nodes.filter((row) => row.done).length : 0;
+  const displayedTotal = Array.isArray(adv.nodes) && adv.nodes.length
+    ? adv.nodes.length : (adv.total || 0);
+  const recipeNote = Array.isArray(adv.nodes) && adv.nodes.length
+    && (adv.done || 0) > displayedDone
+    ? ' · 另有 ' + ((adv.done || 0) - displayedDone) + ' 个配方解锁' : '';
+  advBox.append(dataNode('h4', null, '成就 · ' + displayedDone + ' / '
+    + displayedTotal + recipeNote));
+  if (Array.isArray(adv.nodes) && adv.nodes.length) {
+    advBox.append(advancementTree(adv));
+  } else if (Array.isArray(adv.ids) && adv.ids.length) {
     const list = dataNode('div', 'identity-data-tags');
     for (const id of adv.ids) list.append(dataNode('span', 'identity-data-tag', id));
     advBox.append(list);

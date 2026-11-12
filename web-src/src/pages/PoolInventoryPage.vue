@@ -18,7 +18,7 @@
         <div>
           <h3 v-if="!embedded">{{ title }}</h3>
           <h4 v-else>{{ title }}</h4>
-          <p class="muted small">{{ description }}</p>
+          <p v-if="description" class="muted small">{{ description }}</p>
         </div>
         <span class="spacer"></span>
         <span class="muted small">
@@ -26,13 +26,13 @@
             · 实物总值 {{ formatValue(fundValue) }} VP</template>
         </span>
         <button
-          v-if="kind === 'fund'"
-          class="ghost"
+          class="icon-button"
           type="button"
-          :disabled="loading || saving"
-          @click="expandSlots"
-        >＋ 扩充 9 格</button>
-        <button class="ghost" type="button" :disabled="loading" @click="load">重新读取</button>
+          :disabled="loading"
+          title="重新读取"
+          aria-label="重新读取"
+          @click="load"
+        >↻</button>
       </div>
 
       <div v-if="kind === 'fund'" class="fund-search">
@@ -42,12 +42,26 @@
           placeholder="搜索仓库物品（中文 / 英文 / ID）"
           aria-label="搜索仓库物品"
         />
-        <select v-model="itemSort" aria-label="仓库物品排序">
-          <option value="slot">按槽位</option>
-          <option value="name">按名称</option>
-          <option value="count">按数量</option>
-          <option value="value">按价值</option>
-        </select>
+        <div class="fund-sort" role="group" aria-label="排列顺序">
+          <button
+            v-for="option in sortOptions"
+            :key="option.id"
+            type="button"
+            class="fund-sort-segment"
+            :class="{ active: itemSort === option.id }"
+            :title="option.hint"
+            @click="setSort(option.id)"
+          >{{ option.label }}</button>
+          <span class="fund-sort-divider"></span>
+          <button
+            type="button"
+            class="fund-sort-dir"
+            :class="{ desc: sortDesc }"
+            :title="sortDesc ? '当前逆序，点击改为顺序' : '当前顺序，点击改为逆序'"
+            @click="toggleSortDirection"
+          >{{ sortDesc ? '逆序 ↓' : '顺序 ↑' }}</button>
+        </div>
+        <span class="fund-sort-badge">{{ sortLabel }}</span>
         <span class="muted small">{{ filteredItems.length }} / {{ items.length }} 条</span>
       </div>
       <div v-if="kind === 'fund' && filteredItems.length" class="fund-item-list">
@@ -66,12 +80,7 @@
         </button>
       </div>
 
-      <div class="pool-actions">
-        <span class="muted small">
-          改动即时写入仓库；Web 只和自己交互，不需要预设/模拟，也不需要二次确认。
-        </span>
-        <span v-if="saving" class="muted small">写入中…</span>
-      </div>
+      <p v-if="saving" class="muted small">写入中…</p>
 
       <div class="panel">
         <ItemWorkbench
@@ -83,9 +92,12 @@
           item-endpoint="/api/inventory/item"
           :revision="revision"
           :disabled="saving"
-          :web-deposit="kind !== 'web'"
-          :web-withdraw="kind !== 'web'"
+          :trash="kind === 'web'"
+          :editable="false"
+          :unlimited-stack="kind === 'fund'"
+          :has-more="hasMore"
           @change="onWorkbenchChange"
+          @need-more="loadMoreSlots"
         />
       </div>
     </template>
@@ -93,10 +105,22 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import TabShell from '../components/TabShell.vue';
 import ItemWorkbench from '../components/ItemWorkbench.vue';
 import { useLiveRefresh } from '../composables/useLiveRefresh.js';
+import { itemCursor } from '../composables/itemCursor.js';
+import { filterItems } from '../composables/itemSearch.js';
+
+const SLOT_PX = 48;
+const SLOT_GAP = 2;
+const PAGE_ROWS = 6;
+
+function computeColumns() {
+  // 大致按「窗口宽度 / 格子宽度」算列数，再乘固定 6 行得到最低格子数。
+  const available = Math.max(360, window.innerWidth - 360);
+  return Math.max(3, Math.min(24, Math.floor((available + SLOT_GAP) / (SLOT_PX + SLOT_GAP))));
+}
 
 const props = defineProps({
   kind: { type: String, default: 'web' },
@@ -118,16 +142,28 @@ const revision = ref(0);
 const dirty = ref(false);
 const fundValue = ref(0);
 const schema = ref({});
-const cursorPending = ref(false);
+const cursorPending = computed(() => !!itemCursor.item);
 const itemQuery = ref('');
-const itemSort = ref('slot');
+const itemSort = ref('added');
+const sortDesc = ref(false);
+const columns = ref(computeColumns());
+const visiblePages = ref(1);
+const sortOptions = [
+  { id: 'added', label: '添加顺序', hint: '按放入仓库的先后（槽位顺序）' },
+  { id: 'name', label: '名称', hint: '按物品中文 / 英文名称' },
+  { id: 'count', label: '数量', hint: '按堆叠数量' },
+  { id: 'nbt', label: 'NBT', hint: '按数据组件数目' },
+  { id: 'rarity', label: '稀有度', hint: '按原版稀有度' },
+  { id: 'value', label: '价值', hint: '按 VP 价值' },
+];
+const pageSlots = computed(() => columns.value * PAGE_ROWS);
 const focusedSlot = ref(null);
 let liveTimer = null;
 
 const title = computed(() => props.kind === 'fund' ? '基金仓库' : 'Web 背包');
 const description = computed(() => props.kind === 'fund'
-  ? '服务器基金的实物仓库，和容器/玩家背包共用同一套槽位与组件编辑；改动即时写入，槽位可按需扩充，没有容量上限。'
-  : '幽灵管理员的 54 格 Web 仓库：装备栏、副手、主背包、快捷栏与仓库，共用容器工作台、调试方块页签和垃圾桶。');
+  ? ''
+  : '幽灵管理员的 54 格 Web 仓库：装备栏、副手、主背包、快捷栏与仓库。');
 const readEndpoint = computed(() => props.kind === 'fund'
   ? '/api/lottery/fund' : '/api/inventory/web');
 const writeEndpoint = computed(() => props.kind === 'fund'
@@ -136,18 +172,15 @@ const nonEmpty = computed(() => (slots.value || []).filter((value) => value).len
 
 const layout = computed(() => {
   if (props.kind === 'fund') {
-    // 每 9 格一行、每 54 格一块；扩容后自动生成新块，不截断已有物品。
-    const rows = [];
-    for (let start = 0; start < slots.value.length; start += 54) {
-      rows.push({
-        label: `基金仓库 ${start}–${Math.min(slots.value.length, start + 54) - 1}`,
-        start,
-        size: Math.min(54, slots.value.length - start),
-        columns: 9,
-        zone: 'plain',
-      });
-    }
-    return rows;
+    // 列数随窗口宽度自适应；最低显示 固定 6 行 × 当前列数，滚到底再懒加载。
+    const size = Math.min(slots.value.length, visiblePages.value * pageSlots.value);
+    return [{
+      label: '基金仓库 0–' + Math.max(0, size - 1),
+      start: 0,
+      size,
+      columns: columns.value,
+      zone: 'plain',
+    }];
   }
   // Web 背包与玩家背包同一套相对布局。
   return [
@@ -159,26 +192,9 @@ const layout = computed(() => {
   ];
 });
 
-const filteredItems = computed(() => {
-  const query = itemQuery.value.trim().toLowerCase();
-  let rows = (items.value || []).filter((row) => {
-    if (!query) return true;
-    return [row.zh, row.name, row.id].some((value) =>
-      String(value || '').toLowerCase().includes(query));
-  });
-  rows = rows.slice();
-  if (itemSort.value === 'name') {
-    rows.sort((a, b) => String(a.zh || a.name || a.id || '')
-      .localeCompare(String(b.zh || b.name || b.id || ''), 'zh-CN'));
-  } else if (itemSort.value === 'count') {
-    rows.sort((a, b) => (Number(b.count) || 0) - (Number(a.count) || 0));
-  } else if (itemSort.value === 'value') {
-    rows.sort((a, b) => (Number(b.value) || 0) - (Number(a.value) || 0));
-  } else {
-    rows.sort((a, b) => (Number(a.slot) || 0) - (Number(b.slot) || 0));
-  }
-  return rows;
-});
+const filteredItems = computed(() => filterItems(items.value || [], itemQuery.value)
+  .slice()
+  .sort((a, b) => (Number(a.slot) || 0) - (Number(b.slot) || 0)));
 
 const liveState = useLiveRefresh({
   mode: () => 'live',
@@ -191,9 +207,7 @@ const liveState = useLiveRefresh({
   },
   applySnapshot: (snapshot) => {
     if (dirty.value || saving.value || cursorPending.value) return false;
-    const incoming = (snapshot.slots || []).slice();
-    const minimum = props.kind === 'fund' ? (snapshot.minSize || 54) : 54;
-    while (incoming.length < minimum) incoming.push('');
+    const incoming = normalize(incomingSlots(snapshot.slots));
     if (sameSlots(incoming, baselineSlots.value)) return false;
     applyLoadedData(incoming, snapshot.items || [], snapshot.value);
     message.value = '检测到仓库内容变化，已同步最新内容。';
@@ -203,8 +217,18 @@ const liveState = useLiveRefresh({
 
 // 仓库与 Web 背包同源：所有改动即时落库，因此没有实时/预设/模拟分段。
 
+function onResize() {
+  columns.value = computeColumns();
+  visiblePages.value = Math.max(1, visiblePages.value);
+}
+
 onMounted(() => {
   if (token.value) connect();
+  window.addEventListener('resize', onResize);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', onResize);
 });
 
 async function api(path, options = {}) {
@@ -258,9 +282,7 @@ async function load() {
   try {
     const result = await api(readEndpoint.value);
     if (result.status !== 200 || !result.data.ok) throw new Error(result.data.error || '读取仓库失败');
-    const incoming = (result.data.slots || []).slice();
-    const minimum = props.kind === 'fund' ? (result.data.minSize || 54) : 54;
-    while (incoming.length < minimum) incoming.push('');
+    const incoming = normalize(incomingSlots(result.data.slots));
     applyLoadedData(incoming, result.data.items || [], result.data.value);
   } catch (e) {
     error.value = e.message || String(e);
@@ -276,7 +298,53 @@ function applyLoadedData(incoming, incomingItems, value) {
   fundValue.value = Number(value || 0);
   revision.value = Date.now();
   dirty.value = false;
-  cursorPending.value = false;
+  let visible = 1;
+  while (visible * pageSlots.value < incoming.length
+      && incoming.slice((visible - 1) * pageSlots.value, visible * pageSlots.value)
+        .every(Boolean)) {
+    visible += 1;
+  }
+  visiblePages.value = visible;
+}
+
+function incomingSlots(list) {
+  const source = (list || []).slice();
+  const minimum = props.kind === 'fund' ? pageSlots.value : 54;
+  while (source.length < minimum) source.push('');
+  return source;
+}
+
+/** 基金仓库至少 54 格，最后一件物品之后永远留一格空位；多余的整块空槽会被裁掉。 */
+function normalize(list) {
+  if (props.kind !== 'fund') return list;
+  const out = list.slice();
+  let last = -1;
+  for (let i = out.length - 1; i >= 0; i--) {
+    if (out[i]) { last = i; break; }
+  }
+  const needed = Math.max(pageSlots.value,
+    Math.ceil((last + 2) / pageSlots.value) * pageSlots.value);
+  while (out.length < needed) out.push('');
+  if (out.length > needed) out.length = needed;
+  return out;
+}
+
+function sectionCountFor(list) {
+  if (props.kind !== 'fund') return 1;
+  const out = list || [];
+  let last = -1;
+  for (let i = out.length - 1; i >= 0; i--) {
+    if (out[i]) { last = i; break; }
+  }
+  return Math.max(1, Math.ceil((last + 2) / pageSlots.value));
+}
+
+const hasMore = computed(() => props.kind === 'fund'
+  && visiblePages.value * pageSlots.value < slots.value.length);
+
+function loadMoreSlots() {
+  if (!hasMore.value) return;
+  visiblePages.value += 1;
 }
 
 function sameSlots(a, b) {
@@ -289,19 +357,10 @@ function sameSlots(a, b) {
   return true;
 }
 
-async function expandSlots() {
-  if (saving.value) return;
-  const next = slots.value.slice();
-  for (let i = 0; i < 9; i++) next.push('');
-  slots.value = next;
-  baselineSlots.value = next.slice();
-  focusedSlot.value = null;
-  await save();
-  message.value = `仓库已扩充到 ${slots.value.length} 格。`;
-}
-
 async function focusSlot(slot) {
   focusedSlot.value = slot;
+  visiblePages.value = Math.max(visiblePages.value,
+    Math.ceil((slot + 2) / pageSlots.value));
   await nextTick();
   const node = document.querySelector(`.workbench-section .slot[aria-label^="槽位 ${slot} "]`);
   node?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -313,20 +372,71 @@ function formatValue(value) {
 }
 
 function onWorkbenchChange(payload) {
-  cursorPending.value = !!payload.pending;
-  slots.value = payload.slots;
+  const previousLength = slots.value.length;
+  const next = normalize(payload.slots);
+  slots.value = next;
   items.value = payload.items;
-  dirty.value = !sameSlots(payload.slots, baselineSlots.value);
+  // 只在仓库因为“填满最后可见格”而增长时自动露出下一块；
+  // 大仓库重新打开时仍从 0–53 开始，滚到底再懒加载。
+  if (next.length > previousLength) {
+    visiblePages.value = Math.max(visiblePages.value,
+      Math.ceil(next.length / pageSlots.value));
+  }
+  dirty.value = !sameSlots(next, baselineSlots.value);
   if (!dirty.value) {
     liveTimer && clearTimeout(liveTimer);
     return;
   }
-  if (payload.pending) {
-    message.value = '光标上还有物品，放下后才会写入仓库。';
-    return;
-  }
   liveTimer && clearTimeout(liveTimer);
   liveTimer = setTimeout(() => save(), 450);
+}
+
+const RARITY_ORDER = { common: 1, uncommon: 2, rare: 3, epic: 4 };
+
+const sortLabel = computed(() =>
+  sortOptions.find((option) => option.id === itemSort.value)?.label || '添加顺序');
+
+function setSort(next) {
+  if (next === itemSort.value) return;
+  itemSort.value = next;
+  applySort();
+}
+
+function sortKey(row) {
+  switch (itemSort.value) {
+    case 'name': return String(row.zh || row.name || row.id || '');
+    case 'count': return Number(row.count) || 0;
+    case 'nbt': return Number(row.componentCount) || 0;
+    case 'rarity': return RARITY_ORDER[row.rarity] || 0;
+    case 'value': return Number(row.value) || 0;
+    default: return Number(row.slot) || 0;
+  }
+}
+
+function applySort() {
+  const rows = (items.value || []).slice();
+  const direction = sortDesc.value ? -1 : 1;
+  rows.sort((a, b) => {
+    const left = sortKey(a);
+    const right = sortKey(b);
+    const result = typeof left === 'string'
+      ? left.localeCompare(right, 'zh-CN') : left - right;
+    if (result !== 0) return result * direction;
+    return String(a.zh || a.name || a.id || '')
+      .localeCompare(String(b.zh || b.name || b.id || ''), 'zh-CN') * direction;
+  });
+  const next = normalize(new Array(Math.max(pageSlots.value, rows.length + 1)).fill(''));
+  rows.forEach((row, index) => { next[index] = row.encoded; });
+  slots.value = next;
+  items.value = rows.map((row, index) => Object.assign({}, row, { slot: index }));
+  visiblePages.value = sectionCountFor(next);
+  dirty.value = true;
+  save();
+}
+
+function toggleSortDirection() {
+  sortDesc.value = !sortDesc.value;
+  applySort();
 }
 
 async function save() {
@@ -339,12 +449,12 @@ async function save() {
       body: JSON.stringify({ slots: slots.value }),
     });
     if (result.status !== 200 || !result.data.ok) throw new Error(result.data.error || '写入失败');
-    const incoming = (result.data.slots || slots.value).slice();
-    const minimum = props.kind === 'fund' ? (result.data.minSize || 54) : 54;
-    while (incoming.length < minimum) incoming.push('');
+    const incoming = normalize(incomingSlots(result.data.slots || slots.value));
     slots.value = incoming;
     baselineSlots.value = incoming.slice();
     items.value = result.data.items || items.value;
+    visiblePages.value = Math.min(visiblePages.value,
+      Math.max(1, Math.ceil(incoming.length / pageSlots.value)));
     fundValue.value = Number(result.data.value || 0);
     dirty.value = false;
     message.value = '已写入' + title.value + '。';
@@ -430,12 +540,22 @@ async function save() {
   font-variant-numeric: tabular-nums;
 }
 
-.pool-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
+.icon-button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.icon-button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--fg);
 }
 
 .inventory-connect {
@@ -445,4 +565,55 @@ async function save() {
   margin-top: 10px;
 }
 
+
+.fund-sort {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 0;
+  border: 2px solid #373737;
+  border-radius: 4px;
+  background: #8b8b8b;
+  overflow: hidden;
+}
+
+.fund-sort-segment {
+  padding: 4px 9px;
+  border: 0;
+  border-right: 1px solid #555;
+  background: #c6c6c6;
+  color: #2b2b2b;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.fund-sort-segment:hover { background: #e0e0e0; }
+
+.fund-sort-segment.active {
+  background: #4a7f3f;
+  color: #fff;
+  box-shadow: inset 0 0 0 2px #2f5a26;
+}
+
+.fund-sort-divider { width: 4px; background: #555; }
+
+.fund-sort-dir {
+  padding: 4px 9px;
+  border: 0;
+  background: #c6c6c6;
+  color: #2b2b2b;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.fund-sort-dir.desc { background: #b06a3c; color: #fff; }
+
+.fund-sort-badge {
+  padding: 3px 9px;
+  border: 1px solid var(--amber, #f0c674);
+  border-radius: 999px;
+  color: var(--amber, #f0c674);
+  font-size: 11px;
+  font-weight: 700;
+}
 </style>
