@@ -98,15 +98,9 @@
             </div>
 
             <div class="inventory-main-body">
-              <PlayerDoll
-                :uuid="data.player.uuid"
-                :name="data.player.name"
-                :online="data.online === true"
-                :height="230"
-              />
               <InventoryWindow
                 kind="player"
-                :target="{ uuid: data.player.uuid, name: data.player.name }"
+                :target="{ uuid: data.player.uuid, name: data.player.name, online: data.online === true }"
               />
             </div>
           </template>
@@ -123,13 +117,14 @@
         :height="win.height"
         :x="win.x"
         :y="win.y"
-        :z="win.pinned ? 900 + win.z : win.z"
+        :z="win.z"
         :pinned="win.pinned"
         :active="activeContainerWindow === win.key"
         @focus="focusContainerWindow(win)"
         @pin="toggleContainerPin(win)"
         @minimize="minimizeContainerWindow(win)"
         @close="closeContainerWindow(win)"
+        @dismiss="closeContainerWindow(win)"
       >
         <InventoryWindow kind="container" :target="win.target" />
       </FloatingWindow>
@@ -156,7 +151,6 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import TabShell from '../components/TabShell.vue';
-import PlayerDoll from '../components/PlayerDoll.vue';
 import FloatingWindow from '../components/FloatingWindow.vue';
 import InventoryWindow from '../components/InventoryWindow.vue';
 import MapPicker from '../components/MapPicker.vue';

@@ -110,13 +110,14 @@
         :height="win.height"
         :x="win.x"
         :y="win.y"
-        :z="win.pinned ? 900 + win.z : win.z"
+        :z="win.z"
         :pinned="win.pinned"
         :active="activeWindow === win.key"
         @focus="focusWindow(win)"
         @pin="toggleWindowPin(win)"
         @minimize="minimizeWindow(win)"
         @close="closeWindow(win)"
+        @dismiss="closeWindow(win)"
       >
         <InventoryWindow :kind="win.kind" :target="win.target" />
       </FloatingWindow>

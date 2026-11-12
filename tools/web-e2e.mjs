@@ -2460,7 +2460,7 @@ async function main() {
 
     // 三级子页导航：天网 / 世界 / 配置 / 社区
     await navigate(base + '/samsara/sky/track');
-    await until("document.querySelector('.section-subnav [data-subnav=\"inventory\"]')",
+    await until("document.querySelector('.section-subnav [data-subnav=\"sky\"]')",
         20000, '天网三级导航');
     const subnavSky = await evaluate(`(() => ({
       items: [...document.querySelectorAll('.section-subnav .subnav-item')]
@@ -2470,8 +2470,8 @@ async function main() {
         .filter((node) => !node.classList.contains('ia-crumb-sep'))
         .map((node) => node.textContent.trim()),
     }))()`);
-    check('天网三级导航为轨迹/Diff/容器/玩家背包（Web 背包已并入全局浮窗）',
-        subnavSky.items.join('|') === '轨迹回看|Diff 回看|容器|玩家背包'
+    check('天网三级导航只保留轨迹/Diff/天网（容器与玩家背包已合并）',
+        subnavSky.items.join('|') === '轨迹回看|Diff 回看|天网'
         && subnavSky.section === '天网', JSON.stringify(subnavSky));
     check('面包屑为 samsara / 天网 / 轨迹回看',
         subnavSky.crumb.join('|') === 'samsara|天网|轨迹回看', JSON.stringify(subnavSky));
@@ -2888,87 +2888,94 @@ async function main() {
 
     // 浏览器极少数情况下会在重负载后丢掉 sessionStorage；这里显式补一次 token。
     await evaluate(`sessionStorage.setItem('samsara-token', ${JSON.stringify(token)}); true`);
-    await navigate(base + '/samsara/sky/inventory');
-    try {
-      await until("document.querySelector('.inventory-layout')", 40000, '玩家背包页');
-    } catch (e) {
-      const state = await evaluate(`(() => ({
+    // 天网容器与玩家背包已合并为单一页面；玩家背包通过地图聚合网格里的玩家头像打开浮窗。
+    await navigate(base + '/samsara/sky/containers');
+    await until("document.querySelector('.container-page.embedded')", 40000, '天网统一页');
+    await until("document.querySelectorAll('.map-marker').length >= 1", 30000, '天网地图标记');
+    const skyUnified = await evaluate(`(async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      let opened = false;
+      for (let attempt = 0; attempt < 3 && !opened; attempt++) {
+        for (const marker of [...document.querySelectorAll('.map-marker')]) {
+          marker.click();
+          await sleep(250);
+          const cell = [...document.querySelectorAll('.cluster-cell')]
+            .find((n) => n.querySelector('.marker-head'));
+          if (cell) {
+            cell.click();
+            opened = true;
+            break;
+          }
+          if (document.querySelector('.floating-window .inventory-window-player')) {
+            opened = true;
+            break;
+          }
+        }
+        if (!opened) await sleep(1200);
+      }
+      const deadline = Date.now() + 15000;
+      while (!document.querySelector('.floating-window .inventory-window-player')
+          && Date.now() < deadline) {
+        await sleep(150);
+      }
+      const win = [...document.querySelectorAll('.floating-window')]
+        .find((w) => w.querySelector('.inventory-window-player'));
+      const rows = win ? [...win.querySelectorAll('.workbench-row')]
+        .map((r) => r.className.replace('workbench-row ', '').trim()) : [];
+      const gear = win?.querySelector('.workbench-row-gear');
+      const main = win?.querySelector('.workbench-row-main');
+      const hotbar = win?.querySelector('.workbench-row-hotbar');
+      return {
+        opened,
         path: location.pathname,
-        ready: document.readyState,
-        token: Boolean(sessionStorage.getItem('samsara-token')),
-        layout: Boolean(document.querySelector('.inventory-layout')),
-        connect: Boolean(document.querySelector('.inventory-connect')),
-        error: document.querySelector('.container-message.error')?.textContent || '',
-        text: document.body.innerText.slice(0, 400),
-      }))()`);
-      throw new Error('玩家背包页: ' + JSON.stringify(state));
-    }
-    await until("document.querySelectorAll('.inventory-main .slot').length === 68",
-        20000, '玩家背包槽位');
-    const inventoryUi = await evaluate(`(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 900));
-      return ({
-      page: !!document.querySelector('[data-page="inventory"]'),
-      slots: document.querySelectorAll('.inventory-main .slot').length,
-      players: document.querySelectorAll('.inventory-player').length,
-      scope: !!document.querySelector('.inventory-scope'),
-      defaultMode: document.querySelector('.inventory-main .mode-switch button.active')?.textContent.trim() || '',
-      map: !!document.querySelector('.inventory-map-block .map-picker'),
-      mapMarkers: document.querySelectorAll('.inventory-map-block .map-marker').length,
-      mapTiles: [...document.querySelectorAll('.inventory-map-block .map-tile')]
-        .filter((img) => img.complete && img.naturalWidth > 0).length,
-      rows: [...document.querySelectorAll('.inventory-main .workbench-row')]
-        .map((row) => row.className.replace('workbench-row ', '').trim()),
-      gearTop: (() => {
-        const gear = document.querySelector('.inventory-main .workbench-row-gear');
-        const main = document.querySelector('.inventory-main .workbench-row-main');
-        return !!gear && !!main && gear.getBoundingClientRect().top < main.getBoundingClientRect().top;
-      })(),
-      hotbarBelow: (() => {
-        const main = document.querySelector('.inventory-main .workbench-row-main');
-        const hotbar = document.querySelector('.inventory-main .workbench-row-hotbar');
-        return !!main && !!hotbar
-          && hotbar.getBoundingClientRect().top > main.getBoundingClientRect().bottom;
-      })(),
-      section: document.querySelector('.section-tab.active')?.textContent.trim() || '',
-      // 所有分区格子必须与主背包等宽：装备/副手曾经被压成 9 列平分。
-      gearSlotWidth: document.querySelector('.inventory-main .workbench-row-gear .slot')
-        ?.getBoundingClientRect().width || 0,
-      mainSlotWidth: document.querySelector('.inventory-main .workbench-row-main .slot')
-        ?.getBoundingClientRect().width || 0,
-      gearColumns: (() => {
-        const grid = document.querySelector('.inventory-main .workbench-row-gear .slot-grid');
-        return grid ? getComputedStyle(grid).gridTemplateColumns.split(' ').length : 0;
-      })(),
-      errors: window.__e2eErrors?.length || 0,
-      });
+        section: document.querySelector('.section-tab.active')?.textContent.trim() || '',
+        nav: [...document.querySelectorAll('.section-subnav .subnav-item')]
+          .map((n) => n.textContent.trim()),
+        windows: document.querySelectorAll('.floating-window').length,
+        slots: win ? win.querySelectorAll('.slot').length : 0,
+        doll: !!(win && win.querySelector('.pm3d-model')),
+        dollInGear: !!(gear && gear.querySelector('.pm3d')),
+        ender: rows.some((r) => r.includes('workbench-row-ender')),
+        trash: win ? win.querySelectorAll('.workbench-trash').length : 0,
+        noImmediateWrite: ![...(win?.querySelectorAll('button') || [])]
+          .some((b) => b.textContent.includes('立即写入')),
+        gearTop: !!gear && !!main
+          && gear.getBoundingClientRect().top < main.getBoundingClientRect().top,
+        hotbarBelow: !!main && !!hotbar
+          && hotbar.getBoundingClientRect().top > main.getBoundingClientRect().bottom,
+        gearSlotWidth: gear?.querySelector('.slot')?.getBoundingClientRect().width || 0,
+        mainSlotWidth: main?.querySelector('.slot')?.getBoundingClientRect().width || 0,
+        gearColumns: (() => {
+          const g = gear?.querySelector('.slot-grid');
+          return g ? getComputedStyle(g).gridTemplateColumns.split(' ').length : 0;
+        })(),
+        errors: window.__e2eErrors?.length || 0,
+      };
     })()`);
-    check('天网玩家背包页可打开', inventoryUi.page && inventoryUi.slots === 68
-        && inventoryUi.players >= 1 && inventoryUi.scope === true
-        && inventoryUi.defaultMode === '模拟'
-        && inventoryUi.section === '天网', JSON.stringify(inventoryUi));
-    check('玩家背包地图显示在线/离线玩家标记', inventoryUi.map === true
-        && inventoryUi.mapMarkers >= 1 && inventoryUi.mapTiles >= 1,
-        JSON.stringify({ map: inventoryUi.map, markers: inventoryUi.mapMarkers,
-          tiles: inventoryUi.mapTiles }));
-    check('玩家背包按游戏 GUI 排布：装备在上、快捷栏在下且留间隔',
-        inventoryUi.gearTop === true && inventoryUi.hotbarBelow === true
-        && inventoryUi.rows.some((row) => row.includes('workbench-row-gap')),
-        JSON.stringify({ rows: inventoryUi.rows, gearTop: inventoryUi.gearTop,
-          hotbarBelow: inventoryUi.hotbarBelow }));
-    check('玩家背包装备/副手格子与主背包等宽且不再平分成 9 列',
-        inventoryUi.gearColumns === 1 && inventoryUi.gearSlotWidth >= 40
-        && Math.abs(inventoryUi.gearSlotWidth - inventoryUi.mainSlotWidth) <= 1,
-        JSON.stringify({ gearColumns: inventoryUi.gearColumns,
-          gear: inventoryUi.gearSlotWidth, main: inventoryUi.mainSlotWidth }));
+    check('天网只保留一个页面，玩家背包浮窗为 68 格且合并末影箱',
+        skyUnified.path === '/samsara/sky/containers'
+        && skyUnified.section === '天网'
+        && skyUnified.nav.join('|') === '轨迹回看|Diff 回看|天网'
+        && skyUnified.opened === true && skyUnified.slots === 68
+        && skyUnified.ender === true && skyUnified.trash === 0
+        && skyUnified.noImmediateWrite === true,
+        JSON.stringify(skyUnified));
+    check('玩家窗口 3D 纸盒人在装备行，装备/主背包等宽且快捷栏在下',
+        skyUnified.doll === true && skyUnified.dollInGear === true
+        && skyUnified.gearTop === true && skyUnified.hotbarBelow === true
+        && skyUnified.gearColumns === 1 && skyUnified.gearSlotWidth >= 40
+        && Math.abs(skyUnified.gearSlotWidth - skyUnified.mainSlotWidth) <= 1,
+        JSON.stringify({ doll: skyUnified.doll, dollInGear: skyUnified.dollInGear,
+          gearTop: skyUnified.gearTop, hotbarBelow: skyUnified.hotbarBelow,
+          gear: skyUnified.gearSlotWidth, main: skyUnified.mainSlotWidth }));
 
     // Web 背包已改为 samsara 全局浮窗（右侧「背包」标签 / E 键），旧路由重定向回玩家背包。
     await navigate(base + '/samsara/sky/web-inventory');
     await sleep(800);
     const legacyPath = await evaluate('location.pathname');
-    check('旧 Web 背包链接重定向到玩家背包', legacyPath === '/samsara/sky/inventory', legacyPath);
+    check('旧 Web 背包链接重定向到天网统一页', legacyPath === '/samsara/sky/containers', legacyPath);
 
-    await until("document.querySelector('.inventory-layout')", 30000, '玩家背包页');
+    await until("document.querySelector('.container-page.embedded')", 30000, '天网统一页');
     // 预置 1 件物品，用于验证浮窗内搬运会实时写入（无需保存/确认）。
     const drawerSeed = await (await fetch(base + '/api/inventory/item', {
       method: 'POST', headers: authHeaders,

@@ -18,7 +18,7 @@
         @dragover.prevent
         @drop.prevent="trashDrop"
       >
-        <ItemIcon :item="{ id: 'minecraft:lava_bucket' }" size="md" :show-count="false" />
+        <img class="workbench-trash-icon" :src="trashIconSrc" alt="垃圾桶" draggable="false" />
       </button>
       <span v-if="cursor" class="cursor-chip">
         光标：<ItemIcon :item="cursor" size="sm" :show-count="false" />
@@ -46,6 +46,9 @@
           class="workbench-row"
           :class="['workbench-row-' + row.zone, { 'workbench-row-gap': row.gap }]"
         >
+          <div v-if="doll && row.zone === 'gear'" class="workbench-doll">
+            <slot name="doll" />
+          </div>
           <section
             v-for="section in row.sections"
             :key="section.label + section.start"
@@ -76,7 +79,9 @@
         <div class="workbench-panel workbench-editor-panel">
           <div class="workbench-panel-head">
             <h4>槽位 {{ selectedIndex }} · 组件编辑</h4>
+            <span class="spacer"></span>
             <button class="ghost tiny" type="button" @click="removeSelected">清空槽位</button>
+            <button class="ghost tiny" type="button" title="关闭编辑" @click="closeEditor">×</button>
           </div>
           <ItemEditor
             :item="selectedItem"
@@ -110,6 +115,7 @@ const props = defineProps({
   trash: { type: Boolean, default: true },
   unlimitedStack: { type: Boolean, default: false },
   hasMore: { type: Boolean, default: false },
+  doll: { type: Boolean, default: false },
 });
 const emit = defineEmits(['change', 'select', 'need-more']);
 const sourceId = nextWorkbenchId();
@@ -145,6 +151,8 @@ const ownsCursor = computed(() => !!cursor.value && itemCursor.sourceId === sour
 const busy = ref(false);
 const workbenchError = ref('');
 const workbenchMessage = ref('');
+// 动态绑定：避免 Vite 把 /ui/ 资源当成构建期 import（这些文件由后端静态目录提供）。
+const trashIconSrc = '/ui/trashcan.png';
 let dragSource = null;
 
 
@@ -505,6 +513,11 @@ function applyEditorItem(item) {
   commit('edit');
 }
 
+function closeEditor() {
+  selectedIndex.value = null;
+  hideItemTooltip();
+}
+
 function removeSelected() {
   if (selectedIndex.value === null) return;
   if (!localSlots.value[selectedIndex.value] && !cursor.value) return;
@@ -581,9 +594,11 @@ defineExpose({ resetSelection, pickFromLibrary: libraryPick });
   cursor: pointer;
 }
 
-.workbench-trash .item-icon-view {
-  width: 42px;
-  height: 42px;
+.workbench-trash-icon {
+  width: 32px;
+  height: 32px;
+  image-rendering: pixelated;
+  pointer-events: none;
 }
 
 .workbench-trash.armed {
@@ -623,10 +638,13 @@ defineExpose({ resetSelection, pickFromLibrary: libraryPick });
 }
 
 .workbench-body {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 14px;
-  align-items: start;
+  position: relative;
+  display: block;
+  min-width: 0;
+}
+
+.workbench-body > .workbench-grids {
+  width: 100%;
 }
 
 .workbench-grids {
@@ -660,6 +678,13 @@ defineExpose({ resetSelection, pickFromLibrary: libraryPick });
   padding-left: 4px;
 }
 
+.workbench-doll {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  min-width: 176px;
+}
+
 .workbench-row-gear .workbench-section:last-child {
   margin-bottom: 2px;
 }
@@ -682,22 +707,25 @@ defineExpose({ resetSelection, pickFromLibrary: libraryPick });
   font-weight: 700;
 }
 
-.workbench-body.has-editor {
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 420px);
-}
-
 .workbench-side {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 8;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  min-width: 0;
+  width: min(380px, 94%);
+  max-height: 100%;
+  overflow: auto;
 }
 
 .workbench-panel {
   padding: 10px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: 10px;
   background: var(--panel);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .5);
 }
 
 .workbench-panel h4 {
@@ -793,9 +821,8 @@ defineExpose({ resetSelection, pickFromLibrary: libraryPick });
 }
 
 @media (max-width: 1100px) {
-  .workbench-body,
-  .workbench-body.has-editor {
-    grid-template-columns: minmax(0, 1fr);
+  .workbench-side {
+    width: min(340px, 96%);
   }
 }
 </style>

@@ -1,5 +1,6 @@
 <template>
   <section
+    ref="root"
     class="floating-window"
     :class="{ pinned, active }"
     :style="style"
@@ -15,12 +16,13 @@
         type="button"
         class="fw-button"
         :class="{ on: pinned }"
-        :title="pinned ? '取消固定' : '固定在最前'"
-        :aria-label="pinned ? '取消固定' : '固定在最前'"
+        :title="pinned ? '取消固定' : '保持窗口'"
+        :aria-label="pinned ? '取消固定' : '保持窗口'"
         @pointerdown.stop
         @click.stop="$emit('pin')"
       >⌖</button>
       <button
+        v-if="canMinimize"
         type="button"
         class="fw-button"
         title="最小化到右侧"
@@ -44,7 +46,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 const props = defineProps({
   title: { type: String, default: '' },
@@ -56,8 +58,10 @@ const props = defineProps({
   z: { type: Number, default: 100 },
   pinned: { type: Boolean, default: false },
   active: { type: Boolean, default: false },
+  canMinimize: { type: Boolean, default: true },
 });
-defineEmits(['close', 'minimize', 'pin', 'focus']);
+const emit = defineEmits(['close', 'minimize', 'pin', 'focus', 'dismiss']);
+const root = ref(null);
 
 const left = ref(props.x);
 const top = ref(props.y);
@@ -105,8 +109,20 @@ function endDrag() {
   window.removeEventListener('pointermove', onDrag);
 }
 
+function onDocumentPointer(event) {
+  if (props.pinned) return;
+  const node = root.value;
+  if (node && !node.contains(event.target)) emit('dismiss');
+}
+
+onMounted(() => {
+  // 捕获阶段先于页面其它点击逻辑；未保持的窗口在点击外部时自行关闭。
+  document.addEventListener('pointerdown', onDocumentPointer, true);
+});
+
 onBeforeUnmount(() => {
   window.removeEventListener('pointermove', onDrag);
+  document.removeEventListener('pointerdown', onDocumentPointer, true);
 });
 </script>
 

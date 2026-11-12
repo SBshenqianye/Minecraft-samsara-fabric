@@ -68,7 +68,7 @@ public final class MojangSkinService {
         if (cached != null && cached.expiresAt > now) {
             return cached.skin;
         }
-        Skin skin = load(normalizedUuid, normalizedName);
+        Skin skin = load(normalizedUuid, normalizedName, fallbackName(name));
         cache.put(key, new Entry(now + (skin == null ? FAILURE_TTL_MS : SUCCESS_TTL_MS), skin));
         if (cached != null && cached.skin != null && skin == null) {
             // 短暂网络抖动时继续用上一次成功的皮肤，避免地图头像闪回本地图。
@@ -88,8 +88,10 @@ public final class MojangSkinService {
         long now = System.currentTimeMillis();
         Entry cached = bodyCache.get(key);
         if (cached != null && cached.expiresAt > now) return cached.skin;
-        // 全身渲染优先用玩家名：离线服的 UUID 是本地生成的，第三方皮肤站按名字才能命中。
-        String id = normalizedName != null ? normalizedName : normalizedUuid;
+        // 全身渲染优先用玩家名（含非 ASCII 离线名）：离线服的 UUID 是本地生成的，
+        // 第三方皮肤站按名字/ID 才能命中；Mojang 官方 API 仍只用规范化的 ASCII 名。
+        String id = fallbackName(name) != null ? fallbackName(name)
+                : normalizedName != null ? normalizedName : normalizedUuid;
         String encoded = URLEncoder.encode(id, StandardCharsets.UTF_8).replace("+", "%20");
         Skin skin = null;
         for (String base : new String[]{"https://minotar.net/body/", "https://mc-heads.net/body/"}) {
@@ -104,7 +106,7 @@ public final class MojangSkinService {
         return skin;
     }
 
-    private Skin load(String uuid, String name) {
+    private Skin load(String uuid, String name, String fallbackName) {
         String id = uuid;
         try {
             if (id == null && name != null) {
@@ -123,7 +125,7 @@ public final class MojangSkinService {
         }
         // 官方查不到（离线玩家/正版档案隐藏/网络失败）时回退第三方皮肤站；
         // 仍只接受 PNG 魔数与大小校验，失败才让前端用 SVG。
-        String fallbackKey = name != null ? name : id;
+        String fallbackKey = fallbackName != null ? fallbackName : id;
         if (fallbackKey != null) {
             for (String base : FALLBACK_SKIN_URLS) {
                 try {
@@ -222,6 +224,14 @@ public final class MojangSkinService {
         }
         JsonObject json = GSON.fromJson(response.body(), JsonObject.class);
         return json;
+    }
+
+    /** 离线玩家名可能含中文/空格/符号，Mojang 官方接口不认，但第三方皮肤站能按 ID 命中。 */
+    private static String fallbackName(String name) {
+        if (name == null) return null;
+        String trimmed = name.trim();
+        if (trimmed.isEmpty() || trimmed.length() > 64) return null;
+        return trimmed;
     }
 
     private static String normalizeName(String name) {

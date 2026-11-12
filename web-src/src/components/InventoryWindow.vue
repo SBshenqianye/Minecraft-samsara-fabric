@@ -53,8 +53,19 @@
       :revision="revision"
       :disabled="saving"
       :trash="false"
+      :doll="kind === 'player'"
       @change="onWorkbenchChange"
-    />
+    >
+      <template #doll>
+        <PlayerModel3D
+          v-if="kind === 'player'"
+          :uuid="target?.uuid || ''"
+          :name="target?.name || ''"
+          :online="target?.online === true"
+          :armor="armorMap"
+        />
+      </template>
+    </ItemWorkbench>
   </div>
 </template>
 
@@ -62,6 +73,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import ItemWorkbench from './ItemWorkbench.vue';
+import PlayerModel3D from './PlayerModel3D.vue';
 import { useLiveRefresh } from '../composables/useLiveRefresh.js';
 import { itemCursor } from '../composables/itemCursor.js';
 
@@ -107,6 +119,17 @@ const filledCount = computed(() => (slots.value || []).filter((value) => value).
 const revisionText = computed(() => props.kind === 'container'
   ? String(revision.value)
   : invRevision.value + ' / ' + enderRevision.value);
+const armorMap = computed(() => {
+  const map = {};
+  for (const row of items.value || []) {
+    const slot = Number(row.slot);
+    if (slot === 39) map.helmet = row;
+    else if (slot === 38) map.chestplate = row;
+    else if (slot === 37) map.leggings = row;
+    else if (slot === 36) map.boots = row;
+  }
+  return map;
+});
 const containerSize = computed(() => Number(props.target?.size) || 0);
 
 const layout = computed(() => {

@@ -66,7 +66,14 @@
         <div class="cluster-popup-head">
           <strong>{{ clusterPopup.markers.length }} 个目标</strong>
           <span class="spacer"></span>
-          <button class="ghost tiny" type="button" title="关闭" @click="clusterPopup = null">×</button>
+          <button
+            class="ghost tiny"
+            type="button"
+            :class="{ on: clusterPinned }"
+            :title="clusterPinned ? '取消保持' : '保持网格（不自动关闭）'"
+            @click="clusterPinned = !clusterPinned"
+          >{{ clusterPinned ? '保持中' : '保持' }}</button>
+          <button class="ghost tiny" type="button" title="关闭" @click="closeClusterPopup">×</button>
         </div>
         <div
           class="cluster-grid"
@@ -188,6 +195,7 @@ const visibleMarkers = computed(() => {
 
 const CLUSTER_DISTANCE = 52;
 const clusterPopup = ref(null);
+const clusterPinned = ref(false);
 
 const visibleClusters = computed(() => {
   const source = visibleMarkers.value;
@@ -253,7 +261,12 @@ function onMarkerClick(cluster) {
 
 function chooseClusterMarker(marker) {
   emit('select', marker.id);
+  if (!clusterPinned.value) closeClusterPopup();
+}
+
+function closeClusterPopup() {
   clusterPopup.value = null;
+  clusterPinned.value = false;
 }
 
 const trailPaths = computed(() => {
@@ -401,7 +414,6 @@ function setScale(next, px, py) {
   const worldX = centerX.value + (ax - viewW.value / 2) * scale.value;
   const worldZ = centerZ.value + (ay - viewH.value / 2) * scale.value;
   scale.value = clamped;
-  clusterPopup.value = null;
   centerX.value = worldX - (ax - viewW.value / 2) * clamped;
   centerZ.value = worldZ - (ay - viewH.value / 2) * clamped;
   rebuildTiles();
@@ -426,7 +438,6 @@ function onWheel(event) {
 
 function startPan(event) {
   if (event.button !== 0) return;
-  clusterPopup.value = null;
   dragging.value = true;
   dragStart = { x: event.clientX, y: event.clientY, cx: centerX.value, cz: centerZ.value };
   viewport.value?.setPointerCapture?.(event.pointerId);
@@ -536,12 +547,12 @@ onBeforeUnmount(() => {
 });
 
 watch(() => props.dimension, () => {
+  closeClusterPopup();
   applyStack();
 }, { immediate: false });
 
 watch(() => props.markers, () => {
   // 玩家状态每 4 秒刷新；这里不能重建瓦片，否则整张地图会随标记更新闪烁。
-  clusterPopup.value = null;
   prepareMarkers();
   if (!centeredOnMarkers.value && props.markers.length) centerOnMarkers();
 }, { deep: false });

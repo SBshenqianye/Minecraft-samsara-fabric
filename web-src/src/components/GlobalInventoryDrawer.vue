@@ -18,21 +18,22 @@
       class="global-inventory-panel"
       title="Web 背包"
       subtitle="54 格 · 创造物品库（E）"
-      :width="980"
-      :height="680"
+      :width="initialWidth"
+      :height="initialHeight"
       :x="initialX"
       :y="72"
       :z="1200"
       :pinned="pinned"
       :active="true"
+      :can-minimize="false"
       @close="close"
+      @dismiss="close"
       @minimize="minimize"
       @pin="pinned = !pinned"
     >
       <div class="global-inventory-status">
         <span v-if="saving" class="muted small">写入中…</span>
         <span v-else-if="dirty" class="muted small">待写入…</span>
-        <span class="muted small">改动即时写入</span>
       </div>
       <p v-if="error" class="container-message error">{{ error }}</p>
       <p v-if="message" class="container-message ok">{{ message }}</p>
@@ -69,7 +70,9 @@ import CreativeLibrary from './CreativeLibrary.vue';
 
 const open = ref(false);
 const pinned = ref(false);
-const initialX = Math.max(60, window.innerWidth - 1020);
+const initialWidth = Math.min(1120, Math.max(880, window.innerWidth - 40));
+const initialHeight = Math.min(780, Math.max(620, window.innerHeight - 110));
+const initialX = Math.max(20, window.innerWidth - initialWidth - 20);
 const loading = ref(false);
 const saving = ref(false);
 const connected = ref(false);
@@ -131,7 +134,8 @@ function dialogBlocking() {
 
 function openWindow() {
   open.value = true;
-  pinned.value = true;
+  // 默认未保持：点击窗口外部即收起；点 ⌖ 才保持窗口一直存在。
+  pinned.value = false;
   if (!slots.value.length && !loading.value && !error.value) bootstrap();
 }
 
@@ -338,5 +342,24 @@ defineExpose({ open: () => openWindow() });
   .global-inventory-body {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+/* Web 背包窗口内不再出现滚动条：缩小槽位，保持整窗可见。 */
+.global-inventory-panel :deep(.slot-grid) {
+  --slot-size: 40px;
+  gap: 4px;
+}
+
+.global-inventory-panel :deep(.workbench-grids) {
+  padding: 8px;
+}
+
+.global-inventory-panel :deep(.workbench-row) {
+  gap: 10px;
+}
+
+.global-inventory-panel :deep(.workbench-row-gap) {
+  margin-top: 10px;
+  padding-top: 8px;
 }
 </style>
