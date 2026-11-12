@@ -17,7 +17,7 @@
       v-if="open"
       class="global-inventory-panel"
       title="Web 背包"
-      subtitle="54 格 · 创造物品库（E）"
+      subtitle="68 格虚拟玩家 · 创造物品库（E）"
       :width="initialWidth"
       :height="initialHeight"
       :x="initialX"
@@ -41,7 +41,7 @@
         <p class="muted small">需要管理端 token；请先在任意管理页连接。</p>
       </div>
       <div v-else class="global-inventory-body">
-        <div class="global-inventory-top" :class="{ 'has-editor': !!editorItem }">
+        <div class="global-inventory-main">
           <div class="global-inventory-slots">
             <ItemWorkbench
               ref="workbench"
@@ -71,20 +71,21 @@
               </button>
             </div>
           </div>
-          <div v-if="editorItem" class="global-inventory-editor">
-            <div class="global-inventory-editor-head">
-              <strong>组件编辑</strong>
-              <span class="spacer"></span>
-              <button class="ghost tiny" type="button" title="关闭编辑" @click="closeEditor">×</button>
-            </div>
-            <ItemEditor
-              :item="editorItem"
-              :schema="schema"
-              @update="applyEditorItem"
-            />
-          </div>
+          <CreativeLibrary class="global-inventory-library" @pick="onPick" />
         </div>
-        <CreativeLibrary class="global-inventory-library" @pick="onPick" />
+        <div v-if="editorItem" class="global-inventory-editor">
+          <div class="global-inventory-editor-head">
+            <strong>组件编辑</strong>
+            <span class="muted small">选中的槽位物品</span>
+            <span class="spacer"></span>
+            <button class="ghost tiny" type="button" title="关闭编辑" @click="closeEditor">×</button>
+          </div>
+          <ItemEditor
+            :item="editorItem"
+            :schema="schema"
+            @update="applyEditorItem"
+          />
+        </div>
       </div>
     </FloatingWindow>
   </div>
@@ -99,6 +100,7 @@ import ItemEditor from './ItemEditor.vue';
 
 const open = ref(false);
 const pinned = ref(false);
+const WEB_SLOTS = 68; // 41 格玩家背包 + 27 格末影箱
 const trashIconSrc = '/ui/trashcan.png';
 const initialWidth = Math.min(1120, Math.max(880, window.innerWidth - 40));
 const initialHeight = Math.min(940, Math.max(680, window.innerHeight - 60));
@@ -133,13 +135,13 @@ let token = '';
 let liveTimer = null;
 
 // 与玩家背包同一套相对布局：装备 4 格 + 副手 1 格 + 主背包 27 格
-// + 快捷栏 9 格 + 仓库 13 格，共 54 格。
+// + 快捷栏 9 格 + 末影箱 27 格，共 68 格，方便以后把 Web 背包当成虚拟玩家。
 const layout = [
   { label: '装备 0–3', start: 0, size: 4, columns: 1, row: 'gear', zone: 'gear' },
   { label: '副手 4', start: 4, size: 1, columns: 1, row: 'gear', zone: 'gear' },
   { label: '主背包 5–31', start: 5, size: 27, columns: 9, row: 'main', zone: 'main' },
   { label: '快捷栏 32–40', start: 32, size: 9, columns: 9, row: 'hotbar', zone: 'hotbar', gap: true },
-  { label: '仓库 41–53', start: 41, size: 13, columns: 9, row: 'storage', zone: 'storage', gap: true },
+  { label: '末影箱 41–67（27 格）', start: 41, size: 27, columns: 9, row: 'storage', zone: 'storage', gap: true },
 ];
 onMounted(() => {
   token = sessionStorage.getItem('samsara-token') || '';
@@ -259,7 +261,7 @@ async function load() {
     const result = await api('/api/inventory/web');
     if (result.status !== 200 || !result.data.ok) throw new Error(result.data.error || '读取 Web 背包失败');
     const incoming = (result.data.slots || []).slice();
-    while (incoming.length < 54) incoming.push('');
+    while (incoming.length < WEB_SLOTS) incoming.push('');
     slots.value = incoming;
     baselineSlots.value = incoming.slice();
     items.value = result.data.items || [];
@@ -301,7 +303,7 @@ async function save() {
     });
     if (result.status !== 200 || !result.data.ok) throw new Error(result.data.error || '写入失败');
     const incoming = (result.data.slots || slots.value).slice();
-    while (incoming.length < 54) incoming.push('');
+    while (incoming.length < WEB_SLOTS) incoming.push('');
     slots.value = incoming;
     baselineSlots.value = incoming.slice();
     items.value = result.data.items || items.value;
@@ -362,7 +364,7 @@ defineExpose({ open: () => openWindow() });
   margin-bottom: 6px;
 }
 
-/* 创造物品库与物品栏上下切分：上半是背包（组件编辑并排），下半是创造物品库。 */
+/* 生存物品栏在左、创造物品库在右，两者等高；组件编辑独占下方整行。 */
 .global-inventory-body {
   display: flex;
   flex: 1;
@@ -372,25 +374,25 @@ defineExpose({ open: () => openWindow() });
   overflow: auto;
 }
 
-.global-inventory-top {
-  display: flex;
-  align-items: flex-start;
+.global-inventory-main {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: minmax(380px, 1.15fr) minmax(320px, 1fr);
+  align-items: stretch;
   gap: 10px;
-  min-width: 0;
+  min-height: 360px;
 }
 
 .global-inventory-slots {
-  flex: 0 1 auto;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
+  min-height: 0;
 }
 
 .global-inventory-library {
-  flex: 0 0 auto;
   min-width: 0;
-}
-
-.global-inventory-top.has-editor {
-  align-items: stretch;
+  min-height: 0;
 }
 
 .global-inventory-trash-row {
@@ -411,8 +413,8 @@ defineExpose({ open: () => openWindow() });
 }
 
 @media (max-width: 900px) {
-  .global-inventory-top {
-    flex-direction: column;
+  .global-inventory-main {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -444,19 +446,17 @@ defineExpose({ open: () => openWindow() });
   overflow: hidden;
 }
 
-/* 专用编辑面板：与背包并排，不遮挡槽位 */
+/* 专用编辑面板：放在生存背包和创造物品库下方，占满整行。 */
 .global-inventory-editor {
   display: flex;
-  flex: 0 0 300px;
+  flex: 0 0 auto;
   flex-direction: column;
+  width: 100%;
   min-width: 0;
-  min-height: 0;
-  max-height: 100%;
   padding: 8px;
   border: 2px solid #373737;
   border-radius: 4px;
   background: #c6c6c6;
-  overflow: auto;
 }
 
 .global-inventory-editor-head {
@@ -470,7 +470,18 @@ defineExpose({ open: () => openWindow() });
 
 .global-inventory-editor-head .spacer { flex: 1; }
 
-.global-inventory-editor :deep(.item-editor) { color: #2b2b2b; }
+.global-inventory-editor :deep(.item-editor) {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+  align-items: start;
+  color: #2b2b2b;
+}
+
+.global-inventory-editor :deep(.item-editor-head),
+.global-inventory-editor :deep(.container-message) {
+  grid-column: 1 / -1;
+}
 
 /* 垃圾桶单独一行，不再压在物品栏格子上 */
 .creative-trash {
@@ -495,6 +506,10 @@ defineExpose({ open: () => openWindow() });
 
 /* 创造物品库也用原版 GUI 灰底与页签样式（「全部」在第一位） */
 .global-inventory-panel :deep(.creative-library) {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
   gap: 6px;
   padding: 6px;
   border: 2px solid #373737;
@@ -526,10 +541,12 @@ defineExpose({ open: () => openWindow() });
 .global-inventory-panel :deep(.creative-toolbar) { color: #2b2b2b; }
 
 .global-inventory-panel :deep(.creative-grid) {
+  flex: 1 1 auto;
   border: 2px solid #373737;
   border-radius: 0;
   background: #8b8b8b;
-  min-height: 140px;
-  max-height: 180px;
+  min-height: 220px;
+  max-height: none;
 }
 </style>
+

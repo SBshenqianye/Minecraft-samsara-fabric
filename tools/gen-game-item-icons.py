@@ -71,6 +71,7 @@ class Assets:
         self.names = set(self.zip.namelist())
         self.out = out_dir
         self._tex_cache = {}
+        self._img_cache = {}
         self._model_cache = {}
 
     def has(self, name):
@@ -79,7 +80,8 @@ class Assets:
     def read_json(self, name):
         return json.loads(self.zip.read(name))
 
-    def texture(self, ref):
+    def image(self, ref):
+        """Load a texture reference as RGBA PIL image (first frame for animated textures)."""
         if ref is None:
             return None
         ref = str(ref)
@@ -87,16 +89,26 @@ class Assets:
             return None
         ns, path = split_id(ref)
         name = f'assets/{ns}/textures/{path}.png'
-        if name not in self._tex_cache:
+        if name not in self._img_cache:
             if name not in self.names:
-                self._tex_cache[name] = None
+                self._img_cache[name] = None
             else:
                 img = Image.open(io.BytesIO(self.zip.read(name))).convert('RGBA')
-                # Animated block textures: use the first square frame.
                 w, h = img.size
                 if h > w and h % w == 0:
                     img = img.crop((0, 0, w, w))
-                self._tex_cache[name] = np.asarray(img, dtype=np.uint8)
+                self._img_cache[name] = img
+        return self._img_cache[name]
+
+    def texture(self, ref):
+        if ref is None:
+            return None
+        ref = str(ref)
+        ns, path = split_id(ref)
+        name = f'assets/{ns}/textures/{path}.png'
+        if name not in self._tex_cache:
+            img = self.image(ref)
+            self._tex_cache[name] = None if img is None else np.asarray(img, dtype=np.uint8)
         return self._tex_cache[name]
 
     def resolve_model(self, model_ref, seen=None):
@@ -551,6 +563,153 @@ def spec_faces(assets: Assets, spec):
     return None, None
 
 
+# ------------------------------------------------------------- flat item icons
+
+GRASS_TINT = (0x91, 0xBD, 0x59)
+POTION_FALLBACK = (0x38, 0x5D, 0xC6)
+
+
+def tint_color(tints):
+    """Item definition tints: grass / potion / dye. Flat icons use a representative color."""
+    for tint in tints or []:
+        kind = str(tint.get('type', ''))
+        if kind == 'minecraft:grass':
+            return GRASS_TINT
+        if kind == 'minecraft:potion':
+            value = tint.get('default')
+            if isinstance(value, int):
+                value &= 0xFFFFFF
+                return ((value >> 16) & 0xFF, (value >> 8) & 0xFF, value & 0xFF)
+            return POTION_FALLBACK
+    return None
+
+
+def apply_flat_tint(img, tint):
+    """Vanilla item tint multiplies grayscale layer pixels; colored pixels stay unchanged."""
+    if tint is None:
+        return img
+    arr = np.asarray(img.convert('RGBA'), dtype=np.float32).copy()
+    rgb = arr[..., :3]
+    spread = rgb.max(axis=2) - rgb.min(axis=2)
+    mask = (arr[..., 3] > 0) & (spread <= 12)
+    for channel in range(3):
+        rgb[..., channel][mask] *= tint[channel] / 255.0
+    return Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8), 'RGBA')
+
+
+def flat_model_icon(assets: Assets, model_ref, tints):
+    model = assets.resolve_model(model_ref)
+    textures = model.get('textures') or {}
+    keys = [key for key in textures if str(key).startswith('layer')
+            and str(key)[5:].isdigit()]
+    keys.sort(key=lambda key: int(str(key)[5:]))
+    if not keys:
+        # 少数模型只给了一个命名贴图（如 item/generated 的变体），按声明顺序兜底。
+        keys = [key for key in textures if key != 'particle']
+    if not keys:
+        return None
+    size = 16
+    base = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+    drew = False
+    tint = tint_color(tints)
+    for key in keys:
+        img = assets.image(textures.get(key))
+        if img is None:
+            continue
+        if img.size != (size, size):
+            img = img.resize((size, size), Image.NEAREST)
+        img = apply_flat_tint(img, tint)
+        base.alpha_composite(img, (0, 0))
+        drew = True
+    if not drew:
+        return None
+    return base.resize((SIZE, SIZE), Image.NEAREST)
+
+
+def special_icon(assets: Assets, spec):
+    """Special item renderers that have no elements: banners and shields."""
+    model = spec.get('model') or {}
+    kind = str(model.get('type', ''))
+    if kind == 'minecraft:banner':
+        color = str(model.get('color', 'white'))
+        img = assets.image(f'minecraft:map/decorations/{color}_banner')
+        if img is not None:
+            return img.resize((SIZE, SIZE), Image.NEAREST)
+    if kind == 'minecraft:shield':
+        img = assets.image('minecraft:entity/shield/shield_base_nopattern')
+        if img is not None:
+            # shield_base 是 64x64 的展开图；正面在 (2,2)-(12,22)，与原版 shield/base.png 的遮罩一致。
+            if img.width >= 12 and img.height >= 22:
+                img = img.crop((2, 2, 12, 22))
+            else:
+                bbox = img.getbbox()
+                if bbox:
+                    img = img.crop(bbox)
+            return img.resize((SIZE, SIZE), Image.NEAREST)
+    return None
+
+
+def flat_spec_icon(assets: Assets, spec, tints):
+    spec = choose_model_spec(spec)
+    if not spec:
+        return None
+    kind = spec.get('type')
+    if kind == 'minecraft:model':
+        return flat_model_icon(assets, spec.get('model'), tints)
+    if kind == 'minecraft:composite':
+        base = None
+        for child in spec.get('models', []):
+            img = flat_spec_icon(assets, child, tints)
+            if img is None:
+                continue
+            if base is None:
+                base = img
+            else:
+                base.alpha_composite(img, (0, 0))
+        return base
+    if kind == 'minecraft:special':
+        return special_icon(assets, spec)
+    return None
+
+
+def special_fallback(assets: Assets, path: str, out_dir: str):
+    """铜箱/铜傀儡雕像等 26.3 特殊实体渲染：没有元素模型时用原版贴图做近似图标。"""
+    if path.endswith('_chest') or path == 'copper_chest':
+        base_path = os.path.join(out_dir, 'chest.png')
+        if os.path.isfile(base_path):
+            base = Image.open(base_path).convert('RGBA')
+            name = path
+            if 'oxidized' in name:
+                tint = (0.45, 0.95, 0.78)
+            elif 'weathered' in name:
+                tint = (0.64, 0.88, 0.70)
+            elif 'exposed' in name:
+                tint = (0.92, 0.80, 0.66)
+            else:
+                tint = (1.0, 0.62, 0.36)
+            arr = np.asarray(base, dtype=np.float32).copy()
+            arr[..., 0] *= tint[0]
+            arr[..., 1] *= tint[1]
+            arr[..., 2] *= tint[2]
+            return Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8), 'RGBA')
+    if 'copper_golem_statue' in path:
+        texture = 'minecraft:block/copper_block'
+        if 'oxidized' in path:
+            texture = 'minecraft:block/oxidized_copper'
+        elif 'weathered' in path:
+            texture = 'minecraft:block/weathered_copper'
+        elif 'exposed' in path:
+            texture = 'minecraft:block/exposed_copper'
+        img = assets.image(texture)
+        if img is not None:
+            return img.resize((SIZE, SIZE), Image.NEAREST)
+    if path == 'decorated_pot':
+        img = assets.image('minecraft:entity/decorated_pot/decorated_pot_base')
+        if img is not None:
+            return img.resize((SIZE, SIZE), Image.NEAREST)
+    return None
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--jar', required=True)
@@ -564,7 +723,7 @@ def main():
     stats = {'rendered': 0, 'flat': 0, 'skin': 0, 'missing': 0}
     for item_id in lang:
         path = split_id(item_id)[1]
-        if path in ('piston_head', 'pottery_shard_skull'):
+        if path in ('piston_head', 'pottery_shard_skull', 'air'):
             continue
         if only and path not in only:
             continue
@@ -574,12 +733,14 @@ def main():
                 print('MISSING_ITEM', item_id)
             stats['missing'] += 1
             continue
+        tints = spec.get('tints') if isinstance(spec, dict) else None
         if path in SKULLS:
             faces, gui = spec_faces(assets, spec)
         elif path == 'shulker_box' or path.endswith('_shulker_box'):
             faces, gui = shulker_faces(assets, path)
         else:
             faces, gui = spec_faces(assets, spec)
+        img = None
         if faces:
             if gui:
                 yaw = float(gui.get('rotation', [0, 225, 0])[1])
@@ -587,13 +748,22 @@ def main():
             else:
                 yaw, pitch = 225.0, 30.0
             img = render(faces, yaw=yaw, pitch=pitch)
+        else:
+            # 原版 item/generated 的平面多层贴图、旗帜与盾牌等 special 模型。
+            img = flat_spec_icon(assets, spec, tints)
+            if img is None:
+                img = special_fallback(assets, path, args.out)
+        if img is not None:
             name = SKULL_ALIAS.get(path, path)
             img.save(os.path.join(args.out, name + '.png'))
             if name != path:
                 img.save(os.path.join(args.out, path + '.png'))
-            stats['rendered'] += 1
+            if faces:
+                stats['rendered'] += 1
+            else:
+                stats['flat'] += 1
         else:
-            stats['flat'] += 1
+            stats['missing'] += 1
     print(stats)
 
 

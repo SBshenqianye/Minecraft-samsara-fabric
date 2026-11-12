@@ -21,13 +21,15 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Web 幽灵管理员背包：与真实玩家无关的 54 格持久物品仓库。
+ * Web 虚拟管理员/虚拟玩家的持久物品栏：41 格玩家背包 + 27 格末影箱，共 68 格。
  *
  * <p>数据落在 {@code world/samsara/web-inventory.json}，所有读写都在服务器线程完成。
- * 用于把容器/玩家背包里的物品暂存到 Web，再由管理员取出或继续编辑。
+ * 0–3 装备、4 副手、5–31 主背包、32–40 快捷栏、41–67 末影箱。
  */
 public final class WebInventoryService {
-    public static final int SLOTS = 54;
+    public static final int PLAYER_SLOTS = 41;
+    public static final int ENDER_SLOTS = 27;
+    public static final int SLOTS = PLAYER_SLOTS + ENDER_SLOTS;
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
     private final MinecraftServer server;

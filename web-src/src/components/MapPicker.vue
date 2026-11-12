@@ -66,15 +66,23 @@
         <div class="cluster-popup-head">
           <strong>{{ clusterPopup.markers.length }} 个目标</strong>
           <span class="spacer"></span>
-          <button
-            class="ghost tiny"
-            type="button"
-            :class="{ on: clusterPinned }"
+          <el-button
+            class="cluster-tool"
+            size="small"
+            circle
+            :type="clusterPinned ? 'primary' : 'default'"
             :title="clusterPinned ? '取消保持' : '保持网格（不自动关闭）'"
             aria-label="保持网格"
             @click="clusterPinned = !clusterPinned"
-          ><PinIcon :active="clusterPinned" /></button>
-          <button class="ghost tiny" type="button" title="关闭" @click="closeClusterPopup">×</button>
+          ><PinIcon :active="clusterPinned" /></el-button>
+          <el-button
+            class="cluster-tool"
+            size="small"
+            circle
+            title="关闭"
+            aria-label="关闭"
+            @click="closeClusterPopup"
+          >×</el-button>
         </div>
         <div
           class="cluster-grid"
@@ -205,8 +213,8 @@ const visibleMarkers = computed(() => {
 });
 
 const CLUSTER_DISTANCE = 52;
-// 放大到最细的三档时不再聚合：同坐标/相近的容器与玩家按网格散开，全部单独可见。
-const NO_CLUSTER_SCALE = 0.25;
+// 只有最细一档（放得最大）才取消聚合并散开重叠标记；其余档位继续聚合。
+const NO_CLUSTER_SCALE = 0.0625;
 const SPREAD_X = 120;
 const SPREAD_Y = 30;
 const clusterPopup = ref(null);
@@ -319,8 +327,8 @@ function onMarkerClick(cluster) {
     return;
   }
   const columns = cluster.markers.length <= 2 ? 1 : 2;
-  const width = 420;
-  const height = Math.min(420, 56 + Math.ceil(cluster.markers.length / columns) * 58);
+  const width = 460;
+  const height = Math.min(440, 56 + Math.ceil(cluster.markers.length / columns) * 62);
   clusterPopup.value = {
     markers: cluster.markers,
     columns,
@@ -693,15 +701,17 @@ watch(() => props.markers, () => {
   align-items: center;
   gap: 5px;
   transform: translate(-50%, -50%);
-  padding: 3px 7px 3px 4px;
+  padding: 3px 8px 3px 4px;
   border: 1px solid #f0c674;
   border-radius: 999px;
-  background: rgba(18, 22, 30, .9);
+  background: rgba(12, 16, 22, .96);
   color: #ffe9b0;
-  font-size: 10px;
+  font-size: 11px;
+  font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, .35);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .5);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .9);
   /* 只过渡颜色，不重复布局；位置取整后点击选中不再出现像素级抖动 */
   transition: border-color .2s ease, box-shadow .2s ease, background-color .2s ease, color .2s ease;
 }
@@ -760,7 +770,7 @@ watch(() => props.markers, () => {
 }
 
 .marker-label {
-  max-width: 96px;
+  max-width: 130px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -857,22 +867,36 @@ watch(() => props.markers, () => {
 .cluster-popup {
   position: absolute;
   z-index: 8;
-  width: 420px;
-  max-height: 420px;
+  width: 460px;
+  max-height: 440px;
   overflow: auto;
-  padding: 8px;
+  padding: 10px;
   border: 1px solid var(--line-strong);
-  border-radius: 10px;
-  background: rgba(16, 21, 28, .97);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, .5);
+  border-radius: 12px;
+  background: rgba(16, 21, 28, .98);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, .55);
 }
 
 .cluster-popup-head {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-bottom: 6px;
-  font-size: 11px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.cluster-popup-head .spacer { flex: 1; }
+
+.cluster-tool {
+  min-width: 26px;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+}
+
+.cluster-tool :deep(svg) {
+  width: 14px;
+  height: 14px;
 }
 
 .cluster-grid {
@@ -883,12 +907,12 @@ watch(() => props.markers, () => {
 .cluster-cell {
   display: flex;
   align-items: flex-start;
-  gap: 6px;
+  gap: 7px;
   min-width: 0;
-  padding: 5px 6px;
-  border: 1px solid transparent;
-  border-radius: 7px;
-  background: rgba(255, 255, 255, .03);
+  padding: 7px 8px;
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .045);
   color: var(--fg);
   text-align: left;
   cursor: pointer;
@@ -904,21 +928,24 @@ watch(() => props.markers, () => {
   display: flex;
   min-width: 0;
   flex-direction: column;
+  gap: 1px;
 }
 
 /* 名字要完整读得出来：允许换行，不再被省略号截掉。 */
 .cluster-cell-label {
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1.35;
-  color: var(--fg);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: #f4f8ff;
   white-space: normal;
   word-break: break-word;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, .6);
 }
 
 .cluster-cell-sub {
-  font-size: 10px;
-  line-height: 1.35;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #b9c6d6;
   white-space: normal;
   word-break: break-word;
 }

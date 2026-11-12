@@ -40,26 +40,21 @@
           aria-label="搜索仓库物品"
         />
         <div class="fund-sort" role="group" aria-label="排列顺序">
-          <button
-            v-for="option in sortOptions"
-            :key="option.id"
-            type="button"
-            class="fund-sort-segment"
-            :class="{ active: itemSort === option.id }"
-            :title="option.hint"
-            @click="setSort(option.id)"
-          >{{ option.label }}</button>
-          <span class="fund-sort-divider"></span>
-          <button
-            type="button"
-            class="fund-sort-dir"
-            :class="{ desc: sortDesc }"
+          <Segmented
+            :model-value="itemSort"
+            :options="sortOptions"
+            aria-label="排列顺序"
+            @update:model-value="setSort"
+          />
+          <el-button
+            size="small"
+            :type="sortDesc ? 'warning' : 'default'"
             :title="sortDesc ? '当前逆序，点击改为顺序' : '当前顺序，点击改为逆序'"
             @click="toggleSortDirection"
-          >{{ sortDesc ? '逆序 ↓' : '顺序 ↑' }}</button>
+          >{{ sortDesc ? '逆序 ↓' : '顺序 ↑' }}</el-button>
+          <span class="fund-sort-badge">{{ sortLabel }}</span>
+          <span class="muted small">{{ filteredItems.length }} / {{ items.length }} 条</span>
         </div>
-        <span class="fund-sort-badge">{{ sortLabel }}</span>
-        <span class="muted small">{{ filteredItems.length }} / {{ items.length }} 条</span>
       </div>
       <div v-if="kind === 'fund' && filteredItems.length" class="fund-item-list">
         <button
@@ -111,6 +106,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import TabShell from '../components/TabShell.vue';
 import ItemWorkbench from '../components/ItemWorkbench.vue';
+import Segmented from '../components/Segmented.vue';
 import { useLiveRefresh } from '../composables/useLiveRefresh.js';
 import { itemCursor } from '../composables/itemCursor.js';
 import { filterItems } from '../composables/itemSearch.js';
@@ -166,7 +162,7 @@ let liveTimer = null;
 const title = computed(() => props.kind === 'fund' ? '基金仓库' : 'Web 背包');
 const description = computed(() => props.kind === 'fund'
   ? ''
-  : '幽灵管理员的 54 格 Web 仓库：装备栏、副手、主背包、快捷栏与仓库。');
+  : '虚拟玩家的 68 格 Web 物品栏：装备栏、副手、主背包、快捷栏与末影箱。');
 const readEndpoint = computed(() => props.kind === 'fund'
   ? '/api/lottery/fund' : '/api/inventory/web');
 const writeEndpoint = computed(() => props.kind === 'fund'
@@ -191,7 +187,7 @@ const layout = computed(() => {
     { label: '副手 4', start: 4, size: 1, columns: 1, row: 'gear', zone: 'gear' },
     { label: '主背包 5–31', start: 5, size: 27, columns: 9, row: 'main', zone: 'main' },
     { label: '快捷栏 32–40', start: 32, size: 9, columns: 9, row: 'hotbar', zone: 'hotbar', gap: true },
-    { label: '仓库 41–53', start: 41, size: 13, columns: 9, row: 'storage', zone: 'storage', gap: true },
+    { label: '末影箱 41–67（27 格）', start: 41, size: 27, columns: 9, row: 'storage', zone: 'storage', gap: true },
   ];
 });
 
@@ -312,7 +308,7 @@ function applyLoadedData(incoming, incomingItems, value) {
 
 function incomingSlots(list) {
   const source = (list || []).slice();
-  const minimum = props.kind === 'fund' ? pageSlots.value : 54;
+  const minimum = props.kind === 'fund' ? pageSlots.value : 68;
   while (source.length < minimum) source.push('');
   return source;
 }
@@ -592,44 +588,9 @@ async function save() {
 .fund-sort {
   display: inline-flex;
   flex-wrap: wrap;
-  align-items: stretch;
-  gap: 0;
-  border: 2px solid #373737;
-  border-radius: 4px;
-  background: #8b8b8b;
-  overflow: hidden;
+  align-items: center;
+  gap: 8px;
 }
-
-.fund-sort-segment {
-  padding: 4px 9px;
-  border: 0;
-  border-right: 1px solid #555;
-  background: #c6c6c6;
-  color: #2b2b2b;
-  font-size: 11px;
-  cursor: pointer;
-}
-
-.fund-sort-segment:hover { background: #e0e0e0; }
-
-.fund-sort-segment.active {
-  background: #4a7f3f;
-  color: #fff;
-  box-shadow: inset 0 0 0 2px #2f5a26;
-}
-
-.fund-sort-divider { width: 4px; background: #555; }
-
-.fund-sort-dir {
-  padding: 4px 9px;
-  border: 0;
-  background: #c6c6c6;
-  color: #2b2b2b;
-  font-size: 11px;
-  cursor: pointer;
-}
-
-.fund-sort-dir.desc { background: #b06a3c; color: #fff; }
 
 .fund-sort-badge {
   padding: 3px 9px;

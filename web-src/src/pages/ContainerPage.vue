@@ -33,32 +33,26 @@
       <p v-if="error" class="container-message error">{{ error }}</p>
 
       <section class="container-card">
-        <div class="container-filters">
-          <label>
-            维度
-            <select v-model="filters.dimension" :disabled="allDimensions" @change="search">
-              <option v-for="dimension in dimensions" :key="dimension.id" :value="dimension.id">
-                {{ dimension.name }}（{{ dimension.id }}）
-              </option>
-            </select>
+        <div class="sky-search-row">
+          <label class="sky-search">
+            <span class="sky-search-label">搜索容器</span>
+            <el-input
+              v-model="filters.q"
+              clearable
+              placeholder="物品 ID / 名称，如 diamond、钻石"
+              @input="queueSearch"
+              @keyup.enter="search"
+            />
           </label>
-          <label class="dimension-toggle" title="同时搜索所有维度">
-            <input v-model="allDimensions" type="checkbox" @change="toggleAllDimensions" />
-            全维度
+          <label class="sky-search">
+            <span class="sky-search-label">搜索玩家</span>
+            <el-input
+              v-model="playerQuery"
+              clearable
+              placeholder="玩家名字 / UUID"
+              aria-label="搜索玩家"
+            />
           </label>
-          <label class="grow">
-            按物品找箱
-            <input v-model="filters.q" type="text" placeholder="物品 ID / 名称，如 diamond、钻石"
-              @input="queueSearch" @keyup.enter="search" />
-          </label>
-          <button
-            class="icon-button"
-            type="button"
-            :disabled="scanning"
-            title="刷新索引（重新扫描已加载区块）"
-            aria-label="刷新索引"
-            @click="scan"
-          >↻</button>
         </div>
 
         <div class="container-map">
@@ -66,64 +60,136 @@
             :markers="markers"
             :dimension="filters.dimension || dimensions[0]?.id || 'minecraft:overworld'"
             :selected-id="selectedMarkerId"
-            :height="520"
+            :height="560"
             @select="selectMarker"
           />
         </div>
 
-        <div class="container-result-head">
-          <span class="muted small">
-            索引 {{ indexSize }} 个容器 · 当前 {{ containers.length }} 个
-          </span>
-          <span class="spacer"></span>
-          <span class="muted small">{{ loading ? '读取中…' : '' }}</span>
-        </div>
-        <div v-if="containers.length" class="container-list compact list-narrow">
-          <button
-            v-for="row in containers"
-            :key="rowKey(row)"
-            class="container-row"
-            :class="{ active: selected && samePos(selected.container, row) }"
-            type="button"
-            @click="openContainer(row)"
-          >
-            <span>
-              <strong>{{ typeLabel(row.type) }}</strong>
-              <span class="meta"> · {{ row.dimension }} · {{ row.x }}, {{ row.y }}, {{ row.z }}</span>
-            </span>
-            <span class="meta">{{ row.nonEmpty }} / {{ row.size }} 格</span>
-            <span class="meta">{{ row.source === 'loaded' ? '实时' : row.source === 'pending' ? '待写入' : '缓存' }}</span>
-          </button>
-        </div>
-        <p v-else class="muted small">{{ loading ? '读取中…' : '没有找到容器；可输入物品名找箱，或点“刷新索引”。' }}</p>
+        <div class="sky-result-grid">
+          <section class="sky-result-col">
+            <div class="sky-result-title">
+              <strong>容器结果</strong>
+              <span class="muted small">索引 {{ indexSize }} 个 · 当前 {{ visibleContainers.length }} 个</span>
+              <span class="spacer"></span>
+              <span class="muted small">{{ loading ? '读取中…' : '' }}</span>
+            </div>
+            <div class="sky-filter-bar">
+              <Segmented
+                v-model="containerType"
+                :options="containerTypeOptions"
+                aria-label="容器类型"
+              />
+              <Segmented
+                v-model="containerContent"
+                :options="containerContentOptions"
+                aria-label="容器内容"
+              />
+              <Segmented
+                v-model="containerSource"
+                :options="containerSourceOptions"
+                aria-label="容器来源"
+              />
+              <Segmented
+                :model-value="allDimensions ? 'all' : 'current'"
+                :options="dimensionScopeOptions"
+                aria-label="搜索维度"
+                @update:model-value="setDimensionScope"
+              />
+              <select v-model="filters.dimension" :disabled="allDimensions" @change="search">
+                <option v-for="dimension in dimensions" :key="dimension.id" :value="dimension.id">
+                  {{ dimension.name }}（{{ dimension.id }}）
+                </option>
+              </select>
+              <button
+                class="icon-button"
+                type="button"
+                :disabled="scanning"
+                title="刷新索引（重新扫描已加载区块）"
+                aria-label="刷新索引"
+                @click="scan"
+              >↻</button>
+            </div>
+            <div v-if="visibleContainers.length" class="container-list compact list-narrow sky-list">
+              <button
+                v-for="row in visibleContainers"
+                :key="rowKey(row)"
+                class="sky-row container-row"
+                :class="{ active: selected && samePos(selected.container, row) }"
+                type="button"
+                @click="openContainer(row)"
+              >
+                <ItemIcon
+                  class="sky-row-icon"
+                  :item="{ id: row.type || 'minecraft:chest', name: typeLabel(row.type), count: 1 }"
+                  size="sm"
+                  :show-count="false"
+                />
+                <span class="sky-row-main">
+                  <strong class="sky-row-title">{{ typeLabel(row.type) }}</strong>
+                  <span class="sky-row-meta">
+                    {{ shortDimension(row.dimension) }} · {{ row.x }}, {{ row.y }}, {{ row.z }}
+                  </span>
+                </span>
+                <span class="sky-row-stats">{{ row.nonEmpty }} / {{ row.size }} 格</span>
+                <span class="sky-row-badge" :class="'source-' + (row.source || 'cached')">
+                  {{ sourceLabel(row) }}
+                </span>
+              </button>
+            </div>
+            <p v-else class="muted small">
+              {{ loading ? '读取中…' : (filters.q ? '没有容器包含匹配该物品。' : '没有找到容器；可点“刷新索引”。') }}
+            </p>
+          </section>
 
-        <div class="container-player-search">
-          <input
-            v-model="playerQuery"
-            type="search"
-            placeholder="搜索玩家名字 / UUID"
-            aria-label="搜索玩家"
-          />
-          <span class="muted small">{{ filteredPlayers.length }} / {{ players.length }} 名玩家</span>
+          <section class="sky-result-col">
+            <div class="sky-result-title">
+              <strong>玩家结果</strong>
+              <span class="muted small">{{ filteredPlayers.length }} / {{ players.length }} 名</span>
+            </div>
+            <div class="sky-filter-bar">
+              <Segmented
+                v-model="playerStatus"
+                :options="playerStatusOptions"
+                aria-label="玩家状态"
+              />
+              <Segmented
+                v-model="playerScope"
+                :options="playerScopeOptions"
+                aria-label="玩家维度"
+              />
+            </div>
+            <div v-if="filteredPlayers.length" class="container-player-list sky-list">
+              <button
+                v-for="player in filteredPlayers"
+                :key="player.uuid"
+                type="button"
+                class="sky-row player-row"
+                :class="{ active: selectedPlayerId === 'player:' + player.uuid, online: player.online }"
+                @click="openPlayerWindow(player)"
+              >
+                <span class="sky-row-avatar">
+                  <img
+                    :src="playerAvatar(player)"
+                    :alt="player.name || player.uuid"
+                    loading="lazy"
+                    @error="$event.target.style.display = 'none'"
+                  />
+                  <span>{{ initialOf(player) }}</span>
+                </span>
+                <span class="sky-row-main">
+                  <strong class="sky-row-title">{{ player.name || player.uuid }}</strong>
+                  <span class="sky-row-meta">
+                    {{ shortDimension(player.dimension || '') }}<template v-if="player.lastSeen"> · {{ player.lastSeen }}</template>
+                  </span>
+                </span>
+                <span class="sky-row-badge" :class="player.online ? 'online' : 'offline'">
+                  {{ player.online ? '在线' : '离线' }}
+                </span>
+              </button>
+            </div>
+            <p v-else class="muted small">没有匹配的已知玩家。</p>
+          </section>
         </div>
-        <div v-if="filteredPlayers.length" class="container-player-list">
-          <button
-            v-for="player in filteredPlayers"
-            :key="player.uuid"
-            type="button"
-            class="container-player"
-            :class="{ active: selectedPlayerId === 'player:' + player.uuid, online: player.online }"
-            @click="openPlayerWindow(player)"
-          >
-            <span class="container-player-name">{{ player.name || player.uuid }}</span>
-            <span class="meta">
-              {{ player.online ? '在线' : '离线' }}<template v-if="player.dimension">
-                · {{ shortDimension(player.dimension) }}</template><template v-if="player.lastSeen">
-                · {{ player.lastSeen }}</template>
-            </span>
-          </button>
-        </div>
-        <p v-else class="muted small">没有匹配的已知玩家。</p>
       </section>
 
     </template>
@@ -175,7 +241,9 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import FloatingWindow from '../components/FloatingWindow.vue';
 import GlobalItemCursor from '../components/GlobalItemCursor.vue';
 import InventoryWindow from '../components/InventoryWindow.vue';
+import ItemIcon from '../components/ItemIcon.vue';
 import MapPicker from '../components/MapPicker.vue';
+import Segmented from '../components/Segmented.vue';
 import { useLiveRefresh } from '../composables/useLiveRefresh.js';
 import { itemCursor } from '../composables/itemCursor.js';
 
@@ -201,6 +269,11 @@ const filters = reactive({ dimension: 'minecraft:overworld', q: '' });
 const windows = ref([]);
 const players = ref([]);
 const playerQuery = ref('');
+const playerStatus = ref('all');
+const playerScope = ref('current');
+const containerType = ref('all');
+const containerContent = ref('all');
+const containerSource = ref('all');
 const selectedPlayerId = ref('');
 let playersTimer = null;
 const activeWindow = ref('');
@@ -270,13 +343,72 @@ const layout = computed(() => [{
     ? Math.max(1, selected.value?.container?.size || 1) : 9,
 }]);
 
-// 玩家页面并入天网后保留原来的按名字/UUID 搜索（旧页面用同一套过滤）。
+const containerTypeOptions = [
+  { value: 'all', label: '全部类型' },
+  { value: 'chest', label: '箱子' },
+  { value: 'barrel', label: '木桶' },
+  { value: 'shulker', label: '潜影盒' },
+  { value: 'other', label: '其他' },
+];
+const containerContentOptions = [
+  { value: 'all', label: '全部内容' },
+  { value: 'filled', label: '有物品' },
+  { value: 'empty', label: '空容器' },
+];
+const containerSourceOptions = [
+  { value: 'all', label: '全部来源' },
+  { value: 'loaded', label: '实时' },
+  { value: 'cached', label: '缓存' },
+  { value: 'pending', label: '待写入' },
+];
+const dimensionScopeOptions = [
+  { value: 'current', label: '当前维度' },
+  { value: 'all', label: '全维度' },
+];
+const playerStatusOptions = [
+  { value: 'all', label: '全部玩家' },
+  { value: 'online', label: '在线' },
+  { value: 'offline', label: '离线' },
+];
+const playerScopeOptions = [
+  { value: 'current', label: '当前维度' },
+  { value: 'all', label: '全维度' },
+];
+
+function containerGroup(type) {
+  const key = String(type || '');
+  if (key === 'minecraft:chest' || key === 'minecraft:trapped_chest') return 'chest';
+  if (key === 'minecraft:barrel') return 'barrel';
+  if (key === 'minecraft:shulker_box' || key.endsWith('_shulker_box')) return 'shulker';
+  return 'other';
+}
+
+const visibleContainers = computed(() => containers.value.filter((row) => {
+  if (containerType.value !== 'all' && containerGroup(row.type) !== containerType.value) return false;
+  if (containerContent.value === 'filled' && !(Number(row.nonEmpty) > 0)) return false;
+  if (containerContent.value === 'empty' && Number(row.nonEmpty) > 0) return false;
+  if (containerSource.value !== 'all') {
+    const source = String(row.source || '');
+    if (containerSource.value === 'cached' && source === 'loaded') return false;
+    if (containerSource.value !== 'cached' && source !== containerSource.value) return false;
+  }
+  return true;
+}));
+
+// 玩家状态/维度/名字/UUID 同时过滤；容器与玩家共用同一张地图。
 const filteredPlayers = computed(() => {
   const value = playerQuery.value.trim().toLowerCase();
-  if (!value) return players.value;
-  return players.value.filter((player) =>
-    String(player.name || '').toLowerCase().includes(value)
-      || String(player.uuid || '').toLowerCase().includes(value));
+  return players.value.filter((player) => {
+    if (value && !String(player.name || '').toLowerCase().includes(value)
+        && !String(player.uuid || '').toLowerCase().includes(value)) {
+      return false;
+    }
+    if (playerStatus.value === 'online' && player.online !== true) return false;
+    if (playerStatus.value === 'offline' && player.online === true) return false;
+    if (playerScope.value === 'current' && filters.dimension
+        && player.dimension && player.dimension !== filters.dimension) return false;
+    return true;
+  });
 });
 
 function shortDimension(dimension) {
@@ -288,7 +420,7 @@ function shortDimension(dimension) {
 }
 
 const markers = computed(() => {
-  const rows = containers.value
+  const rows = visibleContainers.value
     .filter((row) => !filters.dimension || row.dimension === filters.dimension)
     .slice(0, 300)
     .map((row) => ({
@@ -301,7 +433,7 @@ const markers = computed(() => {
       kind: 'container',
       icon: row.type,
     }));
-  const people = players.value
+  const people = filteredPlayers.value
     .filter((player) => player.dimension && Number.isFinite(Number(player.x)))
     .filter((player) => !filters.dimension || player.dimension === filters.dimension)
     .map((player) => ({
@@ -360,6 +492,25 @@ function typeLabel(type) {
     'minecraft:ender_chest': '末影箱',
   };
   return map[key] || key.replace('minecraft:', '');
+}
+
+function sourceLabel(row) {
+  const source = String(row?.source || '');
+  if (source === 'loaded') return '实时';
+  if (source === 'pending') return '待写入';
+  return '缓存';
+}
+
+function playerAvatar(player) {
+  const params = new URLSearchParams();
+  if (player?.uuid) params.set('uuid', String(player.uuid));
+  else if (player?.name) params.set('name', String(player.name));
+  return '/api/user/map/avatar?' + params.toString();
+}
+
+function initialOf(player) {
+  const name = String(player?.name || player?.uuid || '?').trim();
+  return /^[A-Za-z0-9\u4e00-\u9fff]/.test(name) ? name.charAt(0).toUpperCase() : '?';
 }
 
 function rowKey(row) {
@@ -478,6 +629,12 @@ async function search() {
 function queueSearch() {
   window.clearTimeout(searchTimer);
   searchTimer = window.setTimeout(search, 320);
+}
+
+function setDimensionScope(value) {
+  const next = value === 'all';
+  if (next === allDimensions.value) return;
+  toggleAllDimensions();
 }
 
 function toggleAllDimensions() {
@@ -771,6 +928,193 @@ async function save(silent) {
   gap: 9px;
 }
 
+.sky-search-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.sky-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sky-search-label {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.sky-search :deep(.el-input) {
+  min-width: 0;
+}
+
+.sky-result-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.sky-result-col {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+}
+
+.sky-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: 360px;
+  overflow: auto;
+}
+
+.sky-row {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 6px 9px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: var(--panel-soft);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sky-row:hover {
+  border-color: var(--line-strong);
+  background: var(--panel);
+}
+
+.sky-row.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.sky-row.online {
+  border-color: color-mix(in srgb, #4ade80 42%, var(--line));
+}
+
+.sky-row-icon {
+  width: 26px;
+  height: 26px;
+}
+
+.sky-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.sky-row-title {
+  overflow: hidden;
+  color: var(--fg);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sky-row-meta {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sky-row-stats {
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.sky-row-badge {
+  padding: 2px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.sky-row-badge.source-loaded,
+.sky-row-badge.online {
+  border-color: color-mix(in srgb, #4ade80 46%, var(--line));
+  background: color-mix(in srgb, #4ade80 12%, transparent);
+  color: #3fbf72;
+}
+
+.sky-row-badge.source-pending {
+  border-color: color-mix(in srgb, #d29922 46%, var(--line));
+  background: color-mix(in srgb, #d29922 12%, transparent);
+  color: #d29922;
+}
+
+.sky-row-avatar {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: #263241;
+  color: #f5f8ff;
+  font-size: 11px;
+  font-weight: 700;
+  image-rendering: pixelated;
+}
+
+.sky-row-avatar img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+
+.sky-result-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-height: 22px;
+}
+
+.sky-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.sky-filter-bar select {
+  padding: 4px 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-soft);
+  color: var(--fg);
+  font-size: 12px;
+}
+
+@media (max-width: 1000px) {
+  .sky-search-row,
+  .sky-result-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .container-filters .grow {
   flex: 1 1 220px;
 }
@@ -783,7 +1127,7 @@ async function save(silent) {
 }
 
 .container-list.compact {
-  max-height: 280px;
+  max-height: 340px;
   overflow: auto;
 }
 
@@ -845,9 +1189,9 @@ async function save(silent) {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-width: 760px;
-  max-height: 200px;
-  margin-top: 8px;
+  max-width: none;
+  max-height: 340px;
+  margin-top: 0;
   overflow: auto;
 }
 

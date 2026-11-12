@@ -20,12 +20,7 @@
         placeholder="搜索中文 / 英文 / ID / 拼音"
         aria-label="搜索物品"
       />
-      <select v-model="sort" aria-label="物品排序">
-        <option value="name">按名称</option>
-        <option value="value-desc">价值从高到低</option>
-        <option value="value-asc">价值从低到高</option>
-        <option value="id">按 ID</option>
-      </select>
+      <Segmented v-model="sort" :options="sortOptions" aria-label="物品排序" />
       <span class="muted small">{{ filtered.length }} / {{ all.length }}</span>
     </div>
 
@@ -36,7 +31,7 @@
         type="button"
         class="creative-slot"
         :title="(row.zh || row.name || row.id) + '\n' + row.id"
-        @click="pick(row)"
+        @click="pick(row, $event)"
         @mouseenter="hover(row, $event)"
         @mousemove="move($event)"
         @mouseleave="leave"
@@ -56,12 +51,19 @@
 <script setup>
 import { computed, onMounted, reactive, ref, toRefs, watch } from 'vue';
 import ItemIcon from './ItemIcon.vue';
+import Segmented from './Segmented.vue';
 import { filterItems } from '../composables/itemSearch.js';
 import { hideItemTooltip, itemTooltip, moveItemTooltip, showItemTooltip } from './itemTooltip.js';
 
 const emit = defineEmits(['pick']);
 
 const PAGE = 200;
+const sortOptions = [
+  { value: 'name', label: '名称' },
+  { value: 'value-desc', label: '价值 ↓' },
+  { value: 'value-asc', label: '价值 ↑' },
+  { value: 'id', label: 'ID' },
+];
 const tabs = [
   { id: 'all', label: '全部' },
   { id: 'building', label: '建筑' },
@@ -221,8 +223,8 @@ function onScroll(event) {
   }
 }
 
-function pick(row) {
-  emit('pick', row);
+function pick(row, event) {
+  emit('pick', Object.assign({}, row, { shift: event?.shiftKey === true }));
 }
 
 function hover(row, event) {

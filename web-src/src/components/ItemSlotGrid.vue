@@ -22,7 +22,7 @@
         v-if="itemAt(index)"
         :item="itemAt(index)"
       />
-      <span v-else class="empty-index">{{ index }}</span>
+      <span v-else class="empty-index">{{ start + index }}</span>
       <span
         v-if="editable && itemAt(index)"
         class="slot-edit"
@@ -44,6 +44,7 @@ const props = defineProps({
   slots: { type: Array, default: () => [] },
   items: { type: Array, default: () => [] },
   selected: { type: Number, default: null },
+  start: { type: Number, default: 0 },
   columns: { type: Number, default: 9 },
   iconBase: { type: String, default: '/items/' },
   hasCursor: { type: Boolean, default: false },
@@ -65,12 +66,13 @@ function itemAt(index) {
 
 function titleFor(index) {
   const item = itemAt(index);
-  if (!item) return '空槽位 ' + index;
+  if (!item) return '空槽位 ' + (props.start + index);
   return (item.name || item.id) + ' ×' + item.count + '\n点击拿起 / 右键分半，悬停显示完整属性';
 }
 
 function ariaFor(index) {
   const item = itemAt(index);
-  return item ? '槽位 ' + index + ' ' + (item.name || item.id) + ' ×' + item.count : '空槽位 ' + index;
+  return item ? '槽位 ' + (props.start + index) + ' ' + (item.name || item.id) + ' ×' + item.count
+    : '空槽位 ' + (props.start + index);
 }
 </script>

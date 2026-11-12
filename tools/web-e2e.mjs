@@ -1926,14 +1926,14 @@ async function main() {
 
     const webInv = await fetch(base + '/api/inventory/web', { headers: authHeaders })
       .then((response) => response.json());
-    check('Web 幽灵背包可读取且固定 54 格', webInv.ok === true
-        && webInv.size === 54 && webInv.slots?.length === 54, JSON.stringify({ size: webInv.size }));
+    check('Web 虚拟玩家物品栏可读取且固定 68 格', webInv.ok === true
+        && webInv.size === 68 && webInv.slots?.length === 68, JSON.stringify({ size: webInv.size }));
     const webStone = await (await fetch(base + '/api/inventory/item', {
       method: 'POST', headers: authHeaders,
       body: JSON.stringify({ id: 'minecraft:stone', count: 2 }),
     })).json();
-    const empty54 = Array(54).fill('');
-    const webSlots = empty54.slice();
+    const empty68 = Array(68).fill('');
+    const webSlots = empty68.slice();
     webSlots[0] = webStone.encoded;
     const webWrite = await fetch(base + '/api/inventory/web/write', {
       method: 'POST', headers: authHeaders,
@@ -1954,7 +1954,7 @@ async function main() {
         JSON.stringify({ ok: webWithdraw.ok }));
     await fetch(base + '/api/inventory/web/write', {
       method: 'POST', headers: authHeaders,
-      body: JSON.stringify({ slots: Array(54).fill('') }),
+      body: JSON.stringify({ slots: Array(68).fill('') }),
     });
 
     const fundInv = await fetch(base + '/api/lottery/fund', { headers: authHeaders })
@@ -2164,7 +2164,8 @@ async function main() {
       if (!target) return { error: 'no row', text: document.body.innerText.slice(0, 200) };
       target.click();
       const deadline = Date.now() + 8000;
-      while (!document.querySelector('.slot-grid') && Date.now() < deadline) {
+      while ((!document.querySelector('.slot-grid')
+          || !document.querySelector('.slot .item-icon-view')) && Date.now() < deadline) {
         await sleep(100);
       }
       // 窗口内物品与分段按钮是异步渲染，给一次稳定帧再采集。
@@ -2732,8 +2733,8 @@ async function main() {
         30000, '天网容器列表');
     const skyEntry = await evaluate(`(() => ({
       autoWindows: document.querySelectorAll('.floating-window .inventory-window').length,
-      playerSearch: !!document.querySelector('.container-page.embedded .container-player-search input'),
-      playerList: document.querySelectorAll('.container-page.embedded .container-player').length,
+      playerSearch: !!document.querySelector('.container-page.embedded .sky-search input'),
+      playerList: document.querySelectorAll('.container-page.embedded .sky-row-avatar').length,
       trailIcon: !!document.querySelector('.container-page.embedded .map-trail-toggle svg'),
       trailText: document.querySelector('.container-page.embedded .map-trail-toggle')
         ?.textContent.trim() || '',
@@ -2748,7 +2749,8 @@ async function main() {
       if (row) {
         row.click();
         const deadline = Date.now() + 8000;
-        while (!document.querySelector('.slot-grid')
+        while ((!document.querySelector('.slot-grid')
+            || !document.querySelector('.slot .item-icon-view'))
             && Date.now() < deadline) {
           await new Promise((resolve) => setTimeout(resolve, 100));
         }
@@ -3002,7 +3004,7 @@ async function main() {
       method: 'POST', headers: authHeaders,
       body: JSON.stringify({ id: 'minecraft:stone', count: 1 }),
     })).json();
-    const drawerSeedSlots = Array(54).fill('');
+    const drawerSeedSlots = Array(68).fill('');
     drawerSeedSlots[0] = drawerSeed.encoded;
     await fetch(base + '/api/inventory/web/write', {
       method: 'POST', headers: authHeaders,
@@ -3014,7 +3016,7 @@ async function main() {
     })()`);
     try {
       await until("document.querySelector('.global-inventory-panel')"
-          + " && document.querySelectorAll('.global-inventory-panel .slot').length === 54",
+          + " && document.querySelectorAll('.global-inventory-panel .slot').length === 68",
           30000, '全局背包浮窗');
     } catch (e) {
       const state = await evaluate(`(() => ({
@@ -3060,16 +3062,17 @@ async function main() {
         nav: [...document.querySelectorAll('.subnav-item')].map((n) => n.textContent.trim()),
       });
     })()`);
-    check('Web 幽灵背包为全局浮窗：E 键唤起、54 格 + 创造物品库，无预设/模拟，浮窗打开时标签隐藏',
-        webInventoryUi.panel === true && webInventoryUi.slots === 54
+    check('Web 虚拟玩家物品栏为全局浮窗：E 键唤起、68 格 + 创造物品库，无预设/模拟，浮窗打开时标签隐藏',
+        webInventoryUi.panel === true && webInventoryUi.slots === 68
         && webInventoryUi.modeSwitch === false && webInventoryUi.saveButton === false
         && webInventoryUi.library === true && webInventoryUi.tabVisible === false
         && webInventoryUi.debugTab === true && webInventoryUi.noLibraryElsewhere === true
         && !webInventoryUi.nav.includes('Web 背包'),
         JSON.stringify(webInventoryUi));
-    check('Web 背包改为装备/副手/主背包/快捷栏/仓库布局且创造物品库上下切分',
+    check('Web 背包改为装备/副手/主背包/快捷栏/末影箱布局且创造物品库并排等高',
         webInventoryUi.labels.some((text) => text.startsWith('装备'))
         && webInventoryUi.labels.some((text) => text.startsWith('副手'))
+        && webInventoryUi.labels.some((text) => text.startsWith('末影箱'))
         && !webInventoryUi.labels.some((text) => text.includes('0–44'))
         && webInventoryUi.split === true,
         JSON.stringify({ labels: webInventoryUi.labels, split: webInventoryUi.split }));
@@ -3092,7 +3095,7 @@ async function main() {
         JSON.stringify({ first: drawerLive.slots?.[0], second: drawerLive.slots?.[1] }));
     await fetch(base + '/api/inventory/web/write', {
       method: 'POST', headers: authHeaders,
-      body: JSON.stringify({ slots: Array(54).fill('') }),
+      body: JSON.stringify({ slots: Array(68).fill('') }),
     });
 
     // 收起浮窗后标签必须重新出现（标签与页面互斥）。
@@ -3146,7 +3149,7 @@ async function main() {
       method: 'POST', headers: authHeaders,
       body: JSON.stringify({ id: 'minecraft:stone', count: 1 }),
     }).then((response) => response.json()).then(async (seed) => {
-      const one = Array(54).fill('');
+      const one = Array(68).fill('');
       one[0] = seed.encoded || '';
       await fetch(base + '/api/inventory/web/write', {
         method: 'POST', headers: authHeaders,
@@ -3189,7 +3192,7 @@ async function main() {
     await sleep(500);
     await fetch(base + '/api/inventory/web/write', {
       method: 'POST', headers: authHeaders,
-      body: JSON.stringify({ slots: Array(54).fill('') }),
+      body: JSON.stringify({ slots: Array(68).fill('') }),
     });
     await evaluate(`(() => {
       [...document.querySelectorAll('.global-inventory-panel button')]
@@ -3211,9 +3214,9 @@ async function main() {
         .some((button) => button.textContent.includes('扩充')),
       search: !!document.querySelector('.fund-inventory-embed .fund-search input'),
       sort: !!document.querySelector('.fund-inventory-embed .fund-sort'),
-      sortOptions: [...document.querySelectorAll('.fund-inventory-embed .fund-sort-segment')]
+      sortOptions: [...document.querySelectorAll('.fund-inventory-embed .fund-sort .el-segmented__item')]
         .map((option) => option.textContent.trim()),
-      sortDir: !!document.querySelector('.fund-inventory-embed .fund-sort-dir'),
+      sortDir: !!document.querySelector('.fund-inventory-embed .fund-sort .el-button'),
       statusBar: (() => {
         const node = document.querySelector('.fund-inventory-embed .pool-status');
         return node ? getComputedStyle(node).minHeight : '';
@@ -3563,3 +3566,7 @@ main().catch((error) => {
   console.error('E2E 执行失败：' + (error && error.stack || error));
   process.exitCode = 1;
 });
+
+
+
+

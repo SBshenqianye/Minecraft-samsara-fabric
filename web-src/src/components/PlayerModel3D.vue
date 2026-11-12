@@ -211,7 +211,7 @@ function facePoints(box, face) {
 
 function partTransform(part) {
   const box = BOX[part];
-  let rx = 0, rz = 0;
+  let rx = 0, rz = 0, oy = 0, oz = 0;
   if (pose.value === 'wave') {
     if (part === 'arm-left') rz = -145;
     if (part === 'arm-right') rz = 8;
@@ -221,13 +221,25 @@ function partTransform(part) {
     if (part === 'leg-left') rx = -28;
     if (part === 'leg-right') rx = 28;
   } else if (pose.value === 'sneak') {
-    if (part.startsWith('leg-')) rx = -32;
-    if (part === 'body') rx = 12;
+    // 参照原版 HumanoidModel/PlayerModel 的潜行姿态：
+    // 身体绕髋部（骨盆）前倾，腿不旋转（原版只是略微下移），手臂前摆。
+    // 旧实现把腿反向旋转 32°，才会出现“骨盆前倾、脚后甩”的海马姿势。
+    if (part === 'body') { rx = -28.6; oy = 3.2; }
+    if (part === 'head') { oy = 4.2; }
+    if (part.startsWith('arm-')) { rx = 23; oy = 5.2; }
+    if (part.startsWith('leg-')) { oy = 0.2; }
   }
-  const pivot = part === 'body'
+  // 身体/头的枢轴在底部（髋部/脖子），四肢的枢轴在顶部（肩/胯）。
+  const pivot = (part === 'body' || part === 'head')
     ? [box.x, box.y + box.h / 2, box.z]
     : [box.x, box.y - box.h / 2, box.z];
-  return { rx: rx * Math.PI / 180, rz: rz * Math.PI / 180, pivot };
+  return {
+    rx: rx * Math.PI / 180,
+    rz: rz * Math.PI / 180,
+    pivot,
+    oy,
+    oz,
+  };
 }
 
 function applyPart(point, box, tf) {
@@ -245,7 +257,7 @@ function applyPart(point, box, tf) {
     }
     x = px + tf.pivot[0]; y = py + tf.pivot[1]; z = pz + tf.pivot[2];
   }
-  return [x, y, z];
+  return [x, y + (tf.oy || 0), z + (tf.oz || 0)];
 }
 
 function rotateView(p, yaw, pitch) {
@@ -319,9 +331,12 @@ function draw() {
       const rotated = points.map((p) => rotateView(p, yaw, pitch));
       const normal = cross(sub(rotated[1], rotated[0]), sub(rotated[2], rotated[0]));
       if (normal[2] <= 0.0001) continue;
+      // 皮肤 UV 的 right/left 是“角色自身”的左右；几何 +X 面是角色左侧，
+      // 因此 +X 面取 left 贴图、-X 面取 right 贴图，否则头颅两侧会反。
+      const uv = face === 'right' ? uvMap.left : face === 'left' ? uvMap.right : uvMap[face];
       faces.push({
         img,
-        uv: uvMap[face],
+        uv,
         s0: project(rotated[0]),
         s1: project(rotated[1]),
         s2: project(rotated[2]),

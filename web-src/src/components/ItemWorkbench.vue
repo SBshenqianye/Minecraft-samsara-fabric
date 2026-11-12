@@ -52,6 +52,7 @@
             <ItemSlotGrid
               :slots="slotsFor(section)"
               :items="itemsFor(section)"
+              :start="section.start"
               :selected="selectedIndex !== null && selectedIndex >= section.start
                 && selectedIndex < section.start + section.size ? selectedIndex - section.start : null"
               :columns="section.columns || 9"
@@ -235,6 +236,19 @@ function setSlot(index, item) {
   if (item) localItems.value.push(Object.assign({}, item, { slot: index }));
 }
 
+/**
+ * 无限堆叠仓库（基金仓库）的空位选择：
+ * 不重排已有物品，只把新物品放进最早的空格，避免中间出现无意义的空洞。
+ */
+function firstEmptySlot() {
+  return localSlots.value.findIndex((value) => !value);
+}
+
+function findMergeTarget(index, item) {
+  if (!props.autoStack || !item) return null;
+  return localItems.value.find((row) => row.slot !== index && sameSignature(row, item)) || null;
+}
+
 async function api(path, options) {
   const token = sessionStorage.getItem('samsara-token') || '';
   const headers = Object.assign({ Authorization: 'Bearer ' + token }, options.headers || {});
@@ -274,6 +288,7 @@ function onSectionClick(section, payload) {
 function onSectionEdit(section, payload) {
   hideItemTooltip();
   selectedIndex.value = sectionIndex(section, payload);
+  emit('select', selectedItem.value);
 }
 
 function onSectionDragStart(section, payload) {
@@ -320,49 +335,58 @@ async function onSlotClick({ index, button, shift }) {
       cursor.value = picked;
       setSlot(index, take >= slotItem.count ? null : await withCount(slotItem, slotItem.count - take));
       changed = true;
-    } else if (!slotItem) {
-      const place = button === 2 ? 1 : cursor.value.count;
-      // 基金仓库这类无限堆叠仓库：从别的物品栏带过来的物品放进空格时，
-      // 先并入已有的同类堆叠，而不是又占一个新格子。仓库内部搬运不触发自动堆叠。
-      const stackTarget = props.autoStack && cursorOrigin.value === null
-        ? localItems.value.find((row) => row.slot !== index
-            && sameSignature(row, cursor.value))
-        : null;
-      if (stackTarget) {
-        setSlot(stackTarget.slot,
-          await withCount(stackTarget, Number(stackTarget.count) + place));
-        selectedIndex.value = stackTarget.slot;
-      } else {
-        setSlot(index, await withCount(cursor.value, place));
-        selectedIndex.value = index;
+    } else {
+      // 基金仓库这类无限堆叠仓库：只要仓库里已有同签名堆叠，就把新物品并进去，
+      // 不管目标格是空的、堆叠已满，还是放着另一种物品。这样新物品不会另占一格。
+      const mergeTarget = sameSignature(slotItem, cursor.value)
+        ? null : findMergeTarget(index, cursor.value);
+      if (mergeTarget) {
+        const place = button === 2 ? 1 : cursor.value.count;
+        setSlot(mergeTarget.slot,
+          await withCount(mergeTarget, Number(mergeTarget.count) + place));
+        selectedIndex.value = mergeTarget.slot;
+        cursor.value = place >= cursor.value.count
+          ? null : await withCount(cursor.value, cursor.value.count - place);
+        if (!cursor.value) cursorOrigin.value = null;
+        changed = true;
+      } else if (!slotItem) {
+        const place = button === 2 ? 1 : cursor.value.count;
+        // 仓库内部搬动尊重用户点选的格子；从外部带入的新物品才落到最早空位，
+        // 既保证密集堆积，又不会把用户主动整理的物品又弹回原处。
+        const destination = props.autoStack && cursorOrigin.value === null
+          ? firstEmptySlot() : index;
+        setSlot(destination >= 0 ? destination : index, await withCount(cursor.value, place));
+        selectedIndex.value = destination >= 0 ? destination : index;
+        cursor.value = place >= cursor.value.count
+          ? null : await withCount(cursor.value, cursor.value.count - place);
+        if (!cursor.value) cursorOrigin.value = null;
+        changed = true;
+      } else if (sameSignature(slotItem, cursor.value)) {
+        const max = props.unlimitedStack
+          ? Number.MAX_SAFE_INTEGER
+          : Math.min(slotItem.maxStack || 64, cursor.value.maxStack || 64);
+        const space = max - slotItem.count;
+        if (space <= 0) return;
+        const place = button === 2 ? 1 : Math.min(space, cursor.value.count);
+        setSlot(index, await withCount(slotItem, slotItem.count + place));
+        cursor.value = place >= cursor.value.count
+          ? null : await withCount(cursor.value, cursor.value.count - place);
+        changed = true;
+      } else if (button !== 2) {
+        const previous = slotItem;
+        setSlot(index, cursor.value);
+        cursor.value = previous;
+        cursorOrigin.value = index;
+        changed = true;
       }
-      cursor.value = place >= cursor.value.count
-        ? null : await withCount(cursor.value, cursor.value.count - place);
-      if (!cursor.value) cursorOrigin.value = null;
-      changed = true;
-    } else if (sameSignature(slotItem, cursor.value)) {
-      const max = props.unlimitedStack
-        ? Number.MAX_SAFE_INTEGER
-        : Math.min(slotItem.maxStack || 64, cursor.value.maxStack || 64);
-      const space = max - slotItem.count;
-      if (space <= 0) return;
-      const place = button === 2 ? 1 : Math.min(space, cursor.value.count);
-      setSlot(index, await withCount(slotItem, slotItem.count + place));
-      cursor.value = place >= cursor.value.count
-        ? null : await withCount(cursor.value, cursor.value.count - place);
-      changed = true;
-    } else if (button !== 2) {
-      const previous = slotItem;
-      setSlot(index, cursor.value);
-      cursor.value = previous;
-      cursorOrigin.value = index;
-      changed = true;
     }
   } catch (e) {
     workbenchError.value = e.message || String(e);
   } finally {
     busy.value = false;
-    if (changed) commit('interact');
+    if (changed) {
+      commit('interact');
+    }
   }
 }
 
@@ -395,7 +419,9 @@ async function quickMove(index) {
     workbenchError.value = e.message || String(e);
   } finally {
     busy.value = false;
-    if (changed) commit('interact');
+    if (changed) {
+      commit('interact');
+    }
   }
 }
 
@@ -446,21 +472,26 @@ async function libraryPick(row) {
   busy.value = true;
   workbenchError.value = '';
   try {
-    const data = await api(props.itemEndpoint, {
+    const base = await api(props.itemEndpoint, {
       method: 'POST',
       body: JSON.stringify({ id: row.id, count: 1 }),
     });
-    const item = Object.assign({}, data, { count: 1, signature: data.signature || data.id });
-    if (cursor.value) {
-      cursor.value = item;
-      commit('interact');
-    } else if (selectedIndex.value !== null && !localSlots.value[selectedIndex.value]) {
-      setSlot(selectedIndex.value, item);
-      commit('interact');
-    } else {
-      cursor.value = item;
-      cursorOrigin.value = selectedIndex.value;
-    }
+    // Shift+点击创造物品：和原版一样拿一整组；不可堆叠物品仍然是 1 个。
+    const wanted = row.shift ? Math.max(1, Number(base.maxStack || 1)) : 1;
+    const data = wanted > 1
+      ? await api(props.itemEndpoint, {
+        method: 'POST',
+        body: JSON.stringify({ id: row.id, count: wanted }),
+      })
+      : base;
+    const item = Object.assign({}, data, {
+      count: wanted,
+      signature: data.signature || data.id,
+    });
+    // 和原版创造模式一样：点击创造物品先放到光标上，再点槽位放下。
+    // 不再因为“当前选中了某个空槽位”就直接塞进去，否则 Shift+点击拿不到一组。
+    cursor.value = item;
+    cursorOrigin.value = null;
   } catch (e) {
     workbenchError.value = e.message || String(e);
   } finally {
