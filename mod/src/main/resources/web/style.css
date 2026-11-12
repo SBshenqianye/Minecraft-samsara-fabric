@@ -2074,3 +2074,143 @@ img.glint { filter: drop-shadow(0 0 3px #b26cff) saturate(1.2); }
       "history history";
   }
 }
+
+/* 身份组成就脉络：原版风格的图标节点 + 连线，可拖动/缩放。 */
+.identity-adv-tree {
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #10151c;
+}
+
+.identity-adv-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel-soft);
+}
+
+.identity-adv-spacer {
+  flex: 1;
+}
+
+.identity-adv-viewport {
+  position: relative;
+  height: 420px;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  background:
+    radial-gradient(circle at 50% 40%, rgba(88, 166, 255, .08), transparent 55%),
+    linear-gradient(rgba(255, 255, 255, .03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, .03) 1px, transparent 1px);
+  background-size: auto, 28px 28px, 28px 28px;
+}
+
+.identity-adv-viewport.dragging {
+  cursor: grabbing;
+}
+
+.identity-adv-canvas {
+  position: absolute;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.identity-adv-lines {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.identity-adv-lines line {
+  stroke: #45505f;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.identity-adv-lines line.done {
+  stroke: #3f8f63;
+}
+
+.identity-adv-node {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 2px solid #4a5566;
+  border-radius: 7px;
+  background: #1b222c;
+  cursor: pointer;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, .4);
+}
+
+.identity-adv-node img {
+  width: 30px;
+  height: 30px;
+  image-rendering: pixelated;
+}
+
+.identity-adv-node.todo {
+  filter: grayscale(1);
+  opacity: .42;
+}
+
+.identity-adv-node.todo:hover {
+  opacity: .8;
+}
+
+.identity-adv-node.frame-task.done {
+  border-color: #4ade80;
+}
+
+.identity-adv-node.frame-goal.done {
+  border-color: #f0c674;
+}
+
+.identity-adv-node.frame-challenge.done {
+  border-color: #c792ea;
+}
+
+.identity-adv-fallback {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 5px;
+  background: #263241;
+  color: #dbe4f0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.identity-adv-label {
+  position: absolute;
+  top: 46px;
+  left: 50%;
+  width: 84px;
+  transform: translateX(-50%);
+  overflow: hidden;
+  color: #c7d2df;
+  font-size: 9px;
+  line-height: 1.2;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.identity-adv-footer {
+  padding: 6px 8px;
+  border-top: 1px solid var(--line);
+  background: var(--panel-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

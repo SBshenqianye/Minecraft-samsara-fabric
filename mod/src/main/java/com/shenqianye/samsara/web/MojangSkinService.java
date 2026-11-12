@@ -52,6 +52,7 @@ public final class MojangSkinService {
             .build();
 
     private final Map<String, Entry> cache = new ConcurrentHashMap<>();
+    private final Map<String, Entry> bodyCache = new ConcurrentHashMap<>();
 
     /** 返回皮肤 PNG；没有正版档案、网络失败或响应异常时返回 null。 */
     public Skin skin(String uuid, String name) {
@@ -74,6 +75,32 @@ public final class MojangSkinService {
             cache.put(key, new Entry(now + FAILURE_TTL_MS, cached.skin));
             return cached.skin;
         }
+        return skin;
+    }
+
+    /** 第三方渲染的全身 3D 纸盒人（与实际皮肤一致）；失败时前端回退头像。 */
+    public Skin body(String uuid, String name) {
+        String normalizedUuid = normalizeUuid(uuid);
+        String normalizedName = normalizeName(name);
+        String key = normalizedUuid != null ? "uuid:" + normalizedUuid
+                : normalizedName != null ? "name:" + normalizedName.toLowerCase(Locale.ROOT) : "";
+        if (key.isEmpty()) return null;
+        long now = System.currentTimeMillis();
+        Entry cached = bodyCache.get(key);
+        if (cached != null && cached.expiresAt > now) return cached.skin;
+        // 全身渲染优先用玩家名：离线服的 UUID 是本地生成的，第三方皮肤站按名字才能命中。
+        String id = normalizedName != null ? normalizedName : normalizedUuid;
+        String encoded = URLEncoder.encode(id, StandardCharsets.UTF_8).replace("+", "%20");
+        Skin skin = null;
+        for (String base : new String[]{"https://minotar.net/body/", "https://mc-heads.net/body/"}) {
+            try {
+                skin = downloadSkin(base + encoded + "/240", true);
+                if (skin != null) break;
+            } catch (Exception e) {
+                Samsara.LOGGER.debug("[web] 3D 皮肤渲染失败 {}: {}", base, e.getMessage());
+            }
+        }
+        bodyCache.put(key, new Entry(now + (skin == null ? FAILURE_TTL_MS : SUCCESS_TTL_MS), skin));
         return skin;
     }
 

@@ -489,9 +489,8 @@ public final class LotteryService {
 
     /** 写回基金仓库；槽位数不设上限，提交更短的数组即可缩容回最小 54 格。 */
     public synchronized Map<String, Object> writeFundInventory(List<String> slots) {
-        if (slots == null || slots.size() > MAX_FUND_SLOTS) {
-            return Map.of("ok", false, "status", 400,
-                    "error", "基金仓库单次提交不能超过 " + MAX_FUND_SLOTS + " 格");
+        if (slots == null) {
+            return Map.of("ok", false, "status", 400, "error", "缺少 slots");
         }
         List<String> normalized = new ArrayList<>(slots);
         while (normalized.size() < MIN_FUND_SLOTS) normalized.add("");

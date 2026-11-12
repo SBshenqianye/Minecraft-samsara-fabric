@@ -6,6 +6,9 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.shenqianye.samsara.lottery.ItemValueService;
+import net.minecraft.advancements.AdvancementHolder;
+import net.minecraft.advancements.AdvancementNode;
+import net.minecraft.advancements.DisplayInfo;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
@@ -81,7 +84,7 @@ public final class IdentityDataInspector {
             out.put("message", "读取玩家数据失败：" + e.getMessage());
             return out;
         }
-        out.put("advancements", advancements(advancementsFile));
+        out.put("advancements", advancements(advancementsFile, server));
         out.put("stats", stats(statsFile));
         return out;
     }
@@ -284,7 +287,7 @@ public final class IdentityDataInspector {
         return out;
     }
 
-    private static Map<String, Object> advancements(Path file) {
+    private static Map<String, Object> advancements(Path file, MinecraftServer server) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("exists", Files.isRegularFile(file));
         if (!Files.isRegularFile(file)) {
@@ -294,17 +297,44 @@ public final class IdentityDataInspector {
             JsonObject root = JsonParser.parseString(Files.readString(file, StandardCharsets.UTF_8)).getAsJsonObject();
             int done = 0;
             List<String> ids = new ArrayList<>();
+            java.util.Set<String> doneIds = new java.util.HashSet<>();
             for (Map.Entry<String, JsonElement> entry : root.entrySet()) {
                 if (entry.getValue().isJsonObject()
                         && entry.getValue().getAsJsonObject().has("done")
                         && entry.getValue().getAsJsonObject().get("done").getAsBoolean()) {
                     done++;
+                    doneIds.add(entry.getKey());
                     if (ids.size() < 80) ids.add(entry.getKey());
                 }
             }
             out.put("total", root.size());
             out.put("done", done);
             out.put("ids", ids);
+            if (server != null) {
+                List<Map<String, Object>> nodes = new ArrayList<>();
+                for (AdvancementNode node : server.getAdvancements().tree().nodes()) {
+                    AdvancementHolder holder = node.holder();
+                    DisplayInfo display = holder.value().display().orElse(null);
+                    if (display == null || display.hidden()) {
+                        continue;
+                    }
+                    String id = holder.id().toString();
+                    ItemStack icon = display.icon().create();
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("id", id);
+                    row.put("title", display.title().getString());
+                    row.put("description", display.description().getString());
+                    row.put("icon", BuiltInRegistries.ITEM.getKey(icon.getItem()).getPath());
+                    row.put("frame", display.type().getSerializedName());
+                    row.put("x", node.x());
+                    row.put("y", node.y());
+                    row.put("parent", node.parent() == null ? ""
+                            : node.parent().holder().id().toString());
+                    row.put("done", doneIds.contains(id));
+                    nodes.add(row);
+                }
+                out.put("nodes", nodes);
+            }
         } catch (IOException | RuntimeException e) {
             out.put("error", e.getMessage());
         }

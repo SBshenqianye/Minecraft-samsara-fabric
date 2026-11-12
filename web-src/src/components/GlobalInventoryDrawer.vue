@@ -51,7 +51,7 @@
             item-endpoint="/api/inventory/item"
             :revision="revision"
             :disabled="saving"
-            :trash="false"
+            :trash="true"
             @change="onChange"
           />
         </div>

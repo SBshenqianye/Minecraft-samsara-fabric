@@ -2540,6 +2540,9 @@ async function main() {
       type: 'mouseWheel', x: 720, y: 520, deltaX: 0, deltaY: 520,
     });
     await sleep(700);
+    // headless 下鼠标滚轮偶发不触发页面滚动；用 JS 滚动兜底，并等待平滑滚动结束。
+    await evaluate("window.scrollTo({ top: 520, behavior: 'instant' }); true");
+    await sleep(1200);
     const stickyLayout = await evaluate(`(() => {
       const box = (selector) => {
         const node = document.querySelector(selector);
@@ -2900,7 +2903,7 @@ async function main() {
       }))()`);
       throw new Error('玩家背包页: ' + JSON.stringify(state));
     }
-    await until("document.querySelectorAll('.inventory-main .slot').length === 41",
+    await until("document.querySelectorAll('.inventory-main .slot').length === 68",
         20000, '玩家背包槽位');
     const inventoryUi = await evaluate(`(async () => {
       await new Promise((resolve) => setTimeout(resolve, 900));
@@ -2940,7 +2943,7 @@ async function main() {
       errors: window.__e2eErrors?.length || 0,
       });
     })()`);
-    check('天网玩家背包页可打开', inventoryUi.page && inventoryUi.slots === 41
+    check('天网玩家背包页可打开', inventoryUi.page && inventoryUi.slots === 68
         && inventoryUi.players >= 1 && inventoryUi.scope === true
         && inventoryUi.defaultMode === '模拟'
         && inventoryUi.section === '天网', JSON.stringify(inventoryUi));

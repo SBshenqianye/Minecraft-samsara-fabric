@@ -67,9 +67,9 @@
             </div>
             <div class="inventory-map">
               <MapPicker
-                :markers="playerMarkers"
+                :markers="mixedMarkers"
                 :dimension="mapDimension"
-                :selected-id="selectedPlayer?.uuid || ''"
+                :selected-id="selectedContainerId || selectedPlayer?.uuid || ''"
                 :height="520"
                 @select="selectMarker"
               />
@@ -97,62 +97,68 @@
               </div>
             </div>
 
-            <div class="inventory-actions">
-              <div class="mode-switch" role="group" aria-label="写入模式">
-                <button
-                  v-for="option in modeOptions"
-                  :key="option.id"
-                  type="button"
-                  :class="{ active: mode === option.id }"
-                  :title="option.hint"
-                  @click="setMode(option.id)"
-                >{{ option.label }}</button>
-              </div>
-              <el-button size="small" :disabled="saving" @click="refresh">重置 / 重新读取</el-button>
-              <el-button
-                v-if="mode !== 'simulate'"
-                size="small"
-                type="primary"
-                :disabled="!dirty || saving"
-                :loading="saving"
-                @click="confirmSave"
-              >
-                {{ mode === 'live' ? '立即写入' : '保存修改' }}{{ dirty ? ' *' : '' }}
-              </el-button>
+            <div class="inventory-main-body">
+              <PlayerDoll
+                :uuid="data.player.uuid"
+                :name="data.player.name"
+                :online="data.online === true"
+                :height="230"
+              />
+              <InventoryWindow
+                kind="player"
+                :target="{ uuid: data.player.uuid, name: data.player.name }"
+              />
             </div>
-
-            <p v-if="!data.online && source !== 'identity'" class="muted small">
-              离线写入不会直接改运行中的 .dat，而是在玩家下次登录或停服前应用。
-            </p>
-
-            <ItemWorkbench
-              :slots="slots"
-              :items="data.items || []"
-              :layout="layout"
-              :schema="schema"
-              :mode="mode"
-              item-endpoint="/api/inventory/item"
-              :revision="revision"
-              :disabled="saving"
-              @change="onWorkbenchChange"
-            />
-
-            <p v-if="data.pendingWrite" class="muted small">
-              当前显示安全队列中的内容；写入会更新队列，登录或停服前应用。
-            </p>
           </template>
         </section>
       </div>
     </template>
+    <Teleport to="body">
+      <FloatingWindow
+        v-for="win in visibleContainerWindows"
+        :key="win.key"
+        :title="win.title"
+        :subtitle="win.subtitle"
+        :width="win.width"
+        :height="win.height"
+        :x="win.x"
+        :y="win.y"
+        :z="win.pinned ? 900 + win.z : win.z"
+        :pinned="win.pinned"
+        :active="activeContainerWindow === win.key"
+        @focus="focusContainerWindow(win)"
+        @pin="toggleContainerPin(win)"
+        @minimize="minimizeContainerWindow(win)"
+        @close="closeContainerWindow(win)"
+      >
+        <InventoryWindow kind="container" :target="win.target" />
+      </FloatingWindow>
+    </Teleport>
+
+    <Teleport to="body">
+      <div v-if="minimizedContainerWindows.length" class="window-dock" aria-label="最小化的容器窗口">
+        <span class="window-dock-title">容器</span>
+        <button
+          v-for="win in minimizedContainerWindows"
+          :key="win.key"
+          type="button"
+          class="window-dock-tab"
+          :title="win.subtitle"
+          @click="restoreContainerWindow(win)"
+        >{{ win.title }}</button>
+      </div>
+    </Teleport>
   </TabShell>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import TabShell from '../components/TabShell.vue';
-import ItemWorkbench from '../components/ItemWorkbench.vue';
+import PlayerDoll from '../components/PlayerDoll.vue';
+import FloatingWindow from '../components/FloatingWindow.vue';
+import InventoryWindow from '../components/InventoryWindow.vue';
 import MapPicker from '../components/MapPicker.vue';
 import { useLiveRefresh } from '../composables/useLiveRefresh.js';
 import { itemCursor } from '../composables/itemCursor.js';
@@ -181,6 +187,12 @@ const source = ref('player');
 const identityUuid = ref('');
 const isEmbedded = computed(() => String(route.query.embed || '') === '1');
 const mapDimension = ref('minecraft:overworld');
+const containerRows = ref([]);
+const containerWindows = ref([]);
+const activeContainerWindow = ref('');
+const selectedContainerId = ref('');
+let containerWindowZ = 90;
+let containerWindowCascade = 0;
 const playersUpdatedAt = ref('');
 let liveTimer = null;
 let playersTimer = null;
@@ -248,6 +260,116 @@ const mapDimensions = computed(() => {
   }
   return [...seen.values()];
 });
+
+const containerMarkers = computed(() => containerRows.value
+  .filter((row) => row.dimension === mapDimension.value)
+  .map((row) => ({
+    id: 'container:' + containerKey(row),
+    x: Number(row.x),
+    z: Number(row.z),
+    dimension: row.dimension,
+    label: containerTypeLabel(row.type),
+    sub: row.x + ', ' + row.y + ', ' + row.z + ' · ' + row.nonEmpty + '/' + row.size,
+    kind: 'container',
+    icon: row.type,
+  })));
+
+const mixedMarkers = computed(() => playerMarkers.value.concat(containerMarkers.value));
+
+const visibleContainerWindows = computed(() =>
+  containerWindows.value.filter((win) => !win.minimized));
+const minimizedContainerWindows = computed(() =>
+  containerWindows.value.filter((win) => win.minimized));
+
+function containerKey(row) {
+  return [row.dimension, row.x, row.y, row.z].join(',');
+}
+
+function containerTypeLabel(type) {
+  const key = String(type || '');
+  const map = {
+    'minecraft:chest': '箱子',
+    'minecraft:trapped_chest': '陷阱箱',
+    'minecraft:barrel': '木桶',
+    'minecraft:shulker_box': '潜影盒',
+    'minecraft:hopper': '漏斗',
+    'minecraft:dispenser': '发射器',
+    'minecraft:dropper': '投掷器',
+    'minecraft:furnace': '熔炉',
+    'minecraft:blast_furnace': '高炉',
+    'minecraft:smoker': '烟熏炉',
+    'minecraft:brewing_stand': '酿造台',
+    'minecraft:ender_chest': '末影箱',
+  };
+  return map[key] || key.replace('minecraft:', '');
+}
+
+function focusContainerWindow(win) {
+  containerWindowZ += 1;
+  win.z = containerWindowZ;
+  activeContainerWindow.value = win.key;
+}
+
+function openContainerWindow(row) {
+  const key = 'container:' + containerKey(row);
+  selectedContainerId.value = key;
+  const existing = containerWindows.value.find((win) => win.key === key);
+  if (existing) {
+    existing.minimized = false;
+    focusContainerWindow(existing);
+    return;
+  }
+  containerWindowCascade = (containerWindowCascade + 1) % 6;
+  containerWindows.value.push({
+    key,
+    kind: 'container',
+    target: Object.assign({}, row),
+    title: containerTypeLabel(row.type),
+    subtitle: row.dimension + ' · ' + row.x + ', ' + row.y + ', ' + row.z,
+    width: 820,
+    height: 620,
+    x: 150 + containerWindowCascade * 26,
+    y: 100 + containerWindowCascade * 20,
+    z: ++containerWindowZ,
+    pinned: false,
+    minimized: false,
+  });
+  activeContainerWindow.value = key;
+}
+
+function toggleContainerPin(win) {
+  win.pinned = !win.pinned;
+  if (win.pinned) focusContainerWindow(win);
+}
+
+function minimizeContainerWindow(win) {
+  win.minimized = true;
+  if (activeContainerWindow.value === win.key) activeContainerWindow.value = '';
+}
+
+function restoreContainerWindow(win) {
+  win.minimized = false;
+  focusContainerWindow(win);
+}
+
+function closeContainerWindow(win) {
+  containerWindows.value = containerWindows.value.filter((row) => row.key !== win.key);
+  if (activeContainerWindow.value === win.key) activeContainerWindow.value = '';
+  if (selectedContainerId.value === win.key) selectedContainerId.value = '';
+}
+
+async function loadContainers() {
+  if (!token.value) return;
+  try {
+    const params = new URLSearchParams({ dimension: mapDimension.value });
+    const result = await api('/api/containers?' + params.toString());
+    if (result.status === 200 && result.data.ok) {
+      containerRows.value = result.data.containers || [];
+    }
+  } catch {
+    // 容器地图不可用时保留玩家标记。
+  }
+}
 
 const playerMarkers = computed(() => players.value
   .filter((player) => player.dimension && Number.isFinite(Number(player.x)))
@@ -363,6 +485,7 @@ async function connect() {
       if (identityUuid.value) await loadIdentity();
     } else {
       await loadPlayers();
+      await loadContainers();
     }
   } catch (e) {
     error.value = e.message || String(e);
@@ -380,6 +503,11 @@ async function loadSchema() {
     // schema 失败时仍可做数量编辑
   }
 }
+
+watch(mapDimension, () => {
+  selectedContainerId.value = '';
+  loadContainers();
+});
 
 async function loadPlayers() {
   loading.value = true;
@@ -406,6 +534,12 @@ async function selectPlayer(player) {
 }
 
 function selectMarker(id) {
+  if (String(id).startsWith('container:')) {
+    const row = containerRows.value.find((candidate) => 'container:' + containerKey(candidate) === id);
+    if (row) openContainerWindow(row);
+    return;
+  }
+  selectedContainerId.value = '';
   const player = players.value.find((candidate) => candidate.uuid === id);
   if (player) selectPlayer(player);
 }
@@ -787,5 +921,56 @@ async function save(silent) {
 }
 .inventory-map {
   margin-top: 12px;
+}
+.inventory-main-body {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.inventory-main-body .item-workbench {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .inventory-main-body {
+    flex-wrap: wrap;
+  }
+}
+
+.window-dock {
+  position: fixed;
+  right: 0;
+  top: 30%;
+  z-index: 880;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 5px;
+  border: 1px solid var(--line);
+  border-right: 0;
+  border-radius: 9px 0 0 9px;
+  background: var(--panel);
+}
+
+.window-dock-title {
+  color: var(--muted);
+  font-size: 9px;
+  text-align: center;
+}
+
+.window-dock-tab {
+  max-width: 108px;
+  padding: 4px 7px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-soft);
+  color: var(--fg);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
 }
 </style>

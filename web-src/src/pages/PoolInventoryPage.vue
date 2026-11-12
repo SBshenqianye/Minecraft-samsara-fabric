@@ -86,7 +86,7 @@
           item-endpoint="/api/inventory/item"
           :revision="revision"
           :disabled="saving"
-          :trash="kind !== 'fund'"
+          :trash="kind === 'web'"
           :unlimited-stack="kind === 'fund'"
           :has-more="hasMore"
           @change="onWorkbenchChange"

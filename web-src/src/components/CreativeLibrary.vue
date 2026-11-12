@@ -50,7 +50,6 @@
     </div>
 
     <p v-if="error" class="container-message error">{{ error }}</p>
-    <p class="muted small creative-hint">点击物品放到光标；按住 Shift 点击可连续取用。物品无限，不消耗。</p>
   </section>
 </template>
 
@@ -290,7 +289,7 @@ defineExpose({ reload: ensureAll });
 
 .creative-grid {
   display: grid;
-  grid-template-columns: repeat(9, 32px);
+  grid-template-columns: repeat(auto-fill, minmax(32px, 1fr));
   gap: 3px;
   align-content: start;
   min-height: 200px;
@@ -305,8 +304,9 @@ defineExpose({ reload: ensureAll });
 .creative-slot {
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: 100%;
+  min-height: 32px;
+  aspect-ratio: 1;
   padding: 0;
   border: 1px solid #3a3a3a;
   border-radius: 4px;

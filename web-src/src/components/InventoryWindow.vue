@@ -8,7 +8,7 @@
         title="每次操作立即写入；未加载区块或离线玩家会排队，加载/登录后自动应用。"
         aria-label="写入说明"
       >!</span>
-      <span class="muted small">{{ filledCount }} 件 · revision {{ revision }}</span>
+      <span class="muted small">{{ filledCount }} 件 · revision {{ revisionText }}</span>
       <span class="spacer"></span>
       <div class="mode-switch" role="group" aria-label="写入模式">
         <button
@@ -21,21 +21,12 @@
         >{{ option.label }}</button>
       </div>
       <button
-        v-if="mode !== 'simulate'"
+        v-if="mode === 'preset'"
         class="primary tiny"
         type="button"
         :disabled="!dirty || saving"
         @click="confirmSave"
-      >{{ mode === 'live' ? '立即写入' : '保存修改' }}{{ dirty ? ' *' : '' }}</button>
-      <div v-if="kind === 'player'" class="iw-scope">
-        <button
-          v-for="option in scopeOptions"
-          :key="option.id"
-          type="button"
-          :class="{ active: scope === option.id }"
-          @click="setScope(option.id)"
-        >{{ option.label }}</button>
-      </div>
+      >保存修改{{ dirty ? ' *' : '' }}</button>
       <span v-if="saving" class="muted small">写入中…</span>
       <button
         class="icon-button"
@@ -61,7 +52,7 @@
       :item-endpoint="itemEndpoint"
       :revision="revision"
       :disabled="saving"
-      :trash="true"
+      :trash="false"
       @change="onWorkbenchChange"
     />
   </div>
@@ -79,8 +70,10 @@ const props = defineProps({
   target: { type: Object, default: () => ({}) },
 });
 
+const INV_SIZE = 41;
+const ENDER_SIZE = 27;
+
 const token = ref(sessionStorage.getItem('samsara-token') || '');
-const scope = ref('inventory');
 const mode = ref('simulate');
 const loading = ref(false);
 const saving = ref(false);
@@ -90,6 +83,8 @@ const slots = ref([]);
 const baselineSlots = ref([]);
 const items = ref([]);
 const revision = ref(0);
+const invRevision = ref(0);
+const enderRevision = ref(0);
 const dirty = ref(false);
 const schema = ref({});
 let liveTimer = null;
@@ -101,12 +96,6 @@ const modeOptions = [
   { id: 'simulate', label: '模拟', hint: '只在本地演练，不会写入服务器。' },
 ];
 
-const scopeOptions = [
-  { id: 'inventory', label: '背包' },
-  { id: 'ender', label: '末影箱' },
-  { id: 'armor', label: '盔甲' },
-];
-
 const tokenKey = computed(() => props.kind === 'container'
   ? 'container:' + [props.target?.dimension, props.target?.x, props.target?.y, props.target?.z].join(',')
   : 'player:' + (props.target?.uuid || ''));
@@ -115,7 +104,11 @@ const ready = computed(() => token.value && !loading.value && !error.value);
 const itemEndpoint = computed(() => props.kind === 'container'
   ? '/api/containers/item' : '/api/inventory/item');
 const filledCount = computed(() => (slots.value || []).filter((value) => value).length);
+const revisionText = computed(() => props.kind === 'container'
+  ? String(revision.value)
+  : invRevision.value + ' / ' + enderRevision.value);
 const containerSize = computed(() => Number(props.target?.size) || 0);
+
 const layout = computed(() => {
   if (props.kind === 'container') {
     const size = Math.max(1, containerSize.value || slots.value.length || 1);
@@ -126,23 +119,18 @@ const layout = computed(() => {
       columns: size <= 3 ? size : 9,
     }];
   }
-  if (scope.value === 'armor') {
-    return [{ label: '盔甲 36–39', start: 0, size: 4, columns: 1 }];
-  }
-  if (scope.value === 'ender') {
-    return [{ label: '末影箱 0–26', start: 0, size: 27, columns: 9 }];
-  }
   return [
     { label: '盔甲 36–39', start: 36, size: 4, columns: 1, row: 'gear', zone: 'gear' },
     { label: '副手 40', start: 40, size: 1, columns: 1, row: 'gear', zone: 'gear' },
     { label: '主背包 9–35', start: 9, size: 27, columns: 9, row: 'main', zone: 'main' },
     { label: '快捷栏 0–8', start: 0, size: 9, columns: 9, row: 'hotbar', zone: 'hotbar', gap: true },
+    { label: '末影箱 0–26', start: INV_SIZE, size: ENDER_SIZE, columns: 9, row: 'ender', zone: 'ender', gap: true },
   ];
 });
 
 const liveState = useLiveRefresh({
   mode: () => 'live',
-  key: () => tokenKey.value + ':' + scope.value,
+  key: () => tokenKey.value,
   canRefresh: () => !!token.value && !!slots.value.length && !dirty.value
     && !saving.value && !loading.value && !cursorPending.value,
   fetchSnapshot: async (signal) => {
@@ -150,14 +138,21 @@ const liveState = useLiveRefresh({
       const result = await api(readPath(), { signal });
       return result.status === 200 && result.data.ok ? result.data : null;
     }
-    const result = await api(inventoryPath(), { signal });
-    return result.status === 200 && result.data.ok ? result.data : null;
+    const [inv, end] = await Promise.all([
+      api(inventoryPath('inventory'), { signal }),
+      api(inventoryPath('ender'), { signal }),
+    ]);
+    if (inv.status !== 200 || !inv.data.ok || end.status !== 200 || !end.data.ok) return null;
+    return { inv: inv.data, end: end.data };
   },
   applySnapshot: (snapshot) => {
     if (dirty.value || saving.value || cursorPending.value) return false;
-    const incoming = snapshot.slots || [];
+    const incoming = props.kind === 'container'
+      ? (snapshot.container?.slots || [])
+      : combineSlots(snapshot.inv?.slots, snapshot.end?.slots);
     if (sameSlots(incoming, baselineSlots.value)) return false;
-    applySnapshotData(snapshot);
+    if (props.kind === 'container') applyContainerData(snapshot);
+    else applyPlayerData(snapshot.inv, snapshot.end);
     if (!message.value) message.value = '检测到外部改动，已同步最新内容。';
     return true;
   },
@@ -172,10 +167,11 @@ onBeforeUnmount(() => {
   window.clearTimeout(liveTimer);
 });
 
-watch(() => props.target, () => {
-  if (props.kind === 'player') scope.value = 'inventory';
+watch(() => props.kind === 'player'
+  ? String(props.target?.uuid || '')
+  : [props.target?.dimension, props.target?.x, props.target?.y, props.target?.z].join(','), () => {
   load();
-}, { deep: true });
+});
 
 function readPath() {
   const row = props.target || {};
@@ -188,10 +184,10 @@ function readPath() {
   return '/api/containers/read?' + params.toString();
 }
 
-function inventoryPath() {
+function inventoryPath(scope) {
   const params = new URLSearchParams({
     player: String(props.target?.uuid || ''),
-    scope: scope.value,
+    scope,
   });
   return '/api/inventory?' + params.toString();
 }
@@ -222,13 +218,27 @@ async function load() {
   error.value = '';
   message.value = '';
   try {
-    const result = await api(props.kind === 'container' ? readPath() : inventoryPath());
-    if (result.status !== 200 || !result.data.ok) {
-      throw new Error(result.data.error || '读取失败');
-    }
-    applySnapshotData(result.data);
-    if (result.data.pendingWrite) {
-      message.value = '玩家不在线，当前显示安全队列中的内容。';
+    if (props.kind === 'container') {
+      const result = await api(readPath());
+      if (result.status !== 200 || !result.data.ok) {
+        throw new Error(result.data.error || '读取容器失败');
+      }
+      applyContainerData(result.data);
+    } else {
+      const [inv, end] = await Promise.all([
+        api(inventoryPath('inventory')),
+        api(inventoryPath('ender')),
+      ]);
+      if (inv.status !== 200 || !inv.data.ok) {
+        throw new Error(inv.data.error || '读取玩家背包失败');
+      }
+      if (end.status !== 200 || !end.data.ok) {
+        throw new Error(end.data.error || '读取末影箱失败');
+      }
+      applyPlayerData(inv.data, end.data);
+      if (inv.data.pendingWrite || end.data.pendingWrite) {
+        message.value = '玩家不在线，当前显示安全队列中的内容。';
+      }
     }
   } catch (e) {
     error.value = e.message || String(e);
@@ -239,13 +249,35 @@ async function load() {
   }
 }
 
-function applySnapshotData(payload) {
-  const row = props.kind === 'container' ? payload.container : payload;
-  const incoming = (row?.slots || []).slice();
+function applyContainerData(payload) {
+  const row = payload.container || {};
+  const incoming = (row.slots || []).slice();
   slots.value = incoming;
   baselineSlots.value = incoming.slice();
   items.value = (payload.items || []).slice();
-  revision.value = Number(row?.revision || payload.revision || 0);
+  revision.value = Number(row.revision || payload.revision || 0);
+  dirty.value = false;
+}
+
+function combineSlots(invSlots, endSlots) {
+  const inv = (invSlots || []).slice(0, INV_SIZE);
+  const end = (endSlots || []).slice(0, ENDER_SIZE);
+  while (inv.length < INV_SIZE) inv.push('');
+  while (end.length < ENDER_SIZE) end.push('');
+  return inv.concat(end);
+}
+
+function applyPlayerData(inv, end) {
+  const incoming = combineSlots(inv?.slots, end?.slots);
+  slots.value = incoming;
+  baselineSlots.value = incoming.slice();
+  const invItems = (inv?.items || []).map((row) => Object.assign({}, row));
+  const endItems = (end?.items || []).map((row) =>
+    Object.assign({}, row, { slot: Number(row.slot) + INV_SIZE }));
+  items.value = invItems.concat(endItems);
+  invRevision.value = Number(inv?.revision || 0);
+  enderRevision.value = Number(end?.revision || 0);
+  revision.value = invRevision.value;
   dirty.value = false;
 }
 
@@ -257,12 +289,6 @@ function sameSlots(a, b) {
     if ((left[i] || '') !== (right[i] || '')) return false;
   }
   return true;
-}
-
-async function setScope(next) {
-  if (next === scope.value) return;
-  scope.value = next;
-  await load();
 }
 
 function onWorkbenchChange(payload) {
@@ -308,6 +334,18 @@ async function confirmSave() {
   await save(false);
 }
 
+async function writePlayerScope(scope, scopeSlots, scopeRevision) {
+  return api('/api/inventory/write', {
+    method: 'POST',
+    body: JSON.stringify({
+      player: props.target?.uuid,
+      scope,
+      revision: scopeRevision,
+      slots: scopeSlots,
+    }),
+  });
+}
+
 async function save(silent) {
   if (saving.value) {
     saveQueued = true;
@@ -318,10 +356,9 @@ async function save(silent) {
   saveQueued = false;
   error.value = '';
   try {
-    let result;
     if (props.kind === 'container') {
       const row = props.target || {};
-      result = await api('/api/containers/write', {
+      const result = await api('/api/containers/write', {
         method: 'POST',
         body: JSON.stringify({
           dimension: row.dimension,
@@ -332,34 +369,60 @@ async function save(silent) {
           slots: slots.value,
         }),
       });
+      if (result.status === 409) {
+        await load();
+        throw new Error('容器已被其他操作修改，已重新读取。');
+      }
+      if ((result.status !== 200 && result.status !== 202) || !result.data.ok) {
+        throw new Error(result.data.error || '写入失败');
+      }
+      const incoming = (result.data.container?.slots || slots.value).slice();
+      slots.value = incoming;
+      baselineSlots.value = incoming.slice();
+      items.value = result.data.items || items.value;
+      revision.value = Number(result.data.container?.revision || revision.value);
+      message.value = result.data.queued ? '目标区块未加载，已排队。' : '已写入容器。';
     } else {
-      result = await api('/api/inventory/write', {
-        method: 'POST',
-        body: JSON.stringify({
-          player: props.target?.uuid,
-          scope: scope.value,
-          revision: revision.value,
-          slots: slots.value,
-        }),
-      });
+      const invSlots = slots.value.slice(0, INV_SIZE);
+      const endSlots = slots.value.slice(INV_SIZE, INV_SIZE + ENDER_SIZE);
+      const baseline = baselineSlots.value;
+      const changedInv = !sameSlots(invSlots, baseline.slice(0, INV_SIZE));
+      const changedEnd = !sameSlots(endSlots, baseline.slice(INV_SIZE, INV_SIZE + ENDER_SIZE));
+      if (!changedInv && !changedEnd) {
+        dirty.value = false;
+        return;
+      }
+      const queued = [];
+      if (changedInv) {
+        const result = await writePlayerScope('inventory', invSlots, invRevision.value);
+        if (result.status === 409) {
+          await load();
+          throw new Error('玩家背包已被其他操作修改，已重新读取。');
+        }
+        if ((result.status !== 200 && result.status !== 202) || !result.data.ok) {
+          throw new Error(result.data.error || '写入玩家背包失败');
+        }
+        invRevision.value = Number(result.data.revision || invRevision.value);
+        if (result.data.queued) queued.push('背包');
+      }
+      if (changedEnd) {
+        const result = await writePlayerScope('ender', endSlots, enderRevision.value);
+        if (result.status === 409) {
+          await load();
+          throw new Error('末影箱已被其他操作修改，已重新读取。');
+        }
+        if ((result.status !== 200 && result.status !== 202) || !result.data.ok) {
+          throw new Error(result.data.error || '写入末影箱失败');
+        }
+        enderRevision.value = Number(result.data.revision || enderRevision.value);
+        if (result.data.queued) queued.push('末影箱');
+      }
+      baselineSlots.value = slots.value.slice();
+      message.value = queued.length
+        ? '玩家不在线，已写入安全队列（' + queued.join('、') + '）。'
+        : '已写入玩家背包与末影箱。';
     }
-    if (result.status === 409) {
-      await load();
-      throw new Error('目标已被其他操作修改，已重新读取。');
-    }
-    if ((result.status !== 200 && result.status !== 202) || !result.data.ok) {
-      throw new Error(result.data.error || '写入失败');
-    }
-    const row = props.kind === 'container' ? result.data.container : result.data;
-    const incoming = (row?.slots || slots.value).slice();
-    slots.value = incoming;
-    baselineSlots.value = incoming.slice();
-    items.value = result.data.items || items.value;
-    revision.value = Number(row?.revision || revision.value);
     dirty.value = false;
-    message.value = props.kind === 'container'
-      ? (result.data.queued ? '目标区块未加载，已排队。' : '已写入容器。')
-      : (result.data.queued ? '玩家不在线，已写入安全队列。' : '已写入玩家背包。');
     if (!silent) ElMessage.success(message.value);
   } catch (e) {
     error.value = e.message || String(e);
@@ -391,27 +454,42 @@ async function save(silent) {
   padding-bottom: 4px;
 }
 
-.iw-scope {
+.mode-switch {
   display: inline-flex;
   padding: 2px;
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: 8px;
   background: var(--panel-soft);
 }
 
-.iw-scope button {
-  padding: 2px 7px;
+.mode-switch button {
+  padding: 3px 9px;
   border: 0;
-  border-radius: 5px;
+  border-radius: 6px;
   background: transparent;
   color: var(--muted);
   font-size: 11px;
   cursor: pointer;
 }
 
-.iw-scope button.active {
+.mode-switch button.active {
   background: var(--accent);
   color: #fff;
+}
+
+.primary.tiny {
+  padding: 3px 9px;
+  border: 1px solid var(--accent);
+  border-radius: 7px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.primary.tiny:disabled {
+  opacity: .45;
+  cursor: default;
 }
 
 .mode-flag {

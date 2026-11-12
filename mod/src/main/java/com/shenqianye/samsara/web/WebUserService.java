@@ -307,6 +307,10 @@ public final class WebUserService {
         return skins().skin(uuid, name);
     }
 
+    public MojangSkinService.Skin body(String uuid, String name) {
+        return skins().body(uuid, name);
+    }
+
     /**
      * 公网用户端隐藏玩家名：保留首字符、分隔符（如 _）和末 3 位，其余统一替换为 *，长度不变。
      * 例如 xh_unpkire → x*_****ire。管理端 /api/map/* 仍返回完整名字。

@@ -61,6 +61,7 @@
         :style="{ left: clusterPopup.left + 'px', top: clusterPopup.top + 'px' }"
         @pointerdown.stop
         @click.stop
+        @wheel.stop
       >
         <div class="cluster-popup-head">
           <strong>{{ clusterPopup.markers.length }} 个目标</strong>
@@ -239,9 +240,9 @@ function onMarkerClick(cluster) {
     emit('select', cluster.markers[0].id);
     return;
   }
-  const columns = Math.min(6, Math.max(2, Math.ceil(Math.sqrt(cluster.markers.length))));
-  const width = 300;
-  const height = Math.min(340, 52 + Math.ceil(cluster.markers.length / columns) * 46);
+  const columns = Math.min(3, Math.max(2, Math.ceil(Math.sqrt(cluster.markers.length))));
+  const width = 380;
+  const height = Math.min(380, 56 + Math.ceil(cluster.markers.length / columns) * 54);
   clusterPopup.value = {
     markers: cluster.markers,
     columns,
@@ -468,9 +469,10 @@ function loadAvatar(marker) {
     avatarUrls[marker.id] = cached;
     return;
   }
-  const query = marker.uuid
-    ? 'uuid=' + encodeURIComponent(marker.uuid)
-    : 'name=' + encodeURIComponent(marker.label || '');
+  const params = new URLSearchParams();
+  if (marker.uuid) params.set('uuid', String(marker.uuid));
+  if (marker.label) params.set('name', String(marker.label));
+  const query = params.toString();
   if (!query) return;
   avatarLoading.add(marker.id);
   const image = new Image();
@@ -736,8 +738,8 @@ watch(() => props.markers, () => {
 .cluster-popup {
   position: absolute;
   z-index: 8;
-  width: 300px;
-  max-height: 340px;
+  width: 380px;
+  max-height: 380px;
   overflow: auto;
   padding: 8px;
   border: 1px solid var(--line-strong);
@@ -790,6 +792,13 @@ watch(() => props.markers, () => {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 11px;
+  color: var(--fg);
+}
+
+.cluster-cell-text .muted {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 </style>

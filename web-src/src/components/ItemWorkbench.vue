@@ -17,7 +17,9 @@
         @click="trashCursor"
         @dragover.prevent
         @drop.prevent="trashDrop"
-      >🗑</button>
+      >
+        <ItemIcon :item="{ id: 'minecraft:lava_bucket' }" size="md" :show-count="false" />
+      </button>
       <span v-if="cursor" class="cursor-chip">
         光标：<ItemIcon :item="cursor" size="sm" :show-count="false" />
         <span>{{ cursor.name }} ×{{ cursor.count }}</span>
@@ -31,7 +33,7 @@
     <p v-if="workbenchMessage" class="container-message ok">{{ workbenchMessage }}</p>
 
 
-    <div class="workbench-body">
+    <div class="workbench-body" :class="{ 'has-editor': !!selectedItem }">
       <div
         ref="gridsEl"
         class="workbench-grids"
@@ -70,8 +72,8 @@
         <p v-if="!layout.length" class="muted small">没有可显示的槽位。</p>
       </div>
 
-      <aside class="workbench-side">
-        <div v-if="selectedItem" class="workbench-panel workbench-editor-panel">
+      <aside v-if="selectedItem" class="workbench-side">
+        <div class="workbench-panel workbench-editor-panel">
           <div class="workbench-panel-head">
             <h4>槽位 {{ selectedIndex }} · 组件编辑</h4>
             <button class="ghost tiny" type="button" @click="removeSelected">清空槽位</button>
@@ -83,9 +85,6 @@
             @update="applyEditorItem"
           />
         </div>
-        <p v-else class="muted small workbench-tip">
-          左键拿起/放下整组，右键拿起一半/放下一个；相同物品会自动合并。选中槽位后可编辑名称、附魔、药水、属性等组件。
-        </p>
       </aside>
     </div>
   </div>
@@ -569,13 +568,22 @@ defineExpose({ resetSelection, pickFromLibrary: libraryPick });
 }
 
 .workbench-trash {
-  padding: 3px 8px;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  padding: 0;
   border: 1px dashed var(--line-strong);
   border-radius: 8px;
   background: transparent;
   color: var(--muted);
   font-size: 11px;
   cursor: pointer;
+}
+
+.workbench-trash .item-icon-view {
+  width: 42px;
+  height: 42px;
 }
 
 .workbench-trash.armed {
@@ -616,7 +624,7 @@ defineExpose({ resetSelection, pickFromLibrary: libraryPick });
 
 .workbench-body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 420px);
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
   align-items: start;
 }
@@ -672,6 +680,10 @@ defineExpose({ resetSelection, pickFromLibrary: libraryPick });
   color: var(--muted);
   font-size: 11px;
   font-weight: 700;
+}
+
+.workbench-body.has-editor {
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 420px);
 }
 
 .workbench-side {
@@ -781,7 +793,8 @@ defineExpose({ resetSelection, pickFromLibrary: libraryPick });
 }
 
 @media (max-width: 1100px) {
-  .workbench-body {
+  .workbench-body,
+  .workbench-body.has-editor {
     grid-template-columns: minmax(0, 1fr);
   }
 }

@@ -26,13 +26,13 @@
       </div>
       <el-button size="small" :disabled="saving || loading" @click="load">重新读取</el-button>
       <el-button
-        v-if="mode !== 'simulate'"
+        v-if="mode === 'preset'"
         size="small"
         type="primary"
         :disabled="!dirty || saving"
         :loading="saving"
         @click="save"
-      >{{ mode === 'live' ? '立即写入' : '保存修改' }}{{ dirty ? ' *' : '' }}</el-button>
+      >保存修改{{ dirty ? ' *' : '' }}</el-button>
       <span class="muted small">{{ modeHint }}</span>
       <span class="spacer"></span>
       <span class="muted small">data {{ dataUuid }} · revision {{ revision }}</span>
@@ -48,6 +48,7 @@
         item-endpoint="/api/inventory/item"
         :revision="revision"
         :disabled="saving"
+        :trash="false"
         @change="onChange"
       />
     </div>
