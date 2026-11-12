@@ -46,9 +46,10 @@ const poses = [
 ];
 
 const query = computed(() => {
+  // 离线玩家 UUID 不是 Mojang 账号：官方解析失败后仍会按玩家名/ID 回退查皮肤。
   const params = new URLSearchParams();
-  if (props.uuid) params.set('uuid', props.uuid);
   if (props.name) params.set('name', props.name);
+  if (props.uuid) params.set('uuid', props.uuid);
   return params.toString();
 });
 const skinSrc = computed(() => '/api/user/map/avatar?' + query.value);
@@ -209,6 +210,23 @@ function facePoints(box, face) {
   }
 }
 
+const SNEAK_BODY_RX = -28.6;
+const SNEAK_BODY_OY = 1.2;
+
+/** 潜行时身体绕髋部前倾后，脖子/肩膀的世界坐标；让头和手臂真正接在躯干上。 */
+function sneakNeckOffset() {
+  const angle = SNEAK_BODY_RX * Math.PI / 180;
+  const hipY = BOX.body.y + BOX.body.h / 2;
+  const topY = BOX.body.y - BOX.body.h / 2;
+  const dy = topY - hipY;
+  const neckY = hipY + dy * Math.cos(angle) + SNEAK_BODY_OY;
+  const neckZ = dy * Math.sin(angle);
+  return {
+    y: neckY - (BOX.head.y + BOX.head.h / 2),
+    z: neckZ,
+  };
+}
+
 function partTransform(part) {
   const box = BOX[part];
   let rx = 0, rz = 0, oy = 0, oz = 0;
@@ -221,13 +239,23 @@ function partTransform(part) {
     if (part === 'leg-left') rx = -28;
     if (part === 'leg-right') rx = 28;
   } else if (pose.value === 'sneak') {
-    // 参照原版 HumanoidModel/PlayerModel 的潜行姿态：
-    // 身体绕髋部（骨盆）前倾，腿不旋转（原版只是略微下移），手臂前摆。
-    // 旧实现把腿反向旋转 32°，才会出现“骨盆前倾、脚后甩”的海马姿势。
-    if (part === 'body') { rx = -28.6; oy = 3.2; }
-    if (part === 'head') { oy = 4.2; }
-    if (part.startsWith('arm-')) { rx = 23; oy = 5.2; }
-    if (part.startsWith('leg-')) { oy = 0.2; }
+    // 原版 HumanoidModel：身体绕髋部前倾，头和手臂跟随躯干顶部（脖子/肩膀），
+    // 手臂相对世界略向后垂，避免旧实现的“头颈断裂、手臂肩膀断裂”。
+    const neck = sneakNeckOffset();
+    if (part === 'body') {
+      rx = SNEAK_BODY_RX;
+      oy = SNEAK_BODY_OY;
+    }
+    if (part === 'head') {
+      rx = -6;
+      oy = neck.y;
+      oz = neck.z;
+    }
+    if (part.startsWith('arm-')) {
+      rx = -12;
+      oy = neck.y;
+      oz = neck.z;
+    }
   }
   // 身体/头的枢轴在底部（髋部/脖子），四肢的枢轴在顶部（肩/胯）。
   const pivot = (part === 'body' || part === 'head')

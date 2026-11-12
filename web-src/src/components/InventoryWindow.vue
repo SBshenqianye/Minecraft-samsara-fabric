@@ -118,22 +118,73 @@ const containerSize = computed(() => Number(props.target?.size) || 0);
 
 const layout = computed(() => {
   if (props.kind === 'container') {
-    const size = Math.max(1, containerSize.value || slots.value.length || 1);
-    return [{
-      label: '容器槽位 0–' + (size - 1),
-      start: 0,
-      size,
-      columns: size <= 3 ? size : 9,
-    }];
+    return containerLayout(props.target?.type, Math.max(1, containerSize.value || slots.value.length || 1));
   }
   return [
-    { label: '盔甲 36–39', start: 36, size: 4, columns: 1, row: 'gear', zone: 'gear' },
-    { label: '副手 40', start: 40, size: 1, columns: 1, row: 'gear', zone: 'gear' },
+    { label: '盔甲 36–39', start: 36, size: 4, columns: 1, row: 'gear', zone: 'gear', hints: [
+      { icon: '/ui/slot_boots.png', label: '靴子' },
+      { icon: '/ui/slot_leggings.png', label: '护腿' },
+      { icon: '/ui/slot_chestplate.png', label: '胸甲' },
+      { icon: '/ui/slot_helmet.png', label: '头盔' },
+    ] },
+    { label: '副手 40', start: 40, size: 1, columns: 1, row: 'gear', zone: 'gear',
+      hints: [{ icon: '/ui/slot_shield.png', label: '副手' }] },
     { label: '主背包 9–35', start: 9, size: 27, columns: 9, row: 'main', zone: 'main' },
     { label: '快捷栏 0–8', start: 0, size: 9, columns: 9, row: 'hotbar', zone: 'hotbar', gap: true },
     { label: '末影箱 0–26', start: INV_SIZE, size: ENDER_SIZE, columns: 9, row: 'ender', zone: 'ender', gap: true },
   ];
 });
+
+/** 按原版 GUI 摆放容器槽位：熔炉/高炉/烟熏炉、酿造台不是排成一行。 */
+function containerLayout(type, size) {
+  const key = String(type || '').replace('minecraft:', '');
+  const single = (label, start, area) => ({
+    label, start, size: 1, columns: 1, row: 'shape', zone: 'shape', area,
+  });
+  if (key === 'furnace' || key === 'blast_furnace' || key === 'smoker') {
+    return [
+      { ...single('原料', 0, '1 / 1 / 2 / 2'), align: 'center' },
+      { ...single('燃料', 1, '2 / 1 / 3 / 2'), align: 'center' },
+      { ...single('产物', 2, '1 / 3 / 3 / 4'), align: 'center' },
+    ].map((section) => ({
+      ...section,
+      grid: { columns: '64px 34px 64px', rows: '64px 64px', gap: '4px' },
+    }));
+  }
+  if (key === 'brewing_stand') {
+    const grid = { columns: 'repeat(3, 56px)', rows: '56px 56px', gap: '4px' };
+    return [
+      { ...single('燃料', 4, '1 / 1 / 2 / 2'), grid },
+      { ...single('原料', 3, '1 / 2 / 2 / 3'), grid },
+      { label: '药水', start: 0, size: 3, columns: 3, row: 'shape', zone: 'shape',
+        area: '2 / 1 / 3 / 4', grid },
+    ];
+  }
+  if (key === 'hopper') {
+    return [{ label: '漏斗槽位 0–4', start: 0, size, columns: 5 }];
+  }
+  if (key === 'dispenser' || key === 'dropper' || key === 'crafter') {
+    return [{ label: '容器槽位 0–8', start: 0, size, columns: 3 }];
+  }
+  if (key === 'campfire') {
+    return [{ label: '营火槽位 0–3', start: 0, size, columns: 2 }];
+  }
+  if (key === 'chiseled_bookshelf') {
+    return [{ label: '书架槽位 0–5', start: 0, size, columns: 3 }];
+  }
+  if (size <= 1) return [{ label: '容器槽位 0', start: 0, size: 1, columns: 1 }];
+  if (size <= 3) return [{ label: `容器槽位 0–${size - 1}`, start: 0, size, columns: size }];
+  if (size === 4) return [{ label: '容器槽位 0–3', start: 0, size, columns: 2 }];
+  if (size === 5) return [{ label: '容器槽位 0–4', start: 0, size, columns: 5 }];
+  if (size === 6) return [{ label: '容器槽位 0–5', start: 0, size, columns: 3 }];
+  if (size === 9) return [{ label: '容器槽位 0–8', start: 0, size, columns: 3 }];
+  return [{
+    label: `容器槽位 0–${size - 1}`,
+    start: 0,
+    size,
+    columns: size >= 27 ? 9 : 9,
+  }];
+}
 
 const liveState = useLiveRefresh({
   mode: () => mode.value,

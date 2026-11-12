@@ -18,7 +18,7 @@ import os
 import zipfile
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw
 
 SIZE = 32
 SS = 4
@@ -672,6 +672,69 @@ def flat_spec_icon(assets: Assets, spec, tints):
     return None
 
 
+def decorated_pot_icon(assets: Assets):
+    """装饰罐是 special 方块实体：用原版侧面/底部贴图拼一个等距陶罐图标。"""
+    side = assets.image('minecraft:entity/decorated_pot/decorated_pot_side')
+    if side is None:
+        return None
+    arr = np.asarray(side.convert('RGBA'))
+    opaque = arr[arr[..., 3] > 0]
+    if len(opaque):
+        base = tuple(int(v) for v in opaque[:, :3].mean(axis=0))
+    else:
+        base = (154, 98, 78)
+    ss = 4
+    size = SIZE * ss
+    canvas = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(canvas)
+    scale = 4.15
+    cx, cy = size / 2, size / 2 + 9 * scale
+    cos30 = 0.8660254
+
+    def project(x, y, z):
+        return (cx + (x - z) * cos30 * scale,
+                cy + (x + z) * 0.5 * scale - y * scale)
+
+    def shade(rgb, factor):
+        return tuple(max(0, min(255, int(v * factor))) for v in rgb) + (255,)
+
+    # 连续陶罐轮廓：圈足 → 鼓腹 → 收颈 → 外翻口沿，环之间用四边形连接。
+    rings = [
+        (0.0, 5.0), (2.0, 5.0), (3.0, 7.0), (13.0, 7.0),
+        (14.5, 6.1), (17.0, 4.6), (18.5, 5.8), (21.0, 5.8),
+    ]
+    for index in range(len(rings) - 1):
+        y0, r0 = rings[index]
+        y1, r1 = rings[index + 1]
+        # 等距视角看到的是 +X 面（右侧）和 +Z 面（左侧），只画这两个可见面。
+        right = [project(r0, y0, -r0), project(r0, y0, r0),
+                 project(r1, y1, r1), project(r1, y1, -r1)]
+        front = [project(r0, y0, r0), project(-r0, y0, r0),
+                 project(-r1, y1, r1), project(r1, y1, r1)]
+        draw.polygon(front, fill=shade(base, 0.76))
+        draw.polygon(right, fill=shade(base, 0.94))
+
+    top_y, top_r = rings[-1]
+    outer = [project(-top_r, top_y, -top_r), project(top_r, top_y, -top_r),
+             project(top_r, top_y, top_r), project(-top_r, top_y, top_r)]
+    draw.polygon(outer, fill=shade(base, 1.12))
+    opening = [project(-3.8, top_y + 0.02, -3.8), project(3.8, top_y + 0.02, -3.8),
+               project(3.8, top_y + 0.02, 3.8), project(-3.8, top_y + 0.02, 3.8)]
+    draw.polygon(opening, fill=shade(base, 0.36))
+
+    # 用原版侧面贴图叠一点陶土颗粒；只作用在已经画出的罐体 alpha 上。
+    pot_mask = canvas.getchannel('A')
+    tile = side.convert('RGBA').resize((64, 64), Image.NEAREST)
+    grain = Image.new('RGBA', canvas.size, (0, 0, 0, 0))
+    for gy in range(0, size, 64):
+        for gx in range(0, size, 64):
+            grain.alpha_composite(tile, (gx, gy))
+    grain.putalpha(Image.eval(grain.getchannel('A'), lambda value: value // 3))
+    grain.putalpha(Image.composite(grain.getchannel('A'), Image.new('L', canvas.size, 0), pot_mask))
+    canvas = Image.alpha_composite(canvas, grain)
+    return canvas.resize((SIZE, SIZE), Image.NEAREST)
+
+
 def special_fallback(assets: Assets, path: str, out_dir: str):
     """铜箱/铜傀儡雕像等 26.3 特殊实体渲染：没有元素模型时用原版贴图做近似图标。"""
     if path.endswith('_chest') or path == 'copper_chest':
@@ -704,9 +767,7 @@ def special_fallback(assets: Assets, path: str, out_dir: str):
         if img is not None:
             return img.resize((SIZE, SIZE), Image.NEAREST)
     if path == 'decorated_pot':
-        img = assets.image('minecraft:entity/decorated_pot/decorated_pot_base')
-        if img is not None:
-            return img.resize((SIZE, SIZE), Image.NEAREST)
+        return decorated_pot_icon(assets)
     return None
 
 

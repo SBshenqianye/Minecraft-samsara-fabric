@@ -6,6 +6,10 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.shenqianye.samsara.Samsara;
 
+import java.awt.Graphics2D;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
@@ -19,6 +23,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
+import javax.imageio.ImageIO;
 
 /**
  * 通过 Mojang 官方 API 解析玩家皮肤。
@@ -53,13 +58,16 @@ public final class MojangSkinService {
 
     private final Map<String, Entry> cache = new ConcurrentHashMap<>();
     private final Map<String, Entry> bodyCache = new ConcurrentHashMap<>();
+    private final Map<String, Entry> headCache = new ConcurrentHashMap<>();
 
     /** 返回皮肤 PNG；没有正版档案、网络失败或响应异常时返回 null。 */
     public Skin skin(String uuid, String name) {
         String normalizedUuid = normalizeUuid(uuid);
         String normalizedName = normalizeName(name);
+        String fallback = fallbackName(name);
         String key = normalizedUuid != null ? "uuid:" + normalizedUuid
-                : normalizedName != null ? "name:" + normalizedName.toLowerCase(Locale.ROOT) : "";
+                : normalizedName != null ? "name:" + normalizedName.toLowerCase(Locale.ROOT)
+                : fallback != null ? "id:" + fallback.toLowerCase(Locale.ROOT) : "";
         if (key.isEmpty()) {
             return null;
         }
@@ -68,7 +76,7 @@ public final class MojangSkinService {
         if (cached != null && cached.expiresAt > now) {
             return cached.skin;
         }
-        Skin skin = load(normalizedUuid, normalizedName, fallbackName(name));
+        Skin skin = load(normalizedUuid, normalizedName, fallback);
         cache.put(key, new Entry(now + (skin == null ? FAILURE_TTL_MS : SUCCESS_TTL_MS), skin));
         if (cached != null && cached.skin != null && skin == null) {
             // 短暂网络抖动时继续用上一次成功的皮肤，避免地图头像闪回本地图。
@@ -82,8 +90,10 @@ public final class MojangSkinService {
     public Skin body(String uuid, String name) {
         String normalizedUuid = normalizeUuid(uuid);
         String normalizedName = normalizeName(name);
+        String fallback = fallbackName(name);
         String key = normalizedUuid != null ? "uuid:" + normalizedUuid
-                : normalizedName != null ? "name:" + normalizedName.toLowerCase(Locale.ROOT) : "";
+                : normalizedName != null ? "name:" + normalizedName.toLowerCase(Locale.ROOT)
+                : fallback != null ? "id:" + fallback.toLowerCase(Locale.ROOT) : "";
         if (key.isEmpty()) return null;
         long now = System.currentTimeMillis();
         Entry cached = bodyCache.get(key);
@@ -104,6 +114,51 @@ public final class MojangSkinService {
         }
         bodyCache.put(key, new Entry(now + (skin == null ? FAILURE_TTL_MS : SUCCESS_TTL_MS), skin));
         return skin;
+    }
+
+    /**
+     * 玩家列表/地图头像：直接返回从完整皮肤裁出的 8×8 头部（含第二层帽子），
+     * 而不是整张 skin 展开图。离线玩家也走同一套按名字/ID 的皮肤查找。
+     */
+    public Skin head(String uuid, String name) {
+        String normalizedUuid = normalizeUuid(uuid);
+        String normalizedName = normalizeName(name);
+        String key = normalizedUuid != null ? "uuid:" + normalizedUuid
+                : normalizedName != null ? "name:" + normalizedName.toLowerCase(Locale.ROOT)
+                : fallbackName(name) != null ? "id:" + fallbackName(name).toLowerCase(Locale.ROOT) : "";
+        if (key.isEmpty()) return null;
+        long now = System.currentTimeMillis();
+        Entry cached = headCache.get(key);
+        if (cached != null && cached.expiresAt > now) return cached.skin;
+        Skin cropped = cropHead(skin(uuid, name));
+        headCache.put(key, new Entry(now + (cropped == null ? FAILURE_TTL_MS : SUCCESS_TTL_MS), cropped));
+        return cropped;
+    }
+
+    private Skin cropHead(Skin skin) {
+        if (skin == null || skin.bytes() == null || skin.bytes().length == 0) return null;
+        try {
+            BufferedImage source = ImageIO.read(new ByteArrayInputStream(skin.bytes()));
+            if (source == null || source.getWidth() < 16 || source.getHeight() < 16) return null;
+            BufferedImage out = new BufferedImage(64, 64, BufferedImage.TYPE_INT_ARGB);
+            Graphics2D graphics = out.createGraphics();
+            try {
+                // 前脸 8×8；64×32 老皮肤同样从 (8,8) 开始。
+                graphics.drawImage(source, 0, 0, 64, 64, 8, 8, 16, 16, null);
+                // 64×64 皮肤的第二层 / 帽子区域。
+                if (source.getHeight() >= 64 && source.getWidth() >= 64) {
+                    graphics.drawImage(source, 0, 0, 64, 64, 40, 8, 48, 16, null);
+                }
+            } finally {
+                graphics.dispose();
+            }
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+            if (!ImageIO.write(out, "png", bytes)) return null;
+            return new Skin(bytes.toByteArray(), "image/png");
+        } catch (Exception e) {
+            Samsara.LOGGER.debug("[web] 头像裁剪失败: {}", e.getMessage());
+            return null;
+        }
     }
 
     private Skin load(String uuid, String name, String fallbackName) {

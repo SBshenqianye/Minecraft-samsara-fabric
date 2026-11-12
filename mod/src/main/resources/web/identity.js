@@ -15,6 +15,7 @@ const I = {
   names: {},
   types: {},
   online: {},
+  onlineMode: true,
   drag: null,
   seq: 0,
   dirty: false,
@@ -150,6 +151,7 @@ function applyModel(model) {
   }));
   I.candidates = model.candidates || [];
   I.labels = config.dataLabels || {};
+  I.onlineMode = model.onlineMode !== false;
   I.dirty = false;
   renderAll();
 }
@@ -267,6 +269,18 @@ function groupCard(group, index) {
   head.className = 'card-head';
   const titleRow = document.createElement('div');
   titleRow.className = 'card-title-row';
+  const avatar = document.createElement('img');
+  avatar.className = 'identity-avatar';
+  avatar.alt = '';
+  avatar.loading = 'lazy';
+  avatar.title = group.name || '身份组头像';
+  const skinId = groupSkinId(group);
+  if (skinId) {
+    avatar.src = '/api/user/map/head?id=' + encodeURIComponent(skinId);
+    avatar.addEventListener('error', () => { avatar.style.visibility = 'hidden'; });
+  } else {
+    avatar.style.visibility = 'hidden';
+  }
   const badgeIndex = document.createElement('span');
   badgeIndex.className = 'group-index';
   badgeIndex.textContent = String(index + 1).padStart(2, '0');
@@ -280,7 +294,7 @@ function groupCard(group, index) {
     I.dirty = true;
     renderNav();
   });
-  titleRow.append(badgeIndex, nameInput);
+  titleRow.append(avatar, badgeIndex, nameInput);
 
   const badges = document.createElement('div');
   badges.className = 'card-badges';
@@ -359,6 +373,15 @@ function badge(text, className) {
 
 function groupOnline(group) {
   return [group.premium, group.offline].some((uuid) => uuid && I.online[uuid]);
+}
+
+/** 按服务器在线/离线模式选择头像：正版模式优先正版 UUID，离线模式优先离线 UUID。 */
+function groupSkinId(group) {
+  const preferred = I.onlineMode ? group.premium : group.offline;
+  const fallback = I.onlineMode ? group.offline : group.premium;
+  const uuid = preferred || fallback;
+  if (uuid) return I.names[uuid] || group.name || uuid;
+  return group.name || group.data || '';
 }
 
 function renderZone(group, role, labelText, hintText) {

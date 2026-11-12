@@ -39,18 +39,9 @@
             <el-input
               v-model="filters.q"
               clearable
-              placeholder="物品 ID / 名称，如 diamond、钻石"
+              placeholder="物品 / 容器名称，如 diamond、钻石、箱子、熔炉"
               @input="queueSearch"
               @keyup.enter="search"
-            />
-          </label>
-          <label class="sky-search">
-            <span class="sky-search-label">搜索玩家</span>
-            <el-input
-              v-model="playerQuery"
-              clearable
-              placeholder="玩家名字 / UUID"
-              aria-label="搜索玩家"
             />
           </label>
         </div>
@@ -60,7 +51,7 @@
             :markers="markers"
             :dimension="filters.dimension || dimensions[0]?.id || 'minecraft:overworld'"
             :selected-id="selectedMarkerId"
-            :height="560"
+            :height="840"
             @select="selectMarker"
           />
         </div>
@@ -120,12 +111,12 @@
               >
                 <ItemIcon
                   class="sky-row-icon"
-                  :item="{ id: row.type || 'minecraft:chest', name: typeLabel(row.type), count: 1 }"
+                  :item="{ id: row.type || 'minecraft:chest', name: typeLabel(row.type, row.size), count: 1 }"
                   size="sm"
                   :show-count="false"
                 />
                 <span class="sky-row-main">
-                  <strong class="sky-row-title">{{ typeLabel(row.type) }}</strong>
+                  <strong class="sky-row-title">{{ typeLabel(row.type, row.size) }}</strong>
                   <span class="sky-row-meta">
                     {{ shortDimension(row.dimension) }} · {{ row.x }}, {{ row.y }}, {{ row.z }}
                   </span>
@@ -189,6 +180,18 @@
             </div>
             <p v-else class="muted small">没有匹配的已知玩家。</p>
           </section>
+        </div>
+
+        <div class="sky-bottom-search">
+          <label class="sky-search">
+            <span class="sky-search-label">搜索玩家</span>
+            <el-input
+              v-model="playerQuery"
+              clearable
+              placeholder="玩家名字 / UUID"
+              aria-label="搜索玩家"
+            />
+          </label>
         </div>
       </section>
 
@@ -294,6 +297,7 @@ const mode = ref('simulate');
 const schema = ref({});
 const cursorPending = computed(() => !!itemCursor.item);
 let liveTimer = null;
+let saveQueued = false;
 
 const liveState = useLiveRefresh({
   mode: () => 'simulate',
@@ -428,7 +432,7 @@ const markers = computed(() => {
       x: row.x,
       z: row.z,
       dimension: row.dimension,
-      label: typeLabel(row.type),
+      label: typeLabel(row.type, row.size),
       sub: row.x + ', ' + row.y + ', ' + row.z + ' · ' + row.nonEmpty + '/' + row.size,
       kind: 'container',
       icon: row.type,
@@ -475,8 +479,10 @@ async function loadPlayers() {
 }
 
 
-function typeLabel(type) {
+function typeLabel(type, size) {
   const key = String(type || '');
+  if ((key === 'minecraft:chest' || key === 'minecraft:trapped_chest')
+      && Number(size) >= 54) return key === 'minecraft:trapped_chest' ? '大陷阱箱' : '大箱子';
   const map = {
     'minecraft:chest': '箱子',
     'minecraft:trapped_chest': '陷阱箱',
@@ -490,6 +496,13 @@ function typeLabel(type) {
     'minecraft:smoker': '烟熏炉',
     'minecraft:brewing_stand': '酿造台',
     'minecraft:ender_chest': '末影箱',
+    'minecraft:decorated_pot': '装饰罐',
+    'minecraft:crafter': '合成器',
+    'minecraft:chiseled_bookshelf': '雕纹书架',
+    'minecraft:campfire': '营火',
+    'minecraft:jukebox': '唱片机',
+    'minecraft:lectern': '讲台',
+    'minecraft:beacon': '信标',
   };
   return map[key] || key.replace('minecraft:', '');
 }
@@ -503,9 +516,10 @@ function sourceLabel(row) {
 
 function playerAvatar(player) {
   const params = new URLSearchParams();
-  if (player?.uuid) params.set('uuid', String(player.uuid));
-  else if (player?.name) params.set('name', String(player.name));
-  return '/api/user/map/avatar?' + params.toString();
+  // 离线玩家没有 Mojang UUID，按玩家名字/ID 查皮肤；正版玩家也优先用当前名字。
+  if (player?.name) params.set('id', String(player.name));
+  else if (player?.uuid) params.set('id', String(player.uuid));
+  return '/api/user/map/head?' + params.toString();
 }
 
 function initialOf(player) {
@@ -738,7 +752,7 @@ function openWindow(row) {
     key,
     kind: 'container',
     target: Object.assign({}, row),
-    title: typeLabel(row.type),
+    title: typeLabel(row.type, row.size),
     subtitle: row.dimension + ' · ' + row.x + ', ' + row.y + ', ' + row.z,
     width: 820,
     height: 640,
@@ -820,7 +834,10 @@ function onWorkbenchChange(payload) {
     return;
   }
   liveTimer && clearTimeout(liveTimer);
-  liveTimer = setTimeout(() => save(true), 450);
+  liveTimer = setTimeout(() => {
+    liveTimer = null;
+    save(true);
+  }, 150);
 }
 
 async function setMode(next) {
@@ -856,7 +873,11 @@ async function confirmSave() {
 }
 
 async function save(silent) {
-  if (saving.value || !selected.value) return;
+  if (saving.value || !selected.value) {
+    if (!selected.value) return;
+    saveQueued = true;
+    return;
+  }
   saving.value = true;
   error.value = '';
   try {
@@ -910,6 +931,10 @@ async function save(silent) {
   } finally {
     saving.value = false;
     liveState.invalidate();
+    if (saveQueued) {
+      saveQueued = false;
+      if (dirty.value) save(true);
+    }
   }
 }
 </script>
@@ -930,8 +955,17 @@ async function save(silent) {
 
 .sky-search-row {
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
+}
+
+.sky-bottom-search {
+  display: flex;
+  margin-top: 12px;
+}
+
+.sky-bottom-search .sky-search {
+  flex: 1 1 auto;
 }
 
 .sky-search {
@@ -1298,3 +1332,4 @@ async function save(silent) {
 }
 
 </style>
+

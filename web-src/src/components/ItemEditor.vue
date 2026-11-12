@@ -4,7 +4,7 @@
       <div class="item-editor-title">
         <ItemIcon :item="item" size="sm" :show-count="false" />
         <div>
-          <strong>{{ item.name || item.id }}</strong>
+          <strong>{{ item.zh || item.name || item.id }}</strong>
           <p class="muted small">{{ item.id }} · 槽位内数量 {{ item.count }}</p>
         </div>
       </div>

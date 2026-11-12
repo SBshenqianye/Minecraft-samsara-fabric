@@ -52,7 +52,6 @@
               mode="live"
               item-endpoint="/api/inventory/item"
               :revision="revision"
-              :disabled="saving"
               :editable="true"
               :trash="false"
               :show-toolbar="false"
@@ -133,12 +132,21 @@ function applyEditorItem(item) {
 }
 let token = '';
 let liveTimer = null;
+let localVersion = 0;
+let flushPromise = null;
 
 // 与玩家背包同一套相对布局：装备 4 格 + 副手 1 格 + 主背包 27 格
 // + 快捷栏 9 格 + 末影箱 27 格，共 68 格，方便以后把 Web 背包当成虚拟玩家。
+const ARMOR_HINTS = [
+  { icon: '/ui/slot_helmet.png', label: '头盔' },
+  { icon: '/ui/slot_chestplate.png', label: '胸甲' },
+  { icon: '/ui/slot_leggings.png', label: '护腿' },
+  { icon: '/ui/slot_boots.png', label: '靴子' },
+];
 const layout = [
-  { label: '装备 0–3', start: 0, size: 4, columns: 1, row: 'gear', zone: 'gear' },
-  { label: '副手 4', start: 4, size: 1, columns: 1, row: 'gear', zone: 'gear' },
+  { label: '装备 0–3', start: 0, size: 4, columns: 1, row: 'gear', zone: 'gear', hints: ARMOR_HINTS },
+  { label: '副手 4', start: 4, size: 1, columns: 1, row: 'gear', zone: 'gear',
+    hints: [{ icon: '/ui/slot_shield.png', label: '副手' }] },
   { label: '主背包 5–31', start: 5, size: 27, columns: 9, row: 'main', zone: 'main' },
   { label: '快捷栏 32–40', start: 32, size: 9, columns: 9, row: 'hotbar', zone: 'hotbar', gap: true },
   { label: '末影箱 41–67（27 格）', start: 41, size: 27, columns: 9, row: 'storage', zone: 'storage', gap: true },
@@ -152,6 +160,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown);
   window.clearTimeout(liveTimer);
+  if (dirty.value && !saving.value) save();
 });
 
 function onKeydown(event) {
@@ -195,6 +204,7 @@ function close() {
   pinned.value = false;
   open.value = false;
   window.clearTimeout(liveTimer);
+  liveTimer = null;
   // 关闭会销毁浮窗内的组件，未落库的改动立即补写，避免丢改动。
   if (dirty.value && !saving.value) save();
 }
@@ -278,42 +288,67 @@ async function load() {
 function onChange(payload) {
   slots.value = payload.slots;
   items.value = payload.items;
+  localVersion += 1;
   dirty.value = !sameSlots(payload.slots, baselineSlots.value);
   // Web 背包只和自己交互，没有“和玩家抢东西”的风险，所以一律实时写入。
-  if (!dirty.value) {
-    window.clearTimeout(liveTimer);
-    return;
-  }
   window.clearTimeout(liveTimer);
-  liveTimer = window.setTimeout(() => save(), 450);
+  if (!dirty.value) return;
+  // 120ms 足以合并连续点击，又不会让“写入中”明显拖慢操作。
+  liveTimer = window.setTimeout(() => {
+    liveTimer = null;
+    save();
+  }, 120);
 }
 
 function onPick(row) {
   workbench.value?.pickFromLibrary(row);
 }
 
+/**
+ * 写入队列：保存期间允许继续操作。每次发送都记录版本号，返回时若本地又有改动，
+ * 不拿旧服务器快照覆盖本地（旧实现会因此把刚放进去的物品“吞”掉），熔断式继续写最新状态。
+ */
 async function save() {
-  if (saving.value) return;
+  if (flushPromise) return flushPromise;
+  if (!dirty.value) return;
   saving.value = true;
   error.value = '';
+  flushPromise = (async () => {
+    while (dirty.value) {
+      const version = localVersion;
+      const snapshot = slots.value.slice();
+      const result = await api('/api/inventory/web/write', {
+        method: 'POST',
+        body: JSON.stringify({ slots: snapshot }),
+      });
+      if (result.status !== 200 || !result.data.ok) {
+        throw new Error(result.data.error || '写入失败');
+      }
+      const incoming = (result.data.slots || snapshot).slice();
+      while (incoming.length < WEB_SLOTS) incoming.push('');
+      if (version === localVersion) {
+        slots.value = incoming;
+        baselineSlots.value = incoming.slice();
+        items.value = result.data.items || items.value;
+      } else {
+        // 本次快照已经落库；本地在请求期间又变了，保留本地并继续写下一版。
+        baselineSlots.value = snapshot;
+      }
+      dirty.value = !sameSlots(slots.value, baselineSlots.value);
+      message.value = '已写入 Web 背包。';
+    }
+  })();
   try {
-    const result = await api('/api/inventory/web/write', {
-      method: 'POST',
-      body: JSON.stringify({ slots: slots.value }),
-    });
-    if (result.status !== 200 || !result.data.ok) throw new Error(result.data.error || '写入失败');
-    const incoming = (result.data.slots || slots.value).slice();
-    while (incoming.length < WEB_SLOTS) incoming.push('');
-    slots.value = incoming;
-    baselineSlots.value = incoming.slice();
-    items.value = result.data.items || items.value;
-    dirty.value = false;
-    message.value = '已写入 Web 背包。';
+    await flushPromise;
   } catch (e) {
     error.value = e.message || String(e);
+    // 网络/服务端临时失败时保留 dirty，稍后自动重试一次。
+    if (!liveTimer) liveTimer = window.setTimeout(() => save(), 1200);
   } finally {
     saving.value = false;
+    flushPromise = null;
   }
+  return flushPromise;
 }
 
 defineExpose({ open: () => openWindow() });
@@ -471,16 +506,52 @@ defineExpose({ open: () => openWindow() });
 .global-inventory-editor-head .spacer { flex: 1; }
 
 .global-inventory-editor :deep(.item-editor) {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 10px;
-  align-items: start;
+  display: block;
+  columns: 240px;
+  column-gap: 8px;
+  max-height: none;
+  overflow: visible;
+  padding-right: 0;
   color: #2b2b2b;
 }
 
 .global-inventory-editor :deep(.item-editor-head),
-.global-inventory-editor :deep(.container-message) {
-  grid-column: 1 / -1;
+.global-inventory-editor :deep(.container-message),
+.global-inventory-editor :deep(.editor-raw) {
+  column-span: all;
+}
+
+.global-inventory-editor :deep(.editor-section) {
+  break-inside: avoid;
+  margin: 0 0 8px;
+  padding: 8px;
+  border-radius: 8px;
+}
+
+.global-inventory-editor :deep(.editor-section h4) {
+  margin-bottom: 6px;
+}
+
+.global-inventory-editor :deep(.field-row) {
+  gap: 6px;
+}
+
+.global-inventory-editor :deep(.field-row > .field) {
+  flex: 1 1 120px;
+}
+
+.global-inventory-editor :deep(.list-editor) {
+  gap: 4px;
+}
+
+.global-inventory-editor :deep(.list-row) {
+  gap: 4px;
+}
+
+.global-inventory-editor :deep(.item-editor-head) {
+  position: static;
+  padding: 2px 0 8px;
+  background: transparent;
 }
 
 /* 垃圾桶单独一行，不再压在物品栏格子上 */

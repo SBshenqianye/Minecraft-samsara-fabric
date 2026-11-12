@@ -714,6 +714,7 @@ details.output-group > summary { padding: 3px 2px; }
 .identity-card { border: 1px solid var(--line); border-radius: 14px; background: var(--panel-soft); padding: 14px; box-shadow: var(--shadow-soft); }
 .card-head { display: flex; align-items: start; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
 .card-title-row { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
+.identity-avatar { flex: 0 0 auto; width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 7px; background: #263241; image-rendering: pixelated; object-fit: cover; }
 .group-index { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 9px; background: var(--accent-soft); color: var(--accent); font-family: var(--mono); font-size: 11px; font-weight: 700; }
 .group-name { border: 0; background: transparent; padding: 4px 6px; font-size: 16px; font-weight: 700; border-radius: 7px; }
 .group-name:hover { background: var(--panel); }

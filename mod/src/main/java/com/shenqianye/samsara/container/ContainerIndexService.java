@@ -12,7 +12,10 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.Container;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.ChestBlock;
+import net.minecraft.world.level.block.DoubleBlockCombiner;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 
 import java.io.IOException;
@@ -238,11 +241,12 @@ public final class ContainerIndexService {
                 if (dimFilter != null && !dimFilter.equals(entry.dimension)) continue;
                 if (typeFilter != null && !typeFilter.equals(entry.type)
                         && !entry.type.contains(typeFilter)) continue;
+                if (isIndexedChestHalf(entry)) continue;
                 if (x != null && z != null) {
                     int r = Math.max(0, radius);
                     if (Math.abs(entry.x - x) > r || Math.abs(entry.z - z) > r) continue;
                 }
-                if (!itemQuery.isEmpty() && !matchesItem(entry, itemQuery)) continue;
+                if (!itemQuery.isEmpty() && !matchesQuery(entry, itemQuery)) continue;
                 rows.add(entry.toModel(false, sourceOf(entry)));
                 if (rows.size() >= MAX_LIST) break;
             }
@@ -259,8 +263,13 @@ public final class ContainerIndexService {
         }
     }
 
-    /** 按物品 ID / 名称搜索容器内容；只解码到命中为止。 */
-    private boolean matchesItem(ContainerEntry entry, String query) {
+    /** 按物品 ID / 名称或容器类型名称搜索；只解码到命中为止。 */
+    private boolean matchesQuery(ContainerEntry entry, String query) {
+        String type = entry.type == null ? "" : entry.type.toLowerCase(java.util.Locale.ROOT);
+        String typeName = containerTypeName(entry.type);
+        if (type.contains(query) || typeName.toLowerCase(java.util.Locale.ROOT).contains(query)) {
+            return true;
+        }
         for (String encoded : entry.slots) {
             if (encoded == null || encoded.isBlank()) continue;
             ItemStack stack = LotteryItemCodec.decode(encoded, registries);
@@ -271,20 +280,54 @@ public final class ContainerIndexService {
                     || name.toLowerCase(java.util.Locale.ROOT).contains(query)) {
                 return true;
             }
+            String zh = com.shenqianye.samsara.item.ItemLang.zh(id);
+            if (!zh.isEmpty() && zh.toLowerCase(java.util.Locale.ROOT).contains(query)) {
+                return true;
+            }
         }
         return false;
     }
 
+    private static String containerTypeName(String type) {
+        String key = String.valueOf(type == null ? "" : type)
+                .replace("minecraft:", "").toLowerCase(java.util.Locale.ROOT);
+        return switch (key) {
+            case "chest" -> "箱子 大箱子";
+            case "trapped_chest" -> "陷阱箱";
+            case "barrel" -> "木桶";
+            case "shulker_box" -> "潜影盒";
+            case "hopper" -> "漏斗";
+            case "dispenser" -> "发射器";
+            case "dropper" -> "投掷器";
+            case "furnace" -> "熔炉";
+            case "blast_furnace" -> "高炉";
+            case "smoker" -> "烟熏炉";
+            case "brewing_stand" -> "酿造台";
+            case "ender_chest" -> "末影箱";
+            case "decorated_pot" -> "装饰罐";
+            case "crafter" -> "合成器";
+            case "chiseled_bookshelf" -> "雕纹书架";
+            case "campfire" -> "营火";
+            case "jukebox" -> "唱片机";
+            case "lectern" -> "讲台";
+            case "beacon" -> "信标";
+            default -> key;
+        };
+    }
+
     public Map<String, Object> read(String dimension, int x, int y, int z) {
         synchronized (lock) {
-            ContainerPos key = new ContainerPos(dimension, x, y, z);
             ServerLevel level = level(dimension);
+            BlockPos requested = new BlockPos(x, y, z);
+            BlockPos pos = level == null ? requested : primaryChestPos(level, requested);
+            ContainerPos key = new ContainerPos(dimension, pos.getX(), pos.getY(), pos.getZ());
             if (level != null) {
-                LevelChunk chunk = level.getChunkSource().getChunkNow(x >> 4, z >> 4);
+                LevelChunk chunk = level.getChunkSource().getChunkNow(pos.getX() >> 4, pos.getZ() >> 4);
                 if (chunk != null) {
-                    BlockEntity entity = level.getBlockEntity(new BlockPos(x, y, z));
+                    BlockEntity entity = level.getBlockEntity(pos);
                     if (entity instanceof Container container) {
-                        ContainerEntry fresh = snapshotNow(level, entity.getBlockPos(), entity, container,
+                        Container combined = effectiveContainer(level, pos, container);
+                        ContainerEntry fresh = snapshotNow(level, pos, entity, combined,
                                 entries.get(key));
                         entries.put(key, fresh);
                         markShardDirty(fresh);
@@ -302,7 +345,7 @@ public final class ContainerIndexService {
             if (cached == null) {
                 return error("容器不存在或尚未建立索引；可先执行 /api/containers/scan");
             }
-            PendingWrite pending = loadPending(dimension, x, y, z);
+            PendingWrite pending = loadPending(dimension, pos.getX(), pos.getY(), pos.getZ());
             if (pending != null && pending.slots != null
                     && pending.slots.size() == cached.size) {
                 // 区块未加载但已有排队写入时，读取显示“目标内容”，避免重置后看到旧快照。
@@ -369,6 +412,11 @@ public final class ContainerIndexService {
             if (encodedSlots == null) {
                 return WriteResult.error(400, "缺少 slots");
             }
+            BlockPos requested = new BlockPos(x, y, z);
+            BlockPos primary = primaryChestPos(level, requested);
+            x = primary.getX();
+            y = primary.getY();
+            z = primary.getZ();
             ContainerPos key = new ContainerPos(dimension, x, y, z);
             LevelChunk chunk = level.getChunkSource().getChunkNow(x >> 4, z >> 4);
             if (chunk == null) {
@@ -390,10 +438,11 @@ public final class ContainerIndexService {
                 return WriteResult.queued(cached, "区块未加载，已排队；区块加载后自动写入");
             }
             BlockEntity entity = level.getBlockEntity(new BlockPos(x, y, z));
-            if (!(entity instanceof Container container)) {
+            if (!(entity instanceof Container rawContainer)) {
                 return WriteResult.error(400, "该坐标没有可编辑的容器");
             }
             BlockPos pos = new BlockPos(x, y, z);
+            Container container = effectiveContainer(level, pos, rawContainer);
             ContainerEntry old = entries.get(key);
             if (old == null) {
                 old = snapshotNow(level, pos, entity, container, null);
@@ -430,6 +479,12 @@ public final class ContainerIndexService {
             container.setChanged();
             level.blockEntityChanged(pos);
             level.sendBlockUpdated(pos, level.getBlockState(pos), level.getBlockState(pos), 3);
+            BlockPos otherHalf = otherChestHalf(level, pos);
+            if (otherHalf != null) {
+                level.blockEntityChanged(otherHalf);
+                level.sendBlockUpdated(otherHalf, level.getBlockState(otherHalf),
+                        level.getBlockState(otherHalf), 3);
+            }
             ContainerEntry fresh = snapshotNow(level, pos, entity, container, old);
             entries.put(key, fresh);
             markShardDirty(fresh);
@@ -590,7 +645,7 @@ public final class ContainerIndexService {
                 } else {
                     // 没有坐标时只刷新索引中已知且已加载的区块，避免强制加载大量区块。
                     Set<ChunkKey> chunks = new HashSet<>();
-                    for (ContainerEntry entry : entries.values()) {
+                    for (ContainerEntry entry : new ArrayList<>(entries.values())) {
                         if (!dim.equals(entry.dimension)) continue;
                         ChunkKey key = new ChunkKey(dim, entry.x >> 4, entry.z >> 4);
                         if (chunks.add(key)) {
@@ -624,8 +679,15 @@ public final class ContainerIndexService {
             if (!(e.getValue() instanceof Container container)) continue;
             BlockPos pos = e.getKey();
             ContainerPos key = new ContainerPos(dim, pos.getX(), pos.getY(), pos.getZ());
+            // 大箱子只索引主半格，物品由 ChestBlock#getContainer 合并成 54 格。
+            if (isSecondaryChest(level, pos)) {
+                ContainerEntry removed = entries.remove(key);
+                if (removed != null) markShardDirty(removed);
+                continue;
+            }
             if (snapshot) {
-                ContainerEntry entry = snapshotNow(level, pos, e.getValue(), container, entries.get(key));
+                Container combined = effectiveContainer(level, pos, container);
+                ContainerEntry entry = snapshotNow(level, pos, e.getValue(), combined, entries.get(key));
                 entries.put(key, entry);
                 markShardDirty(entry);
             } else {
@@ -639,7 +701,8 @@ public final class ContainerIndexService {
         if (level == null) return;
         LevelChunk chunk = level.getChunkSource().getChunkNow(pos.x() >> 4, pos.z() >> 4);
         if (chunk == null) return;
-        BlockPos blockPos = new BlockPos(pos.x(), pos.y(), pos.z());
+        BlockPos blockPos = primaryChestPos(level, new BlockPos(pos.x(), pos.y(), pos.z()));
+        pos = new ContainerPos(pos.dimension(), blockPos.getX(), blockPos.getY(), blockPos.getZ());
         BlockEntity entity = level.getBlockEntity(blockPos);
         if (!(entity instanceof Container container)) {
             ContainerEntry removed = entries.remove(pos);
@@ -648,9 +711,53 @@ public final class ContainerIndexService {
             }
             return;
         }
-        ContainerEntry entry = snapshotNow(level, blockPos, entity, container, entries.get(pos));
+        Container combined = effectiveContainer(level, blockPos, container);
+        ContainerEntry entry = snapshotNow(level, blockPos, entity, combined, entries.get(pos));
         entries.put(pos, entry);
         markShardDirty(entry);
+    }
+
+    private static boolean isSecondaryChest(ServerLevel level, BlockPos pos) {
+        if (level == null || pos == null) return false;
+        BlockState state = level.getBlockState(pos);
+        return state.getBlock() instanceof ChestBlock
+                && ChestBlock.getBlockType(state) == DoubleBlockCombiner.BlockType.SECOND;
+    }
+
+    private static BlockPos primaryChestPos(ServerLevel level, BlockPos pos) {
+        if (level == null || pos == null) return pos;
+        BlockState state = level.getBlockState(pos);
+        if (state.getBlock() instanceof ChestBlock
+                && ChestBlock.getBlockType(state) == DoubleBlockCombiner.BlockType.SECOND) {
+            return ChestBlock.getConnectedBlockPos(pos, state);
+        }
+        return pos;
+    }
+
+    private static BlockPos otherChestHalf(ServerLevel level, BlockPos pos) {
+        if (level == null || pos == null) return null;
+        BlockState state = level.getBlockState(pos);
+        if (!(state.getBlock() instanceof ChestBlock)
+                || ChestBlock.getBlockType(state) == DoubleBlockCombiner.BlockType.SINGLE) {
+            return null;
+        }
+        return ChestBlock.getConnectedBlockPos(pos, state);
+    }
+
+    private static Container effectiveContainer(ServerLevel level, BlockPos pos, Container fallback) {
+        if (level == null || pos == null) return fallback;
+        BlockState state = level.getBlockState(pos);
+        if (state.getBlock() instanceof ChestBlock chest) {
+            Container combined = ChestBlock.getContainer(chest, state, level, pos, false);
+            if (combined != null) return combined;
+        }
+        return fallback;
+    }
+
+    private boolean isIndexedChestHalf(ContainerEntry entry) {
+        ServerLevel level = level(entry.dimension);
+        if (level == null) return false;
+        return isSecondaryChest(level, new BlockPos(entry.x, entry.y, entry.z));
     }
 
     private ContainerEntry snapshotNow(ServerLevel level, BlockPos pos, BlockEntity entity,
@@ -662,11 +769,12 @@ public final class ContainerIndexService {
         entry.z = pos.getZ();
         entry.type = entity == null ? "minecraft:container"
                 : String.valueOf(BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(entity.getType()));
-        entry.size = container.getContainerSize();
+        Container actual = effectiveContainer(level, pos, container);
+        entry.size = actual.getContainerSize();
         List<String> slots = new ArrayList<>(entry.size);
         int nonEmpty = 0;
         for (int i = 0; i < entry.size; i++) {
-            ItemStack stack = container.getItem(i);
+            ItemStack stack = actual.getItem(i);
             if (stack == null || stack.isEmpty()) {
                 slots.add("");
                 continue;

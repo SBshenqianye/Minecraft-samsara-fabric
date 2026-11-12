@@ -3,6 +3,9 @@ package com.shenqianye.samsara.web;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.shenqianye.samsara.identity.IdentityConfig;
+import com.shenqianye.samsara.identity.IdentityResolver;
+import com.shenqianye.samsara.identity.IdentityService;
 import com.shenqianye.samsara.server.ServerBackup;
 import com.shenqianye.samsara.server.ServerConfigFiles;
 import net.minecraft.nbt.CompoundTag;
@@ -21,6 +24,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /** Web「本体」页：服务器配置 + 存档备份。 */
 public class ServerWebService {
@@ -220,6 +224,9 @@ public class ServerWebService {
             if (Boolean.TRUE.equals(row.get("online"))) continue;
             decorateOfflinePosition(row, String.valueOf(row.get("uuid")));
         }
+        // 同一身份组只保留当前服务器验证方式对应的账号入口：
+        // 正版模式优先正版 UUID，离线模式优先离线 UUID；若另一个账号正在线则优先在线者。
+        dedupeIdentityGroups(list);
         list.sort(Comparator
                 .comparing((Map<String, Object> row) -> Boolean.TRUE.equals(row.get("online")) ? 0 : 1)
                 .thenComparing(row -> String.valueOf(row.get("name")), String.CASE_INSENSITIVE_ORDER));
@@ -227,6 +234,79 @@ public class ServerWebService {
         out.put("ok", true);
         out.put("players", list);
         return out;
+    }
+
+    /**
+     * 同一身份组只保留一个“当前服务器验证方式”的账号入口，避免正版/离线两个 UUID
+     * 同时出现在天网玩家列表；若另一个账号正在线则优先在线者。
+     */
+    private void dedupeIdentityGroups(List<Map<String, Object>> rows) {
+        IdentityService identity = IdentityService.getInstance();
+        IdentityConfig config = identity.config();
+        if (config == null || !config.enabled || config.groups == null || config.groups.isEmpty()) {
+            return;
+        }
+        boolean onlineMode = true;
+        if (server != null) {
+            try {
+                onlineMode = server.usesAuthentication();
+            } catch (RuntimeException ignored) {
+                onlineMode = true;
+            }
+        }
+        Map<String, Map<String, Object>> chosen = new LinkedHashMap<>();
+        List<Map<String, Object>> merged = new ArrayList<>();
+        for (Map<String, Object> row : rows) {
+            UUID uuid = uuidOf(row.get("uuid"));
+            IdentityConfig.Group group = IdentityResolver.groupOf(config, uuid);
+            if (group == null) {
+                merged.add(row);
+                continue;
+            }
+            String key = group.dataUuid() != null ? group.dataUuid().toString()
+                    : "name:" + String.valueOf(group.name).toLowerCase(java.util.Locale.ROOT);
+            Map<String, Object> previous = chosen.get(key);
+            if (previous == null) {
+                chosen.put(key, row);
+                merged.add(row);
+                continue;
+            }
+            if (preferAccount(row, previous, group, onlineMode)) {
+                int index = merged.indexOf(previous);
+                if (index >= 0) merged.set(index, row);
+                chosen.put(key, row);
+            }
+        }
+        rows.clear();
+        rows.addAll(merged);
+    }
+
+    private static boolean preferAccount(Map<String, Object> candidate, Map<String, Object> current,
+                                         IdentityConfig.Group group, boolean onlineMode) {
+        boolean candidateOnline = Boolean.TRUE.equals(candidate.get("online"));
+        boolean currentOnline = Boolean.TRUE.equals(current.get("online"));
+        if (candidateOnline != currentOnline) {
+            return candidateOnline;
+        }
+        UUID preferred = onlineMode ? group.premiumUuid() : group.offlineUuid();
+        if (preferred == null) {
+            preferred = onlineMode ? group.offlineUuid() : group.premiumUuid();
+        }
+        if (preferred == null) return false;
+        String id = preferred.toString();
+        boolean candidatePreferred = id.equalsIgnoreCase(String.valueOf(candidate.get("uuid")));
+        boolean currentPreferred = id.equalsIgnoreCase(String.valueOf(current.get("uuid")));
+        return candidatePreferred && !currentPreferred;
+    }
+
+    private static UUID uuidOf(Object value) {
+        String text = value == null ? "" : String.valueOf(value).trim();
+        if (text.isEmpty()) return null;
+        try {
+            return UUID.fromString(text);
+        } catch (RuntimeException ignored) {
+            return null;
+        }
     }
 
     /** 离线玩家沿用最后退出的位置，地图上保留灰色图标。 */

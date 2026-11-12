@@ -132,6 +132,7 @@ public final class WebSecurity {
                 || "/api/user/map/live".equals(path)
                 || "/api/user/map/tile".equals(path)
                 || "/api/user/map/avatar".equals(path)
+                || "/api/user/map/head".equals(path)
                 || "/api/user/worlds/icon".equals(path)
                 || "/api/config".equals(path) || "/api/reload".equals(path)
                 || "/api/status".equals(path)

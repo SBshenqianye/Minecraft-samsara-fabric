@@ -1002,8 +1002,10 @@ public final class LocalWebServer {
                 return;
             }
             if ("/api/user/map/avatar".equals(path)) {
-                MojangSkinService.Skin skin = userService.avatar(
-                        query.getOrDefault("uuid", ""), query.getOrDefault("name", ""));
+                String id = query.getOrDefault("id", "");
+                String uuid = query.getOrDefault("uuid", id);
+                String name = query.getOrDefault("name", id);
+                MojangSkinService.Skin skin = userService.avatar(uuid, name);
                 if (skin == null) {
                     status = 404;
                     json(exchange, status, Map.of("error", "没有可用的 Mojang 皮肤"));
@@ -1012,9 +1014,23 @@ public final class LocalWebServer {
                 sendBytes(exchange, 200, skin.mime(), skin.bytes());
                 return;
             }
+            if ("/api/user/map/head".equals(path)) {
+                String id = query.getOrDefault("id", "");
+                String uuid = query.getOrDefault("uuid", id);
+                String name = query.getOrDefault("name", id);
+                MojangSkinService.Skin skin = userService.head(uuid, name);
+                if (skin == null) {
+                    status = 404;
+                    json(exchange, status, Map.of("error", "没有可用的玩家头像"));
+                    return;
+                }
+                sendBytes(exchange, 200, skin.mime(), skin.bytes());
+                return;
+            }
             if ("/api/user/map/body".equals(path)) {
+                String id = query.getOrDefault("id", "");
                 MojangSkinService.Skin skin = userService.body(
-                        query.getOrDefault("uuid", ""), query.getOrDefault("name", ""));
+                        query.getOrDefault("uuid", id), query.getOrDefault("name", id));
                 if (skin == null) {
                     status = 404;
                     json(exchange, status, Map.of("error", "没有可用的 3D 皮肤"));

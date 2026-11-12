@@ -12,7 +12,12 @@
     />
     <span v-else class="fallback">{{ (label || '?').slice(0, 1) }}</span>
     <span v-if="tint" class="tint" :style="{ background: tint }"></span>
-    <span v-if="glint" class="glint" aria-hidden="true"></span>
+    <span
+      v-if="glint"
+      class="glint"
+      :style="glintMaskStyle"
+      aria-hidden="true"
+    ></span>
     <span v-if="showCount && count > 1" class="count">{{ count }}</span>
   </span>
 </template>
@@ -28,7 +33,7 @@ const props = defineProps({
 
 const failed = ref(false);
 
-const label = computed(() => props.item.name || props.item.zh || props.item.id || '?');
+const label = computed(() => props.item.zh || props.item.name || props.item.id || '?');
 const count = computed(() => Number(props.item.count || 1));
 
 const icon = computed(() => {
@@ -49,6 +54,14 @@ const glint = computed(() => {
   if (/enchantment_glint_override\s*[=:]\s*true/i.test(text)) return true;
   if (/(?:^|[^a-z_])(stored_)?enchantments\s*[=:]\s*\{[^}]/i.test(text)) return true;
   return false;
+});
+
+const glintMaskStyle = computed(() => {
+  const url = `url('${src.value}')`;
+  return {
+    maskImage: url,
+    WebkitMaskImage: url,
+  };
 });
 
 const tint = computed(() => {
@@ -138,24 +151,30 @@ watch(src, () => {
   position: absolute;
   inset: 3px;
   border-radius: 4px;
-  background: linear-gradient(120deg,
-    transparent 28%, rgba(255, 255, 255, .75) 50%, transparent 72%);
-  background-size: 220% 100%;
+  background-image: url('/ui/enchanted_glint_item.png');
+  background-repeat: repeat;
+  background-size: 24px 24px;
   mix-blend-mode: screen;
+  opacity: .72;
+  image-rendering: pixelated;
   pointer-events: none;
-  animation: item-glint 2.6s linear infinite;
+  mask-repeat: no-repeat;
+  mask-size: contain;
+  mask-position: center;
+  animation: item-glint 1.9s linear infinite;
 }
 
 .size-sm .glint {
   inset: 2px;
+  background-size: 20px 20px;
 }
 
 @keyframes item-glint {
   from {
-    background-position: 120% 0;
+    background-position: 0 0;
   }
   to {
-    background-position: -120% 0;
+    background-position: 24px 24px;
   }
 }
 

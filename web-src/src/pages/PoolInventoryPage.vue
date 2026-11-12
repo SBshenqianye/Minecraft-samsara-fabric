@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <component :is="embedded ? 'div' : TabShell" v-bind="embedded ? {} : { name: 'pool-inventory', title, description }">
     <section v-if="!connected" class="panel">
       <h3>连接管理端</h3>
@@ -52,7 +52,6 @@
             :title="sortDesc ? '当前逆序，点击改为顺序' : '当前顺序，点击改为逆序'"
             @click="toggleSortDirection"
           >{{ sortDesc ? '逆序 ↓' : '顺序 ↑' }}</el-button>
-          <span class="fund-sort-badge">{{ sortLabel }}</span>
           <span class="muted small">{{ filteredItems.length }} / {{ items.length }} 条</span>
         </div>
       </div>
@@ -392,9 +391,6 @@ function onWorkbenchChange(payload) {
 
 const RARITY_ORDER = { common: 1, uncommon: 2, rare: 3, epic: 4 };
 
-const sortLabel = computed(() =>
-  sortOptions.find((option) => option.id === itemSort.value)?.label || '添加顺序');
-
 function setSort(next) {
   if (next === itemSort.value) return;
   itemSort.value = next;
@@ -592,12 +588,4 @@ async function save() {
   gap: 8px;
 }
 
-.fund-sort-badge {
-  padding: 3px 9px;
-  border: 1px solid var(--amber, #f0c674);
-  border-radius: 999px;
-  color: var(--amber, #f0c674);
-  font-size: 11px;
-  font-weight: 700;
-}
 </style>

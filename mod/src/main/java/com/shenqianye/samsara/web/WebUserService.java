@@ -307,6 +307,11 @@ public final class WebUserService {
         return skins().skin(uuid, name);
     }
 
+    /** 玩家列表头像：从完整皮肤裁出的头部，离线玩家也按名字/ID 查找。 */
+    public MojangSkinService.Skin head(String uuid, String name) {
+        return skins().head(uuid, name);
+    }
+
     public MojangSkinService.Skin body(String uuid, String name) {
         return skins().body(uuid, name);
     }

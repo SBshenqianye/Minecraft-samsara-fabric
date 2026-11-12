@@ -38,7 +38,15 @@
           v-for="(row, rowIndex) in layoutRows"
           :key="'row-' + rowIndex"
           class="workbench-row"
-          :class="['workbench-row-' + row.zone, { 'workbench-row-gap': row.gap }]"
+          :class="['workbench-row-' + row.zone, {
+            'workbench-row-gap': row.gap,
+            'workbench-row-grid': !!row.grid,
+          }]"
+          :style="row.grid ? {
+            gridTemplateColumns: row.grid.columns || 'repeat(3, 48px)',
+            gridTemplateRows: row.grid.rows || 'auto',
+            gap: row.grid.gap || '6px',
+          } : null"
         >
           <div v-if="doll && row.zone === 'gear'" class="workbench-doll">
             <slot name="doll" />
@@ -47,6 +55,7 @@
             v-for="section in row.sections"
             :key="section.label + section.start"
             class="workbench-section"
+            :style="section.area ? { gridArea: section.area, alignSelf: section.align || 'start' } : null"
           >
             <div v-if="section.label" class="workbench-section-title">{{ section.label }}</div>
             <ItemSlotGrid
@@ -58,6 +67,7 @@
               :columns="section.columns || 9"
               :has-cursor="!!cursor"
               :editable="editable"
+              :hints="section.hints || []"
               @slot-click="onSectionClick(section, $event)"
               @slot-edit="onSectionEdit(section, $event)"
               @slot-hover="onSlotHover"
@@ -134,6 +144,8 @@ const workbenchMessage = ref('');
 // 动态绑定：避免 Vite 把 /ui/ 资源当成构建期 import（这些文件由后端静态目录提供）。
 const trashIconSrc = '/ui/trashcan.png';
 let dragSource = null;
+// 同一 encoded + 数量反复出现（拿半组、放回、合并）时不必每次都请求服务端重编码。
+const countCache = new Map();
 
 
 const modeLabel = computed(() => {
@@ -163,11 +175,13 @@ const layoutRows = computed(() => {
     if (name && last && last.name === name) {
       last.sections.push(section);
       last.gap = last.gap || !!section.gap;
+      last.grid = last.grid || section.grid || null;
     } else {
       rows.push({
         name,
         zone: section.zone || (name || 'plain'),
         gap: !!section.gap,
+        grid: section.grid || null,
         sections: [section],
       });
     }
@@ -264,11 +278,17 @@ async function withCount(item, count) {
   if (!item) return null;
   if (count <= 0) return null;
   if (item.encoded && Number(item.count) === count) return item;
+  const key = [item.encoded || item.id || '', count, props.unlimitedStack ? 1 : 0].join('|');
+  const cached = countCache.get(key);
+  if (cached) return Object.assign({}, item, cached, { count });
   const data = await api(props.itemEndpoint, {
     method: 'POST',
     body: JSON.stringify({ encoded: item.encoded, count, unlimited: props.unlimitedStack }),
   });
-  return Object.assign({}, item, data, { count });
+  const changed = Object.assign({}, data, { count });
+  if (countCache.size > 400) countCache.clear();
+  countCache.set(key, changed);
+  return Object.assign({}, item, changed);
 }
 
 function sameSignature(a, b) {
@@ -664,6 +684,16 @@ defineExpose({
   flex-wrap: nowrap;
   align-items: flex-start;
   gap: 12px;
+  min-width: 0;
+}
+
+.workbench-row-grid {
+  display: grid;
+  align-items: start;
+  width: max-content;
+}
+
+.workbench-row-grid .workbench-section {
   min-width: 0;
 }
 

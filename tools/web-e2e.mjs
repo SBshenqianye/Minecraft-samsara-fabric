@@ -1957,6 +1957,19 @@ async function main() {
       body: JSON.stringify({ slots: Array(68).fill('') }),
     });
 
+    const headResponse = await fetch(base + '/api/user/map/head?id=xh_unpkire');
+    const headBytes = headResponse.ok ? await headResponse.arrayBuffer() : null;
+    check('玩家列表头像按ID返回裁好的头部而不是整张皮肤',
+        headResponse.ok && headResponse.headers.get('content-type') === 'image/png'
+        && headBytes && headBytes.byteLength > 200 && headBytes.byteLength < 20000,
+        JSON.stringify({ status: headResponse.status, bytes: headBytes?.byteLength || 0 }));
+
+    const namedSearch = await fetch(base + '/api/containers?q=' + encodeURIComponent('箱子'),
+        { headers: authHeaders }).then((response) => response.json());
+    check('容器搜索支持容器名称（如“箱子”）', namedSearch.ok === true
+        && Number(namedSearch.total) > 0,
+        JSON.stringify({ total: namedSearch.total, q: namedSearch.q }));
+
     const fundInv = await fetch(base + '/api/lottery/fund', { headers: authHeaders })
       .then((response) => response.json());
     check('基金仓库可读取且至少 54 格', fundInv.ok === true
@@ -3047,6 +3060,8 @@ async function main() {
           .some((button) => button.textContent.trim() === '调试方块'),
         labels: [...document.querySelectorAll('.global-inventory-panel .workbench-section-title')]
           .map((node) => node.textContent.trim()),
+        hints: [...document.querySelectorAll('.global-inventory-panel .slot .slot-hint')]
+          .map((node) => node.getAttribute('src') || ''),
         split: (() => {
           const body = document.querySelector('.global-inventory-panel .global-inventory-body');
           return body ? getComputedStyle(body).flexDirection === 'column' : false;
@@ -3076,6 +3091,13 @@ async function main() {
         && !webInventoryUi.labels.some((text) => text.includes('0–44'))
         && webInventoryUi.split === true,
         JSON.stringify({ labels: webInventoryUi.labels, split: webInventoryUi.split }));
+    check('Web 背包空装备/副手槽显示原版装备提示且不限制放置',
+        webInventoryUi.hints.length >= 4
+        && webInventoryUi.hints.some((src) => src.includes('slot_chestplate'))
+        && webInventoryUi.hints.some((src) => src.includes('slot_leggings'))
+        && webInventoryUi.hints.some((src) => src.includes('slot_boots'))
+        && webInventoryUi.hints.some((src) => src.includes('slot_shield')),
+        JSON.stringify(webInventoryUi.hints));
 
     // 浮窗内搬运必须实时落库：点起 → 放下 → 服务端立刻可见，不需要保存按钮或确认弹窗。
     await evaluate(`(() => {

@@ -1,5 +1,5 @@
 <template>
-  <div class="map-picker" :class="{ 'map-no-cluster': noCluster }" :style="{ height: height + 'px' }">
+  <div class="map-picker" :class="{ 'grid-markers': gridMarkers, 'max-zoom': maxZoom }" :style="{ height: height + 'px' }">
     <div ref="viewport" class="map-viewport" @pointerdown="startPan" @wheel.prevent="onWheel">
       <div class="map-layer">
         <template v-for="tile in tiles" :key="tile.key">
@@ -38,7 +38,7 @@
         >
           <template v-if="cluster.markers.length > 1">
             <span class="cluster-count">{{ cluster.markers.length }}</span>
-            <span class="marker-label">{{ cluster.label }}</span>
+            <span v-if="!gridMarkers" class="marker-label">{{ cluster.label }}</span>
           </template>
           <template v-else>
             <span v-if="cluster.marker.kind === 'player'" class="marker-head" :style="avatarStyle(cluster.marker)">
@@ -51,7 +51,7 @@
               size="sm"
               :show-count="false"
             />
-            <span class="marker-label">{{ cluster.marker.label }}</span>
+            <span v-if="!gridMarkers" class="marker-label">{{ cluster.marker.label }}</span>
           </template>
         </button>
       </div>
@@ -158,8 +158,9 @@ const props = defineProps({
 const emit = defineEmits(['select']);
 
 // 与世界地图 map.js 同一套缩放档位与「格/像素」口径；交互实现彼此独立。
-const SCALES = [0.0625, 0.125, 0.25, 0.5, 1, 2, 4, 8, 16];
-const MIN_SCALE = 0.0625;
+// 最细两档是这次新增的：0.015625 时一格方块占 64px，正好放一个可点击图标。
+const SCALES = [0.015625, 0.03125, 0.0625, 0.125, 0.25, 0.5, 1, 2, 4, 8, 16];
+const MIN_SCALE = 0.015625;
 const MAX_SCALE = 16;
 const TRAIL_COLORS = ['#60a5fa', '#f0c674', '#7ad7a8', '#c792ea', '#f38ba8', '#89ddff'];
 
@@ -212,44 +213,20 @@ const visibleMarkers = computed(() => {
       && marker.top > -40 && marker.top < viewH.value + 40);
 });
 
-const CLUSTER_DISTANCE = 52;
-// 只有最细一档（放得最大）才取消聚合并散开重叠标记；其余档位继续聚合。
-const NO_CLUSTER_SCALE = 0.0625;
-const SPREAD_X = 120;
-const SPREAD_Y = 30;
+const GRID_SCALE = 0.0625;       // 细档开始按方块格聚合，避免散开后跳变
+const MAX_GRID_SCALE = 0.015625; // 最细档一格方块一个可点击图标
+const MAX_GRID_SPREAD = 14;
 const clusterPopup = ref(null);
 const clusterPinned = ref(false);
-const noCluster = computed(() => scale.value <= NO_CLUSTER_SCALE);
+const gridMarkers = computed(() => scale.value <= GRID_SCALE + 1e-9);
+const maxZoom = computed(() => scale.value <= MAX_GRID_SCALE + 1e-9);
 
-/** 贪心地把互相重叠的标记挪到最近的空网格位，保持靠近真实坐标又彼此分开。 */
-function spreadMarkers(markers) {
-  const placed = [];
-  return markers.map((marker) => {
-    let left = marker.left;
-    let top = marker.top;
-    for (let ring = 0; ring <= 14; ring++) {
-      let found = false;
-      for (let row = -ring; row <= ring && !found; row++) {
-        for (let col = -ring; col <= ring && !found; col++) {
-          if (Math.max(Math.abs(row), Math.abs(col)) !== ring) continue;
-          const candidateLeft = marker.left + col * SPREAD_X;
-          const candidateTop = marker.top + row * SPREAD_Y;
-          const free = placed.every((point) =>
-            Math.abs(point.left - candidateLeft) >= SPREAD_X
-            || Math.abs(point.top - candidateTop) >= SPREAD_Y);
-          if (free) {
-            left = candidateLeft;
-            top = candidateTop;
-            found = true;
-          }
-        }
-      }
-      if (found) break;
-    }
-    placed.push({ left, top });
-    return { ...marker, left, top };
-  });
-}
+/** 越放大，像素半径越小；粗档聚得多，细档自然拆开，不再某一档突然散开。 */
+const clusterRadius = computed(() => {
+  const index = Math.max(0, SCALES.indexOf(scale.value));
+  const zoomIn = SCALES.length - 1 - index;
+  return Math.max(MAX_GRID_SPREAD, 64 - zoomIn * 5);
+});
 
 /** 聚合网格里显示的容器/玩家名字：玩家用名字，容器用类型 + 坐标区分。 */
 function markerName(marker) {
@@ -259,31 +236,61 @@ function markerName(marker) {
   return marker.label + (coords ? ' · ' + coords : '');
 }
 
-function singleCluster(marker) {
+function clusterModel(rows, left, top) {
+  const sorted = rows.slice().sort((a, b) =>
+    (Number(a.z) - Number(b.z)) || (Number(a.x) - Number(b.x)));
+  const first = sorted[0];
+  const everyPlayer = sorted.every((row) => row.kind === 'player');
+  const everyOffline = sorted.every((row) => row.online === false);
   return {
-    id: marker.id,
-    left: Math.round(marker.left),
-    top: Math.round(marker.top),
-    markers: [marker],
-    marker,
-    active: marker.id === props.selectedId,
-    offline: marker.online === false,
-    player: marker.kind === 'player',
-    label: marker.label,
-    title: marker.label + (marker.sub ? ' · ' + marker.sub : ''),
+    id: sorted.map((row) => row.id).sort().join('|'),
+    left: Math.round(left),
+    top: Math.round(top),
+    markers: sorted,
+    marker: first,
+    active: sorted.some((row) => row.id === props.selectedId),
+    offline: everyOffline,
+    player: everyPlayer,
+    label: sorted.length > 1 ? (everyPlayer ? '玩家' : '容器') : first.label,
+    title: sorted.length > 1
+      ? sorted.length + ' 个目标，点击展开'
+      : first.label + (first.sub ? ' · ' + first.sub : ''),
   };
+}
+
+/** 细档按方块坐标聚合：每格最多一个图标，最大档就是一格方块一个图标。 */
+function blockClusters(source) {
+  const cells = new Map();
+  for (const marker of source) {
+    const bx = Math.floor(Number(marker.x));
+    const bz = Math.floor(Number(marker.z));
+    const key = bx + ',' + bz;
+    let cell = cells.get(key);
+    if (!cell) {
+      cell = { bx, bz, markers: [] };
+      cells.set(key, cell);
+    }
+    cell.markers.push(marker);
+  }
+  const { left, top, ppb } = projection();
+  return [...cells.values()].map((cell) => clusterModel(
+    cell.markers,
+    (cell.bx + 0.5 - left) * ppb,
+    (cell.bz + 0.5 - top) * ppb,
+  ));
 }
 
 const visibleClusters = computed(() => {
   const source = visibleMarkers.value;
-  if (noCluster.value) return spreadMarkers(source).map(singleCluster);
+  if (gridMarkers.value) return blockClusters(source);
   const clusters = [];
+  const radius = clusterRadius.value;
   for (const marker of source) {
     let target = null;
     for (const cluster of clusters) {
       const dx = cluster.left - marker.left;
       const dy = cluster.top - marker.top;
-      if (dx * dx + dy * dy <= CLUSTER_DISTANCE * CLUSTER_DISTANCE) {
+      if (dx * dx + dy * dy <= radius * radius) {
         target = cluster;
         break;
       }
@@ -296,29 +303,7 @@ const visibleClusters = computed(() => {
     target.left = target.markers.reduce((sum, row) => sum + row.left, 0) / target.markers.length;
     target.top = target.markers.reduce((sum, row) => sum + row.top, 0) / target.markers.length;
   }
-  return clusters.map((cluster) => {
-    const rows = cluster.markers.slice().sort((a, b) =>
-      (Number(a.z) - Number(b.z)) || (Number(a.x) - Number(b.x)));
-    const first = rows[0];
-    const everyPlayer = rows.every((row) => row.kind === 'player');
-    const everyOffline = rows.every((row) => row.online === false);
-    return {
-      id: rows.map((row) => row.id).sort().join('|'),
-      left: Math.round(cluster.left),
-      top: Math.round(cluster.top),
-      markers: rows,
-      marker: first,
-      active: rows.some((row) => row.id === props.selectedId),
-      offline: everyOffline,
-      player: everyPlayer,
-      label: rows.length > 1
-        ? (everyPlayer ? '玩家' : '容器')
-        : first.label,
-      title: rows.length > 1
-        ? rows.length + ' 个目标，点击展开'
-        : first.label + (first.sub ? ' · ' + first.sub : ''),
-    };
-  });
+  return clusters.map((cluster) => clusterModel(cluster.markers, cluster.left, cluster.top));
 });
 
 function onMarkerClick(cluster) {
@@ -492,8 +477,8 @@ function setScale(next, px, py) {
   const worldX = centerX.value + (ax - viewW.value / 2) * scale.value;
   const worldZ = centerZ.value + (ay - viewH.value / 2) * scale.value;
   scale.value = clamped;
-  // 进入无聚合层级时网格已经没有对应目标，即使图钉保持也要收起。
-  if (noCluster.value || !clusterPinned.value) closeClusterPopup();
+  // 进入细档网格后聚合形态会变，即使图钉保持也收起旧网格。
+  if (gridMarkers.value || !clusterPinned.value) closeClusterPopup();
   centerX.value = worldX - (ax - viewW.value / 2) * clamped;
   centerZ.value = worldZ - (ay - viewH.value / 2) * clamped;
   rebuildTiles();
@@ -562,11 +547,10 @@ function loadAvatar(marker) {
     avatarUrls[marker.id] = cached;
     return;
   }
-  const params = new URLSearchParams();
-  if (marker.uuid) params.set('uuid', String(marker.uuid));
-  if (marker.label) params.set('name', String(marker.label));
-  const query = params.toString();
-  if (!query) return;
+  // 头像接口已经裁好 8×8 头部；离线玩家按名字/ID 查找，不再返回整张皮肤展开图。
+  const id = marker.label || marker.name || marker.uuid;
+  if (!id) return;
+  const url = '/api/user/map/head?id=' + encodeURIComponent(id);
   avatarLoading.add(marker.id);
   const image = new Image();
   image.crossOrigin = 'anonymous';
@@ -574,25 +558,13 @@ function loadAvatar(marker) {
   image.decoding = 'async';
   image.onload = () => {
     avatarLoading.delete(marker.id);
-    try {
-      const canvas = document.createElement('canvas');
-      canvas.width = 64;
-      canvas.height = 64;
-      const ctx = canvas.getContext('2d');
-      ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(image, 8, 8, 8, 8, 0, 0, 64, 64);
-      try { ctx.drawImage(image, 40, 8, 8, 8, 0, 0, 64, 64); } catch { /* 旧皮肤没有帽子层 */ }
-      const data = canvas.toDataURL('image/png');
-      avatarCache.set(marker.id, data);
-      avatarUrls[marker.id] = data;
-    } catch {
-      // tainted canvas 或解码失败时保留首字母占位。
-    }
+    avatarCache.set(marker.id, url);
+    avatarUrls[marker.id] = url;
   };
   image.onerror = () => {
     avatarLoading.delete(marker.id);
   };
-  image.src = '/api/user/map/avatar?' + query;
+  image.src = url;
 }
 
 function prepareMarkers() {
@@ -775,9 +747,50 @@ watch(() => props.markers, () => {
   text-overflow: ellipsis;
 }
 
-/* 无聚合层级：格子按网格散开，标签收窄一点保证相邻标记不叠字。 */
-.map-no-cluster .marker-label {
-  max-width: 72px;
+/* 细档：每格一个图标，隐藏文字标签，避免 16/32/64px 网格里名字互相压住。 */
+.map-picker.grid-markers .map-marker {
+  gap: 0;
+  padding: 2px;
+  border-radius: 7px;
+}
+
+.map-picker.grid-markers .marker-label {
+  display: none;
+}
+
+.map-picker.grid-markers .marker-head,
+.map-picker.grid-markers .marker-item {
+  width: 14px;
+  height: 14px;
+}
+
+.map-picker.grid-markers .cluster-count {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  font-size: 9px;
+}
+
+/* 最细档一格方块 64px，图标放大到接近格子大小，仍然每个都独立可点。 */
+.map-picker.max-zoom .map-marker {
+  padding: 3px;
+  border-radius: 9px;
+}
+
+.map-picker.max-zoom .marker-head,
+.map-picker.max-zoom .marker-item {
+  width: 38px;
+  height: 38px;
+}
+
+.map-picker.max-zoom .marker-initial {
+  font-size: 18px;
+}
+
+.map-picker.max-zoom .cluster-count {
+  min-width: 38px;
+  height: 38px;
+  font-size: 15px;
 }
 
 .map-controls {

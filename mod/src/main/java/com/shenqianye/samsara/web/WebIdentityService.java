@@ -60,6 +60,13 @@ public final class WebIdentityService implements IdentityWebService {
         out.put("issues", issues(service.configStore().issues()));
         out.put("states", states(service.stateStore()));
         out.put("candidates", candidates(service));
+        boolean onlineMode = true;
+        try {
+            if (service.server() != null) onlineMode = service.server().usesAuthentication();
+        } catch (RuntimeException ignored) {
+            onlineMode = true;
+        }
+        out.put("onlineMode", onlineMode);
         return out;
     }
 

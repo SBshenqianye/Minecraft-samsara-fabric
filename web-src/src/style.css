@@ -173,6 +173,15 @@
   text-shadow: 1px 1px 0 #3f3f3f;
 }
 
+/* 原版装备/副手空槽提示：仅作背景标记，不限制放入物品。 */
+.slot .slot-hint {
+  width: 28px;
+  height: 28px;
+  opacity: .5;
+  pointer-events: none;
+  filter: brightness(1.25);
+}
+
 .slot-edit {
   position: absolute;
   right: 2px;
