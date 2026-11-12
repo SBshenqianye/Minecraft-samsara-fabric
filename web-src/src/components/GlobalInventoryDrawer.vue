@@ -40,47 +40,51 @@
       <div v-if="!connected" class="global-inventory-connect">
         <p class="muted small">需要管理端 token；请先在任意管理页连接。</p>
       </div>
-      <div v-else class="global-inventory-body" :class="{ 'has-editor': !!editorItem }">
-        <div class="global-inventory-slots">
-          <ItemWorkbench
-            ref="workbench"
-            :slots="slots"
-            :items="items"
-            :layout="layout"
-            :schema="schema"
-            mode="live"
-            item-endpoint="/api/inventory/item"
-            :revision="revision"
-            :disabled="saving"
-            :editable="true"
-            :trash="false"
-            :show-toolbar="false"
-            @change="onChange"
-            @select="onWorkbenchSelect"
-          />
-          <button
-            class="creative-trash"
-            type="button"
-            title="删除光标上的物品（原版创造模式垃圾桶位置）"
-            aria-label="垃圾桶"
-            @click="workbench?.trashCursor()"
-          >
-            <img :src="trashIconSrc" alt="" draggable="false" />
-          </button>
+      <div v-else class="global-inventory-body">
+        <div class="global-inventory-top" :class="{ 'has-editor': !!editorItem }">
+          <div class="global-inventory-slots">
+            <ItemWorkbench
+              ref="workbench"
+              :slots="slots"
+              :items="items"
+              :layout="layout"
+              :schema="schema"
+              mode="live"
+              item-endpoint="/api/inventory/item"
+              :revision="revision"
+              :disabled="saving"
+              :editable="true"
+              :trash="false"
+              :show-toolbar="false"
+              @change="onChange"
+              @select="onWorkbenchSelect"
+            />
+            <div class="global-inventory-trash-row">
+              <button
+                class="creative-trash"
+                type="button"
+                title="删除光标上的物品"
+                aria-label="垃圾桶"
+                @click="workbench?.trashCursor()"
+              >
+                <img :src="trashIconSrc" alt="" draggable="false" />
+              </button>
+            </div>
+          </div>
+          <div v-if="editorItem" class="global-inventory-editor">
+            <div class="global-inventory-editor-head">
+              <strong>组件编辑</strong>
+              <span class="spacer"></span>
+              <button class="ghost tiny" type="button" title="关闭编辑" @click="closeEditor">×</button>
+            </div>
+            <ItemEditor
+              :item="editorItem"
+              :schema="schema"
+              @update="applyEditorItem"
+            />
+          </div>
         </div>
         <CreativeLibrary class="global-inventory-library" @pick="onPick" />
-        <div v-if="editorItem" class="global-inventory-editor">
-          <div class="global-inventory-editor-head">
-            <strong>组件编辑</strong>
-            <span class="spacer"></span>
-            <button class="ghost tiny" type="button" title="关闭编辑" @click="closeEditor">×</button>
-          </div>
-          <ItemEditor
-            :item="editorItem"
-            :schema="schema"
-            @update="applyEditorItem"
-          />
-        </div>
       </div>
     </FloatingWindow>
   </div>
@@ -97,7 +101,7 @@ const open = ref(false);
 const pinned = ref(false);
 const trashIconSrc = '/ui/trashcan.png';
 const initialWidth = Math.min(1120, Math.max(880, window.innerWidth - 40));
-const initialHeight = Math.min(780, Math.max(620, window.innerHeight - 110));
+const initialHeight = Math.min(940, Math.max(680, window.innerHeight - 60));
 const initialX = Math.max(20, window.innerWidth - initialWidth - 20);
 const loading = ref(false);
 const saving = ref(false);
@@ -128,11 +132,14 @@ function applyEditorItem(item) {
 let token = '';
 let liveTimer = null;
 
-// 参考原版创造模式物品栏：9x5 物品格 + 最下方 9 格快捷栏，共 54 格。
-// 垃圾桶放在快捷栏右侧（与创造模式「销毁物品」槽位置一致）。
+// 与玩家背包同一套相对布局：装备 4 格 + 副手 1 格 + 主背包 27 格
+// + 快捷栏 9 格 + 仓库 13 格，共 54 格。
 const layout = [
-  { label: '物品 0–44', start: 0, size: 45, columns: 9, row: 'creative', zone: 'creative' },
-  { label: '快捷栏 45–53', start: 45, size: 9, columns: 9, row: 'hotbar', zone: 'hotbar', gap: true },
+  { label: '装备 0–3', start: 0, size: 4, columns: 1, row: 'gear', zone: 'gear' },
+  { label: '副手 4', start: 4, size: 1, columns: 1, row: 'gear', zone: 'gear' },
+  { label: '主背包 5–31', start: 5, size: 27, columns: 9, row: 'main', zone: 'main' },
+  { label: '快捷栏 32–40', start: 32, size: 9, columns: 9, row: 'hotbar', zone: 'hotbar', gap: true },
+  { label: '仓库 41–53', start: 41, size: 13, columns: 9, row: 'storage', zone: 'storage', gap: true },
 ];
 onMounted(() => {
   token = sessionStorage.getItem('samsara-token') || '';
@@ -186,6 +193,8 @@ function close() {
   pinned.value = false;
   open.value = false;
   window.clearTimeout(liveTimer);
+  // 关闭会销毁浮窗内的组件，未落库的改动立即补写，避免丢改动。
+  if (dirty.value && !saving.value) save();
 }
 
 function toggleWindow() {
@@ -347,25 +356,47 @@ defineExpose({ open: () => openWindow() });
 
 .global-inventory-status {
   display: flex;
+  align-items: center;
   gap: 8px;
+  min-height: 18px;
   margin-bottom: 6px;
 }
 
+/* 创造物品库与物品栏上下切分：上半是背包（组件编辑并排），下半是创造物品库。 */
 .global-inventory-body {
-  display: grid;
+  display: flex;
   flex: 1;
+  flex-direction: column;
+  gap: 10px;
   min-height: 0;
-  grid-template-columns: minmax(0, 1.35fr) minmax(300px, 1fr);
-  gap: 12px;
-  align-items: start;
+  overflow: auto;
+}
+
+.global-inventory-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
 }
 
 .global-inventory-slots {
+  flex: 0 1 auto;
   min-width: 0;
 }
 
 .global-inventory-library {
+  flex: 0 0 auto;
   min-width: 0;
+}
+
+.global-inventory-top.has-editor {
+  align-items: stretch;
+}
+
+.global-inventory-trash-row {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 6px;
 }
 
 .inventory-slide-enter-active,
@@ -380,18 +411,20 @@ defineExpose({ open: () => openWindow() });
 }
 
 @media (max-width: 900px) {
-  .global-inventory-body {
-    grid-template-columns: minmax(0, 1fr);
+  .global-inventory-top {
+    flex-direction: column;
   }
 }
 
-/* Web 背包窗口内不再出现滚动条：缩小槽位，保持整窗可见。 */
+/* 缩小槽位并让格子区按内容收窄，腾出下半屏给创造物品库。 */
 .global-inventory-panel :deep(.slot-grid) {
-  --slot-size: 40px;
-  gap: 4px;
+  --slot-size: 32px;
+  gap: 3px;
 }
 
 .global-inventory-panel :deep(.workbench-grids) {
+  width: max-content;
+  min-width: 380px;
   padding: 8px;
 }
 
@@ -411,13 +444,10 @@ defineExpose({ open: () => openWindow() });
   overflow: hidden;
 }
 
-/* 专用编辑面板：独立一列，不遮挡背包 */
-.global-inventory-body.has-editor {
-  grid-template-columns: minmax(0, 1.15fr) minmax(230px, .8fr) minmax(280px, .95fr);
-}
-
+/* 专用编辑面板：与背包并排，不遮挡槽位 */
 .global-inventory-editor {
   display: flex;
+  flex: 0 0 300px;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
@@ -442,13 +472,8 @@ defineExpose({ open: () => openWindow() });
 
 .global-inventory-editor :deep(.item-editor) { color: #2b2b2b; }
 
-/* 原版创造模式垃圾桶：快捷栏右侧 */
-.global-inventory-slots { position: relative; }
-
+/* 垃圾桶单独一行，不再压在物品栏格子上 */
 .creative-trash {
-  position: absolute;
-  right: 4px;
-  bottom: 4px;
   display: grid;
   place-items: center;
   width: 40px;
@@ -504,5 +529,7 @@ defineExpose({ open: () => openWindow() });
   border: 2px solid #373737;
   border-radius: 0;
   background: #8b8b8b;
+  min-height: 140px;
+  max-height: 180px;
 }
 </style>

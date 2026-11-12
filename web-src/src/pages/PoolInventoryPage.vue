@@ -11,9 +11,6 @@
     </section>
 
     <template v-else>
-      <p v-if="error" class="container-message error">{{ error }}</p>
-      <p v-if="message" class="container-message ok">{{ message }}</p>
-
       <div class="pool-head" :class="{ 'pool-head-embedded': embedded }">
         <div>
           <h3 v-if="!embedded">{{ title }}</h3>
@@ -80,7 +77,12 @@
         </button>
       </div>
 
-      <p v-if="saving" class="muted small">写入中…</p>
+      <!-- 固定高度状态行：写入中/已写入/错误都占同一行，仓库网格不会上下浮动。 -->
+      <div class="pool-status" role="status" aria-live="polite">
+        <p v-if="error" class="container-message error pool-status-line">{{ error }}</p>
+        <p v-else-if="saving" class="muted small pool-status-line pool-status-saving">写入中…</p>
+        <p v-else-if="message" class="container-message ok pool-status-line">{{ message }}</p>
+      </div>
 
       <div class="panel">
         <ItemWorkbench
@@ -95,6 +97,7 @@
           :trash="kind === 'web'"
           :editable="false"
           :unlimited-stack="kind === 'fund'"
+          :auto-stack="kind === 'fund'"
           :has-more="hasMore"
           @change="onWorkbenchChange"
           @need-more="loadMoreSlots"
@@ -475,6 +478,26 @@ async function save() {
   gap: 10px;
   margin-bottom: 10px;
 }
+
+.pool-status {
+  display: flex;
+  align-items: center;
+  min-height: 22px;
+  margin: 2px 0 6px;
+}
+
+/* 状态行里的 .container-message 去掉自带内外边距，保证高度恒定。 */
+.pool-status-line {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.pool-status-line.error { color: #b91c1c; }
+.pool-status-line.ok { color: #047857; }
+.pool-status-saving { margin: 0; }
 
 .pool-head h3,
 .pool-head h4 {

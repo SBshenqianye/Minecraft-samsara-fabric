@@ -54,7 +54,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, reactive, ref, toRefs, watch } from 'vue';
 import ItemIcon from './ItemIcon.vue';
 import { filterItems } from '../composables/itemSearch.js';
 import { hideItemTooltip, itemTooltip, moveItemTooltip, showItemTooltip } from './itemTooltip.js';
@@ -97,9 +97,12 @@ const DEBUG_ITEMS = [
 const all = ref([]);
 const loading = ref(false);
 const error = ref('');
-const category = ref('all');
-const query = ref('');
-const sort = ref('name');
+// 搜索/分类/排序挂到全局：Web 背包浮窗关闭再打开时组件会重建，但条件不重置。
+const state = globalThis.__samsaraCreativeLibrary
+  || (globalThis.__samsaraCreativeLibrary = reactive({
+    query: '', category: 'all', sort: 'name',
+  }));
+const { query, category, sort } = toRefs(state);
 const visibleCount = ref(PAGE);
 const scrollBox = ref(null);
 let cachePromise = null;

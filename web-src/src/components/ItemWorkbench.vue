@@ -91,6 +91,7 @@ const props = defineProps({
   disabled: { type: Boolean, default: false },
   trash: { type: Boolean, default: true },
   unlimitedStack: { type: Boolean, default: false },
+  autoStack: { type: Boolean, default: false },
   hasMore: { type: Boolean, default: false },
   doll: { type: Boolean, default: false },
   editable: { type: Boolean, default: false },
@@ -321,11 +322,22 @@ async function onSlotClick({ index, button, shift }) {
       changed = true;
     } else if (!slotItem) {
       const place = button === 2 ? 1 : cursor.value.count;
-      const placed = await withCount(cursor.value, place);
-      setSlot(index, placed);
+      // 基金仓库这类无限堆叠仓库：从别的物品栏带过来的物品放进空格时，
+      // 先并入已有的同类堆叠，而不是又占一个新格子。仓库内部搬运不触发自动堆叠。
+      const stackTarget = props.autoStack && cursorOrigin.value === null
+        ? localItems.value.find((row) => row.slot !== index
+            && sameSignature(row, cursor.value))
+        : null;
+      if (stackTarget) {
+        setSlot(stackTarget.slot,
+          await withCount(stackTarget, Number(stackTarget.count) + place));
+        selectedIndex.value = stackTarget.slot;
+      } else {
+        setSlot(index, await withCount(cursor.value, place));
+        selectedIndex.value = index;
+      }
       cursor.value = place >= cursor.value.count
         ? null : await withCount(cursor.value, cursor.value.count - place);
-      selectedIndex.value = index;
       if (!cursor.value) cursorOrigin.value = null;
       changed = true;
     } else if (sameSignature(slotItem, cursor.value)) {

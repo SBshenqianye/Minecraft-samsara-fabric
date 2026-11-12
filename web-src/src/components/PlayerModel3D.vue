@@ -1,32 +1,7 @@
 <template>
   <div class="pm3d" :class="{ offline: !online }">
     <div class="pm3d-stage" @pointerdown="startDrag">
-      <div class="pm3d-model" :class="'pose-' + pose" :style="modelStyle">
-        <div
-          v-for="part in parts"
-          :key="part.name"
-          class="pm3d-part"
-          :class="'part-' + part.name"
-          :style="partStyle(part)"
-        >
-          <div
-            v-for="face in part.faces"
-            :key="'skin-' + face.name"
-            class="pm3d-face pm3d-skin"
-            :class="'face-' + face.name"
-            :style="faceStyle(part, face)"
-          ></div>
-          <template v-for="(layer, li) in armorLayers(part.name)" :key="'armor-' + li">
-            <div
-              v-for="face in part.faces"
-              :key="'a' + li + '-' + face.name"
-              class="pm3d-face pm3d-armor"
-              :class="'face-' + face.name"
-              :style="armorFaceStyle(part, face, layer)"
-            ></div>
-          </template>
-        </div>
-      </div>
+      <canvas ref="canvasEl" class="pm3d-model"></canvas>
       <div class="pm3d-shadow"></div>
     </div>
     <div class="pm3d-tools">
@@ -44,7 +19,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 const props = defineProps({
   uuid: { type: String, default: '' },
@@ -53,12 +28,16 @@ const props = defineProps({
   armor: { type: Object, default: () => ({}) },
 });
 
-const U = 4;
-const rotX = ref(-6);
-const rotY = ref(24);
-const pose = ref('stand');
-let drag = null;
+const VIEW_W = 176;
+const VIEW_H = 230;
+const U = 5;                 // 每个皮肤像素对应的 CSS 像素
+const CX = VIEW_W / 2;
+const CY = VIEW_H / 2 - 4;
 
+const rotX = ref(-6);        // 俯仰
+const rotY = ref(24);        // 偏航
+const pose = ref('stand');
+const canvasEl = ref(null);
 const poses = [
   { id: 'stand', label: '站立' },
   { id: 'wave', label: '挥手' },
@@ -73,77 +52,62 @@ const query = computed(() => {
   return params.toString();
 });
 const skinSrc = computed(() => '/api/user/map/avatar?' + query.value);
-const modelStyle = computed(() => ({
-  '--skin': "url('" + skinSrc.value + "')",
-  transform: 'rotateX(' + rotX.value + 'deg) rotateY(' + rotY.value + 'deg) scale(1.4)',
-}));
 
-// 皮肤 64x64 箱型 UV；26.3 盔甲贴图 (64x32) 沿用同布局，
-// 左臂/左腿镜像右臂/右腿（v 不超过 32）。
-const UV = {
-  head: { front: [8, 8], right: [0, 8], left: [16, 8], back: [24, 8], top: [8, 0], bottom: [16, 0] },
-  body: { front: [20, 20], right: [16, 20], left: [28, 20], back: [32, 20], top: [20, 16], bottom: [28, 16] },
-  'arm-right': { front: [44, 20], right: [40, 20], left: [48, 20], back: [52, 20], top: [44, 16], bottom: [48, 16] },
-  'arm-left': { front: [44, 20], right: [40, 20], left: [48, 20], back: [52, 20], top: [44, 16], bottom: [48, 16] },
-  'leg-right': { front: [4, 20], right: [0, 20], left: [8, 20], back: [12, 20], top: [4, 16], bottom: [8, 16] },
-  'leg-left': { front: [4, 20], right: [0, 20], left: [8, 20], back: [12, 20], top: [4, 16], bottom: [8, 16] },
+/*
+ * Minecraft 64x64 皮肤 UV（skinview3d / 原版 HumanoidModel 同一套布局）。
+ * 每个部位 6 个面，矩形为 [u, v, 宽, 高]，单位为皮肤像素。
+ */
+const UV_BASE = {
+  head: { front: [8, 8, 8, 8], back: [24, 8, 8, 8], right: [0, 8, 8, 8], left: [16, 8, 8, 8], top: [8, 0, 8, 8], bottom: [16, 0, 8, 8] },
+  body: { front: [20, 20, 8, 12], back: [32, 20, 8, 12], right: [16, 20, 4, 12], left: [28, 20, 4, 12], top: [20, 16, 8, 4], bottom: [28, 16, 8, 4] },
+  'arm-right': { front: [44, 20, 4, 12], back: [52, 20, 4, 12], right: [40, 20, 4, 12], left: [48, 20, 4, 12], top: [44, 16, 4, 4], bottom: [48, 16, 4, 4] },
+  'arm-left': { front: [36, 52, 4, 12], back: [44, 52, 4, 12], right: [32, 52, 4, 12], left: [40, 52, 4, 12], top: [36, 48, 4, 4], bottom: [40, 48, 4, 4] },
+  'leg-right': { front: [4, 20, 4, 12], back: [12, 20, 4, 12], right: [0, 20, 4, 12], left: [8, 20, 4, 12], top: [4, 16, 4, 4], bottom: [8, 16, 4, 4] },
+  'leg-left': { front: [4, 52, 4, 12], back: [12, 52, 4, 12], right: [0, 52, 4, 12], left: [8, 52, 4, 12], top: [4, 48, 4, 4], bottom: [8, 48, 4, 4] },
 };
 
-function makePart(name, w, h, d, x, y) {
-  const uv = UV[name];
-  return {
-    name, w, h, d, x, y,
-    faces: [
-      { name: 'front', fw: w, fh: h, uv: uv.front, transform: 'translateZ(' + (d * U / 2) + 'px)' },
-      { name: 'back', fw: w, fh: h, uv: uv.back, transform: 'rotateY(180deg) translateZ(' + (d * U / 2) + 'px)' },
-      { name: 'right', fw: d, fh: h, uv: uv.right, transform: 'rotateY(90deg) translateZ(' + (w * U / 2) + 'px)' },
-      { name: 'left', fw: d, fh: h, uv: uv.left, transform: 'rotateY(-90deg) translateZ(' + (w * U / 2) + 'px)' },
-      { name: 'top', fw: w, fh: d, uv: uv.top, transform: 'rotateX(90deg) translateZ(' + (h * U / 2) + 'px)' },
-      { name: 'bottom', fw: w, fh: d, uv: uv.bottom, transform: 'rotateX(-90deg) translateZ(' + (h * U / 2) + 'px)' },
-    ],
-  };
-}
+// 第二层皮肤（帽子/外套/袖子/裤腿），64x64 专用；旧 64x32 皮肤没有这一层。
+const UV_OVERLAY = {
+  head: { front: [40, 8, 8, 8], back: [56, 8, 8, 8], right: [32, 8, 8, 8], left: [48, 8, 8, 8], top: [40, 0, 8, 8], bottom: [48, 0, 8, 8] },
+  body: { front: [20, 36, 8, 12], back: [32, 36, 8, 12], right: [16, 36, 4, 12], left: [28, 36, 4, 12], top: [20, 32, 8, 4], bottom: [28, 32, 8, 4] },
+  'arm-right': { front: [44, 36, 4, 12], back: [52, 36, 4, 12], right: [40, 36, 4, 12], left: [48, 36, 4, 12], top: [44, 32, 4, 4], bottom: [48, 32, 4, 4] },
+  'arm-left': { front: [52, 52, 4, 12], back: [60, 52, 4, 12], right: [48, 52, 4, 12], left: [56, 52, 4, 12], top: [52, 48, 4, 4], bottom: [56, 48, 4, 4] },
+  'leg-right': { front: [4, 36, 4, 12], back: [12, 36, 4, 12], right: [0, 36, 4, 12], left: [8, 36, 4, 12], top: [4, 32, 4, 4], bottom: [8, 32, 4, 4] },
+  'leg-left': { front: [20, 52, 4, 12], back: [28, 52, 4, 12], right: [16, 52, 4, 12], left: [24, 52, 4, 12], top: [20, 48, 4, 4], bottom: [24, 48, 4, 4] },
+};
 
-const parts = [
-  makePart('head', 8, 8, 8, 0, -12),
-  makePart('body', 8, 12, 4, 0, -2),
-  makePart('arm-right', 4, 12, 4, -6, -2),
-  makePart('arm-left', 4, 12, 4, 6, -2),
-  makePart('leg-right', 4, 12, 4, -2, 10),
-  makePart('leg-left', 4, 12, 4, 2, 10),
-];
+// 盔甲贴图是 64x32，左臂/左腿镜像右臂/右腿；旧皮肤同理。
+const MIRRORED = {
+  ...UV_BASE,
+  'arm-left': UV_BASE['arm-right'],
+  'leg-left': UV_BASE['leg-right'],
+};
 
-function partStyle(part) {
-  return {
-    width: part.w * U + 'px',
-    height: part.h * U + 'px',
-    marginLeft: -(part.w * U / 2) + 'px',
-    marginTop: -(part.h * U / 2) + 'px',
-    transform: 'translate3d(' + (part.x * U) + 'px,' + (part.y * U) + 'px,0)'
-      + ' rotateX(var(--rx, 0deg)) rotateZ(var(--rz, 0deg))',
-  };
-}
+const BOX = {
+  head: { w: 8, h: 8, d: 8, x: 0, y: -12, z: 0 },
+  body: { w: 8, h: 12, d: 4, x: 0, y: -2, z: 0 },
+  'arm-right': { w: 4, h: 12, d: 4, x: -6, y: -2, z: 0 },
+  'arm-left': { w: 4, h: 12, d: 4, x: 6, y: -2, z: 0 },
+  'leg-right': { w: 4, h: 12, d: 4, x: -2, y: 10, z: 0 },
+  'leg-left': { w: 4, h: 12, d: 4, x: 2, y: 10, z: 0 },
+};
+const PARTS = Object.keys(BOX);
+const FACES = ['front', 'back', 'right', 'left', 'top', 'bottom'];
+const SHADE = { front: 1, back: .86, right: .78, left: .78, top: 1.14, bottom: .66 };
 
-function faceStyle(part, face) {
-  const [ux, uy] = face.uv;
-  return {
-    width: face.fw * U + 'px',
-    height: face.fh * U + 'px',
-    marginLeft: -(face.fw * U / 2) + 'px',
-    marginTop: -(face.fh * U / 2) + 'px',
-    backgroundImage: 'var(--skin)',
-    backgroundSize: 64 * U + 'px ' + 64 * U + 'px',
-    backgroundPosition: -(ux * U) + 'px ' + -(uy * U) + 'px',
-    transform: face.transform,
-  };
-}
-
-// 26.3 的 layer_1 / layer_2 改名为 equipment/humanoid*，UV 不变。
 const MATERIAL = [
   ['turtle', 'turtle_scute'], ['netherite', 'netherite'], ['diamond', 'diamond'],
   ['golden', 'gold'], ['gold', 'gold'], ['chainmail', 'chainmail'],
   ['leather', 'leather'], ['copper', 'copper'], ['iron', 'iron'],
 ];
+
+let skinImage = null;
+let skinLegacy = false;
+let skinRequest = 0;
+const skinVersion = ref(0);
+const armorCache = new Map();
+const armorVersion = ref(0);
+let drag = null;
 
 function materialOf(item) {
   const id = String(item?.id || '').replace('minecraft:', '');
@@ -157,32 +121,231 @@ function armorTex(item, prefix) {
   return '/armor/' + prefix + '_' + materialOf(item) + '.png';
 }
 
-function armorLayers(name) {
+function armorLayersFor(part) {
   const a = props.armor || {};
   const out = [];
-  if (name === 'head' && a.helmet) out.push({ tex: armorTex(a.helmet, 'humanoid'), z: 2 });
-  if ((name === 'body' || name.startsWith('arm-')) && a.chestplate) {
-    out.push({ tex: armorTex(a.chestplate, 'humanoid'), z: 2 });
+  if (part === 'head' && a.helmet) out.push(armorTex(a.helmet, 'humanoid'));
+  if ((part === 'body' || part.startsWith('arm-')) && a.chestplate) {
+    out.push(armorTex(a.chestplate, 'humanoid'));
   }
-  if (name.startsWith('leg-')) {
-    if (a.leggings) out.push({ tex: armorTex(a.leggings, 'humanoid_leggings'), z: 2 });
-    if (a.boots) out.push({ tex: armorTex(a.boots, 'humanoid'), z: 3 });
+  if (part.startsWith('leg-')) {
+    if (a.leggings) out.push(armorTex(a.leggings, 'humanoid_leggings'));
+    if (a.boots) out.push(armorTex(a.boots, 'humanoid'));
   }
   return out;
 }
 
-function armorFaceStyle(part, face, layer) {
-  const [ux, uy] = UV[part.name][face.name];
-  return {
-    width: face.fw * U + 'px',
-    height: face.fh * U + 'px',
-    marginLeft: -(face.fw * U / 2) + 'px',
-    marginTop: -(face.fh * U / 2) + 'px',
-    backgroundImage: "url('" + layer.tex + "')",
-    backgroundSize: 64 * U + 'px ' + 32 * U + 'px',
-    backgroundPosition: -(ux * U) + 'px ' + -(uy * U) + 'px',
-    transform: face.transform + ' translateZ(' + layer.z + 'px)',
+function armorImage(url) {
+  let image = armorCache.get(url);
+  if (!image) {
+    image = new Image();
+    image.onload = () => { armorVersion.value += 1; };
+    image.src = url;
+    armorCache.set(url, image);
+  }
+  return image.complete && image.naturalWidth ? image : null;
+}
+
+/** 皮肤接口拿不到时画一个 Steve 风格的占位皮肤，保证纸盒人始终有皮肤。 */
+function makeDefaultSkin() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 64;
+  canvas.height = 64;
+  const g = canvas.getContext('2d');
+  const put = (x, y, w, h, color) => { g.fillStyle = color; g.fillRect(x, y, w, h); };
+  const skin = '#c68642', hair = '#3f2a15', shirt = '#00a0a0', pants = '#3b3b96', shoe = '#4a4a4a';
+  put(8, 0, 16, 8, hair);
+  put(0, 8, 8, 8, hair); put(8, 8, 8, 8, skin);
+  put(16, 8, 8, 8, skin); put(24, 8, 8, 8, hair);
+  put(9, 10, 2, 2, '#ffffff'); put(13, 10, 2, 2, '#ffffff');
+  put(10, 11, 1, 1, '#2b3a67'); put(14, 11, 1, 1, '#2b3a67');
+  put(11, 13, 3, 1, '#8a4b3b');
+  put(20, 16, 16, 4, shirt);
+  put(16, 20, 24, 12, shirt);
+  put(40, 16, 16, 16, skin);
+  put(0, 16, 16, 12, pants); put(0, 28, 16, 4, shoe);
+  put(32, 48, 16, 16, skin);
+  put(0, 48, 16, 12, pants); put(0, 60, 16, 4, shoe);
+  return canvas;
+}
+
+function loadSkin() {
+  const request = ++skinRequest;
+  const image = new Image();
+  image.decoding = 'async';
+  image.onload = () => {
+    if (request !== skinRequest) return;
+    skinImage = image;
+    skinLegacy = image.naturalHeight < 64;
+    skinVersion.value += 1;
+    draw();
   };
+  image.onerror = () => {
+    if (request !== skinRequest) return;
+    skinImage = makeDefaultSkin();
+    skinLegacy = false;
+    skinVersion.value += 1;
+    draw();
+  };
+  image.src = skinSrc.value;
+}
+
+function expandBox(box, amount) {
+  return {
+    w: box.w + amount * 2, h: box.h + amount * 2, d: box.d + amount * 2,
+    x: box.x, y: box.y, z: box.z,
+  };
+}
+
+function facePoints(box, face) {
+  const hw = box.w / 2, hh = box.h / 2, hd = box.d / 2;
+  switch (face) {
+    case 'front': return [[-hw, -hh, hd], [hw, -hh, hd], [-hw, hh, hd]];
+    case 'back': return [[hw, -hh, -hd], [-hw, -hh, -hd], [hw, hh, -hd]];
+    case 'right': return [[hw, -hh, hd], [hw, -hh, -hd], [hw, hh, hd]];
+    case 'left': return [[-hw, -hh, -hd], [-hw, -hh, hd], [-hw, hh, -hd]];
+    case 'top': return [[-hw, -hh, -hd], [hw, -hh, -hd], [-hw, -hh, hd]];
+    default: return [[-hw, hh, hd], [hw, hh, hd], [-hw, hh, -hd]];
+  }
+}
+
+function partTransform(part) {
+  const box = BOX[part];
+  let rx = 0, rz = 0;
+  if (pose.value === 'wave') {
+    if (part === 'arm-left') rz = -145;
+    if (part === 'arm-right') rz = 8;
+  } else if (pose.value === 'run') {
+    if (part === 'arm-left') rx = 38;
+    if (part === 'arm-right') rx = -38;
+    if (part === 'leg-left') rx = -28;
+    if (part === 'leg-right') rx = 28;
+  } else if (pose.value === 'sneak') {
+    if (part.startsWith('leg-')) rx = -32;
+    if (part === 'body') rx = 12;
+  }
+  const pivot = part === 'body'
+    ? [box.x, box.y + box.h / 2, box.z]
+    : [box.x, box.y - box.h / 2, box.z];
+  return { rx: rx * Math.PI / 180, rz: rz * Math.PI / 180, pivot };
+}
+
+function applyPart(point, box, tf) {
+  let [x, y, z] = point;
+  x += box.x; y += box.y; z += box.z;
+  if (tf.rx || tf.rz) {
+    let px = x - tf.pivot[0], py = y - tf.pivot[1], pz = z - tf.pivot[2];
+    if (tf.rz) {
+      const c = Math.cos(tf.rz), s = Math.sin(tf.rz);
+      [px, py] = [px * c - py * s, px * s + py * c];
+    }
+    if (tf.rx) {
+      const c = Math.cos(tf.rx), s = Math.sin(tf.rx);
+      [py, pz] = [py * c - pz * s, py * s + pz * c];
+    }
+    x = px + tf.pivot[0]; y = py + tf.pivot[1]; z = pz + tf.pivot[2];
+  }
+  return [x, y, z];
+}
+
+function rotateView(p, yaw, pitch) {
+  const cy = Math.cos(yaw), sy = Math.sin(yaw);
+  const x = p[0] * cy + p[2] * sy;
+  const z = -p[0] * sy + p[2] * cy;
+  const cx = Math.cos(pitch), sx = Math.sin(pitch);
+  return [x, p[1] * cx - z * sx, p[1] * sx + z * cx];
+}
+
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const cross = (a, b) => [
+  a[1] * b[2] - a[2] * b[1],
+  a[2] * b[0] - a[0] * b[2],
+  a[0] * b[1] - a[1] * b[0],
+];
+const project = (p) => [CX + p[0] * U, CY + p[1] * U];
+
+/** 正交投影下每个面是平行四边形，用仿射变换把皮肤像素映射到画布。 */
+function drawFace(ctx, face) {
+  const [ux, uy, uw, uh] = face.uv;
+  if (!face.img || uw <= 0 || uh <= 0) return;
+  const s0 = face.s0, s1 = face.s1, s2 = face.s2;
+  const a = (s1[0] - s0[0]) / uw;
+  const b = (s1[1] - s0[1]) / uw;
+  const c = (s2[0] - s0[0]) / uh;
+  const d = (s2[1] - s0[1]) / uh;
+  const e = s0[0] - a * ux - c * uy;
+  const f = s0[1] - b * ux - d * uy;
+  const s3 = [s1[0] + s2[0] - s0[0], s1[1] + s2[1] - s0[1]];
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  ctx.beginPath();
+  ctx.moveTo(s0[0], s0[1]);
+  ctx.lineTo(s1[0], s1[1]);
+  ctx.lineTo(s3[0], s3[1]);
+  ctx.lineTo(s2[0], s2[1]);
+  ctx.closePath();
+  ctx.clip();
+  if (face.shade !== 1) ctx.filter = 'brightness(' + face.shade + ')';
+  ctx.transform(a, b, c, d, e, f);
+  ctx.drawImage(face.img, 0, 0);
+  ctx.restore();
+}
+
+function draw() {
+  const canvas = canvasEl.value;
+  if (!canvas) return;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const width = Math.round(VIEW_W * dpr);
+  const height = Math.round(VIEW_H * dpr);
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width;
+    canvas.height = height;
+  }
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, VIEW_W, VIEW_H);
+  if (!skinImage) return;
+
+  const yaw = rotY.value * Math.PI / 180;
+  const pitch = rotX.value * Math.PI / 180;
+  const faces = [];
+
+  const addPart = (part, uvMap, expand, img, bias) => {
+    const box = BOX[part];
+    const geom = expand ? expandBox(box, expand) : box;
+    const tf = partTransform(part);
+    for (const face of FACES) {
+      const points = facePoints(geom, face).map((p) => applyPart(p, box, tf));
+      const rotated = points.map((p) => rotateView(p, yaw, pitch));
+      const normal = cross(sub(rotated[1], rotated[0]), sub(rotated[2], rotated[0]));
+      if (normal[2] <= 0.0001) continue;
+      faces.push({
+        img,
+        uv: uvMap[face],
+        s0: project(rotated[0]),
+        s1: project(rotated[1]),
+        s2: project(rotated[2]),
+        depth: (rotated[0][2] + rotated[1][2] + rotated[2][2]) / 3 + bias,
+        shade: SHADE[face],
+      });
+    }
+  };
+
+  const baseUV = skinLegacy ? MIRRORED : UV_BASE;
+  for (const part of PARTS) addPart(part, baseUV[part], 0, skinImage, 0);
+  // 第二层皮肤用略大的盒子，透明区域自然露出底层。
+  if (!skinLegacy) {
+    for (const part of PARTS) addPart(part, UV_OVERLAY[part], 0.5, skinImage, 0.02);
+  }
+  for (const part of PARTS) {
+    for (const url of armorLayersFor(part)) {
+      const img = armorImage(url);
+      if (img) addPart(part, MIRRORED[part], 0.9, img, 0.04);
+    }
+  }
+
+  faces.sort((a, b) => a.depth - b.depth);
+  for (const face of faces) drawFace(ctx, face);
 }
 
 function startDrag(event) {
@@ -208,8 +371,23 @@ function resetView() {
   rotY.value = 24;
 }
 
-watch(() => [props.uuid, props.name], resetView);
-onBeforeUnmount(() => window.removeEventListener('pointermove', onDrag));
+onMounted(() => {
+  loadSkin();
+  draw();
+});
+
+watch([rotX, rotY, pose], draw);
+watch(() => props.armor, draw, { deep: true });
+watch([skinVersion, armorVersion], draw);
+watch(() => [props.uuid, props.name], () => {
+  resetView();
+  loadSkin();
+});
+
+onBeforeUnmount(() => {
+  skinRequest += 1;
+  window.removeEventListener('pointermove', onDrag);
+});
 </script>
 
 <style scoped>
@@ -230,16 +408,23 @@ onBeforeUnmount(() => window.removeEventListener('pointermove', onDrag));
   place-items: center;
   width: 176px;
   height: 230px;
-  perspective: 720px;
-  cursor: grab;
-  touch-action: none;
-  background: linear-gradient(#c6c6c6, #8b8b8b);
   border: 2px solid #373737;
   border-radius: 4px;
+  background: linear-gradient(#c6c6c6, #8b8b8b);
   overflow: hidden;
+  cursor: grab;
+  touch-action: none;
 }
 
 .pm3d-stage:active { cursor: grabbing; }
+
+.pm3d-model {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 176px;
+  height: 230px;
+}
 
 .pm3d-shadow {
   position: absolute;
@@ -252,55 +437,6 @@ onBeforeUnmount(() => window.removeEventListener('pointermove', onDrag));
   background: radial-gradient(ellipse, rgba(0, 0, 0, .45), transparent 70%);
   pointer-events: none;
 }
-
-.pm3d-model {
-  position: relative;
-  z-index: 1;
-  width: 0;
-  height: 0;
-  transform-style: preserve-3d;
-  transition: transform .08s linear;
-}
-
-.pm3d-part {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform-style: preserve-3d;
-}
-
-.pm3d-face {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  background-repeat: no-repeat;
-  image-rendering: pixelated;
-  backface-visibility: hidden;
-}
-
-.pm3d-skin { background-color: #a8a8a8; }
-.pm3d-armor { opacity: .94; }
-
-/* 原版模型有方向光：侧面压暗、顶面提亮，避免六个面糊成一片。 */
-.face-right, .face-left { filter: brightness(.78); }
-.face-back { filter: brightness(.86); }
-.face-top { filter: brightness(1.14); }
-.face-bottom { filter: brightness(.66); }
-
-.pm3d-face { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .18); }
-
-.part-arm-left, .part-arm-right, .part-leg-left, .part-leg-right {
-  transform-origin: 50% 0;
-}
-
-.pose-wave .part-arm-left { --rz: -145deg; }
-.pose-wave .part-arm-right { --rz: 8deg; }
-.pose-run .part-arm-left { --rx: 38deg; }
-.pose-run .part-arm-right { --rx: -38deg; }
-.pose-run .part-leg-left { --rx: -28deg; }
-.pose-run .part-leg-right { --rx: 28deg; }
-.pose-sneak .part-leg-left, .pose-sneak .part-leg-right { --rx: -32deg; }
-.pose-sneak .part-body { --rx: 12deg; }
 
 .pm3d-tools {
   display: flex;

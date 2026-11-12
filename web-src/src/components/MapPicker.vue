@@ -1,5 +1,5 @@
 <template>
-  <div class="map-picker" :style="{ height: height + 'px' }">
+  <div class="map-picker" :class="{ 'map-no-cluster': noCluster }" :style="{ height: height + 'px' }">
     <div ref="viewport" class="map-viewport" @pointerdown="startPan" @wheel.prevent="onWheel">
       <div class="map-layer">
         <template v-for="tile in tiles" :key="tile.key">
@@ -86,7 +86,8 @@
             type="button"
             class="cluster-cell"
             :class="{ active: marker.id === selectedId }"
-            :title="marker.label + (marker.sub ? ' · ' + marker.sub : '')"
+            :title="markerName(marker) + (marker.sub ? ' · ' + marker.sub : '')"
+            :aria-label="markerName(marker)"
             @click="chooseClusterMarker(marker)"
           >
             <ItemIcon
@@ -99,8 +100,8 @@
               <span v-if="!avatarUrls[marker.id]" class="marker-initial">{{ initialOf(marker) }}</span>
             </span>
             <span class="cluster-cell-text">
-              <span class="cluster-cell-label">{{ marker.label }}</span>
-              <span class="muted small">{{ marker.sub }}</span>
+              <span class="cluster-cell-label">{{ markerName(marker) }}</span>
+              <span class="muted small cluster-cell-sub">{{ marker.sub }}</span>
             </span>
           </button>
         </div>
@@ -109,13 +110,21 @@
         <button type="button" class="ghost tiny" title="放大（滚轮向上）" @click.stop="zoom(-1)">＋</button>
         <button type="button" class="ghost tiny" title="缩小（滚轮向下）" @click.stop="zoom(1)">－</button>
         <button type="button" class="ghost tiny" title="回到标记" @click.stop="centerOnMarkers">◎</button>
-        <button
-          type="button"
-          class="ghost tiny"
-          :class="{ on: trailsVisible }"
-          title="显示/隐藏玩家轨迹"
-          @click.stop="trailsVisible = !trailsVisible"
-        >轨迹</button>
+          <button
+            type="button"
+            class="ghost tiny map-trail-toggle"
+            :class="{ on: trailsVisible }"
+            :aria-pressed="trailsVisible ? 'true' : 'false'"
+            title="显示/隐藏玩家轨迹"
+            aria-label="显示/隐藏玩家轨迹"
+            @click.stop="trailsVisible = !trailsVisible"
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+              <polyline points="1.5,12.5 5,4.5 8,10 11,3.5 14.5,7.5" />
+              <circle cx="1.5" cy="12.5" r="1.2" />
+              <circle cx="14.5" cy="7.5" r="1.2" />
+            </svg>
+          </button>
       </div>
       <div class="map-foot">
         <span>{{ dimensionLabel }} · {{ scale }} 格/像素 · 拖动平移</span>
@@ -196,11 +205,70 @@ const visibleMarkers = computed(() => {
 });
 
 const CLUSTER_DISTANCE = 52;
+// 放大到最细的三档时不再聚合：同坐标/相近的容器与玩家按网格散开，全部单独可见。
+const NO_CLUSTER_SCALE = 0.25;
+const SPREAD_X = 120;
+const SPREAD_Y = 30;
 const clusterPopup = ref(null);
 const clusterPinned = ref(false);
+const noCluster = computed(() => scale.value <= NO_CLUSTER_SCALE);
+
+/** 贪心地把互相重叠的标记挪到最近的空网格位，保持靠近真实坐标又彼此分开。 */
+function spreadMarkers(markers) {
+  const placed = [];
+  return markers.map((marker) => {
+    let left = marker.left;
+    let top = marker.top;
+    for (let ring = 0; ring <= 14; ring++) {
+      let found = false;
+      for (let row = -ring; row <= ring && !found; row++) {
+        for (let col = -ring; col <= ring && !found; col++) {
+          if (Math.max(Math.abs(row), Math.abs(col)) !== ring) continue;
+          const candidateLeft = marker.left + col * SPREAD_X;
+          const candidateTop = marker.top + row * SPREAD_Y;
+          const free = placed.every((point) =>
+            Math.abs(point.left - candidateLeft) >= SPREAD_X
+            || Math.abs(point.top - candidateTop) >= SPREAD_Y);
+          if (free) {
+            left = candidateLeft;
+            top = candidateTop;
+            found = true;
+          }
+        }
+      }
+      if (found) break;
+    }
+    placed.push({ left, top });
+    return { ...marker, left, top };
+  });
+}
+
+/** 聚合网格里显示的容器/玩家名字：玩家用名字，容器用类型 + 坐标区分。 */
+function markerName(marker) {
+  if (!marker) return '';
+  if (marker.kind === 'player') return marker.label || marker.name || '玩家';
+  const coords = String(marker.sub || '').split(' · ')[0];
+  return marker.label + (coords ? ' · ' + coords : '');
+}
+
+function singleCluster(marker) {
+  return {
+    id: marker.id,
+    left: Math.round(marker.left),
+    top: Math.round(marker.top),
+    markers: [marker],
+    marker,
+    active: marker.id === props.selectedId,
+    offline: marker.online === false,
+    player: marker.kind === 'player',
+    label: marker.label,
+    title: marker.label + (marker.sub ? ' · ' + marker.sub : ''),
+  };
+}
 
 const visibleClusters = computed(() => {
   const source = visibleMarkers.value;
+  if (noCluster.value) return spreadMarkers(source).map(singleCluster);
   const clusters = [];
   for (const marker of source) {
     let target = null;
@@ -250,9 +318,9 @@ function onMarkerClick(cluster) {
     emit('select', cluster.markers[0].id);
     return;
   }
-  const columns = Math.min(3, Math.max(2, Math.ceil(Math.sqrt(cluster.markers.length))));
-  const width = 380;
-  const height = Math.min(380, 56 + Math.ceil(cluster.markers.length / columns) * 54);
+  const columns = cluster.markers.length <= 2 ? 1 : 2;
+  const width = 420;
+  const height = Math.min(420, 56 + Math.ceil(cluster.markers.length / columns) * 58);
   clusterPopup.value = {
     markers: cluster.markers,
     columns,
@@ -416,7 +484,8 @@ function setScale(next, px, py) {
   const worldX = centerX.value + (ax - viewW.value / 2) * scale.value;
   const worldZ = centerZ.value + (ay - viewH.value / 2) * scale.value;
   scale.value = clamped;
-  if (!clusterPinned.value) closeClusterPopup();
+  // 进入无聚合层级时网格已经没有对应目标，即使图钉保持也要收起。
+  if (noCluster.value || !clusterPinned.value) closeClusterPopup();
   centerX.value = worldX - (ax - viewW.value / 2) * clamped;
   centerZ.value = worldZ - (ay - viewH.value / 2) * clamped;
   rebuildTiles();
@@ -558,7 +627,7 @@ watch(() => props.dimension, () => {
 
 watch(() => props.markers, () => {
   // 玩家状态每 4 秒刷新；这里不能重建瓦片，否则整张地图会随标记更新闪烁。
-  if (!clusterPinned.value) closeClusterPopup();
+  // 刷新不关闭聚合网格，否则里面的容器/玩家名字刚出现就被收起。
   prepareMarkers();
   if (!centeredOnMarkers.value && props.markers.length) centerOnMarkers();
 }, { deep: false });
@@ -696,6 +765,11 @@ watch(() => props.markers, () => {
   text-overflow: ellipsis;
 }
 
+/* 无聚合层级：格子按网格散开，标签收窄一点保证相邻标记不叠字。 */
+.map-no-cluster .marker-label {
+  max-width: 72px;
+}
+
 .map-controls {
   position: absolute;
   z-index: 6;
@@ -714,9 +788,37 @@ watch(() => props.markers, () => {
   color: #dbe4f0;
 }
 
+/* 轨迹按钮用图标 + 明确选中态：选中高亮底色，未选中半透明，不再溢出两字文本。 */
+.map-trail-toggle {
+  display: grid;
+  place-items: center;
+  line-height: 1;
+}
+
+.map-trail-toggle svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.map-trail-toggle svg circle {
+  fill: currentColor;
+  stroke: none;
+}
+
+.map-trail-toggle:not(.on) {
+  opacity: .55;
+}
+
 .map-controls button.on {
   border-color: #4ade80;
+  background: rgba(74, 222, 128, .22);
   color: #b7f7cf;
+  box-shadow: inset 0 0 0 1px rgba(74, 222, 128, .4);
 }
 
 .map-foot {
@@ -755,8 +857,8 @@ watch(() => props.markers, () => {
 .cluster-popup {
   position: absolute;
   z-index: 8;
-  width: 380px;
-  max-height: 380px;
+  width: 420px;
+  max-height: 420px;
   overflow: auto;
   padding: 8px;
   border: 1px solid var(--line-strong);
@@ -780,10 +882,10 @@ watch(() => props.markers, () => {
 
 .cluster-cell {
   display: flex;
-  align-items: center;
-  gap: 5px;
+  align-items: flex-start;
+  gap: 6px;
   min-width: 0;
-  padding: 3px 5px;
+  padding: 5px 6px;
   border: 1px solid transparent;
   border-radius: 7px;
   background: rgba(255, 255, 255, .03);
@@ -804,18 +906,21 @@ watch(() => props.markers, () => {
   flex-direction: column;
 }
 
+/* 名字要完整读得出来：允许换行，不再被省略号截掉。 */
 .cluster-cell-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 11px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
   color: var(--fg);
+  white-space: normal;
+  word-break: break-word;
 }
 
-.cluster-cell-text .muted {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.cluster-cell-sub {
+  font-size: 10px;
+  line-height: 1.35;
+  white-space: normal;
+  word-break: break-word;
 }
 
 </style>

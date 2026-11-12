@@ -96,6 +96,34 @@
           </button>
         </div>
         <p v-else class="muted small">{{ loading ? '读取中…' : '没有找到容器；可输入物品名找箱，或点“刷新索引”。' }}</p>
+
+        <div class="container-player-search">
+          <input
+            v-model="playerQuery"
+            type="search"
+            placeholder="搜索玩家名字 / UUID"
+            aria-label="搜索玩家"
+          />
+          <span class="muted small">{{ filteredPlayers.length }} / {{ players.length }} 名玩家</span>
+        </div>
+        <div v-if="filteredPlayers.length" class="container-player-list">
+          <button
+            v-for="player in filteredPlayers"
+            :key="player.uuid"
+            type="button"
+            class="container-player"
+            :class="{ active: selectedPlayerId === 'player:' + player.uuid, online: player.online }"
+            @click="openPlayerWindow(player)"
+          >
+            <span class="container-player-name">{{ player.name || player.uuid }}</span>
+            <span class="meta">
+              {{ player.online ? '在线' : '离线' }}<template v-if="player.dimension">
+                · {{ shortDimension(player.dimension) }}</template><template v-if="player.lastSeen">
+                · {{ player.lastSeen }}</template>
+            </span>
+          </button>
+        </div>
+        <p v-else class="muted small">没有匹配的已知玩家。</p>
       </section>
 
     </template>
@@ -172,6 +200,7 @@ const dimensions = ref([
 const filters = reactive({ dimension: 'minecraft:overworld', q: '' });
 const windows = ref([]);
 const players = ref([]);
+const playerQuery = ref('');
 const selectedPlayerId = ref('');
 let playersTimer = null;
 const activeWindow = ref('');
@@ -240,6 +269,23 @@ const layout = computed(() => [{
   columns: (selected.value?.container?.size || 9) <= 3
     ? Math.max(1, selected.value?.container?.size || 1) : 9,
 }]);
+
+// 玩家页面并入天网后保留原来的按名字/UUID 搜索（旧页面用同一套过滤）。
+const filteredPlayers = computed(() => {
+  const value = playerQuery.value.trim().toLowerCase();
+  if (!value) return players.value;
+  return players.value.filter((player) =>
+    String(player.name || '').toLowerCase().includes(value)
+      || String(player.uuid || '').toLowerCase().includes(value));
+});
+
+function shortDimension(dimension) {
+  const value = String(dimension || '');
+  if (value.includes('nether')) return '下界';
+  if (value.endsWith('the_end') || value.includes('end')) return '末地';
+  if (value.includes('overworld')) return '主世界';
+  return value.replace('minecraft:', '');
+}
 
 const markers = computed(() => {
   const rows = containers.value
@@ -420,12 +466,8 @@ async function search() {
     if (!containers.value.length) {
       message.value = q ? '没有容器包含匹配该物品。' : '没有找到容器；可点“刷新索引”。';
       messageKind.value = '';
-    } else if (!selected.value) {
-      // 首次进入自动打开离 E2E 常用测试箱/出生点最近的容器，避免用户还要多点一次。
-      const preferred = containers.value.find((row) => row.x === 8 && row.z === 8)
-        || containers.value[0];
-      await openContainer(preferred);
     }
+    // 不在这里自动打开容器：进入页面、刷新索引、筛选变化都不该弹出容器物品栏。
   } catch (e) {
     error.value = e.message || String(e);
   } finally {
@@ -780,6 +822,66 @@ async function save(silent) {
 
 .list-narrow {
   max-width: 760px;
+}
+
+.container-player-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.container-player-search input[type='search'] {
+  flex: 1 1 260px;
+  max-width: 420px;
+  padding: 5px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  color: var(--fg);
+}
+
+.container-player-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 760px;
+  max-height: 200px;
+  margin-top: 8px;
+  overflow: auto;
+}
+
+.container-player {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 9px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.container-player:hover {
+  border-color: var(--line);
+  background: var(--panel-soft);
+}
+
+.container-player.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.container-player.online {
+  border-color: color-mix(in srgb, #4ade80 42%, var(--line));
+}
+
+.container-player-name {
+  font-weight: 600;
 }
 
 .dimension-toggle {
