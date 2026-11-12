@@ -227,6 +227,8 @@ public class ServerWebService {
         // 同一身份组只保留当前服务器验证方式对应的账号入口：
         // 正版模式优先正版 UUID，离线模式优先离线 UUID；若另一个账号正在线则优先在线者。
         dedupeIdentityGroups(list);
+        // 身份组之外的历史账号（改名/离线模式切换留下的 usercache/白名单）也按名字收口。
+        dedupeNames(list);
         list.sort(Comparator
                 .comparing((Map<String, Object> row) -> Boolean.TRUE.equals(row.get("online")) ? 0 : 1)
                 .thenComparing(row -> String.valueOf(row.get("name")), String.CASE_INSENSITIVE_ORDER));
@@ -297,6 +299,60 @@ public class ServerWebService {
         boolean candidatePreferred = id.equalsIgnoreCase(String.valueOf(candidate.get("uuid")));
         boolean currentPreferred = id.equalsIgnoreCase(String.valueOf(current.get("uuid")));
         return candidatePreferred && !currentPreferred;
+    }
+
+    /** 同名历史账号只保留一个：在线者优先，其次最后在线时间更新的。 */
+    private static void dedupeNames(List<Map<String, Object>> rows) {
+        Map<String, Map<String, Object>> chosen = new LinkedHashMap<>();
+        List<Map<String, Object>> merged = new ArrayList<>();
+        for (Map<String, Object> row : rows) {
+            String name = String.valueOf(row.getOrDefault("name", "")).trim().toLowerCase(java.util.Locale.ROOT);
+            if (name.isEmpty()) {
+                merged.add(row);
+                continue;
+            }
+            Map<String, Object> previous = chosen.get(name);
+            if (previous == null) {
+                chosen.put(name, row);
+                merged.add(row);
+                continue;
+            }
+            if (preferByName(row, previous)) {
+                int index = merged.indexOf(previous);
+                if (index >= 0) merged.set(index, row);
+                chosen.put(name, row);
+            }
+        }
+        rows.clear();
+        rows.addAll(merged);
+    }
+
+    private static boolean preferByName(Map<String, Object> candidate, Map<String, Object> current) {
+        boolean candidateOnline = Boolean.TRUE.equals(candidate.get("online"));
+        boolean currentOnline = Boolean.TRUE.equals(current.get("online"));
+        if (candidateOnline != currentOnline) {
+            return candidateOnline;
+        }
+        long candidateSeen = seenScore(candidate.get("lastSeen"));
+        long currentSeen = seenScore(current.get("lastSeen"));
+        if (candidateSeen != currentSeen) return candidateSeen > currentSeen;
+        // 有地图位置的条目通常比仅存在于白名单里的旧快照更可信。
+        boolean candidatePosition = candidate.get("dimension") != null && candidate.get("x") != null;
+        boolean currentPosition = current.get("dimension") != null && current.get("x") != null;
+        return candidatePosition && !currentPosition;
+    }
+
+    private static long seenScore(Object value) {
+        String text = value == null ? "" : String.valueOf(value).trim();
+        if (!text.matches("^\\d{4}-\\d{2}-\\d{2}.*")) return 0L;
+        try {
+            return java.time.LocalDateTime.parse(text.length() >= 19
+                            ? text.substring(0, 19).replace(' ', 'T')
+                            : text)
+                    .atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli();
+        } catch (RuntimeException ignored) {
+            return 0L;
+        }
     }
 
     private static UUID uuidOf(Object value) {
