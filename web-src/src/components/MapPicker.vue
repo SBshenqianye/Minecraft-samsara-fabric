@@ -71,8 +71,9 @@
             type="button"
             :class="{ on: clusterPinned }"
             :title="clusterPinned ? '取消保持' : '保持网格（不自动关闭）'"
+            aria-label="保持网格"
             @click="clusterPinned = !clusterPinned"
-          >{{ clusterPinned ? '保持中' : '保持' }}</button>
+          ><PinIcon :active="clusterPinned" /></button>
           <button class="ghost tiny" type="button" title="关闭" @click="closeClusterPopup">×</button>
         </div>
         <div
@@ -128,6 +129,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import ItemIcon from './ItemIcon.vue';
+import PinIcon from './PinIcon.vue';
 
 const props = defineProps({
   markers: { type: Array, default: () => [] },
@@ -414,6 +416,7 @@ function setScale(next, px, py) {
   const worldX = centerX.value + (ax - viewW.value / 2) * scale.value;
   const worldZ = centerZ.value + (ay - viewH.value / 2) * scale.value;
   scale.value = clamped;
+  if (!clusterPinned.value) closeClusterPopup();
   centerX.value = worldX - (ax - viewW.value / 2) * clamped;
   centerZ.value = worldZ - (ay - viewH.value / 2) * clamped;
   rebuildTiles();
@@ -427,6 +430,7 @@ function zoom(direction) {
 }
 
 function onWheel(event) {
+  if (!clusterPinned.value && clusterPopup.value) closeClusterPopup();
   const rect = viewport.value?.getBoundingClientRect();
   const px = rect ? event.clientX - rect.left : viewW.value / 2;
   const py = rect ? event.clientY - rect.top : viewH.value / 2;
@@ -438,6 +442,7 @@ function onWheel(event) {
 
 function startPan(event) {
   if (event.button !== 0) return;
+  if (!clusterPinned.value) closeClusterPopup();
   dragging.value = true;
   dragStart = { x: event.clientX, y: event.clientY, cx: centerX.value, cz: centerZ.value };
   viewport.value?.setPointerCapture?.(event.pointerId);
@@ -553,6 +558,7 @@ watch(() => props.dimension, () => {
 
 watch(() => props.markers, () => {
   // 玩家状态每 4 秒刷新；这里不能重建瓦片，否则整张地图会随标记更新闪烁。
+  if (!clusterPinned.value) closeClusterPopup();
   prepareMarkers();
   if (!centeredOnMarkers.value && props.markers.length) centerOnMarkers();
 }, { deep: false });

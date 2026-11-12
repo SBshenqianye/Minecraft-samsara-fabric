@@ -40,7 +40,7 @@
       <div v-if="!connected" class="global-inventory-connect">
         <p class="muted small">需要管理端 token；请先在任意管理页连接。</p>
       </div>
-      <div v-else class="global-inventory-body">
+      <div v-else class="global-inventory-body" :class="{ 'has-editor': !!editorItem }">
         <div class="global-inventory-slots">
           <ItemWorkbench
             ref="workbench"
@@ -52,11 +52,35 @@
             item-endpoint="/api/inventory/item"
             :revision="revision"
             :disabled="saving"
-            :trash="true"
+            :editable="true"
+            :trash="false"
+            :show-toolbar="false"
             @change="onChange"
+            @select="onWorkbenchSelect"
           />
+          <button
+            class="creative-trash"
+            type="button"
+            title="删除光标上的物品（原版创造模式垃圾桶位置）"
+            aria-label="垃圾桶"
+            @click="workbench?.trashCursor()"
+          >
+            <img :src="trashIconSrc" alt="" draggable="false" />
+          </button>
         </div>
         <CreativeLibrary class="global-inventory-library" @pick="onPick" />
+        <div v-if="editorItem" class="global-inventory-editor">
+          <div class="global-inventory-editor-head">
+            <strong>组件编辑</strong>
+            <span class="spacer"></span>
+            <button class="ghost tiny" type="button" title="关闭编辑" @click="closeEditor">×</button>
+          </div>
+          <ItemEditor
+            :item="editorItem"
+            :schema="schema"
+            @update="applyEditorItem"
+          />
+        </div>
       </div>
     </FloatingWindow>
   </div>
@@ -67,9 +91,11 @@ import { onBeforeUnmount, onMounted, ref } from 'vue';
 import FloatingWindow from './FloatingWindow.vue';
 import ItemWorkbench from './ItemWorkbench.vue';
 import CreativeLibrary from './CreativeLibrary.vue';
+import ItemEditor from './ItemEditor.vue';
 
 const open = ref(false);
 const pinned = ref(false);
+const trashIconSrc = '/ui/trashcan.png';
 const initialWidth = Math.min(1120, Math.max(880, window.innerWidth - 40));
 const initialHeight = Math.min(780, Math.max(620, window.innerHeight - 110));
 const initialX = Math.max(20, window.innerWidth - initialWidth - 20);
@@ -85,15 +111,28 @@ const revision = ref(0);
 const dirty = ref(false);
 const schema = ref({});
 const workbench = ref(null);
+const editorItem = ref(null);
+
+function onWorkbenchSelect(item) {
+  editorItem.value = item || null;
+}
+
+function closeEditor() {
+  editorItem.value = null;
+  workbench.value?.clearSelection();
+}
+
+function applyEditorItem(item) {
+  workbench.value?.applyExternalItem(item);
+}
 let token = '';
 let liveTimer = null;
 
+// 参考原版创造模式物品栏：9x5 物品格 + 最下方 9 格快捷栏，共 54 格。
+// 垃圾桶放在快捷栏右侧（与创造模式「销毁物品」槽位置一致）。
 const layout = [
-  { label: '装备 0–3', start: 0, size: 4, columns: 1, row: 'gear', zone: 'gear' },
-  { label: '副手 4', start: 4, size: 1, columns: 1, row: 'gear', zone: 'gear' },
-  { label: '主背包 5–31', start: 5, size: 27, columns: 9, row: 'main', zone: 'main' },
-  { label: '快捷栏 32–40', start: 32, size: 9, columns: 9, row: 'hotbar', zone: 'hotbar', gap: true },
-  { label: '仓库 41–53', start: 41, size: 13, columns: 9, row: 'storage', zone: 'storage', gap: true },
+  { label: '物品 0–44', start: 0, size: 45, columns: 9, row: 'creative', zone: 'creative' },
+  { label: '快捷栏 45–53', start: 45, size: 9, columns: 9, row: 'hotbar', zone: 'hotbar', gap: true },
 ];
 onMounted(() => {
   token = sessionStorage.getItem('samsara-token') || '';
@@ -314,6 +353,8 @@ defineExpose({ open: () => openWindow() });
 
 .global-inventory-body {
   display: grid;
+  flex: 1;
+  min-height: 0;
   grid-template-columns: minmax(0, 1.35fr) minmax(300px, 1fr);
   gap: 12px;
   align-items: start;
@@ -361,5 +402,107 @@ defineExpose({ open: () => openWindow() });
 .global-inventory-panel :deep(.workbench-row-gap) {
   margin-top: 10px;
   padding-top: 8px;
+}
+
+/* 让窗口内容区成为纵向 flex，背包表格吃掉剩余高度，避免出现外层滚动条 */
+.global-inventory-panel :deep(.fw-body) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 专用编辑面板：独立一列，不遮挡背包 */
+.global-inventory-body.has-editor {
+  grid-template-columns: minmax(0, 1.15fr) minmax(230px, .8fr) minmax(280px, .95fr);
+}
+
+.global-inventory-editor {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  max-height: 100%;
+  padding: 8px;
+  border: 2px solid #373737;
+  border-radius: 4px;
+  background: #c6c6c6;
+  overflow: auto;
+}
+
+.global-inventory-editor-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  color: #2b2b2b;
+  font-size: 12px;
+}
+
+.global-inventory-editor-head .spacer { flex: 1; }
+
+.global-inventory-editor :deep(.item-editor) { color: #2b2b2b; }
+
+/* 原版创造模式垃圾桶：快捷栏右侧 */
+.global-inventory-slots { position: relative; }
+
+.creative-trash {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 2px solid #373737;
+  border-radius: 2px;
+  background: #8b8b8b url('/ui/slot.png') center / 100% 100% no-repeat;
+  cursor: pointer;
+}
+
+.creative-trash img {
+  width: 28px;
+  height: 28px;
+  image-rendering: pixelated;
+}
+
+.creative-trash:hover { box-shadow: inset 0 0 0 2px #ffffff; }
+
+/* 创造物品库也用原版 GUI 灰底与页签样式（「全部」在第一位） */
+.global-inventory-panel :deep(.creative-library) {
+  gap: 6px;
+  padding: 6px;
+  border: 2px solid #373737;
+  border-radius: 4px;
+  background: #c6c6c6;
+}
+
+.global-inventory-panel :deep(.creative-tabs) {
+  border: 0;
+  border-radius: 0;
+  background: #8b8b8b;
+  padding: 2px;
+  gap: 2px;
+}
+
+.global-inventory-panel :deep(.creative-tabs button) {
+  border: 1px solid #555;
+  border-radius: 2px;
+  background: #c6c6c6;
+  color: #2b2b2b;
+}
+
+.global-inventory-panel :deep(.creative-tabs button.active) {
+  background: #ffffff;
+  color: #2b2b2b;
+  border-color: #ffffff;
+}
+
+.global-inventory-panel :deep(.creative-toolbar) { color: #2b2b2b; }
+
+.global-inventory-panel :deep(.creative-grid) {
+  border: 2px solid #373737;
+  border-radius: 0;
+  background: #8b8b8b;
 }
 </style>

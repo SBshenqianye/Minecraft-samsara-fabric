@@ -1,6 +1,6 @@
 <template>
   <div class="item-workbench">
-    <div class="workbench-toolbar">
+    <div v-if="showToolbar" class="workbench-toolbar">
       <div class="workbench-mode">
         <span class="mode-dot" :class="mode"></span>
         <strong>{{ modeLabel }}</strong>
@@ -20,12 +20,6 @@
       >
         <img class="workbench-trash-icon" :src="trashIconSrc" alt="垃圾桶" draggable="false" />
       </button>
-      <span v-if="cursor" class="cursor-chip">
-        光标：<ItemIcon :item="cursor" size="sm" :show-count="false" />
-        <span>{{ cursor.name }} ×{{ cursor.count }}</span>
-        <span v-if="!ownsCursor" class="muted small">（来自其他背包）</span>
-        <button v-if="ownsCursor" class="ghost tiny" type="button" :disabled="busy" @click="returnCursor">放回</button>
-      </span>
     </div>
 
     
@@ -33,7 +27,7 @@
     <p v-if="workbenchMessage" class="container-message ok">{{ workbenchMessage }}</p>
 
 
-    <div class="workbench-body" :class="{ 'has-editor': !!selectedItem }">
+    <div class="workbench-body">
       <div
         ref="gridsEl"
         class="workbench-grids"
@@ -62,6 +56,7 @@
                 && selectedIndex < section.start + section.size ? selectedIndex - section.start : null"
               :columns="section.columns || 9"
               :has-cursor="!!cursor"
+              :editable="editable"
               @slot-click="onSectionClick(section, $event)"
               @slot-edit="onSectionEdit(section, $event)"
               @slot-hover="onSlotHover"
@@ -75,30 +70,12 @@
         <p v-if="!layout.length" class="muted small">没有可显示的槽位。</p>
       </div>
 
-      <aside v-if="selectedItem" class="workbench-side">
-        <div class="workbench-panel workbench-editor-panel">
-          <div class="workbench-panel-head">
-            <h4>槽位 {{ selectedIndex }} · 组件编辑</h4>
-            <span class="spacer"></span>
-            <button class="ghost tiny" type="button" @click="removeSelected">清空槽位</button>
-            <button class="ghost tiny" type="button" title="关闭编辑" @click="closeEditor">×</button>
-          </div>
-          <ItemEditor
-            :item="selectedItem"
-            :schema="schema"
-            :unlimited-stack="unlimitedStack"
-            @update="applyEditorItem"
-          />
-        </div>
-      </aside>
     </div>
   </div>
 </template>
 
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
-import ItemEditor from './ItemEditor.vue';
-import ItemIcon from './ItemIcon.vue';
 import ItemSlotGrid from './ItemSlotGrid.vue';
 import { hideItemTooltip, showItemTooltip } from './itemTooltip.js';
 import { clearItemCursor, itemCursor, nextWorkbenchId } from '../composables/itemCursor.js';
@@ -116,6 +93,8 @@ const props = defineProps({
   unlimitedStack: { type: Boolean, default: false },
   hasMore: { type: Boolean, default: false },
   doll: { type: Boolean, default: false },
+  editable: { type: Boolean, default: false },
+  showToolbar: { type: Boolean, default: true },
 });
 const emit = defineEmits(['change', 'select', 'need-more']);
 const sourceId = nextWorkbenchId();
@@ -147,7 +126,6 @@ const cursorOrigin = computed({
     itemCursor.sourceIndex = value;
   },
 });
-const ownsCursor = computed(() => !!cursor.value && itemCursor.sourceId === sourceId);
 const busy = ref(false);
 const workbenchError = ref('');
 const workbenchMessage = ref('');
@@ -451,30 +429,6 @@ async function onDrop({ index }) {
   await onSlotClick({ index, button: 0, shift: false });
 }
 
-async function returnCursor() {
-  if (!cursor.value) return;
-  busy.value = true;
-  let changed = false;
-  try {
-    let target = cursorOrigin.value;
-    if (target === null || localSlots.value[target]) {
-      target = localSlots.value.findIndex((slot) => !slot);
-    }
-    if (target >= 0) {
-      setSlot(target, cursor.value);
-      cursor.value = null;
-      cursorOrigin.value = null;
-      selectedIndex.value = target;
-      changed = true;
-    } else {
-      workbenchError.value = '没有空槽位可以放回；可先清空一个槽位。';
-    }
-  } finally {
-    busy.value = false;
-    if (changed) commit('interact');
-  }
-}
-
 async function libraryPick(row) {
   if (props.disabled || busy.value) return;
   busy.value = true;
@@ -545,7 +499,17 @@ function onGridsScroll() {
   if (node.scrollTop + node.clientHeight >= node.scrollHeight - 48) emit('need-more');
 }
 
-defineExpose({ resetSelection, pickFromLibrary: libraryPick });
+function clearSelection() {
+  selectedIndex.value = null;
+}
+
+defineExpose({
+  resetSelection,
+  clearSelection,
+  pickFromLibrary: libraryPick,
+  applyExternalItem: applyEditorItem,
+  trashCursor,
+});
 </script>
 
 <style scoped>
@@ -626,17 +590,6 @@ defineExpose({ resetSelection, pickFromLibrary: libraryPick });
   background: #8b949e;
 }
 
-.cursor-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 7px;
-  border: 1px solid var(--accent);
-  border-radius: 8px;
-  background: var(--accent-soft);
-  font-size: 12px;
-}
-
 .workbench-body {
   position: relative;
   display: block;
@@ -650,12 +603,12 @@ defineExpose({ resetSelection, pickFromLibrary: libraryPick });
 .workbench-grids {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
   min-width: 0;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: linear-gradient(160deg, var(--panel-soft), var(--panel));
+  padding: 8px;
+  border: 2px solid #373737;
+  border-radius: 4px;
+  background: #c6c6c6;
   overflow: auto;
 }
 
@@ -695,65 +648,21 @@ defineExpose({ resetSelection, pickFromLibrary: libraryPick });
 
 .workbench-row-hotbar,
 .workbench-row-gap {
-  margin-top: 16px;
-  padding-top: 12px;
-  border-top: 1px dashed var(--line);
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 2px solid #8b8b8b;
 }
 
 .workbench-section-title {
-  margin-bottom: 6px;
-  color: var(--muted);
+  margin-bottom: 4px;
+  color: #373737;
   font-size: 11px;
   font-weight: 700;
-}
-
-.workbench-side {
-  position: absolute;
-  top: 0;
-  right: 0;
-  z-index: 8;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  width: min(380px, 94%);
-  max-height: 100%;
-  overflow: auto;
-}
-
-.workbench-panel {
-  padding: 10px;
-  border: 1px solid var(--line-strong);
-  border-radius: 10px;
-  background: var(--panel);
-  box-shadow: 0 14px 34px rgba(0, 0, 0, .5);
-}
-
-.workbench-panel h4 {
-  margin: 0 0 7px;
-  font-size: 12px;
-}
-
-.workbench-panel-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 6px;
+  text-shadow: 0 1px 0 #e8e8e8;
 }
 
 .workbench-panel-head h4 {
   margin: 0;
-}
-
-.workbench-tip {
-  margin: 0;
-  padding: 8px;
-  border: 1px dashed var(--line);
-  border-radius: 8px;
-}
-
-.workbench-editor-panel {
-  min-height: 220px;
 }
 
 .workbench-floating-cursor {
@@ -820,9 +729,5 @@ defineExpose({ resetSelection, pickFromLibrary: libraryPick });
   font-size: 11px;
 }
 
-@media (max-width: 1100px) {
-  .workbench-side {
-    width: min(340px, 96%);
-  }
-}
+
 </style>

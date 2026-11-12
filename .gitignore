@@ -20,8 +20,12 @@ uuid-cache.json
 *.log
 *.log.gz
 logs/
+build-logs/
 crash-reports/
 reports/
+
+# 本地原版客户端 / 反编译参考副本（只读，不入库；见 reference/NOTES.md）
+reference/
 
 # IDE
 .idea/

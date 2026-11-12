@@ -115,8 +115,8 @@
   /* 列数由 ItemSlotGrid 的 columns 传入：装备/副手为 1 列，容器/背包为 9 列。
      轨道用固定 --slot-size，保证任何分区的格子都与主背包完全等宽等高。 */
   grid-template-columns: repeat(var(--slot-columns, 9), var(--slot-size, 48px));
-  gap: 6px;
-  margin-top: 12px;
+  gap: 2px;
+  margin-top: 8px;
 }
 
 .slot {

@@ -14,16 +14,7 @@
     <p v-if="message" class="container-message ok">{{ message }}</p>
 
     <div class="identity-inventory-toolbar">
-      <div class="mode-switch" role="group" aria-label="写入模式">
-        <button
-          v-for="option in modeOptions"
-          :key="option.id"
-          type="button"
-          :class="{ active: mode === option.id }"
-          :title="option.hint"
-          @click="setMode(option.id)"
-        >{{ option.label }}</button>
-      </div>
+      <ModeSwitch :model-value="mode" @update:model-value="setMode" />
       <el-button size="small" :disabled="saving || loading" @click="load">重新读取</el-button>
       <el-button
         v-if="mode === 'preset'"
@@ -33,7 +24,7 @@
         :loading="saving"
         @click="save"
       >保存修改{{ dirty ? ' *' : '' }}</el-button>
-      <span class="muted small">{{ modeHint }}</span>
+      <span class="muted small">{{ modeHintText }}</span>
       <span class="spacer"></span>
       <span class="muted small">data {{ dataUuid }} · revision {{ revision }}</span>
     </div>
@@ -49,6 +40,7 @@
         :revision="revision"
         :disabled="saving"
         :trash="false"
+        :editable="false"
         @change="onChange"
       />
     </div>
@@ -60,6 +52,8 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import ItemWorkbench from './ItemWorkbench.vue';
+import ModeSwitch from './ModeSwitch.vue';
+import { modeHint } from '../composables/writeModes.js';
 import { itemCursor } from '../composables/itemCursor.js';
 
 const visible = ref(false);
@@ -81,12 +75,7 @@ let token = '';
 let liveTimer = null;
 
 const title = computed(() => (groupName.value ? `编辑身份组背包 · ${groupName.value}` : '编辑身份组背包'));
-const modeOptions = [
-  { id: 'live', label: '实时', hint: '每次操作立即写入身份数据文件；写入前自动备份。' },
-  { id: 'preset', label: '预设', hint: '本地编辑，点保存一次性写入。' },
-  { id: 'simulate', label: '模拟', hint: '只在本地演练，不会写入。' },
-];
-const modeHint = computed(() => modeOptions.find((option) => option.id === mode.value)?.hint || '');
+const modeHintText = computed(() => modeHint(mode.value));
 
 // 与玩家背包同源的 41 格布局：装备/副手在上、主背包居中、快捷栏在下。
 const layout = [

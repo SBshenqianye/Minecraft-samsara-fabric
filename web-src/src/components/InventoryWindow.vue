@@ -1,25 +1,12 @@
 <template>
   <div class="inventory-window" :class="'inventory-window-' + kind">
     <div class="iw-bar">
-      <span class="mode-dot live"></span>
-      <strong>实时</strong>
-      <span
-        class="mode-flag"
-        title="每次操作立即写入；未加载区块或离线玩家会排队，加载/登录后自动应用。"
-        aria-label="写入说明"
-      >!</span>
+      <span class="mode-dot" :class="mode"></span>
+      <strong>{{ modeLabel(mode) }}</strong>
+      <span class="mode-flag" :title="modeHint(mode)" :aria-label="modeHint(mode)">!</span>
       <span class="muted small">{{ filledCount }} 件 · revision {{ revisionText }}</span>
       <span class="spacer"></span>
-      <div class="mode-switch" role="group" aria-label="写入模式">
-        <button
-          v-for="option in modeOptions"
-          :key="option.id"
-          type="button"
-          :class="{ active: mode === option.id }"
-          :title="option.hint"
-          @click="setMode(option.id)"
-        >{{ option.label }}</button>
-      </div>
+      <ModeSwitch :model-value="mode" @update:model-value="setMode" />
       <button
         v-if="mode === 'preset'"
         class="primary tiny"
@@ -48,11 +35,12 @@
       :items="items"
       :layout="layout"
       :schema="schema"
-      mode="live"
+      :mode="mode"
       :item-endpoint="itemEndpoint"
       :revision="revision"
       :disabled="saving"
       :trash="false"
+      :editable="false"
       :doll="kind === 'player'"
       @change="onWorkbenchChange"
     >
@@ -74,6 +62,8 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import ItemWorkbench from './ItemWorkbench.vue';
 import PlayerModel3D from './PlayerModel3D.vue';
+import ModeSwitch from './ModeSwitch.vue';
+import { modeLabel, modeHint } from '../composables/writeModes.js';
 import { useLiveRefresh } from '../composables/useLiveRefresh.js';
 import { itemCursor } from '../composables/itemCursor.js';
 
@@ -101,12 +91,6 @@ const dirty = ref(false);
 const schema = ref({});
 let liveTimer = null;
 let saveQueued = false;
-
-const modeOptions = [
-  { id: 'live', label: '实时', hint: '每次操作立即写入；未加载区块或离线玩家会排队。' },
-  { id: 'preset', label: '预设', hint: '本地编辑，点保存一次性提交。' },
-  { id: 'simulate', label: '模拟', hint: '只在本地演练，不会写入服务器。' },
-];
 
 const tokenKey = computed(() => props.kind === 'container'
   ? 'container:' + [props.target?.dimension, props.target?.x, props.target?.y, props.target?.z].join(',')
@@ -152,7 +136,7 @@ const layout = computed(() => {
 });
 
 const liveState = useLiveRefresh({
-  mode: () => 'live',
+  mode: () => mode.value,
   key: () => tokenKey.value,
   canRefresh: () => !!token.value && !!slots.value.length && !dirty.value
     && !saving.value && !loading.value && !cursorPending.value,
@@ -475,29 +459,6 @@ async function save(silent) {
   align-items: center;
   gap: 7px;
   padding-bottom: 4px;
-}
-
-.mode-switch {
-  display: inline-flex;
-  padding: 2px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel-soft);
-}
-
-.mode-switch button {
-  padding: 3px 9px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--muted);
-  font-size: 11px;
-  cursor: pointer;
-}
-
-.mode-switch button.active {
-  background: var(--accent);
-  color: #fff;
 }
 
 .primary.tiny {

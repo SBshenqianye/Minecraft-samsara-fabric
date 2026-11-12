@@ -19,21 +19,21 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * OP / owner 离线登录门禁。
- *
- * <p>目标不是识别玩家，而是防止别人用受保护玩家的名字进服后直接拿到
- * OP / owner 命令权限。普通玩家完全不受影响。
+ * OP / owner 权限口令：只管权限，不管账号和游玩。
  *
  * <p>受保护名单 = {@code ops.json} 里的名字 + {@code permissions.yml} 的 owners。
- * 离线模式下，这些名字进服后处于 pending：除登录/注册/帮助外，所有命令都会被
- * {@code CommandsMixin} 拦下，samsara 权限检查也会降级为 USER。
+ * 离线模式下这些名字进服后处于 pending：普通游玩（移动、聊天、建造、普通命令）
+ * 完全不受影响，只有需要 OP/owner 权限的命令会被拦下。
+ *
+ * <p>密码答错不踢人、不封禁、不计数封顶，可以无限次重新输入 /login；
+ * 未验证期间玩家一直可以正常游玩，只是拿不到 OP/owner 权限。
  */
 public final class OpAuthService {
     private static final OpAuthService INSTANCE = new OpAuthService();
 
     private final Map<UUID, Long> pending = new ConcurrentHashMap<>();
     private final Set<UUID> authenticated = ConcurrentHashMap.newKeySet();
-    private final Map<UUID, Integer> loginAttempts = new ConcurrentHashMap<>();
+    private final Map<UUID, Long> lastReminder = new ConcurrentHashMap<>();
     private MinecraftServer server;
     private OpAuthStore store;
     private int tickCounter;
@@ -53,6 +53,7 @@ public final class OpAuthService {
         this.store.load();
         this.pending.clear();
         this.authenticated.clear();
+        this.lastReminder.clear();
     }
 
     public synchronized boolean enabled() {
@@ -108,14 +109,14 @@ public final class OpAuthService {
         }
         pending.put(uuid, System.currentTimeMillis());
         authenticated.remove(uuid);
-        loginAttempts.remove(uuid);
+        lastReminder.remove(uuid);
         String name = player.getGameProfile().name();
         OpAuthStore.Entry entry = store.get(name);
         String message;
         if (entry != null && entry.hasPassword()) {
-            message = "你的账号受 OP/owner 保护，请先输入 /login <密码>。";
+            message = "你的账号受 OP/owner 保护，请输入 /login <密码> 解锁权限（答错不会被踢出，可反复尝试；未解锁不影响正常游玩）。";
         } else if (entry != null && entry.hasCode()) {
-            message = "你的账号受 OP/owner 保护，请用 /register <注册码> <密码> <密码> 注册。";
+            message = "你的账号受 OP/owner 保护，请用 /register <注册码> <密码> <密码> 注册（未解锁不影响正常游玩）。";
         } else {
             message = "你的账号受 OP/owner 保护，请联系管理员生成一次性注册码。";
         }
@@ -126,11 +127,11 @@ public final class OpAuthService {
         if (uuid != null) {
             pending.remove(uuid);
             authenticated.remove(uuid);
-            loginAttempts.remove(uuid);
+            lastReminder.remove(uuid);
         }
     }
 
-    /** 每秒检查一次登录超时。 */
+    /** 未验证期间仅做温和提醒，绝不踢出或封禁；pending 一直保留直到答对密码。 */
     public void tick(MinecraftServer current) {
         if (store == null || server == null || !enabled()) {
             return;
@@ -139,17 +140,22 @@ public final class OpAuthService {
             return;
         }
         long now = System.currentTimeMillis();
-        long timeout = store.timeoutSeconds() * 1000L;
+        long timeout = Math.max(15, store.timeoutSeconds()) * 1000L;
         for (Map.Entry<UUID, Long> item : pending.entrySet()) {
             if (now - item.getValue() < timeout) {
                 continue;
             }
-            ServerPlayer player = current.getPlayerList().getPlayer(item.getKey());
-            pending.remove(item.getKey());
-            if (player != null) {
-                player.connection.disconnect(ChatFormat.formatComponent(
-                        "登录超时：请重新进服并输入 /login <密码>。"));
+            Long last = lastReminder.get(item.getKey());
+            if (last != null && now - last < 300_000L) {
+                continue;
             }
+            ServerPlayer player = current.getPlayerList().getPlayer(item.getKey());
+            if (player == null) {
+                continue;
+            }
+            lastReminder.put(item.getKey(), now);
+            player.sendSystemMessage(ChatFormat.formatComponent(
+                    "OP 权限尚未解锁；可随时输入 /login <密码> 重新尝试，不影响正常游玩。"));
         }
     }
 
@@ -166,19 +172,12 @@ public final class OpAuthService {
         if (store.verifyPassword(name, password)) {
             pending.remove(uuid);
             authenticated.add(uuid);
-            loginAttempts.remove(uuid);
+            lastReminder.remove(uuid);
             player.sendSystemMessage(ChatFormat.formatComponent("登录成功，OP/owner 命令已解锁。"));
         } else {
-            int attempts = loginAttempts.merge(uuid, 1, Integer::sum);
-            if (attempts >= 5) {
-                pending.remove(uuid);
-                loginAttempts.remove(uuid);
-                player.connection.disconnect(ChatFormat.formatComponent(
-                        "密码错误次数过多，请重新进服后再试。"));
-            } else {
-                player.sendSystemMessage(ChatFormat.formatComponent(
-                        "密码错误（还可尝试 " + (5 - attempts) + " 次）。"));
-            }
+            // 密码只决定权限，不决定能否游玩：保持 pending，允许无限次重试，绝不踢出。
+            player.sendSystemMessage(ChatFormat.formatComponent(
+                    "密码错误，请重新输入 /login <密码>（不会被踢出，可继续游玩）。"));
         }
     }
 
@@ -247,7 +246,7 @@ public final class OpAuthService {
         return out;
     }
 
-    /** pending 状态下允许执行的命令根；其余全部拦截。 */
+    /** 认证相关命令根：这些命令在 pending 时始终放行。 */
     public static boolean isAuthCommand(String command) {
         String normalized = command == null ? "" : command.trim();
         if (normalized.startsWith("/")) {

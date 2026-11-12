@@ -16,11 +16,11 @@
         type="button"
         class="fw-button"
         :class="{ on: pinned }"
-        :title="pinned ? '取消固定' : '保持窗口'"
-        :aria-label="pinned ? '取消固定' : '保持窗口'"
+        :title="pinned ? '取消保持：点击外部关闭' : '保持窗口：点击外部不关闭'"
+        :aria-label="pinned ? '取消保持窗口' : '保持窗口'"
         @pointerdown.stop
         @click.stop="$emit('pin')"
-      >⌖</button>
+      ><PinIcon :active="pinned" /></button>
       <button
         v-if="canMinimize"
         type="button"
@@ -47,6 +47,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import PinIcon from './PinIcon.vue';
 
 const props = defineProps({
   title: { type: String, default: '' },

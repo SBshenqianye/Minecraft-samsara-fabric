@@ -2167,6 +2167,8 @@ async function main() {
       while (!document.querySelector('.slot-grid') && Date.now() < deadline) {
         await sleep(100);
       }
+      // 窗口内物品与分段按钮是异步渲染，给一次稳定帧再采集。
+      await sleep(650);
       const slots = document.querySelectorAll('.slot').length;
       const itemSlot = [...document.querySelectorAll('.slot')]
         .find((slot) => slot.querySelector('.item-icon-view'));
@@ -2269,9 +2271,9 @@ async function main() {
         && /[\u4e00-\u9fff]/.test(containerUi.tooltipText),
         JSON.stringify({ nativeTitles: containerUi.nativeTitles,
           text: containerUi.tooltipText.slice(0, 160) }));
-    check('原始 SNBT 编辑框预填物品原本组件', containerUi.rawSnbt.includes('id')
-        && containerUi.rawSnbt.length > 12,
-        JSON.stringify({ rawSnbt: containerUi.rawSnbt.slice(0, 160) }));
+    check('结构编辑只在 Web 背包：容器窗口无 SNBT 编辑框', containerUi.rawSnbt === ''
+        && containerUi.editor === false,
+        JSON.stringify({ rawSnbt: containerUi.rawSnbt, editor: containerUi.editor }));
     check('容器地图与世界地图同缩放口径、更高且无裂图瓦片',
         containerUi.mapFoot.includes('格/像素') && containerUi.mapHeight >= 440
         && containerUi.mapBrokenTiles === 0,
@@ -2282,8 +2284,8 @@ async function main() {
     check('确认弹窗为固定遮罩而不是页面底部元素', containerUi.modalFixed === true
         && containerUi.modalVisible === true,
         JSON.stringify({ fixed: containerUi.modalFixed, visible: containerUi.modalVisible }));
-    check('容器为主格显示结构化组件编辑器', containerUi.editor === true
-        && containerUi.editorInputs > 0 && containerUi.saveEnabled === true,
+    check('组件编辑只在 Web 背包：容器窗口无结构编辑器', containerUi.editor === false
+        && containerUi.editorInputs === 0 && containerUi.saveEnabled === true,
         JSON.stringify(containerUi));
     check('容器页预设模式点击搬运并保存成功', containerUi.modalOpened === true
         && containerUi.modalStillOpen === false && containerUi.message.includes('已写入'),
@@ -3075,6 +3077,62 @@ async function main() {
     })()`);
     check('收起 Web 背包浮窗后右侧背包标签重新出现', drawerTabBack === true, String(drawerTabBack));
 
+    // 组件编辑只在 Web 背包，且有独立专用面板（不遮挡槽位）。
+    await fetch(base + '/api/inventory/item', {
+      method: 'POST', headers: authHeaders,
+      body: JSON.stringify({ id: 'minecraft:stone', count: 1 }),
+    }).then((response) => response.json()).then(async (seed) => {
+      const one = Array(54).fill('');
+      one[0] = seed.encoded || '';
+      await fetch(base + '/api/inventory/web/write', {
+        method: 'POST', headers: authHeaders,
+        body: JSON.stringify({ slots: one }),
+      });
+    });
+    await evaluate(`(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'e', bubbles: true }));
+      return true;
+    })()`);
+    await until("document.querySelector('.global-inventory-panel .slot')", 20000, 'Web 背包再次打开');
+    await evaluate(`(() => {
+      document.querySelectorAll('.global-inventory-panel .slot')[0].click();
+      return true;
+    })()`);
+    await until("document.querySelector('.global-inventory-editor .item-editor')", 20000, '专用组件编辑面板');
+    const dedicatedEditor = await evaluate(`(() => {
+      const panel = document.querySelector('.global-inventory-editor');
+      const grid = document.querySelector('.global-inventory-panel .slot-grid');
+      return {
+        panel: !!panel,
+        dedicated: !!panel && getComputedStyle(panel).position !== 'absolute',
+        inputs: panel ? panel.querySelectorAll('input, textarea, select').length : 0,
+        gridW: grid ? Math.round(grid.getBoundingClientRect().width) : 0,
+        chips: document.querySelectorAll('.global-inventory-panel .cursor-chip').length,
+        trash: document.querySelectorAll('.global-inventory-panel .creative-trash').length,
+      };
+    })()`);
+    check('组件编辑使用 Web 背包专用面板、无光标 chip、垃圾桶在原版位置',
+        dedicatedEditor.panel === true && dedicatedEditor.dedicated === true
+        && dedicatedEditor.inputs > 0 && dedicatedEditor.chips === 0
+        && dedicatedEditor.trash === 1, JSON.stringify(dedicatedEditor));
+    // 还原：关闭编辑、放回物品、清空背包、收起浮窗
+    await evaluate(`(() => {
+      [...document.querySelectorAll('.global-inventory-editor button')]
+        .find((b) => b.textContent.trim() === '×')?.click();
+      document.querySelectorAll('.global-inventory-panel .slot')[0].click();
+      return true;
+    })()`);
+    await sleep(500);
+    await fetch(base + '/api/inventory/web/write', {
+      method: 'POST', headers: authHeaders,
+      body: JSON.stringify({ slots: Array(54).fill('') }),
+    });
+    await evaluate(`(() => {
+      [...document.querySelectorAll('.global-inventory-panel button')]
+        .find((b) => b.textContent.trim() === '×')?.click();
+      return true;
+    })()`);
+
     await navigate(base + '/samsara/economy/fund');
     await until("document.querySelector('.fund-inventory-embed .slot')", 30000, '服务器基金页内嵌基金仓库');
     const fundInventoryUi = await evaluate(`(() => ({
@@ -3088,19 +3146,25 @@ async function main() {
       expandButton: [...document.querySelectorAll('.fund-inventory-embed .pool-head button')]
         .some((button) => button.textContent.includes('扩充')),
       search: !!document.querySelector('.fund-inventory-embed .fund-search input'),
-      sort: !!document.querySelector('.fund-inventory-embed .fund-search select'),
-      sortOptions: [...document.querySelectorAll('.fund-inventory-embed .fund-search select option')]
+      sort: !!document.querySelector('.fund-inventory-embed .fund-sort'),
+      sortOptions: [...document.querySelectorAll('.fund-inventory-embed .fund-sort-segment')]
         .map((option) => option.textContent.trim()),
+      sortDir: !!document.querySelector('.fund-inventory-embed .fund-sort-dir'),
+      columns: (() => {
+        const grid = document.querySelector('.fund-inventory-embed .slot-grid');
+        return grid ? getComputedStyle(grid).gridTemplateColumns.split(' ').length : 0;
+      })(),
       nav: [...document.querySelectorAll('.subnav-item')].map((n) => n.textContent.trim()),
     }))()`);
     check('基金仓库内嵌服务器基金页、自动扩容、可搜索排序、无预设/模拟分段', fundInventoryUi.embedded === true
         && fundInventoryUi.legacyValues === true && fundInventoryUi.legacyReadonlyFund === false
-        && fundInventoryUi.slots >= 54
+        && fundInventoryUi.slots > 0 && fundInventoryUi.columns >= 3
         && fundInventoryUi.modeSwitch === false && fundInventoryUi.reload === true
         && fundInventoryUi.expandButton === false
         && fundInventoryUi.search === true && fundInventoryUi.sort === true
-        && fundInventoryUi.sortOptions.includes('按添加顺序')
-        && fundInventoryUi.sortOptions.includes('按 NBT 组件数')
+        && fundInventoryUi.sortDir === true
+        && fundInventoryUi.sortOptions.includes('添加顺序')
+        && fundInventoryUi.sortOptions.includes('NBT')
         && !fundInventoryUi.nav.includes('基金仓库'), JSON.stringify(fundInventoryUi));
 
     // 实时模式：外部写入后 Web 应自动同步；模拟/预设不覆盖本地未提交修改。
