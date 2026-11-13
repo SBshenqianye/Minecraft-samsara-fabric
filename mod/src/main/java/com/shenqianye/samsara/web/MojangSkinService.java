@@ -65,9 +65,7 @@ public final class MojangSkinService {
         String normalizedUuid = normalizeUuid(uuid);
         String normalizedName = normalizeName(name);
         String fallback = fallbackName(name);
-        String key = normalizedUuid != null ? "uuid:" + normalizedUuid
-                : normalizedName != null ? "name:" + normalizedName.toLowerCase(Locale.ROOT)
-                : fallback != null ? "id:" + fallback.toLowerCase(Locale.ROOT) : "";
+        String key = cacheKey(normalizedUuid, normalizedName, fallback);
         if (key.isEmpty()) {
             return null;
         }
@@ -91,9 +89,7 @@ public final class MojangSkinService {
         String normalizedUuid = normalizeUuid(uuid);
         String normalizedName = normalizeName(name);
         String fallback = fallbackName(name);
-        String key = normalizedUuid != null ? "uuid:" + normalizedUuid
-                : normalizedName != null ? "name:" + normalizedName.toLowerCase(Locale.ROOT)
-                : fallback != null ? "id:" + fallback.toLowerCase(Locale.ROOT) : "";
+        String key = cacheKey(normalizedUuid, normalizedName, fallback);
         if (key.isEmpty()) return null;
         long now = System.currentTimeMillis();
         Entry cached = bodyCache.get(key);
@@ -123,9 +119,8 @@ public final class MojangSkinService {
     public Skin head(String uuid, String name) {
         String normalizedUuid = normalizeUuid(uuid);
         String normalizedName = normalizeName(name);
-        String key = normalizedUuid != null ? "uuid:" + normalizedUuid
-                : normalizedName != null ? "name:" + normalizedName.toLowerCase(Locale.ROOT)
-                : fallbackName(name) != null ? "id:" + fallbackName(name).toLowerCase(Locale.ROOT) : "";
+        String fallback = fallbackName(name);
+        String key = cacheKey(normalizedUuid, normalizedName, fallback);
         if (key.isEmpty()) return null;
         long now = System.currentTimeMillis();
         Entry cached = headCache.get(key);
@@ -299,6 +294,23 @@ public final class MojangSkinService {
         String trimmed = name.trim();
         if (trimmed.isEmpty() || trimmed.length() > 64) return null;
         return trimmed;
+    }
+
+    /**
+     * 缓存键必须同时包含 UUID 和玩家名：只带 UUID 的请求失败时会把默认 Steve
+     * 写入 uuid 键，随后带名字的请求会命中同一份缓存，真实皮肤就永远出不来。
+     */
+    private static String cacheKey(String uuid, String name, String fallback) {
+        StringBuilder key = new StringBuilder();
+        if (uuid != null) key.append("uuid:").append(uuid);
+        if (name != null) {
+            if (key.length() > 0) key.append('|');
+            key.append("name:").append(name.toLowerCase(Locale.ROOT));
+        }
+        if (key.length() == 0 && fallback != null) {
+            key.append("id:").append(fallback.toLowerCase(Locale.ROOT));
+        }
+        return key.toString();
     }
 
     private static String normalizeName(String name) {

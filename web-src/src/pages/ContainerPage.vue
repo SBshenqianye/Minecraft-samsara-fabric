@@ -35,6 +35,7 @@
       <section class="container-card">
         <div class="container-map">
           <MapPicker
+            ref="mapPicker"
             :markers="markers"
             :dimension="filters.dimension || dimensions[0]?.id || 'minecraft:overworld'"
             :selected-id="selectedMarkerId"
@@ -83,10 +84,19 @@
                 aria-label="搜索维度"
                 @update:model-value="setDimensionScope"
               />
-              <select v-model="filters.dimension" :disabled="allDimensions" @change="search">
-                <option v-for="dimension in dimensions" :key="dimension.id" :value="dimension.id">
-                  {{ dimension.name }}（{{ dimension.id }}）
-                </option>
+              <select v-model="filters.dimension" class="sky-filter-select" :disabled="allDimensions" @change="search">
+                <template v-if="stackGroups.length">
+                  <optgroup v-for="group in stackGroups" :key="group.id" :label="group.label">
+                    <option v-for="dimension in group.dimensions" :key="dimension.id" :value="dimension.id">
+                      {{ dimension.name }}
+                    </option>
+                  </optgroup>
+                </template>
+                <template v-else>
+                  <option v-for="dimension in dimensions" :key="dimension.id" :value="dimension.id">
+                    {{ dimension.name }}（{{ dimension.id }}）
+                  </option>
+                </template>
               </select>
               <button
                 class="icon-button"
@@ -97,9 +107,9 @@
                 @click="scan"
               >↻</button>
             </div>
-            <div v-if="visibleContainers.length" class="container-list compact list-narrow sky-list">
+            <div v-if="visibleContainers.length" class="container-list compact list-narrow sky-list" @scroll.passive="onContainerScroll">
               <button
-                v-for="row in visibleContainers"
+                v-for="row in pagedContainers"
                 :key="rowKey(row)"
                 class="sky-row container-row"
                 :class="{ active: selected && samePos(selected.container, row) }"
@@ -154,10 +164,31 @@
                 :options="playerScopeOptions"
                 aria-label="玩家维度"
               />
-            </div>
-            <div v-if="filteredPlayers.length" class="container-player-list sky-list">
+              <select v-model="playerDimension" class="sky-filter-select" :disabled="playerScope !== 'current'">
+                <template v-if="stackGroups.length">
+                  <optgroup v-for="group in stackGroups" :key="group.id" :label="group.label">
+                    <option v-for="dimension in group.dimensions" :key="dimension.id" :value="dimension.id">
+                      {{ dimension.name }}
+                    </option>
+                  </optgroup>
+                </template>
+                <template v-else>
+                  <option v-for="dimension in dimensions" :key="dimension.id" :value="dimension.id">
+                    {{ dimension.name }}
+                  </option>
+                </template>
+              </select>
               <button
-                v-for="player in filteredPlayers"
+                class="icon-button"
+                type="button"
+                title="刷新玩家列表"
+                aria-label="刷新玩家列表"
+                @click="loadPlayers()"
+              >↻</button>
+            </div>
+            <div v-if="filteredPlayers.length" class="container-player-list sky-list" @scroll.passive="onPlayerScroll">
+              <button
+                v-for="player in pagedPlayers"
                 :key="player.uuid"
                 type="button"
                 class="sky-row player-row"
@@ -233,7 +264,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import FloatingWindow from '../components/FloatingWindow.vue';
 import GlobalItemCursor from '../components/GlobalItemCursor.vue';
@@ -262,6 +293,7 @@ const dimensions = ref([
   { id: 'minecraft:the_nether', name: '下界' },
   { id: 'minecraft:the_end', name: '末地' },
 ]);
+const stackGroups = ref([]);
 const filters = reactive({ dimension: 'minecraft:overworld', q: '' });
 const windows = ref([]);
 const players = ref([]);
@@ -269,6 +301,7 @@ const portals = ref([]);
 const playerQuery = ref('');
 const playerStatus = ref('all');
 const playerScope = ref('current');
+const playerDimension = ref('minecraft:overworld');
 const containerType = ref('all');
 const containerContent = ref('all');
 const containerSource = ref('all');
@@ -284,6 +317,7 @@ let searchTimer = null;
 const containers = ref([]);
 const indexSize = ref(0);
 const selected = ref(null);
+const mapPicker = ref(null);
 const slots = ref([]);
 const baselineSlots = ref([]);
 const items = ref([]);
@@ -405,11 +439,51 @@ const filteredPlayers = computed(() => {
     }
     if (playerStatus.value === 'online' && player.online !== true) return false;
     if (playerStatus.value === 'offline' && player.online === true) return false;
-    if (playerScope.value === 'current' && filters.dimension
-        && player.dimension && player.dimension !== filters.dimension) return false;
+    if (playerScope.value === 'current' && playerDimension.value
+        && player.dimension && player.dimension !== playerDimension.value) return false;
     return true;
   });
 });
+
+const PAGE_CONTAINERS = 80;
+const PAGE_PLAYERS = 50;
+const containerLimit = ref(PAGE_CONTAINERS);
+const playerLimit = ref(PAGE_PLAYERS);
+const pagedContainers = computed(() => visibleContainers.value.slice(0, containerLimit.value));
+const pagedPlayers = computed(() => filteredPlayers.value.slice(0, playerLimit.value));
+watch([containerType, containerContent, containerSource, () => filters.dimension, () => filters.q], () => {
+  containerLimit.value = PAGE_CONTAINERS;
+});
+watch([playerQuery, playerStatus, playerScope, playerDimension], () => {
+  playerLimit.value = PAGE_PLAYERS;
+});
+watch(() => visibleContainers.value.length, () => {
+  if (containerLimit.value > visibleContainers.value.length) {
+    containerLimit.value = Math.max(PAGE_CONTAINERS, visibleContainers.value.length);
+  }
+});
+watch(() => filteredPlayers.value.length, () => {
+  if (playerLimit.value > filteredPlayers.value.length) {
+    playerLimit.value = Math.max(PAGE_PLAYERS, filteredPlayers.value.length);
+  }
+});
+
+function onContainerScroll(event) {
+  const node = event.target;
+  if (node.scrollTop + node.clientHeight >= node.scrollHeight - 120
+      && containerLimit.value < visibleContainers.value.length) {
+    containerLimit.value = Math.min(visibleContainers.value.length, containerLimit.value + PAGE_CONTAINERS);
+  }
+}
+
+function onPlayerScroll(event) {
+  const node = event.target;
+  if (node.scrollTop + node.clientHeight >= node.scrollHeight - 80
+      && playerLimit.value < filteredPlayers.value.length) {
+    playerLimit.value = Math.min(filteredPlayers.value.length, playerLimit.value + PAGE_PLAYERS);
+  }
+}
+
 
 function shortDimension(dimension) {
   const value = String(dimension || '');
@@ -618,16 +692,29 @@ async function loadDimensions() {
     if (result.status !== 200) return;
     const list = [];
     const seen = new Set();
+    const groups = [];
     for (const stack of result.data.stacks || []) {
+      const groupDimensions = [];
       for (const dimension of stack.dimensions || []) {
-        if (!dimension.id || seen.has(dimension.id)) continue;
+        if (!dimension.id) continue;
+        groupDimensions.push({ id: dimension.id, name: dimension.name || dimension.id });
+        if (seen.has(dimension.id)) continue;
         seen.add(dimension.id);
         list.push({ id: dimension.id, name: dimension.name || dimension.id });
       }
+      if (groupDimensions.length) {
+        groups.push({
+          id: stack.id,
+          label: stack.label || stack.name || stack.id,
+          dimensions: groupDimensions,
+        });
+      }
     }
+    if (groups.length) stackGroups.value = groups;
     if (list.length) {
       dimensions.value = list;
       if (!seen.has(filters.dimension)) filters.dimension = list[0].id;
+      if (!seen.has(playerDimension.value)) playerDimension.value = filters.dimension || list[0].id;
       if (allDimensions.value) filters.dimension = '';
     }
   } catch {
@@ -748,7 +835,19 @@ async function switchDimension(dimension) {
   await search();
 }
 
+async function focusMapMarker(id, dimension) {
+  if (dimension && dimension !== filters.dimension) {
+    allDimensions.value = false;
+    filters.dimension = dimension;
+    lastDimension.value = dimension;
+    await search();
+  }
+  await nextTick();
+  mapPicker.value?.focusOn(id, 0.25);
+}
+
 function openPlayerWindow(player) {
+  void focusMapMarker('player:' + player.uuid, player.dimension);
   selectedPlayerId.value = 'player:' + player.uuid;
   const key = selectedPlayerId.value;
   const existing = windows.value.find((win) => win.key === key);
@@ -761,7 +860,7 @@ function openPlayerWindow(player) {
   windows.value.push({
     key,
     kind: 'player',
-    target: { uuid: player.uuid, name: player.name, online: player.online,
+    target: { uuid: player.dataUuid || player.uuid, name: player.name, online: player.online,
       skinUuid: player.skinUuid, skinName: player.skinName },
     title: player.name || String(player.uuid).slice(0, 8),
     subtitle: (player.online ? '在线' : '离线') + ' · ' + player.uuid,
@@ -777,6 +876,7 @@ function openPlayerWindow(player) {
 }
 
 function openContainer(row) {
+  void focusMapMarker(rowKey(row), row.dimension);
   selectedPlayerId.value = '';
   selected.value = { container: row };
   openWindow(row);

@@ -301,6 +301,8 @@ public class ServerWebService {
         if (skin == null) skin = group.dataUuid();
         if (skin == null) skin = group.offlineUuid();
         if (skin != null) row.put("skinUuid", skin.toString());
+        UUID data = group.dataUuid();
+        if (data != null) row.put("dataUuid", data.toString());
         row.put("skinName", row.getOrDefault("name", ""));
     }
 

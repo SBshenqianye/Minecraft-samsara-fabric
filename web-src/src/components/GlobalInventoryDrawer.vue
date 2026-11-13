@@ -31,10 +31,6 @@
       @minimize="minimize"
       @pin="pinned = !pinned"
     >
-      <div class="global-inventory-status">
-        <span v-if="saving" class="muted small">写入中…</span>
-        <span v-else-if="dirty" class="muted small">待写入…</span>
-      </div>
       <p v-if="error" class="container-message error">{{ error }}</p>
       <p v-if="message" class="container-message ok">{{ message }}</p>
       <div v-if="!connected" class="global-inventory-connect">
@@ -389,14 +385,6 @@ defineExpose({ open: () => openWindow() });
   font-size: 10px;
   line-height: 1;
   writing-mode: horizontal-tb;
-}
-
-.global-inventory-status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 18px;
-  margin-bottom: 6px;
 }
 
 /* 生存物品栏在左、创造物品库在右，两者等高；组件编辑独占下方整行。 */

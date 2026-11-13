@@ -793,7 +793,15 @@ details.output-group > summary { padding: 3px 2px; }
 .identity-inline-inventory-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
 .identity-inline-inventory-head strong { font-size: 13px; }
 .identity-inventory-frame { width: 100%; height: 58vh; min-height: 360px; border: 0; border-radius: 10px; background: transparent; }
-.identity-data-content { display: flex; flex-direction: column; gap: 9px; }
+.identity-data-content { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: start; max-height: 78vh; overflow: auto; }
+.identity-data-content > .identity-data-head,
+.identity-data-content > .status-chips,
+.identity-data-content > .identity-data-wide,
+.identity-data-content > p { grid-column: 1 / -1; }
+.identity-data-content > .identity-data-section { min-width: 0; }
+@media (max-width: 900px) {
+  .identity-data-content { grid-template-columns: minmax(0, 1fr); }
+}
 .identity-data-section { padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-soft); }
 .identity-data-section > strong { display: block; margin-bottom: 7px; font-size: 12px; }
 .identity-data-tags { display: flex; flex-wrap: wrap; gap: 5px; }

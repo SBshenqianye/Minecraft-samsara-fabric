@@ -754,7 +754,7 @@ function renderDataDetail(root, uuid, data) {
   root.append(itemSection('背包', data.inventory));
   root.append(itemSection('末影箱', data.enderItems));
   const adv = data.advancements || {};
-  const advBox = dataNode('div', 'identity-data-section');
+  const advBox = dataNode('div', 'identity-data-section identity-data-wide');
   const displayedDone = Array.isArray(adv.nodes)
     ? adv.nodes.filter((row) => row.done).length : 0;
   const displayedTotal = Array.isArray(adv.nodes) && adv.nodes.length

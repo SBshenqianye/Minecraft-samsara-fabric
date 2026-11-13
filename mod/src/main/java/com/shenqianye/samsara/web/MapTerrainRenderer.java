@@ -295,6 +295,19 @@ final class MapTerrainRenderer {
             if (isAir(blockId)) {
                 continue;
             }
+            // 部分存档/高度图会把树冠排除在外，只留下树干。向上找最近的树叶，
+            // 让树林在地图上显示为连续的绿色树冠，而不是孤立的棕色树干点。
+            int leafY = -1;
+            for (int up = 1; up <= 16; up += 1) {
+                String above = blockAt(sections, lx, y + up, lz);
+                if (isLeaves(above)) {
+                    leafY = y + up;
+                }
+            }
+            if (leafY > y) {
+                y = leafY;
+                blockId = blockAt(sections, lx, y, lz);
+            }
             heights[index] = y;
             colors[index] = colorOf(blockId);
             waters[index] = "minecraft:water".equals(blockId);
@@ -316,6 +329,11 @@ final class MapTerrainRenderer {
     private static boolean isAir(String id) {
         return id == null || "minecraft:air".equals(id)
                 || "minecraft:cave_air".equals(id) || "minecraft:void_air".equals(id);
+    }
+
+    private static boolean isLeaves(String id) {
+        return id != null && (id.endsWith("_leaves") || id.equals("minecraft:azalea_leaves")
+                || id.equals("minecraft:flowering_azalea_leaves"));
     }
 
     private static int colorOf(String id) {

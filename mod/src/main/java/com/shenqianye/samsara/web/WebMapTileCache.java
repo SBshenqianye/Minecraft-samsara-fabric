@@ -29,7 +29,7 @@ import java.util.stream.Stream;
 final class WebMapTileCache {
     static final long DEFAULT_MAX_BYTES = 512L * 1024 * 1024L;
     private static final int MEMORY_ENTRIES = 96;
-    private static final String RENDER_VERSION = "v2";
+    private static final String RENDER_VERSION = "v3";
     private static final Pattern SAFE = Pattern.compile("[^A-Za-z0-9_.-]");
 
     private final Path root;
@@ -293,3 +293,4 @@ final class WebMapTileCache {
         return SAFE.matcher(text).replaceAll("_");
     }
 }
+

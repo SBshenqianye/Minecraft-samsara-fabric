@@ -456,10 +456,10 @@ function rebuildTiles() {
   const out = [];
   for (let rx = minRx; rx <= maxRx; rx++) {
     for (let rz = minRz; rz <= maxRz; rz++) {
-      const key = [stackId.value, props.dimension, rx, rz, tileScale, 1, 2].join('|');
+      const key = [stackId.value, props.dimension, rx, rz, tileScale, 1, 3].join('|');
       const url = '/api/user/map/tile?stack=' + encodeURIComponent(stackId.value)
         + '&dim=' + encodeURIComponent(props.dimension)
-        + '&rx=' + rx + '&rz=' + rz + '&scale=' + tileScale + '&shade=1&v=2';
+        + '&rx=' + rx + '&rz=' + rz + '&scale=' + tileScale + '&shade=1&v=3';
       const cached = tileCache.get(key);
       out.push({
         key,
@@ -596,6 +596,20 @@ function prepareMarkers() {
     if ((marker.kind || 'container') === 'player') loadAvatar(marker);
   }
 }
+
+/** 点击列表/地图目标时，直接把地图定位到该标记并放大到合适层级。 */
+function focusOn(markerId, targetScale = 0.25) {
+  const marker = props.markers.find((row) => row.id === markerId);
+  if (!marker) return false;
+  centerX.value = Number(marker.x);
+  centerZ.value = Number(marker.z);
+  scale.value = Math.max(MIN_SCALE, Math.min(MAX_SCALE, targetScale));
+  closeClusterPopup();
+  rebuildTiles();
+  return true;
+}
+
+defineExpose({ focusOn });
 
 onMounted(() => {
   loadModel();
@@ -981,3 +995,4 @@ watch(() => props.markers, () => {
 }
 
 </style>
+
