@@ -378,15 +378,22 @@ public final class IdentityDataInspector {
         }
         try {
             JsonObject root = JsonParser.parseString(Files.readString(file, StandardCharsets.UTF_8)).getAsJsonObject();
-            JsonObject custom = root.has("minecraft:custom") && root.get("minecraft:custom").isJsonObject()
-                    ? root.getAsJsonObject("minecraft:custom") : new JsonObject();
+            // 落盘格式是 {"stats":{"minecraft:custom":{...}}}，兼容直接平铺的旧格式。
+            JsonObject statsRoot = root.has("stats") && root.get("stats").isJsonObject()
+                    ? root.getAsJsonObject("stats") : root;
+            JsonObject custom = statsRoot.has("minecraft:custom") && statsRoot.get("minecraft:custom").isJsonObject()
+                    ? statsRoot.getAsJsonObject("minecraft:custom") : new JsonObject();
             for (String key : List.of("play_time", "deaths", "mob_kills", "player_kills",
                     "walk_one_cm", "sprint_one_cm", "fly_one_cm", "damage_dealt")) {
-                if (custom.has(key)) {
+                // 原版统计键带 minecraft: 前缀；兼容未加前缀的旧文件。
+                String prefixed = "minecraft:" + key;
+                if (custom.has(prefixed)) {
+                    out.put(key, custom.get(prefixed).getAsLong());
+                } else if (custom.has(key)) {
                     out.put(key, custom.get(key).getAsLong());
                 }
             }
-            out.put("categories", root.keySet().size());
+            out.put("categories", statsRoot.keySet().size());
         } catch (IOException | RuntimeException e) {
             out.put("error", e.getMessage());
         }

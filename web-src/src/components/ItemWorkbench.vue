@@ -23,8 +23,6 @@
     </div>
 
     
-    <p v-if="workbenchError" class="container-message error">{{ workbenchError }}</p>
-    <p v-if="workbenchMessage" class="container-message ok">{{ workbenchMessage }}</p>
 
 
     <div class="workbench-body">
@@ -87,6 +85,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { ElMessage } from 'element-plus';
 import ItemSlotGrid from './ItemSlotGrid.vue';
 import { hideItemTooltip, showItemTooltip } from './itemTooltip.js';
 import { clearItemCursor, itemCursor, nextWorkbenchId } from '../composables/itemCursor.js';
@@ -142,7 +141,7 @@ const busy = ref(false);
 const workbenchError = ref('');
 const workbenchMessage = ref('');
 // 动态绑定：避免 Vite 把 /ui/ 资源当成构建期 import（这些文件由后端静态目录提供）。
-const trashIconSrc = '/items/lava_bucket.png';
+const trashIconSrc = '/ui/creative_trash.png';
 let dragSource = null;
 // 同一 encoded + 数量反复出现（拿半组、放回、合并）时不必每次都请求服务端重编码。
 const countCache = new Map();
@@ -401,7 +400,7 @@ async function onSlotClick({ index, button, shift }) {
       }
     }
   } catch (e) {
-    workbenchError.value = e.message || String(e);
+    ElMessage.error(e.message || String(e));
   } finally {
     busy.value = false;
     if (changed) {
@@ -436,7 +435,7 @@ async function quickMove(index) {
       }
     }
   } catch (e) {
-    workbenchError.value = e.message || String(e);
+    ElMessage.error(e.message || String(e));
   } finally {
     busy.value = false;
     if (changed) {
@@ -460,12 +459,12 @@ function onDragEnd() {
 function trashCursor() {
   if (!cursor.value) {
     workbenchError.value = '';
-    workbenchMessage.value = '垃圾桶：先拿起物品再点这里，或把物品拖进来。';
+    ElMessage.info('垃圾桶：先拿起物品再点这里，或把物品拖进来。');
     return;
   }
   cursor.value = null;
   cursorOrigin.value = null;
-  workbenchMessage.value = '已丢进垃圾桶。';
+  ElMessage.success('已丢进垃圾桶。');
   commit('interact');
 }
 
@@ -474,7 +473,7 @@ function trashDrop() {
   const source = dragSource;
   dragSource = null;
   setSlot(source, null);
-  workbenchMessage.value = '已丢进垃圾桶。';
+  ElMessage.success('已丢进垃圾桶。');
   commit('interact');
 }
 
@@ -513,7 +512,7 @@ async function libraryPick(row) {
     cursor.value = item;
     cursorOrigin.value = null;
   } catch (e) {
-    workbenchError.value = e.message || String(e);
+    ElMessage.error(e.message || String(e));
   } finally {
     busy.value = false;
   }
@@ -804,4 +803,5 @@ defineExpose({
 
 
 </style>
+
 

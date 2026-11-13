@@ -267,20 +267,48 @@ public final class IdentityService {
         }
         UUID lastWriter = state.lastWriterUuid();
         if (lastWriter == null) {
-            // F-47：用当前登录账号数据初始化 data，不反向覆盖当前账号。
-            archiveData(data, "init");
-            SyncResult push = pushPlayer(player, data, group.name);
-            if (!push.ok()) {
-                failJoin(player, group, data, state, push, "初始化");
-                return;
+            if (dataSync != null && dataSync.dataExists(data)) {
+                // 身份数据已存在（例如 state 丢失/重装后首次进入）：
+                // 身份数据才是根，先恢复到当前账号，禁止用当前账号覆盖已有背包。
+                IdentityDataSync.Result pull = dataSync.pull(data, uuid, group.name);
+                if (!pull.ok()) {
+                    failJoin(player, group, data, state,
+                            new SyncResult(pull.ok(), pull.businessFailure(), pull.message(),
+                                    pull.blocked()), "恢复");
+                    return;
+                }
+                if (!applyIdentityData(player, data)) {
+                    state.syncBlocked = true;
+                    stateStore.put(data, state);
+                    stateStore.save();
+                    IdentityAudit.log(identityRoot, "sync_apply_failed", name, uuid, "data=" + data);
+                    disconnect(player, "身份组「" + group.name
+                            + "」数据应用失败，已阻止进入以保护存档");
+                    return;
+                }
+                state.lastWriter = uuid.toString();
+                state.lastSyncAt = System.currentTimeMillis();
+                state.syncBlocked = false;
+                stateStore.put(data, state);
+                stateStore.save();
+                IdentityAudit.log(identityRoot, "sync_pull_existing", name, uuid,
+                        "data=" + data + " group=" + group.name);
+            } else {
+                // F-47：没有历史身份数据时，才用当前登录账号数据初始化 data。
+                archiveData(data, "init");
+                SyncResult push = pushPlayer(player, data, group.name);
+                if (!push.ok()) {
+                    failJoin(player, group, data, state, push, "初始化");
+                    return;
+                }
+                state.lastWriter = uuid.toString();
+                state.lastSyncAt = System.currentTimeMillis();
+                state.syncBlocked = false;
+                stateStore.put(data, state);
+                stateStore.save();
+                IdentityAudit.log(identityRoot, "sync_init", name, uuid,
+                        "data=" + data + " group=" + group.name);
             }
-            state.lastWriter = uuid.toString();
-            state.lastSyncAt = System.currentTimeMillis();
-            state.syncBlocked = false;
-            stateStore.put(data, state);
-            stateStore.save();
-            IdentityAudit.log(identityRoot, "sync_init", name, uuid,
-                    "data=" + data + " group=" + group.name);
         } else if (!lastWriter.equals(uuid)) {
             // F-46：只有账号切换才同步 data → 当前账号。
             IdentityDataSync.Result pull = dataSync.pull(data, uuid, group.name);

@@ -14,6 +14,10 @@
     <p v-if="message" class="container-message ok">{{ message }}</p>
 
     <div class="identity-inventory-toolbar">
+      <div class="mode-switch identity-scope-switch">
+        <button type="button" :class="{ active: scope === 'inventory' }" @click="setScope('inventory')">背包</button>
+        <button type="button" :class="{ active: scope === 'ender' }" @click="setScope('ender')">末影箱</button>
+      </div>
       <ModeSwitch :model-value="mode" @update:model-value="setMode" />
       <el-button size="small" :disabled="saving || loading" @click="load">重新读取</el-button>
       <el-button
@@ -70,6 +74,7 @@ const revision = ref(0);
 const dirty = ref(false);
 const cursorPending = computed(() => !!itemCursor.item);
 const mode = ref('simulate');
+const scope = ref('inventory');
 const schema = ref({});
 let token = '';
 let liveTimer = null;
@@ -77,19 +82,22 @@ let liveTimer = null;
 const title = computed(() => (groupName.value ? `编辑身份组背包 · ${groupName.value}` : '编辑身份组背包'));
 const modeHintText = computed(() => modeHint(mode.value));
 
-// 与玩家背包同源的 41 格布局：装备/副手在上、主背包居中、快捷栏在下。
-const layout = [
-  { label: '盔甲 36–39', start: 36, size: 4, columns: 1, row: 'gear', zone: 'gear' },
-  { label: '副手 40', start: 40, size: 1, columns: 1, row: 'gear', zone: 'gear' },
-  { label: '主背包 9–35', start: 9, size: 27, columns: 9, row: 'main', zone: 'main' },
-  { label: '快捷栏 0–8', start: 0, size: 9, columns: 9, row: 'hotbar', zone: 'hotbar', gap: true },
-];
+// 与玩家背包同源的布局：背包 41 格 / 末影箱 27 格，复用 ItemWorkbench。
+const layout = computed(() => (scope.value === 'ender'
+  ? [{ label: '末影箱 0–26', start: 0, size: 27, columns: 9 }]
+  : [
+    { label: '盔甲 36–39', start: 36, size: 4, columns: 1, row: 'gear', zone: 'gear' },
+    { label: '副手 40', start: 40, size: 1, columns: 1, row: 'gear', zone: 'gear' },
+    { label: '主背包 9–35', start: 9, size: 27, columns: 9, row: 'main', zone: 'main' },
+    { label: '快捷栏 0–8', start: 0, size: 9, columns: 9, row: 'hotbar', zone: 'hotbar', gap: true },
+  ]));
 
 function onOpen(event) {
   const detail = event.detail || {};
   if (!detail.data) return;
   dataUuid.value = String(detail.data);
   groupName.value = String(detail.name || '');
+  scope.value = detail.scope === 'ender' ? 'ender' : 'inventory';
   token = sessionStorage.getItem('samsara-token') || '';
   slots.value = [];
   items.value = [];
@@ -112,6 +120,15 @@ function reset() {
   liveTimer && window.clearTimeout(liveTimer);
   slots.value = [];
   items.value = [];
+}
+
+function setScope(next) {
+  if (next === scope.value) return;
+  scope.value = next;
+  slots.value = [];
+  items.value = [];
+  dirty.value = false;
+  load();
 }
 
 async function api(path, options = {}) {
@@ -143,7 +160,7 @@ async function load() {
   loading.value = true;
   error.value = '';
   try {
-    const params = new URLSearchParams({ source: 'identity', data: dataUuid.value, scope: 'inventory' });
+    const params = new URLSearchParams({ source: 'identity', data: dataUuid.value, scope: scope.value });
     const result = await api('/api/inventory?' + params.toString());
     if (result.status !== 200 || !result.data.ok) {
       throw new Error(result.data.error || '读取身份背包失败');
@@ -221,7 +238,7 @@ async function save(silent) {
       body: JSON.stringify({
         source: 'identity',
         data: dataUuid.value,
-        scope: 'inventory',
+        scope: scope.value,
         revision: revision.value,
         slots: slots.value,
       }),

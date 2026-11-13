@@ -241,7 +241,8 @@ public final class ContainerIndexService {
                 if (dimFilter != null && !dimFilter.equals(entry.dimension)) continue;
                 if (typeFilter != null && !typeFilter.equals(entry.type)
                         && !entry.type.contains(typeFilter)) continue;
-                if (isIndexedChestHalf(entry)) continue;
+                // 列表查询只读内存索引，绝不能再碰世界/区块：
+                // getBlockState 会触发 getChunk，5000 个容器会导致区块反复加载卸载。
                 ensureChestAxis(entry);
                 if (x != null && z != null) {
                     int r = Math.max(0, radius);
@@ -320,15 +321,18 @@ public final class ContainerIndexService {
         synchronized (lock) {
             ServerLevel level = level(dimension);
             BlockPos requested = new BlockPos(x, y, z);
-            BlockPos pos = level == null ? requested : primaryChestPos(level, requested);
+            BlockPos pos = requested;
+            if (level != null) {
+                LevelChunk chunk = level.getChunkSource().getChunkNow(requested.getX() >> 4, requested.getZ() >> 4);
+                if (chunk != null) pos = primaryChestPos(chunk, requested);
+            }
             ContainerPos key = new ContainerPos(dimension, pos.getX(), pos.getY(), pos.getZ());
             if (level != null) {
                 LevelChunk chunk = level.getChunkSource().getChunkNow(pos.getX() >> 4, pos.getZ() >> 4);
                 if (chunk != null) {
-                    BlockEntity entity = level.getBlockEntity(pos);
+                    BlockEntity entity = chunk.getBlockEntity(pos);
                     if (entity instanceof Container container) {
-                        Container combined = effectiveContainer(level, pos, container);
-                        ContainerEntry fresh = snapshotNow(level, pos, entity, combined,
+                        ContainerEntry fresh = snapshotFromChunk(level, chunk, pos, entity, container,
                                 entries.get(key));
                         entries.put(key, fresh);
                         markShardDirty(fresh);
@@ -414,7 +418,8 @@ public final class ContainerIndexService {
                 return WriteResult.error(400, "缺少 slots");
             }
             BlockPos requested = new BlockPos(x, y, z);
-            BlockPos primary = primaryChestPos(level, requested);
+            LevelChunk current = level.getChunkSource().getChunkNow(requested.getX() >> 4, requested.getZ() >> 4);
+            BlockPos primary = current == null ? requested : primaryChestPos(current, requested);
             x = primary.getX();
             y = primary.getY();
             z = primary.getZ();
@@ -680,15 +685,15 @@ public final class ContainerIndexService {
             if (!(e.getValue() instanceof Container container)) continue;
             BlockPos pos = e.getKey();
             ContainerPos key = new ContainerPos(dim, pos.getX(), pos.getY(), pos.getZ());
-            // 大箱子只索引主半格，物品由 ChestBlock#getContainer 合并成 54 格。
-            if (isSecondaryChest(level, pos)) {
+            // 大箱子只索引主半格，物品由主半格合并成 54 格。
+            // 这里必须只读传入的 chunk，不能走 level.getBlockState —— 卸载回调里重新加载区块会造成装卸风暴。
+            if (isSecondaryChest(chunk, pos)) {
                 ContainerEntry removed = entries.remove(key);
                 if (removed != null) markShardDirty(removed);
                 continue;
             }
             if (snapshot) {
-                Container combined = effectiveContainer(level, pos, container);
-                ContainerEntry entry = snapshotNow(level, pos, e.getValue(), combined, entries.get(key));
+                ContainerEntry entry = snapshotFromChunk(level, chunk, pos, e.getValue(), container, entries.get(key));
                 entries.put(key, entry);
                 markShardDirty(entry);
             } else {
@@ -702,9 +707,9 @@ public final class ContainerIndexService {
         if (level == null) return;
         LevelChunk chunk = level.getChunkSource().getChunkNow(pos.x() >> 4, pos.z() >> 4);
         if (chunk == null) return;
-        BlockPos blockPos = primaryChestPos(level, new BlockPos(pos.x(), pos.y(), pos.z()));
+        BlockPos blockPos = primaryChestPos(chunk, new BlockPos(pos.x(), pos.y(), pos.z()));
         pos = new ContainerPos(pos.dimension(), blockPos.getX(), blockPos.getY(), blockPos.getZ());
-        BlockEntity entity = level.getBlockEntity(blockPos);
+        BlockEntity entity = chunk.getBlockEntity(blockPos);
         if (!(entity instanceof Container container)) {
             ContainerEntry removed = entries.remove(pos);
             if (removed != null) {
@@ -712,22 +717,21 @@ public final class ContainerIndexService {
             }
             return;
         }
-        Container combined = effectiveContainer(level, blockPos, container);
-        ContainerEntry entry = snapshotNow(level, blockPos, entity, combined, entries.get(pos));
+        ContainerEntry entry = snapshotFromChunk(level, chunk, blockPos, entity, container, entries.get(pos));
         entries.put(pos, entry);
         markShardDirty(entry);
     }
 
-    private static boolean isSecondaryChest(ServerLevel level, BlockPos pos) {
-        if (level == null || pos == null) return false;
-        BlockState state = level.getBlockState(pos);
+    private static boolean isSecondaryChest(LevelChunk chunk, BlockPos pos) {
+        if (chunk == null || pos == null) return false;
+        BlockState state = chunk.getBlockState(pos);
         return state.getBlock() instanceof ChestBlock
                 && ChestBlock.getBlockType(state) == DoubleBlockCombiner.BlockType.SECOND;
     }
 
-    private static BlockPos primaryChestPos(ServerLevel level, BlockPos pos) {
-        if (level == null || pos == null) return pos;
-        BlockState state = level.getBlockState(pos);
+    private static BlockPos primaryChestPos(LevelChunk chunk, BlockPos pos) {
+        if (chunk == null || pos == null) return pos;
+        BlockState state = chunk.getBlockState(pos);
         if (state.getBlock() instanceof ChestBlock
                 && ChestBlock.getBlockType(state) == DoubleBlockCombiner.BlockType.SECOND) {
             return ChestBlock.getConnectedBlockPos(pos, state);
@@ -758,7 +762,13 @@ public final class ContainerIndexService {
     /** 大箱子是沿 X 轴还是 Z 轴并排；用于地图上画横向/纵向占两格的图标。 */
     private static String chestAxis(ServerLevel level, BlockPos pos) {
         if (level == null || pos == null) return "";
-        BlockState state = level.getBlockState(pos);
+        LevelChunk chunk = level.getChunkSource().getChunkNow(pos.getX() >> 4, pos.getZ() >> 4);
+        if (chunk == null) return "";
+        return chestAxis(chunk.getBlockState(pos), pos);
+    }
+
+    private static String chestAxis(BlockState state, BlockPos pos) {
+        if (state == null || pos == null) return "";
         if (!(state.getBlock() instanceof ChestBlock)
                 || ChestBlock.getBlockType(state) == DoubleBlockCombiner.BlockType.SINGLE) {
             return "";
@@ -774,13 +784,61 @@ public final class ContainerIndexService {
         if (entry == null || entry.size < 54 || entry.axis != null && !entry.axis.isBlank()) return;
         ServerLevel level = level(entry.dimension);
         if (level == null) return;
-        entry.axis = chestAxis(level, new BlockPos(entry.x, entry.y, entry.z));
+        LevelChunk chunk = level.getChunkSource().getChunkNow(entry.x >> 4, entry.z >> 4);
+        if (chunk == null) return; // 未加载就不查，绝不用 getBlockState 触发加载。
+        BlockPos pos = new BlockPos(entry.x, entry.y, entry.z);
+        entry.axis = chestAxis(chunk.getBlockState(pos), pos);
     }
 
-    private boolean isIndexedChestHalf(ContainerEntry entry) {
-        ServerLevel level = level(entry.dimension);
-        if (level == null) return false;
-        return isSecondaryChest(level, new BlockPos(entry.x, entry.y, entry.z));
+    private ContainerEntry snapshotFromChunk(ServerLevel level, LevelChunk chunk, BlockPos pos,
+                                             BlockEntity entity, Container container, ContainerEntry old) {
+        ContainerEntry entry = old == null ? new ContainerEntry() : old.copy();
+        entry.dimension = dimension(level);
+        entry.x = pos.getX();
+        entry.y = pos.getY();
+        entry.z = pos.getZ();
+        entry.type = entity == null ? "minecraft:container"
+                : String.valueOf(BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(entity.getType()));
+        BlockState state = chunk.getBlockState(pos);
+        entry.axis = chestAxis(state, pos);
+        Container second = null;
+        if (state.getBlock() instanceof ChestBlock
+                && ChestBlock.getBlockType(state) != DoubleBlockCombiner.BlockType.SINGLE) {
+            BlockPos other = ChestBlock.getConnectedBlockPos(pos, state);
+            BlockEntity otherEntity = chunk.getBlockEntity(other);
+            if (otherEntity instanceof Container otherContainer) second = otherContainer;
+        }
+        int firstSize = container.getContainerSize();
+        entry.size = firstSize + (second == null ? 0 : second.getContainerSize());
+        List<String> slots = new ArrayList<>(entry.size);
+        int nonEmpty = 0;
+        for (int i = 0; i < entry.size; i++) {
+            ItemStack stack = i < firstSize ? container.getItem(i) : second.getItem(i - firstSize);
+            if (stack == null || stack.isEmpty()) {
+                slots.add("");
+                continue;
+            }
+            String encoded = LotteryItemCodec.encode(stack, registries);
+            if (encoded.isBlank()) {
+                slots.add("");
+                continue;
+            }
+            slots.add(encoded);
+            nonEmpty++;
+        }
+        entry.nonEmpty = nonEmpty;
+        if (old == null) {
+            entry.revision = 1L;
+            entry.updatedAt = System.currentTimeMillis();
+        } else if (!old.sameContent(entry.type, slots)) {
+            entry.revision = old.revision + 1L;
+            entry.updatedAt = System.currentTimeMillis();
+        } else {
+            entry.revision = old.revision;
+            entry.updatedAt = old.updatedAt;
+        }
+        entry.slots = slots;
+        return entry;
     }
 
     private ContainerEntry snapshotNow(ServerLevel level, BlockPos pos, BlockEntity entity,

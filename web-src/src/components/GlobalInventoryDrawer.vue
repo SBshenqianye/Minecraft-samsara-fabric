@@ -96,7 +96,7 @@ import ItemEditor from './ItemEditor.vue';
 const open = ref(false);
 const pinned = ref(false);
 const WEB_SLOTS = 68; // 41 格玩家背包 + 27 格末影箱
-const trashIconSrc = '/items/lava_bucket.png';
+const trashIconSrc = '/ui/creative_trash.png';
 const initialWidth = Math.min(1120, Math.max(880, window.innerWidth - 40));
 const initialHeight = Math.min(940, Math.max(680, window.innerHeight - 60));
 const initialX = Math.max(20, window.innerWidth - initialWidth - 20);
@@ -615,5 +615,6 @@ defineExpose({ open: () => openWindow() });
   max-height: none;
 }
 </style>
+
 
 
