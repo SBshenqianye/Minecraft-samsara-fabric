@@ -1282,7 +1282,7 @@
     return MAP_API_BASE + '/tile?stack=' + encodeURIComponent(stackId)
       + '&dim=' + encodeURIComponent(dimId)
       + '&rx=' + rx + '&rz=' + rz + '&scale=' + scale
-      + '&shade=' + (shade ? 1 : 0) + '&v=4';
+      + '&shade=' + (shade ? 1 : 0) + '&v=6';
   }
 
   // ---- 世界栈卡片图标：自定义上传 > 存档 icon.png > 出生点地图缩略图 ----
@@ -1327,7 +1327,7 @@
     if (!region) return '';
     // 图标是 <img> 请求，无法携带 Bearer；用公开只读用户端 tile。
     return '/api/user/map/tile?stack=' + encodeURIComponent(stack.id)
-      + '&dim=overworld&rx=' + region.rx + '&rz=' + region.rz + '&scale=4&shade=1&v=4';
+      + '&dim=overworld&rx=' + region.rx + '&rz=' + region.rz + '&scale=4&shade=1&v=6';
   }
 
   function stackIconLabel(source) {
@@ -3104,5 +3104,7 @@
     bind();
   }
 })();
+
+
 
 

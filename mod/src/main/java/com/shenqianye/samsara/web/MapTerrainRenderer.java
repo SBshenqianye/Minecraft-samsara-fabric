@@ -418,7 +418,11 @@ final class MapTerrainRenderer {
 
         private static String paletteName(Tag tag) {
             return tag.asString().orElseGet(() -> tag.asCompound()
-                    .map(c -> c.getStringOr("Name", "minecraft:air"))
+                    .map(c -> {
+                        String name = c.getStringOr("Name", "");
+                        if (name.isEmpty()) name = c.getStringOr("id", "");
+                        return name.isEmpty() ? "minecraft:air" : name;
+                    })
                     .orElse("minecraft:air"));
         }
     }
