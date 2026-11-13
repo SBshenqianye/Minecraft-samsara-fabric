@@ -456,10 +456,10 @@ function rebuildTiles() {
   const out = [];
   for (let rx = minRx; rx <= maxRx; rx++) {
     for (let rz = minRz; rz <= maxRz; rz++) {
-      const key = [stackId.value, props.dimension, rx, rz, tileScale, 1].join('|');
+      const key = [stackId.value, props.dimension, rx, rz, tileScale, 1, 2].join('|');
       const url = '/api/user/map/tile?stack=' + encodeURIComponent(stackId.value)
         + '&dim=' + encodeURIComponent(props.dimension)
-        + '&rx=' + rx + '&rz=' + rz + '&scale=' + tileScale + '&shade=1';
+        + '&rx=' + rx + '&rz=' + rz + '&scale=' + tileScale + '&shade=1&v=2';
       const cached = tileCache.get(key);
       out.push({
         key,
