@@ -171,7 +171,7 @@
           </button>
         </nav>
 
-        <main class="app-shell">
+        <main class="app-shell" :class="{ 'no-nav': !route.meta.panel && route.meta.page !== 'server' }">
           <div class="ia-side">
             <aside id="global-nav" class="side-nav" aria-label="页内导航"></aside>
           </div>

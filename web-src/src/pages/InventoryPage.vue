@@ -12,7 +12,6 @@
 
     <template v-else>
       <p v-if="error" class="container-message error">{{ error }}</p>
-      <p v-if="message" class="container-message ok">{{ message }}</p>
 
       <div class="inventory-layout" :class="{ embedded: isEmbedded }">
         <aside class="panel inventory-side">

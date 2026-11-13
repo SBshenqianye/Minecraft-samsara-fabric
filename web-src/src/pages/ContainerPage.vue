@@ -29,7 +29,6 @@
     </section>
 
     <template v-else>
-      <p v-if="message" class="container-message" :class="messageKind">{{ message }}</p>
       <p v-if="error" class="container-message error">{{ error }}</p>
 
       <section class="container-card">
@@ -84,20 +83,12 @@
                 aria-label="搜索维度"
                 @update:model-value="setDimensionScope"
               />
-              <select v-model="filters.dimension" class="sky-filter-select" :disabled="allDimensions" @change="search">
-                <template v-if="stackGroups.length">
-                  <optgroup v-for="group in stackGroups" :key="group.id" :label="group.label">
-                    <option v-for="dimension in group.dimensions" :key="dimension.id" :value="dimension.id">
-                      {{ dimension.name }}
-                    </option>
-                  </optgroup>
-                </template>
-                <template v-else>
-                  <option v-for="dimension in dimensions" :key="dimension.id" :value="dimension.id">
-                    {{ dimension.name }}（{{ dimension.id }}）
-                  </option>
-                </template>
-              </select>
+              <DimensionPicker
+                v-model="filters.dimension"
+                :groups="dimensionGroups"
+                :disabled="allDimensions"
+                @update:model-value="search()"
+              />
               <button
                 class="icon-button"
                 type="button"
@@ -164,20 +155,11 @@
                 :options="playerScopeOptions"
                 aria-label="玩家维度"
               />
-              <select v-model="playerDimension" class="sky-filter-select" :disabled="playerScope !== 'current'">
-                <template v-if="stackGroups.length">
-                  <optgroup v-for="group in stackGroups" :key="group.id" :label="group.label">
-                    <option v-for="dimension in group.dimensions" :key="dimension.id" :value="dimension.id">
-                      {{ dimension.name }}
-                    </option>
-                  </optgroup>
-                </template>
-                <template v-else>
-                  <option v-for="dimension in dimensions" :key="dimension.id" :value="dimension.id">
-                    {{ dimension.name }}
-                  </option>
-                </template>
-              </select>
+              <DimensionPicker
+                v-model="playerDimension"
+                :groups="dimensionGroups"
+                :disabled="playerScope !== 'current'"
+              />
               <button
                 class="icon-button"
                 type="button"
@@ -272,6 +254,7 @@ import InventoryWindow from '../components/InventoryWindow.vue';
 import ItemIcon from '../components/ItemIcon.vue';
 import MapPicker from '../components/MapPicker.vue';
 import Segmented from '../components/Segmented.vue';
+import DimensionPicker from '../components/DimensionPicker.vue';
 import { useLiveRefresh } from '../composables/useLiveRefresh.js';
 import { itemCursor } from '../composables/itemCursor.js';
 
@@ -294,6 +277,9 @@ const dimensions = ref([
   { id: 'minecraft:the_end', name: '末地' },
 ]);
 const stackGroups = ref([]);
+const dimensionGroups = computed(() => stackGroups.value.length
+  ? stackGroups.value
+  : [{ id: 'current', label: '当前世界', dimensions: dimensions.value }]);
 const filters = reactive({ dimension: 'minecraft:overworld', q: '' });
 const windows = ref([]);
 const players = ref([]);
@@ -1054,7 +1040,6 @@ async function save(silent) {
       }
       message.value = '目标区块未加载，已排队；区块加载后自动写入。';
       messageKind.value = '';
-      if (!silent) ElMessage.success('已加入待写入队列');
     } else {
       if (result.data.container) {
         selected.value = Object.assign({}, selected.value, { container: result.data.container });
@@ -1064,7 +1049,6 @@ async function save(silent) {
       }
       message.value = '已写入容器。';
       messageKind.value = 'ok';
-      if (!silent) ElMessage.success('已写入容器');
     }
     baselineSlots.value = slots.value.slice();
     await search();

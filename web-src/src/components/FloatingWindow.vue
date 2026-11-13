@@ -60,6 +60,7 @@ const props = defineProps({
   pinned: { type: Boolean, default: false },
   active: { type: Boolean, default: false },
   canMinimize: { type: Boolean, default: true },
+  persistKey: { type: String, default: '' },
 });
 const emit = defineEmits(['close', 'minimize', 'pin', 'focus', 'dismiss']);
 const root = ref(null);
@@ -108,6 +109,13 @@ function onDrag(event) {
 function endDrag() {
   drag = null;
   window.removeEventListener('pointermove', onDrag);
+  if (props.persistKey) {
+    try {
+      localStorage.setItem(props.persistKey, JSON.stringify({ left: left.value, top: top.value }));
+    } catch {
+      // 私密模式/存储满时忽略。
+    }
+  }
 }
 
 function onDocumentPointer(event) {
@@ -117,6 +125,17 @@ function onDocumentPointer(event) {
 }
 
 onMounted(() => {
+  if (props.persistKey) {
+    try {
+      const saved = JSON.parse(localStorage.getItem(props.persistKey) || 'null');
+      if (saved && Number.isFinite(Number(saved.left)) && Number.isFinite(Number(saved.top))) {
+        left.value = clamp(Number(saved.left), 8, Math.max(8, window.innerWidth - 260));
+        top.value = clamp(Number(saved.top), 8, Math.max(8, window.innerHeight - 120));
+      }
+    } catch {
+      // 忽略损坏的位置记录。
+    }
+  }
   // 捕获阶段先于页面其它点击逻辑；未保持的窗口在点击外部时自行关闭。
   document.addEventListener('pointerdown', onDocumentPointer, true);
 });

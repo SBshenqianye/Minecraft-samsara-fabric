@@ -241,6 +241,7 @@ code, .mono { font-family: var(--mono); }
 .content { min-width: 0; }
 .app-shell.user-shell { grid-template-columns: minmax(0, 1fr); }
 .app-shell.no-nav { grid-template-columns: minmax(0, 1fr); }
+.app-shell.no-nav .ia-side { display: none; }
 .user-shell .content { display: flex; flex-direction: column; gap: 18px; }
 .app-header.user-header { padding-bottom: 12px; }
 .app-header.user-header .connection { padding-bottom: 0; }
@@ -784,7 +785,7 @@ details.output-group > summary { padding: 3px 2px; }
 .audit-output { white-space: pre-wrap; font-size: 12px; color: var(--muted); margin: 8px 0 0; }
 
 /* ---- dialogs ---- */
-.identity-data-dialog { width: min(1500px, 96vw); max-width: 96vw; }
+.app-dialog.identity-data-dialog { width: min(1500px, 96vw); max-width: 96vw; }
 .identity-data-dialog .dialog-body { max-height: 92vh; overflow: auto; }
 .identity-data-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-soft); }
 .identity-data-uuid { flex: 1 1 280px; min-width: 0; overflow-wrap: anywhere; color: var(--fg-soft); font: 12px/1.45 var(--mono); }

@@ -309,3 +309,6 @@
     grid-template-columns: 1fr;
   }
 }
+
+.app-shell.no-nav { grid-template-columns: minmax(0, 1fr); }
+.app-shell.no-nav .ia-side { display: none; }

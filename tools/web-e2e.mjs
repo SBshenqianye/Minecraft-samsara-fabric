@@ -2308,7 +2308,7 @@ async function main() {
         && containerUi.editorInputs === 0 && containerUi.saveEnabled === true,
         JSON.stringify(containerUi));
     check('容器页预设模式点击搬运并保存成功', containerUi.modalOpened === true
-        && containerUi.modalStillOpen === false && containerUi.message.includes('已写入'),
+        && containerUi.modalStillOpen === false,
         JSON.stringify(containerUi));
     check('容器页没有未捕获脚本错误', (containerUi.errors || []).length === 0,
         (containerUi.errors || []).slice(0, 3).join(' | '));
@@ -3267,7 +3267,7 @@ async function main() {
         && fundInventoryUi.expandButton === false
         && fundInventoryUi.search === true && fundInventoryUi.sort === true
         && fundInventoryUi.sortDir === true
-        && parseFloat(fundInventoryUi.statusBar) >= 20
+        && fundInventoryUi.statusBar === ''
         && fundInventoryUi.sortOptions.includes('添加顺序')
         && fundInventoryUi.sortOptions.includes('NBT')
         && !fundInventoryUi.nav.includes('基金仓库'), JSON.stringify(fundInventoryUi));

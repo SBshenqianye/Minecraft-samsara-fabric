@@ -14,7 +14,6 @@
         :disabled="!dirty || saving"
         @click="confirmSave"
       >保存修改{{ dirty ? ' *' : '' }}</button>
-      <span v-if="saving" class="muted small">写入中…</span>
       <button
         class="icon-button"
         type="button"
@@ -26,7 +25,6 @@
     </div>
 
     <p v-if="error" class="container-message error">{{ error }}</p>
-    <p v-else-if="message" class="container-message ok">{{ message }}</p>
     <p v-if="loading" class="muted small">读取中…</p>
 
     <ItemWorkbench

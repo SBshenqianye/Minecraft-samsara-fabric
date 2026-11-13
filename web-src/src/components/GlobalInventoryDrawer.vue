@@ -26,37 +26,37 @@
       :pinned="pinned"
       :active="true"
       :can-minimize="false"
+      persist-key="samsara.web-inventory.position"
       @close="close"
       @dismiss="close"
       @minimize="minimize"
       @pin="pinned = !pinned"
     >
       <p v-if="error" class="container-message error">{{ error }}</p>
-      <p v-if="message" class="container-message ok">{{ message }}</p>
       <div v-if="!connected" class="global-inventory-connect">
         <p class="muted small">需要管理端 token；请先在任意管理页连接。</p>
       </div>
       <div v-else class="global-inventory-body">
         <div class="global-inventory-main">
           <div class="global-inventory-slots">
-            <ItemWorkbench
-              ref="workbench"
-              :slots="slots"
-              :items="items"
-              :layout="layout"
-              :schema="schema"
-              mode="live"
-              item-endpoint="/api/inventory/item"
-              :revision="revision"
-              :editable="true"
-              :trash="false"
-              :show-toolbar="false"
-              @change="onChange"
-              @select="onWorkbenchSelect"
-            />
-            <div class="global-inventory-trash-row">
+            <div class="global-inventory-grid-wrap">
+              <ItemWorkbench
+                ref="workbench"
+                :slots="slots"
+                :items="items"
+                :layout="layout"
+                :schema="schema"
+                mode="live"
+                item-endpoint="/api/inventory/item"
+                :revision="revision"
+                :editable="true"
+                :trash="false"
+                :show-toolbar="false"
+                @change="onChange"
+                @select="onWorkbenchSelect"
+              />
               <button
-                class="creative-trash"
+                class="creative-trash global-inventory-trash"
                 type="button"
                 title="删除光标上的物品"
                 aria-label="垃圾桶"
@@ -96,7 +96,7 @@ import ItemEditor from './ItemEditor.vue';
 const open = ref(false);
 const pinned = ref(false);
 const WEB_SLOTS = 68; // 41 格玩家背包 + 27 格末影箱
-const trashIconSrc = '/ui/trashcan.png';
+const trashIconSrc = '/items/lava_bucket.png';
 const initialWidth = Math.min(1120, Math.max(880, window.innerWidth - 40));
 const initialHeight = Math.min(940, Math.max(680, window.innerHeight - 60));
 const initialX = Math.max(20, window.innerWidth - initialWidth - 20);
@@ -413,15 +413,22 @@ defineExpose({ open: () => openWindow() });
   min-height: 0;
 }
 
+.global-inventory-grid-wrap {
+  position: relative;
+  width: max-content;
+  max-width: 100%;
+}
+
+.global-inventory-trash {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  z-index: 2;
+}
+
 .global-inventory-library {
   min-width: 0;
   min-height: 0;
-}
-
-.global-inventory-trash-row {
-  display: flex;
-  justify-content: flex-end;
-  padding-top: 6px;
 }
 
 .inventory-slide-enter-active,
@@ -608,4 +615,5 @@ defineExpose({ open: () => openWindow() });
   max-height: none;
 }
 </style>
+
 

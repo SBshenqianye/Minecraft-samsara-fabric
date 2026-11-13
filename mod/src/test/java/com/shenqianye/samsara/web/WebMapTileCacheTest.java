@@ -25,7 +25,7 @@ class WebMapTileCacheTest {
         byte[] png = new byte[]{1, 2, 3, 4};
         cache.put("world", "minecraft:overworld", 2, -3, 4, true, 111L, 999L, png);
 
-        Path file = root.resolve("world/v3/minecraft/overworld/4/1/r.2.-3.111.999.png");
+        Path file = root.resolve("world/v4/minecraft/overworld/4/1/r.2.-3.111.999.png");
         assertTrue(Files.isRegularFile(file), "缓存文件应写到栈层/维度/scale/shade 下");
 
         WebMapTileCache reopened = new WebMapTileCache(root);
@@ -52,14 +52,14 @@ class WebMapTileCacheTest {
         WebMapTileCache cache = new WebMapTileCache(root);
         cache.put("world", "minecraft:overworld", 0, 0, 8, true, 100L, 10L,
                 new byte[]{1});
-        Path stale = root.resolve("world/v3/minecraft/overworld/8/1/r.0.0.100.10.png");
+        Path stale = root.resolve("world/v4/minecraft/overworld/8/1/r.0.0.100.10.png");
         assertTrue(Files.isRegularFile(stale));
 
         cache.put("world", "minecraft:overworld", 0, 0, 8, true, 200L, 20L,
                 new byte[]{2});
         assertFalse(Files.exists(stale), "同 region 的旧 mtime 文件应被清理");
         assertTrue(Files.isRegularFile(
-                root.resolve("world/v3/minecraft/overworld/8/1/r.0.0.200.20.png")));
+                root.resolve("world/v4/minecraft/overworld/8/1/r.0.0.200.20.png")));
     }
 
     @Test
@@ -86,8 +86,8 @@ class WebMapTileCacheTest {
         cache.put("world", "minecraft:overworld", 1, 0, 1, true, 1L, 1L,
                 new byte[6]);
 
-        Path first = root.resolve("world/v3/minecraft/overworld/1/1/r.0.0.1.1.png");
-        Path second = root.resolve("world/v3/minecraft/overworld/1/1/r.1.0.1.1.png");
+        Path first = root.resolve("world/v4/minecraft/overworld/1/1/r.0.0.1.1.png");
+        Path second = root.resolve("world/v4/minecraft/overworld/1/1/r.1.0.1.1.png");
         assertFalse(Files.exists(first), "超过磁盘上限后应淘汰最久未使用的 tile 文件");
         assertTrue(Files.exists(second), "最新 tile 保留");
         try (Stream<Path> files = Files.walk(root)) {
@@ -111,7 +111,7 @@ class WebMapTileCacheTest {
 
         cache.put("world", "minecraft:overworld", 1, 0, 4, true, 2L, 2L, new byte[]{2});
         assertTrue(Files.isRegularFile(
-                root.resolve("world/v3/minecraft/overworld/4/1/r.1.0.2.2.png")),
+                root.resolve("world/v4/minecraft/overworld/4/1/r.1.0.2.2.png")),
                 "删除缓存目录后应能重新写入，且不影响服务");
         assertTrue(((Number) cache.stats().get("bytes")).longValue() > 0);
     }

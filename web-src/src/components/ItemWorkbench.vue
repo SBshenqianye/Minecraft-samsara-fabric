@@ -142,7 +142,7 @@ const busy = ref(false);
 const workbenchError = ref('');
 const workbenchMessage = ref('');
 // 动态绑定：避免 Vite 把 /ui/ 资源当成构建期 import（这些文件由后端静态目录提供）。
-const trashIconSrc = '/ui/trashcan.png';
+const trashIconSrc = '/items/lava_bucket.png';
 let dragSource = null;
 // 同一 encoded + 数量反复出现（拿半组、放回、合并）时不必每次都请求服务端重编码。
 const countCache = new Map();
@@ -804,3 +804,4 @@ defineExpose({
 
 
 </style>
+

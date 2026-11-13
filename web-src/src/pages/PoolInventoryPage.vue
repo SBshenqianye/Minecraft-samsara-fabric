@@ -71,12 +71,7 @@
         </button>
       </div>
 
-      <!-- 固定高度状态行：写入中/已写入/错误都占同一行，仓库网格不会上下浮动。 -->
-      <div class="pool-status" role="status" aria-live="polite">
-        <p v-if="error" class="container-message error pool-status-line">{{ error }}</p>
-        <p v-else-if="saving" class="muted small pool-status-line pool-status-saving">写入中…</p>
-        <p v-else-if="message" class="container-message ok pool-status-line">{{ message }}</p>
-      </div>
+      <p v-if="error" class="container-message error">{{ error }}</p>
 
       <div class="panel">
         <ItemWorkbench

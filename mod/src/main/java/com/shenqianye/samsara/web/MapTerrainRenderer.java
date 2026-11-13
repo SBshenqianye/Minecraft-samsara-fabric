@@ -350,8 +350,20 @@ final class MapTerrainRenderer {
             if (mapColor == null || mapColor == MapColor.NONE || mapColor.col == 0) {
                 return FALLBACK_COLOR;
             }
-            return mapColor.col & 0xffffff;
+            int color = mapColor.col & 0xffffff;
+            // 树叶与草地方块的原版地图色相同，森林会糊成一片；树冠略微压暗才能看出树林。
+            if (key.endsWith("_leaves")) {
+                color = multiplyColor(color, 0.72);
+            }
+            return color;
         });
+    }
+
+    private static int multiplyColor(int rgb, double factor) {
+        int r = Math.max(0, Math.min(255, (int) Math.round(((rgb >> 16) & 0xff) * factor)));
+        int g = Math.max(0, Math.min(255, (int) Math.round(((rgb >> 8) & 0xff) * factor)));
+        int b = Math.max(0, Math.min(255, (int) Math.round((rgb & 0xff) * factor)));
+        return (r << 16) | (g << 8) | b;
     }
 
     private static long unpack(long[] values, int bits, int index) {
