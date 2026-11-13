@@ -839,8 +839,8 @@ watch(() => props.markers, () => {
 
 .map-picker.max-zoom .marker-chest-pair :deep(.item-icon-view),
 .map-picker.max-zoom .marker-chest-pair :deep(.item-icon-view img) {
-  width: 28px;
-  height: 28px;
+  width: 50px;
+  height: 50px;
 }
 
 .map-picker.max-zoom .marker-initial {
