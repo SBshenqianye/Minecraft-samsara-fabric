@@ -404,6 +404,30 @@ public final class IdentityDataInspector {
                 mobs.put(key, numberMap(category(statsRoot, key)));
             }
             out.put("mobs", mobs);
+            Map<String, String> names = new LinkedHashMap<>();
+            for (String group : items.keySet()) {
+                Object value = items.get(group);
+                if (value instanceof Map<?, ?> map) {
+                    for (Object id : map.keySet()) {
+                        String key = String.valueOf(id);
+                        String zh = com.shenqianye.samsara.item.ItemLang.zh(
+                                key.indexOf(':') >= 0 ? key : "minecraft:" + key);
+                        if (!zh.isBlank()) names.put(key, zh);
+                    }
+                }
+            }
+            for (String group : mobs.keySet()) {
+                Object value = mobs.get(group);
+                if (value instanceof Map<?, ?> map) {
+                    for (Object id : map.keySet()) {
+                        String key = String.valueOf(id);
+                        String base = key.indexOf(':') >= 0 ? key : "minecraft:" + key;
+                        String zh = com.shenqianye.samsara.item.ItemLang.zh(base + "_spawn_egg");
+                        if (!zh.isBlank()) names.put(key, zh.replace("刷怪蛋", "").trim());
+                    }
+                }
+            }
+            out.put("names", names);
             out.put("categories", statsRoot.keySet().size());
         } catch (IOException | RuntimeException e) {
             out.put("error", e.getMessage());

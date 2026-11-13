@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <component :is="embedded ? 'div' : TabShell" v-bind="embedded ? {} : { name: 'pool-inventory', title, description }">
     <section v-if="!connected" class="panel">
       <h3>连接管理端</h3>
@@ -177,7 +177,7 @@ const layout = computed(() => {
   }
   // Web 背包与玩家背包同一套相对布局。
   return [
-    { label: '装备 0–3', start: 0, size: 4, columns: 1, row: 'gear', zone: 'gear' },
+    { label: '装备 0–3', start: 0, size: 4, columns: 4, row: 'gear', zone: 'gear' },
     { label: '副手 4', start: 4, size: 1, columns: 1, row: 'gear', zone: 'gear' },
     { label: '主背包 5–31', start: 5, size: 27, columns: 9, row: 'main', zone: 'main' },
     { label: '快捷栏 32–40', start: 32, size: 9, columns: 9, row: 'hotbar', zone: 'hotbar', gap: true },

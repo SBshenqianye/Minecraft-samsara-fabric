@@ -2,6 +2,8 @@
   <Teleport to="body">
     <div
       v-if="itemCursor.item"
+      ref="cursorEl"
+      popover="manual"
       class="global-item-cursor workbench-floating-cursor"
       :style="{ left: pointerX + 'px', top: pointerY + 'px' }"
       aria-hidden="true"
@@ -12,12 +14,26 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from 'vue';
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import ItemIcon from './ItemIcon.vue';
 import { itemCursor } from '../composables/itemCursor.js';
 
 const pointerX = ref(12);
 const pointerY = ref(12);
+const cursorEl = ref(null);
+
+// Web 背包在 top layer；跟随光标的物品也必须进入 top layer，否则会被背包遮住。
+watch(() => !!itemCursor.item, async (visible) => {
+  await nextTick();
+  const el = cursorEl.value;
+  if (!el || typeof el.showPopover !== 'function') return;
+  try {
+    if (visible && !el.matches(':popover-open')) el.showPopover();
+    else if (!visible && el.matches(':popover-open')) el.hidePopover();
+  } catch {
+    // ignore
+  }
+}, { flush: 'post' });
 
 function onPointerMove(event) {
   pointerX.value = event.clientX + 12;
@@ -41,5 +57,14 @@ onBeforeUnmount(() => {
   filter: drop-shadow(0 6px 8px rgba(0, 0, 0, .45));
   transform: scale(1.08);
   transform-origin: top left;
+}
+
+.global-item-cursor[popover] {
+  inset: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
 }
 </style>

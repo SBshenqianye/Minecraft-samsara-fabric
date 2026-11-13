@@ -25,7 +25,6 @@
       :z="1200"
       :pinned="pinned"
       :active="true"
-      :can-minimize="false"
       persist-key="samsara.web-inventory.position"
       @close="close"
       @dismiss="close"
@@ -131,7 +130,7 @@ const ARMOR_HINTS = [
   { icon: '/ui/slot_boots.png', label: '靴子' },
 ];
 const layout = [
-  { label: '装备 0–3', start: 0, size: 4, columns: 1, row: 'gear', zone: 'gear', hints: ARMOR_HINTS },
+  { label: '装备 0–3', start: 0, size: 4, columns: 4, row: 'gear', zone: 'gear', hints: ARMOR_HINTS },
   { label: '副手 4', start: 4, size: 1, columns: 1, row: 'gear', zone: 'gear',
     hints: [{ icon: '/ui/slot_shield.png', label: '副手' }] },
   { label: '主背包 5–31', start: 5, size: 27, columns: 9, row: 'main', zone: 'main' },
@@ -390,8 +389,9 @@ defineExpose({ open: () => openWindow() });
 .global-inventory-main {
   display: grid;
   flex: 0 0 auto;
-  grid-template-columns: minmax(380px, 1.15fr) minmax(320px, 1fr);
-  align-items: stretch;
+  grid-template-columns: max-content minmax(320px, 420px);
+  align-items: start;
+  justify-content: start;
   gap: 10px;
   min-height: 360px;
 }
@@ -407,6 +407,7 @@ defineExpose({ open: () => openWindow() });
   position: relative;
   width: max-content;
   max-width: 100%;
+  margin-top: 0;
 }
 
 .global-inventory-trash {
@@ -451,7 +452,7 @@ defineExpose({ open: () => openWindow() });
 .global-inventory-panel :deep(.workbench-grids) {
   width: max-content;
   min-width: 380px;
-  padding: 8px;
+  padding: 6px;
 }
 
 .global-inventory-panel :deep(.workbench-row) {
@@ -569,7 +570,8 @@ defineExpose({ open: () => openWindow() });
   --slot-size: 36px;
   display: flex;
   flex-direction: column;
-  height: 100%;
+  height: auto;
+  max-height: 100%;
   min-height: 0;
   gap: 6px;
   padding: 6px;
@@ -668,11 +670,12 @@ defineExpose({ open: () => openWindow() });
   align-content: start;
   gap: 2px;
   min-height: 220px;
-  max-height: none;
+  max-height: min(560px, calc(100vh - 360px));
   padding: 4px;
   border: 2px solid #373737;
   border-radius: 0;
   background: #8b8b8b;
+  overflow: auto;
 }
 
 .global-inventory-panel :deep(.creative-slot) {

@@ -44,13 +44,12 @@
             <span v-if="cluster.marker.kind === 'player'" class="marker-head" :style="avatarStyle(cluster.marker)">
               <span v-if="!avatarUrls[cluster.marker.id]" class="marker-initial">{{ initialOf(cluster.marker) }}</span>
             </span>
-            <img
+            <BlockModelIcon
               v-else-if="cluster.marker.largeChest"
               class="marker-large-chest"
-              :class="'axis-' + (cluster.marker.chestAxis === 'z' ? 'z' : 'x')"
-              :src="largeChestSrc(cluster.marker)"
-              alt=""
-              draggable="false"
+              :kind="String(cluster.marker.icon || '').includes('trapped') ? 'trapped' : 'chest'"
+              :axis="cluster.marker.chestAxis === 'z' ? 'z' : 'x'"
+              :size="96"
             />
             <ItemIcon
               v-else
@@ -106,13 +105,12 @@
             :aria-label="markerName(marker)"
             @click="chooseClusterMarker(marker)"
           >
-            <img
+            <BlockModelIcon
               v-if="marker.largeChest"
               class="marker-large-chest cluster-large-chest"
-              :class="'axis-' + (marker.chestAxis === 'z' ? 'z' : 'x')"
-              :src="largeChestSrc(marker)"
-              alt=""
-              draggable="false"
+              :kind="String(marker.icon || '').includes('trapped') ? 'trapped' : 'chest'"
+              :axis="marker.chestAxis === 'z' ? 'z' : 'x'"
+              :size="96"
             />
             <ItemIcon
               v-else-if="marker.kind !== 'player'"
@@ -162,6 +160,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import ItemIcon from './ItemIcon.vue';
+import BlockModelIcon from './BlockModelIcon.vue';
 import PinIcon from './PinIcon.vue';
 import { readCache, writeCache } from '../composables/localCache.js';
 
@@ -789,10 +788,10 @@ watch(() => props.markers, () => {
   background: rgba(43, 24, 66, .94);
 }
 
-/* 传送门方块用圆形遮罩，避免方角超出胶囊按钮。 */
+/* 传送门方块用圆角方形遮罩，避免方角超出胶囊按钮。 */
 .map-marker.portal .marker-item,
 .map-marker.portal .marker-item img {
-  border-radius: 50%;
+  border-radius: 6px;
   overflow: hidden;
 }
 
@@ -847,11 +846,9 @@ watch(() => props.markers, () => {
 .marker-large-chest {
   display: block;
   flex: 0 0 auto;
-  width: auto;
+  width: 32px;
   height: 18px;
-  max-width: 34px;
   image-rendering: pixelated;
-  object-fit: contain;
 }
 
 .cluster-large-chest {

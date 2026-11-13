@@ -167,6 +167,12 @@ const KEYWORDS = {
 function classify(id) {
   const path = String(id || '').replace(/^minecraft:/, '').toLowerCase();
   if (path.endsWith('_spawn_egg')) return 'spawn_egg';
+  if (path.includes('tipped_arrow')) return 'combat';
+  if (path.includes('potion') || path.endsWith('_arrow')) return path.includes('arrow') ? 'combat' : 'food';
+  if (path.includes('enchanted_book')) return 'ingredients';
+  if (path.endsWith('_ingot') || path.endsWith('_nugget') || path.startsWith('raw_')
+      || path.endsWith('_ore') || path.includes('_ore_')) return 'ingredients';
+  if (path.includes('copper')) return 'building';
   const order = ['colored', 'combat', 'food', 'tools', 'redstone', 'functional',
     'nature', 'building', 'ingredients'];
   for (const key of order) {

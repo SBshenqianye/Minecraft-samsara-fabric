@@ -120,7 +120,7 @@ const layout = computed(() => {
     return containerLayout(props.target?.type, Math.max(1, containerSize.value || slots.value.length || 1));
   }
   return [
-    { label: '盔甲 36–39', start: 36, size: 4, columns: 1, row: 'gear', zone: 'gear', hints: [
+    { label: '盔甲 36–39', start: 36, size: 4, columns: 4, row: 'gear', zone: 'gear', hints: [
       { icon: '/ui/slot_boots.png', label: '靴子' },
       { icon: '/ui/slot_leggings.png', label: '护腿' },
       { icon: '/ui/slot_chestplate.png', label: '胸甲' },

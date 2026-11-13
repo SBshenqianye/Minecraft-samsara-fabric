@@ -2360,6 +2360,11 @@ html { scroll-padding-top: calc(var(--header-h, 128px) + var(--ia-section-h, 56p
   font-size: 11px;
 }
 .identity-stat-list-row strong { margin-left: auto; font-size: 12px; }
+.identity-stat-body {
+  max-height: 340px;
+  overflow: auto;
+  padding-right: 4px;
+}
 
 .identity-inline-editor-host { margin-top: 8px; }
 .identity-inline-frame {

@@ -70,7 +70,8 @@ function refreshCount() {
 
 function renderOutputNav() {
   if (!O.model) return;
-  const query = $o('output-search').value.trim().toLowerCase();
+  const search = $o('output-search');
+  const query = search ? search.value.trim().toLowerCase() : '';
   const groups = new Map();
   let shown = 0;
   for (const message of O.model.messages) {
@@ -122,13 +123,14 @@ function renderOutputEditor() {
   const palette = $o('output-palette');
   const buttons = $o('output-buttons');
   if (!editor) return;
-  $o('output-errors').replaceChildren();
+  $o('output-errors')?.replaceChildren();
   if (!message) {
     disabled.hidden = true;
     editor.hidden = true;
     palette.hidden = true;
     buttons.hidden = true;
-    $o('output-meta').textContent = '';
+    const meta = $o('output-meta');
+    if (meta) meta.textContent = '';
     return;
   }
   $o('output-meta').textContent = message.key + ' · ' + message.description

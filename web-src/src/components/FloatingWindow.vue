@@ -210,6 +210,8 @@ onBeforeUnmount(() => {
   touch-action: none;
 }
 
+.fw-head .spacer { flex: 1 1 auto; }
+
 .fw-title {
   display: flex;
   min-width: 0;

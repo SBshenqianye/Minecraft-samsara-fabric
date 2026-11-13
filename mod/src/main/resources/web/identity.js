@@ -475,8 +475,63 @@ function dataNode(tag, className, text) {
   return node;
 }
 
+function advancementTreeGrouped(adv, nodes) {
+  const byId = new Map(nodes.map((row) => [row.id, row]));
+  const rootOf = (row) => {
+    const seen = new Set();
+    let current = row;
+    while (current && current.parent && byId.has(current.parent) && !seen.has(current.id)) {
+      seen.add(current.id);
+      current = byId.get(current.parent);
+    }
+    return current || row;
+  };
+  const groups = {
+    adventure: [], nether: [], husbandry: [], story: [],
+  };
+  for (const row of nodes) {
+    const root = String(rootOf(row).id || '');
+    if (root.includes('adventure')) groups.adventure.push(row);
+    else if (root.includes('nether')) groups.nether.push(row);
+    else if (root.includes('husbandry')) groups.husbandry.push(row);
+    else groups.story.push(row);
+  }
+  const tabs = [
+    { id: 'adventure', label: '冒险' },
+    { id: 'nether', label: '下界' },
+    { id: 'husbandry', label: '农牧业' },
+    { id: 'story', label: 'Minecraft' },
+  ];
+  const box = dataNode('div', 'identity-adv-groups');
+  const tabBar = dataNode('div', 'identity-stat-tabs identity-adv-tabs');
+  const host = dataNode('div', 'identity-adv-host');
+  let active = 'adventure';
+  const render = (id) => {
+    active = id;
+    for (const button of tabBar.querySelectorAll('button')) {
+      button.classList.toggle('active', button.dataset.tab === id);
+    }
+    host.replaceChildren(advancementTree(Object.assign({}, adv, {
+      nodes: groups[id] || [],
+      _grouped: true,
+    })));
+  };
+  for (const tab of tabs) {
+    const button = dataNode('button', 'identity-stat-tab', tab.label);
+    button.type = 'button';
+    button.dataset.tab = tab.id;
+    button.disabled = !(groups[tab.id] || []).length;
+    button.addEventListener('click', () => render(tab.id));
+    tabBar.append(button);
+  }
+  box.append(tabBar, host);
+  render(active);
+  return box;
+}
+
 function advancementTree(adv) {
   const nodes = Array.isArray(adv.nodes) ? adv.nodes.slice() : [];
+  if (!adv._grouped) return advancementTreeGrouped(adv, nodes);
   const box = dataNode('div', 'identity-adv-tree');
   const bar = dataNode('div', 'identity-adv-bar');
   bar.append(dataNode('span', 'muted small', '拖动平移 · 滚轮缩放 · 点击节点查看说明'));
@@ -661,8 +716,21 @@ function advancementTree(adv) {
     canvas.append(node);
   }
 
-  let tx = 18;
-  let ty = 18;
+  const rootRow = nodes.find((row) => !row.parent || !byId.has(row.parent)) || nodes[0];
+  const rootPoint = rootRow ? position(rootRow) : { x: 0, y: 0 };
+  // 视口在挂到文档前尺寸为 0，居中必须在布局后按实际尺寸计算。
+  const center = () => {
+    const rect = viewport.getBoundingClientRect();
+    const w = viewport.clientWidth || rect.width;
+    const h = viewport.clientHeight || rect.height;
+    if (!w || !h) return false;
+    // 树可能比视口宽很多，rootPoint 大于半宽时必须允许负位移，否则根节点会被钉在最左侧。
+    tx = w / 2 - rootPoint.x;
+    ty = h / 2 - rootPoint.y;
+    return true;
+  };
+  let tx = 0;
+  let ty = 0;
   let scale = 1;
   let drag = null;
   const apply = () => {
@@ -700,8 +768,7 @@ function advancementTree(adv) {
     apply();
   }, { passive: false });
   reset.addEventListener('click', () => {
-    tx = 18;
-    ty = 18;
+    center();
     scale = 1;
     apply();
     footer.textContent = '共 ' + nodes.length + ' 个成就节点，已获得 ' + doneNodes + ' 个。';
@@ -710,6 +777,15 @@ function advancementTree(adv) {
   apply();
   viewport.append(canvas);
   box.append(bar, viewport, footer);
+  // 调用方紧接着把 box 挂到详情里；挂载后再按真实视口尺寸居中。
+  // 后台标签页会暂停 requestAnimationFrame，必须同时留定时器兜底。
+  const recenter = () => {
+    if (center()) apply();
+  };
+  window.requestAnimationFrame(recenter);
+  window.setTimeout(recenter, 80);
+  window.setTimeout(recenter, 420);
+  window.setTimeout(recenter, 1200);
   return box;
 }
 
@@ -874,8 +950,10 @@ function renderDataDetail(root, uuid, data) {
   }
   root.append(chips);
 
-  root.append(slotSection('背包', data.inventory, 'inventory', uuid));
+  const backpackSection = slotSection('背包', data.inventory, 'inventory', uuid);
+  root.append(backpackSection);
   root.append(slotSection('末影箱', data.enderItems, 'ender', uuid));
+  window.setTimeout(() => openInlineEditor(backpackSection, uuid, 'inventory'), 60);
   const adv = data.advancements || {};
   const advBox = dataNode('div', 'identity-data-section identity-data-wide');
   const displayedDone = Array.isArray(adv.nodes)
@@ -909,21 +987,45 @@ function renderDataDetail(root, uuid, data) {
     { id: 'mobs', label: '生物' },
   ];
   const labels = {
-    play_time: '游玩时间', deaths: '死亡', mob_kills: '击杀生物',
-    player_kills: '击杀玩家', walk_one_cm: '步行', sprint_one_cm: '疾跑',
-    fly_one_cm: '飞行', damage_dealt: '造成伤害', damage_taken: '受到伤害',
-    jump: '跳跃', crouch_one_cm: '潜行距离', climb_one_cm: '攀爬距离',
-    swim_one_cm: '游泳距离', fall_one_cm: '坠落距离', leave_game: '退出游戏',
+    animals_bred: '繁殖动物', aviate_one_cm: '鞘翅飞行距离', bell_ring: '敲响钟',
+    boat_one_cm: '划船距离', clean_armor: '清洗盔甲', clean_banner: '清洗旗帜',
+    clean_shulker_box: '清洗潜影盒', climb_one_cm: '攀爬距离', crouch_one_cm: '潜行距离',
+    damage_absorbed: '吸收伤害', damage_blocked_by_shield: '盾牌格挡伤害',
+    damage_dealt: '造成伤害', damage_dealt_absorbed: '吸收的造成伤害',
+    damage_dealt_resisted: '抵抗的造成伤害', damage_resisted: '抵抗伤害',
+    damage_taken: '受到伤害', deaths: '死亡', drop: '丢弃物品',
+    eat_cake_slice: '吃蛋糕', enchant_item: '附魔', fall_one_cm: '坠落距离',
+    fill_cauldron: '装满炼药锅', fish_caught: '钓鱼', fly_one_cm: '飞行距离',
+    happy_ghast_one_cm: '快乐恶魂骑乘距离', horse_one_cm: '骑马距离',
+    inspect_dispenser: '查看发射器', inspect_dropper: '查看投掷器',
+    inspect_hopper: '查看漏斗', interact_with_anvil: '使用铁砧',
+    interact_with_beacon: '使用信标', interact_with_blast_furnace: '使用高炉',
+    interact_with_brewingstand: '使用酿造台', interact_with_campfire: '使用营火',
+    interact_with_cartography_table: '使用制图台', interact_with_crafting_table: '使用工作台',
+    interact_with_furnace: '使用熔炉', interact_with_grindstone: '使用砂轮',
+    interact_with_lectern: '使用讲台', interact_with_loom: '使用织布机',
+    interact_with_smithing_table: '使用锻造台', interact_with_smoker: '使用烟熏炉',
+    interact_with_stonecutter: '使用切石机', jump: '跳跃', leave_game: '退出游戏',
+    minecart_one_cm: '矿车移动距离', mob_kills: '击杀生物', nautilus_one_cm: '鹦鹉螺骑乘距离',
+    open_barrel: '打开木桶', open_chest: '打开箱子', open_enderchest: '打开末影箱',
+    open_shulker_box: '打开潜影盒', pig_one_cm: '骑猪距离', play_noteblock: '演奏音符盒',
+    play_record: '播放唱片', play_time: '游玩时间', player_kills: '击杀玩家',
+    pot_flower: '种花', raid_trigger: '触发袭击', raid_win: '赢得袭击',
+    sleep_in_bed: '睡床', sleep_in_straw_bed: '睡干草床', sneak_time: '潜行时间',
+    sprint_one_cm: '疾跑距离', strider_one_cm: '骑炽足兽距离', swim_one_cm: '游泳距离',
+    talked_to_villager: '与村民交谈', target_hit: '命中标靶',
     time_since_death: '上次死亡至今', time_since_rest: '上次睡觉至今',
-    total_world_time: '世界总时间', open_chest: '打开箱子', open_barrel: '打开木桶',
-    sleep_in_bed: '睡床', interact_with_crafting_table: '使用工作台',
-    interact_with_furnace: '使用熔炉', enchant_item: '附魔', fish_caught: '钓鱼',
-    animals_bred: '繁殖动物', clean_armor: '清洗盔甲', traded_with_villager: '村民交易',
+    total_world_time: '世界总时间', traded_with_villager: '村民交易',
+    trigger_trapped_chest: '触发陷阱箱', tune_noteblock: '调音音符盒',
+    use_cauldron: '使用炼药锅', walk_on_water_one_cm: '水面行走距离',
+    walk_one_cm: '步行距离', walk_under_water_one_cm: '水下行走距离',
+    mine_block: '挖掘方块', craft_item: '合成物品', use_item: '使用物品',
+    pickup: '拾取物品', drop_item: '丢弃物品', break_item: '损坏物品',
   };
   const formatStat = (key, value) => {
     const number = Number(value) || 0;
     if (key === 'play_time' || key === 'total_world_time' || key === 'time_since_death'
-        || key === 'time_since_rest') {
+        || key === 'time_since_rest' || key === 'sneak_time') {
       const hours = number / 20 / 3600;
       return hours >= 1 ? hours.toFixed(1) + ' 小时' : Math.round(number / 20) + ' 秒';
     }
@@ -935,11 +1037,12 @@ function renderDataDetail(root, uuid, data) {
     const row = dataNode('div', 'identity-data-stat identity-stat-list-row');
     const key = String(id || '');
     const path = key.replace(/^minecraft:/, '');
+    const zh = stats.names && stats.names[key] ? stats.names[key] : path;
     if (withIcon) {
       if (window.SamsaraItem?.icon) {
-        row.append(window.SamsaraItem.icon({ id: key, icon: path, name: path, count }, { size: 'sm' }));
+        row.append(window.SamsaraItem.icon({ id: key, icon: path, name: zh, zh, count }, { size: 'sm' }));
         row.addEventListener('mouseenter', (event) => {
-          window.SamsaraItem?.show?.({ id: key, icon: path, name: path, count }, event.currentTarget);
+          window.SamsaraItem?.show?.({ id: key, icon: path, name: zh, zh, count }, event.currentTarget);
         });
         row.addEventListener('mouseleave', () => window.SamsaraItem?.hide?.());
       } else {
@@ -950,7 +1053,7 @@ function renderDataDetail(root, uuid, data) {
         row.append(icon);
       }
     }
-    row.append(dataNode('span', 'identity-stat-name', path || key),
+    row.append(dataNode('span', 'identity-stat-name', zh),
       dataNode('strong', null, String(count)));
     return row;
   };
@@ -2241,8 +2344,14 @@ function refreshNames() {
 function activate() {
   if (!I.model) ensureIdentityLoaded();
   else {
-    renderNav();
-    refreshNames();
+    // 首次 applyModel 可能发生在身份页尚未挂载时，卡片容器还是空的；
+    // 切回身份页时补一次完整渲染，避免必须刷新页面才看到组卡片。
+    const container = $i('identity-groups');
+    if (!container || !container.childElementCount) renderAll();
+    else {
+      renderNav();
+      refreshNames();
+    }
   }
 }
 

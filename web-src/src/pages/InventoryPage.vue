@@ -383,14 +383,14 @@ const layout = computed(() => {
   if (scope.value === 'inventory') {
     // 对齐游戏内背包 GUI：装备/副手在上，主背包 9–35 居中，快捷栏 0–8 在下并留间隔。
     return [
-      { label: '盔甲 36–39', start: 36, size: 4, columns: 1, row: 'gear', zone: 'gear' },
+      { label: '盔甲 36–39', start: 36, size: 4, columns: 4, row: 'gear', zone: 'gear' },
       { label: '副手 40', start: 40, size: 1, columns: 1, row: 'gear', zone: 'gear' },
       { label: '主背包 9–35', start: 9, size: 27, columns: 9, row: 'main', zone: 'main' },
       { label: '快捷栏 0–8', start: 0, size: 9, columns: 9, row: 'hotbar', zone: 'hotbar', gap: true },
     ];
   }
   if (scope.value === 'armor') {
-    return [{ label: '盔甲 36–39', start: 0, size: 4, columns: 1 }];
+    return [{ label: '盔甲 36–39', start: 0, size: 4, columns: 4 }];
   }
   return [{ label: '末影箱 0–26', start: 0, size: 27, columns: 9 }];
 });

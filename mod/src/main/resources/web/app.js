@@ -3243,10 +3243,24 @@ function stickyNavOffset() {
   const section = document.querySelector('.section-tabs');
   const headerH = header ? header.offsetHeight : 0;
   const sectionH = section ? section.offsetHeight : 0;
-  const base = headerH + sectionH + 14;
+  const base = headerH + sectionH + 8;
+  // 侧栏通常由外层 .ia-side 设 sticky top，导航自身可能是 static；
+  // 必须用 sticky 祖先的真实 top，才能算出滚动后导航的固定位置。
+  let node = nav ? nav.parentElement : null;
+  while (node && node !== document.body) {
+    const style = getComputedStyle(node);
+    if (style.position === 'sticky' || style.position === 'fixed') {
+      const top = parseFloat(style.top);
+      if (Number.isFinite(top)) return Math.max(base, top);
+    }
+    node = node.parentElement;
+  }
   if (nav) {
-    const top = parseFloat(getComputedStyle(nav).top);
-    if (Number.isFinite(top)) return Math.max(base, top);
+    const style = getComputedStyle(nav);
+    if (style.position === 'sticky' || style.position === 'fixed') {
+      const top = parseFloat(style.top);
+      if (Number.isFinite(top)) return Math.max(base, top);
+    }
   }
   return base;
 }
@@ -3278,13 +3292,27 @@ function scrollToTarget(id) {
   // 平滑滚动结束后再按导航实际位置校正一次，避免 header 高度或内部滚动留下偏差。
   const token = id + ':' + Date.now();
   navAlignTimer = token;
-  window.setTimeout(() => {
-    if (navAlignTimer !== token) return;
+  const align = () => {
     const nav = $('global-nav');
     if (!nav || !target.isConnected) return;
     const delta = target.getBoundingClientRect().top - nav.getBoundingClientRect().top;
-    if (Math.abs(delta) > 1) window.scrollBy({ top: delta, behavior: 'auto' });
-  }, 460);
+    if (Math.abs(delta) <= 1) return;
+    // 页面有 scroll-behavior:smooth 时，scrollBy 的 auto 仍会被动画化；
+    // 这里临时关闭平滑，保证校正立即生效，不会在用户点击后慢慢漂。
+    const root = document.documentElement;
+    const previous = root.style.scrollBehavior;
+    root.style.scrollBehavior = 'auto';
+    window.scrollBy(0, delta);
+    root.style.scrollBehavior = previous;
+  };
+  window.setTimeout(() => {
+    if (navAlignTimer !== token) return;
+    align();
+  }, 480);
+  window.setTimeout(() => {
+    if (navAlignTimer !== token) return;
+    align();
+  }, 900);
 }
 
 function clearNav() {
@@ -3505,7 +3533,8 @@ function setActiveTab(name) {
   updateTabActions(name);
   // 导航是跨页共享的 DOM；先清空，页面自己调用 buildNav 时再显示。
   clearNav();
-  clearPageSurfaces();
+  // 同一页重复 activate（路由 settle、脚本重挂载）时不要关掉用户刚打开的数据详情弹窗。
+  if (previous !== name) clearPageSurfaces();
   const pageHandled = enterPage(name);
   if (pageHandled) {
     // 已注册页面由 mount/buildNav 接管。

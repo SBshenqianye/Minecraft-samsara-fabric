@@ -829,12 +829,19 @@ async function main() {
 
     const identityData = await evaluate(`(async () => {
       window.SamsaraUI.setActiveTab('identity');
-      await new Promise((resolve) => setTimeout(resolve, 900));
+      for (let i = 0; i < 50; i++) {
+        if (document.querySelector('#panel-identity .uuid-chip.data')) break;
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
       const chip = document.querySelector('#panel-identity .uuid-chip.data');
       const detail = chip ? [...chip.querySelectorAll('.chip-action')]
         .find((node) => node.textContent.trim() === '详情') : null;
       if (detail) detail.click();
-      await new Promise((resolve) => setTimeout(resolve, 1200));
+      for (let i = 0; i < 50; i++) {
+        if (document.querySelector('#identity-data-content .identity-data-head')) break;
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500));
       const dialog = document.getElementById('identity-data-dialog');
       const text = document.getElementById('identity-data-content')?.textContent || '';
       const copyButton = [...document.querySelectorAll('#identity-data-content button')]
@@ -844,11 +851,28 @@ async function main() {
       const editButton = [...document.querySelectorAll('#identity-data-content button')]
         .find((node) => node.textContent.trim() === '编辑身份组背包');
       const wasOpen = Boolean(dialog && dialog.open);
+      const inlineFrame = document.querySelector('#identity-data-content iframe');
+      const inlineDoc = inlineFrame?.contentDocument;
+      const inlineSections = inlineDoc
+        ? [...inlineDoc.querySelectorAll('.identity-inline-section h4')].map((n) => n.textContent.trim())
+        : [];
+      const inlineText = inlineDoc?.body?.innerText || '';
+      const statTabs = dialog
+        ? [...dialog.querySelectorAll('.identity-stat-tabs:not(.identity-adv-tabs) button')]
+          .map((n) => n.textContent.trim()) : [];
+      const advTabs = dialog
+        ? [...dialog.querySelectorAll('.identity-adv-tabs button')].map((n) => n.textContent.trim()) : [];
+      const itemsTab = dialog
+        ? [...dialog.querySelectorAll('.identity-stat-tabs:not(.identity-adv-tabs) button')]
+          .find((n) => n.textContent.trim() === '物品') : null;
+      if (itemsTab) itemsTab.click();
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      const statBody = dialog?.querySelector('.identity-stat-body');
+      const statScrolls = Boolean(statBody && statBody.scrollHeight > statBody.clientHeight + 1);
       if (editButton) editButton.click();
       await new Promise((resolve) => setTimeout(resolve, 1600));
       const bigDialog = document.querySelector('.identity-inventory-dialog');
       const bigSlots = bigDialog ? bigDialog.querySelectorAll('.slot').length : 0;
-      const iframe = document.querySelector('#identity-data-content iframe');
       const closeBig = bigDialog?.querySelector('.el-dialog__headerbtn');
       if (closeBig) closeBig.click();
       await new Promise((resolve) => setTimeout(resolve, 400));
@@ -856,7 +880,9 @@ async function main() {
       return { open: wasOpen, text,
         hasCopy: Boolean(copyButton), hasBackup: Boolean(backupButton),
         hasEdit: Boolean(editButton), hasBackupList: text.includes('备份记录'),
-        bigSlots, hasIframe: Boolean(iframe),
+        bigSlots, hasIframe: Boolean(inlineFrame),
+        inlineSections, inlineHasPager: /上一页|下一页|分页/.test(inlineText),
+        statTabs, advTabs, statScrolls,
         cardButton: [...document.querySelectorAll('#panel-identity .card-actions button')]
           .some((node) => node.textContent.trim() === '编辑身份组背包'),
         hasInventory: text.includes('背包'), hasEnder: text.includes('末影箱'),
@@ -871,11 +897,104 @@ async function main() {
           hasCopy: identityData.hasCopy, hasBackup: identityData.hasBackup,
           hasEdit: identityData.hasEdit, hasBackupList: identityData.hasBackupList,
           text: identityData.text.slice(0, 160) }));
-    check('身份组背包改用大窗口且不再使用 iframe',
-        identityData.cardButton === true && identityData.hasIframe === false
-        && identityData.bigSlots === 41,
-        JSON.stringify({ cardButton: identityData.cardButton,
-          hasIframe: identityData.hasIframe, bigSlots: identityData.bigSlots }));
+    check('详情内嵌背包+末影箱同一编辑器且不再分页',
+        identityData.hasIframe === true
+        && identityData.inlineSections.length === 2
+        && identityData.inlineSections[0] === '背包'
+        && identityData.inlineSections[1] === '末影箱'
+        && identityData.inlineHasPager === false,
+        JSON.stringify({ hasIframe: identityData.hasIframe,
+          sections: identityData.inlineSections, pager: identityData.inlineHasPager }));
+    check('详情统计/成就不再整页滚动，成就按四类分页',
+        identityData.statScrolls === true
+        && identityData.statTabs.join('|') === '通用|物品|生物'
+        && identityData.advTabs.join('|') === '冒险|下界|农牧业|Minecraft',
+        JSON.stringify({ statScrolls: identityData.statScrolls,
+          statTabs: identityData.statTabs, advTabs: identityData.advTabs }));
+
+    // 逐个点击导航，按“目标顶部 = 吸顶导航顶部”检查视觉位置。
+    const identityNav = await evaluate(`(async () => {
+      window.SamsaraUI.setActiveTab('identity');
+      for (let i = 0; i < 50; i++) {
+        if (document.querySelector('#panel-identity .identity-card')) break;
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      const root = document.documentElement;
+      root.style.scrollBehavior = 'auto';
+      window.scrollTo(0, 0);
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      const out = [];
+      const buttons = [...document.querySelectorAll('#global-nav .nav-item[data-target]')];
+      for (const button of buttons) {
+        button.click();
+        await new Promise((resolve) => setTimeout(resolve, 1100));
+        const target = document.getElementById(button.dataset.target);
+        const nav = document.getElementById('global-nav');
+        const rect = target ? target.getBoundingClientRect() : null;
+        out.push({
+          label: button.innerText.replace(/\\s+/g, ' ').trim(),
+          target: button.dataset.target,
+          delta: target && nav
+            ? Math.round(target.getBoundingClientRect().top - nav.getBoundingClientRect().top) : null,
+          atBottom: Math.ceil(window.scrollY)
+            >= document.documentElement.scrollHeight - document.documentElement.clientHeight - 2,
+          visible: Boolean(rect && nav && rect.bottom > nav.getBoundingClientRect().top
+            && rect.top < window.innerHeight),
+        });
+      }
+      root.style.scrollBehavior = '';
+      window.scrollTo(0, 0);
+      return out;
+    })()`);
+    const navOff = (identityNav || []).filter((row) => row.delta == null
+      || (Math.abs(row.delta) > 1 && !(row.atBottom && row.visible)));
+    check('身份组导航逐项点击后目标落在吸顶导航下沿', identityNav.length > 0 && navOff.length === 0,
+        JSON.stringify(navOff.length ? navOff : { items: identityNav.length }));
+
+    // 配置/权限页导航数量多，逐个点击过慢；按前 12 项覆盖文件组与树节点组。
+    const pageNav = await evaluate(`(async () => {
+      const root = document.documentElement;
+      root.style.scrollBehavior = 'auto';
+      const out = {};
+      for (const page of ['config', 'permissions']) {
+        window.SamsaraUI.setActiveTab(page);
+        await new Promise((resolve) => setTimeout(resolve, 900));
+        window.scrollTo(0, 0);
+        await new Promise((resolve) => setTimeout(resolve, 80));
+        const rows = [];
+        const buttons = [...document.querySelectorAll('#global-nav .nav-item[data-target]')];
+        for (const button of buttons.slice(0, 12)) {
+          button.click();
+          await new Promise((resolve) => setTimeout(resolve, 1100));
+          const target = document.getElementById(button.dataset.target);
+          const nav = document.getElementById('global-nav');
+          const rect = target ? target.getBoundingClientRect() : null;
+          rows.push({
+            label: button.innerText.replace(/\\s+/g, ' ').trim().slice(0, 28),
+            delta: target && nav
+              ? Math.round(target.getBoundingClientRect().top - nav.getBoundingClientRect().top) : null,
+            atBottom: Math.ceil(window.scrollY)
+              >= document.documentElement.scrollHeight - document.documentElement.clientHeight - 2,
+            visible: Boolean(rect && nav && rect.bottom > nav.getBoundingClientRect().top
+              && rect.top < window.innerHeight),
+          });
+        }
+        out[page] = rows;
+      }
+      root.style.scrollBehavior = '';
+      window.scrollTo(0, 0);
+      return out;
+    })()`);
+    const pageNavOff = ['config', 'permissions'].flatMap((page) =>
+      (pageNav[page] || []).filter((row) => row.delta == null
+          || (Math.abs(row.delta) > 1 && !(row.atBottom && row.visible)))
+        .map((row) => Object.assign({ page }, row)));
+    check('配置/权限导航抽样点击后目标对齐', pageNavOff.length === 0,
+        JSON.stringify(pageNavOff.length ? pageNavOff : {
+          config: (pageNav.config || []).length,
+          permissions: (pageNav.permissions || []).length,
+        }));
     check('输出格式布尔改为按钮', mods.output === 2, 'buttons=' + mods.output);
     check('权限树布尔改为按钮', mods.permissions > 0, 'segmented=' + mods.permissions);
     check('配置页布尔改为按钮', mods.configBool > 0, 'segmented=' + mods.configBool);
