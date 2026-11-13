@@ -3653,16 +3653,25 @@ async function reloadActive() {
 
 // ---- 事件 ----
 
-$('token-connect').addEventListener('click', connect);
-$('token-form').addEventListener('submit', (event) => {
+/** 页面懒挂载后，某些旧页面元素可能还没进 DOM；绑定事件时统一判空。 */
+function on(id, event, handler, options) {
+  const node = $(id);
+  if (node) node.addEventListener(event, handler, options);
+}
+
+on('token-connect', 'click', connect);
+on('token-form', 'submit', (event) => {
   event.preventDefault();
   connect();
 });
-$('token-dialog').addEventListener('cancel', (event) => event.preventDefault());
-$('save').addEventListener('click', saveActive);
-$('reload').addEventListener('click', reloadActive);
-$('action-default').addEventListener('click', () => window.SamsaraOutput?.restoreDefault?.());
-$('search').addEventListener('input', render);
+on('token-dialog', 'cancel', (event) => event.preventDefault());
+on('save', 'click', saveActive);
+on('reload', 'click', reloadActive);
+on('action-default', 'click', () => window.SamsaraOutput?.restoreDefault?.());
+// #search 位于配置页，页面懒挂载后才出现；用事件委托保证它挂载后仍能筛选。
+document.addEventListener('input', (event) => {
+  if (event.target && event.target.id === 'search') render();
+});
 
 // 染料距离、模式、上限等任一输入变化后，保护形状预览立即重算。
 // 事件派发在 body 上并冒泡；这里用捕获阶段保证无论目标在哪个子树都能收到。

@@ -656,11 +656,7 @@ onMounted(async () => {
       overlayHost.value.appendChild(document.importNode(node, true));
     }
     await waitForInitialPanel();
-    try {
-      await waitForElement('search', 4000);
-    } catch {
-      // 旧脚本要求 #search 存在；极端情况下继续，错误会显示在页面上
-    }
+    // 旧脚本对 #search 等页面元素已做判空；页面懒挂载时不再等 4 秒。
     await loadLegacyAdminScripts();
     originalSetActiveTab = window.SamsaraUI?.setActiveTab || null;
     installLegacyTabBridge();
