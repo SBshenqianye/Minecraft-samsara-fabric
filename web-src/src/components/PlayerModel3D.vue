@@ -46,11 +46,9 @@ const poses = [
 ];
 
 const query = computed(() => {
-  // 离线玩家 UUID 不是 Mojang 账号：官方解析失败后仍会按玩家名/ID 回退查皮肤。
-  const params = new URLSearchParams();
-  if (props.name) params.set('name', props.name);
-  if (props.uuid) params.set('uuid', props.uuid);
-  return params.toString();
+  // 与玩家列表头像使用完全相同的 ID 查找，避免同一玩家列表有皮肤、纸盒人却没有。
+  const id = props.name || props.uuid;
+  return id ? 'id=' + encodeURIComponent(id) : '';
 });
 const skinSrc = computed(() => '/api/user/map/avatar?' + query.value);
 
@@ -252,7 +250,7 @@ function partTransform(part) {
       oz = neck.z;
     }
     if (part.startsWith('arm-')) {
-      rx = -12;
+      rx = -20;
       oy = neck.y;
       oz = neck.z;
     }

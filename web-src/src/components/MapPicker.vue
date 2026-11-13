@@ -44,6 +44,18 @@
             <span v-if="cluster.marker.kind === 'player'" class="marker-head" :style="avatarStyle(cluster.marker)">
               <span v-if="!avatarUrls[cluster.marker.id]" class="marker-initial">{{ initialOf(cluster.marker) }}</span>
             </span>
+            <span v-if="cluster.marker.largeChest" class="marker-chest-pair" :class="'axis-' + (cluster.marker.chestAxis || 'x')">
+              <ItemIcon
+                :item="{ id: cluster.marker.icon || 'chest', name: cluster.marker.label, count: 1 }"
+                size="sm"
+                :show-count="false"
+              />
+              <ItemIcon
+                :item="{ id: cluster.marker.icon || 'chest', name: cluster.marker.label, count: 1 }"
+                size="sm"
+                :show-count="false"
+              />
+            </span>
             <ItemIcon
               v-else
               class="marker-item"
@@ -98,8 +110,20 @@
             :aria-label="markerName(marker)"
             @click="chooseClusterMarker(marker)"
           >
+            <span v-if="marker.largeChest" class="marker-chest-pair cluster-chest-pair" :class="'axis-' + (marker.chestAxis || 'x')">
+              <ItemIcon
+                :item="{ id: marker.icon || 'chest', name: marker.label }"
+                size="sm"
+                :show-count="false"
+              />
+              <ItemIcon
+                :item="{ id: marker.icon || 'chest', name: marker.label }"
+                size="sm"
+                :show-count="false"
+              />
+            </span>
             <ItemIcon
-              v-if="marker.kind !== 'player'"
+              v-else-if="marker.kind !== 'player'"
               :item="{ id: marker.icon || 'chest', name: marker.label }"
               size="sm"
               :show-count="false"
@@ -741,6 +765,30 @@ watch(() => props.markers, () => {
   height: 18px;
 }
 
+/* 大箱子在手机上占两格：沿 X 并排横向、沿 Z 并排纵向。 */
+.marker-chest-pair {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  flex: 0 0 auto;
+}
+
+.marker-chest-pair.axis-x { flex-direction: row; }
+.marker-chest-pair.axis-z { flex-direction: column; }
+
+.marker-chest-pair :deep(.item-icon-view) {
+  width: 22px;
+  height: 22px;
+}
+
+.marker-chest-pair :deep(.item-icon-view img) {
+  width: 22px;
+  height: 22px;
+}
+
+.cluster-chest-pair { margin-top: 2px; }
+
 .marker-label {
   max-width: 130px;
   overflow: hidden;
@@ -764,6 +812,12 @@ watch(() => props.markers, () => {
   height: 14px;
 }
 
+.map-picker.grid-markers .marker-chest-pair :deep(.item-icon-view),
+.map-picker.grid-markers .marker-chest-pair :deep(.item-icon-view img) {
+  width: 13px;
+  height: 13px;
+}
+
 .map-picker.grid-markers .cluster-count {
   min-width: 16px;
   height: 16px;
@@ -781,6 +835,12 @@ watch(() => props.markers, () => {
 .map-picker.max-zoom .marker-item {
   width: 38px;
   height: 38px;
+}
+
+.map-picker.max-zoom .marker-chest-pair :deep(.item-icon-view),
+.map-picker.max-zoom .marker-chest-pair :deep(.item-icon-view img) {
+  width: 28px;
+  height: 28px;
 }
 
 .map-picker.max-zoom .marker-initial {

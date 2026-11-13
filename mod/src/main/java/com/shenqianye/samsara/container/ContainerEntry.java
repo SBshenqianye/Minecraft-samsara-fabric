@@ -20,6 +20,8 @@ public final class ContainerEntry {
     public String type = "";
     public int size;
     public int nonEmpty;
+    /** 大箱子朝向：x=横向（沿 X 轴并排），z=纵向（沿 Z 轴并排）。 */
+    public String axis = "";
     public long revision = 1;
     public long updatedAt;
     public List<String> slots = new ArrayList<>();
@@ -49,6 +51,7 @@ public final class ContainerEntry {
         out.put("type", type);
         out.put("size", size);
         out.put("nonEmpty", nonEmpty);
+        out.put("axis", axis == null ? "" : axis);
         out.put("empty", empty());
         out.put("revision", revision);
         out.put("updatedAt", updatedAt);
@@ -68,6 +71,7 @@ public final class ContainerEntry {
         copy.type = type;
         copy.size = size;
         copy.nonEmpty = nonEmpty;
+        copy.axis = axis;
         copy.revision = revision;
         copy.updatedAt = updatedAt;
         copy.slots = new ArrayList<>(slots);

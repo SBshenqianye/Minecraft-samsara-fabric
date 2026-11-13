@@ -33,19 +33,6 @@
       <p v-if="error" class="container-message error">{{ error }}</p>
 
       <section class="container-card">
-        <div class="sky-search-row">
-          <label class="sky-search">
-            <span class="sky-search-label">搜索容器</span>
-            <el-input
-              v-model="filters.q"
-              clearable
-              placeholder="物品 / 容器名称，如 diamond、钻石、箱子、熔炉"
-              @input="queueSearch"
-              @keyup.enter="search"
-            />
-          </label>
-        </div>
-
         <div class="container-map">
           <MapPicker
             :markers="markers"
@@ -64,6 +51,16 @@
               <span class="spacer"></span>
               <span class="muted small">{{ loading ? '读取中…' : '' }}</span>
             </div>
+            <label class="sky-search sky-search-inline">
+              <span class="sky-search-label">搜索容器</span>
+              <el-input
+                v-model="filters.q"
+                clearable
+                placeholder="物品 / 容器名称，如 diamond、钻石、箱子、熔炉"
+                @input="queueSearch"
+                @keyup.enter="search"
+              />
+            </label>
             <div class="sky-filter-bar">
               <Segmented
                 v-model="containerType"
@@ -137,6 +134,15 @@
               <strong>玩家结果</strong>
               <span class="muted small">{{ filteredPlayers.length }} / {{ players.length }} 名</span>
             </div>
+            <label class="sky-search sky-search-inline">
+              <span class="sky-search-label">搜索玩家</span>
+              <el-input
+                v-model="playerQuery"
+                clearable
+                placeholder="玩家名字 / UUID"
+                aria-label="搜索玩家"
+              />
+            </label>
             <div class="sky-filter-bar">
               <Segmented
                 v-model="playerStatus"
@@ -180,18 +186,6 @@
             </div>
             <p v-else class="muted small">没有匹配的已知玩家。</p>
           </section>
-        </div>
-
-        <div class="sky-bottom-search">
-          <label class="sky-search">
-            <span class="sky-search-label">搜索玩家</span>
-            <el-input
-              v-model="playerQuery"
-              clearable
-              placeholder="玩家名字 / UUID"
-              aria-label="搜索玩家"
-            />
-          </label>
         </div>
       </section>
 
@@ -436,6 +430,9 @@ const markers = computed(() => {
       sub: row.x + ', ' + row.y + ', ' + row.z + ' · ' + row.nonEmpty + '/' + row.size,
       kind: 'container',
       icon: row.type,
+      largeChest: Number(row.size) >= 54
+        && (row.type === 'minecraft:chest' || row.type === 'minecraft:trapped_chest'),
+      chestAxis: row.axis || '',
     }));
   const people = filteredPlayers.value
     .filter((player) => player.dimension && Number.isFinite(Number(player.x)))
@@ -953,26 +950,19 @@ async function save(silent) {
   gap: 9px;
 }
 
-.sky-search-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 12px;
-}
-
-.sky-bottom-search {
-  display: flex;
-  margin-top: 12px;
-}
-
-.sky-bottom-search .sky-search {
-  flex: 1 1 auto;
-}
-
 .sky-search {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
+}
+
+.sky-search-inline {
+  width: 100%;
+}
+
+.sky-search-inline :deep(.el-input) {
+  flex: 1 1 auto;
 }
 
 .sky-search-label {
@@ -1143,7 +1133,6 @@ async function save(silent) {
 }
 
 @media (max-width: 1000px) {
-  .sky-search-row,
   .sky-result-grid {
     grid-template-columns: minmax(0, 1fr);
   }

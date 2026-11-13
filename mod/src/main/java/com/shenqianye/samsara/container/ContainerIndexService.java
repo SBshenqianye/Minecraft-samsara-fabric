@@ -242,6 +242,7 @@ public final class ContainerIndexService {
                 if (typeFilter != null && !typeFilter.equals(entry.type)
                         && !entry.type.contains(typeFilter)) continue;
                 if (isIndexedChestHalf(entry)) continue;
+                ensureChestAxis(entry);
                 if (x != null && z != null) {
                     int r = Math.max(0, radius);
                     if (Math.abs(entry.x - x) > r || Math.abs(entry.z - z) > r) continue;
@@ -754,6 +755,28 @@ public final class ContainerIndexService {
         return fallback;
     }
 
+    /** 大箱子是沿 X 轴还是 Z 轴并排；用于地图上画横向/纵向占两格的图标。 */
+    private static String chestAxis(ServerLevel level, BlockPos pos) {
+        if (level == null || pos == null) return "";
+        BlockState state = level.getBlockState(pos);
+        if (!(state.getBlock() instanceof ChestBlock)
+                || ChestBlock.getBlockType(state) == DoubleBlockCombiner.BlockType.SINGLE) {
+            return "";
+        }
+        BlockPos other = ChestBlock.getConnectedBlockPos(pos, state);
+        int dx = other.getX() - pos.getX();
+        int dz = other.getZ() - pos.getZ();
+        if (dx == 0 && dz == 0) return "";
+        return Math.abs(dx) >= Math.abs(dz) ? "x" : "z";
+    }
+
+    private void ensureChestAxis(ContainerEntry entry) {
+        if (entry == null || entry.size < 54 || entry.axis != null && !entry.axis.isBlank()) return;
+        ServerLevel level = level(entry.dimension);
+        if (level == null) return;
+        entry.axis = chestAxis(level, new BlockPos(entry.x, entry.y, entry.z));
+    }
+
     private boolean isIndexedChestHalf(ContainerEntry entry) {
         ServerLevel level = level(entry.dimension);
         if (level == null) return false;
@@ -769,6 +792,7 @@ public final class ContainerIndexService {
         entry.z = pos.getZ();
         entry.type = entity == null ? "minecraft:container"
                 : String.valueOf(BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(entity.getType()));
+        entry.axis = chestAxis(level, pos);
         Container actual = effectiveContainer(level, pos, container);
         entry.size = actual.getContainerSize();
         List<String> slots = new ArrayList<>(entry.size);
