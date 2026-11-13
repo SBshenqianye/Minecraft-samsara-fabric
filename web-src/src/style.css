@@ -314,8 +314,8 @@
 .app-shell.no-nav .ia-side { display: none; }
 
 /* 子元素滚动到边界时禁止带动父元素滚动。 */
-*, *::before, *::after { overscroll-behavior: contain; }
 html, body { overscroll-behavior: none; }
+html { scroll-padding-top: calc(var(--header-h, 128px) + var(--ia-section-h, 56px) + 14px); }
 .dialog-close {
   min-width: 30px;
   padding: 2px 8px;

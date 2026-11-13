@@ -13,6 +13,7 @@ const LotteryPage = () => import('./pages/LotteryPage.vue');
 const IdentityPage = () => import('./pages/IdentityPage.vue');
 const ServerPage = () => import('./pages/ServerPage.vue');
 const ContainerPage = () => import('./pages/ContainerPage.vue');
+const IdentityInventoryInline = () => import('./pages/IdentityInventoryInline.vue');
 const InventoryPage = () => import('./pages/InventoryPage.vue');
 const PoolInventoryPage = () => import('./pages/PoolInventoryPage.vue');
 const TrackPage = () => import('./pages/TrackPage.vue');
@@ -219,6 +220,7 @@ const routes = [
       ],
     },
     { path: '/containers', name: 'containers', component: ContainerPage },
+    { path: '/identity-inventory-inline', name: 'identity-inventory-inline', component: IdentityInventoryInline },
     // 身份组背包已改为全局大窗口（IdentityInventoryDialog），不再有独立 iframe 页面。
     { path: '/identity-inventory', redirect: '/samsara/community/identity' },
     { path: '/user', name: 'user', component: UserPage },

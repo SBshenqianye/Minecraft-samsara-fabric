@@ -393,9 +393,42 @@ public final class IdentityDataInspector {
                     out.put(key, custom.get(key).getAsLong());
                 }
             }
+            out.put("custom", numberMap(custom));
+            Map<String, Object> items = new LinkedHashMap<>();
+            for (String key : List.of("mined", "crafted", "used", "picked_up", "dropped", "broken")) {
+                items.put(key, numberMap(category(statsRoot, key)));
+            }
+            out.put("items", items);
+            Map<String, Object> mobs = new LinkedHashMap<>();
+            for (String key : List.of("killed", "killed_by")) {
+                mobs.put(key, numberMap(category(statsRoot, key)));
+            }
+            out.put("mobs", mobs);
             out.put("categories", statsRoot.keySet().size());
         } catch (IOException | RuntimeException e) {
             out.put("error", e.getMessage());
+        }
+        return out;
+    }
+
+    private static JsonObject category(JsonObject statsRoot, String name) {
+        String key = "minecraft:" + name;
+        if (statsRoot.has(key) && statsRoot.get(key).isJsonObject()) {
+            return statsRoot.getAsJsonObject(key);
+        }
+        return statsRoot.has(name) && statsRoot.get(name).isJsonObject()
+                ? statsRoot.getAsJsonObject(name) : new JsonObject();
+    }
+
+    private static Map<String, Long> numberMap(JsonObject source) {
+        Map<String, Long> out = new LinkedHashMap<>();
+        for (Map.Entry<String, JsonElement> entry : source.entrySet()) {
+            try {
+                if (entry.getValue().isJsonPrimitive()) {
+                    out.put(entry.getKey(), entry.getValue().getAsLong());
+                }
+            } catch (RuntimeException ignored) {
+            }
         }
         return out;
     }

@@ -555,6 +555,7 @@ function advancementTree(adv) {
   svg.setAttribute('class', 'identity-adv-lines');
   svg.setAttribute('width', String(width));
   svg.setAttribute('height', String(height));
+  const lineByChild = new Map();
   for (const row of nodes) {
     if (!row.parent || !byId.has(row.parent)) continue;
     const from = position(byId.get(row.parent));
@@ -565,6 +566,7 @@ function advancementTree(adv) {
     line.setAttribute('x2', String(to.x));
     line.setAttribute('y2', String(to.y));
     line.setAttribute('class', row.done ? 'done' : 'todo');
+    lineByChild.set(row.id, line);
     svg.append(line);
   }
   canvas.append(svg);
@@ -600,30 +602,31 @@ function advancementTree(adv) {
   const pathText = (path) => path.map((item) =>
     String(item.title || item.id || '?')).join(' > ');
 
-  const tip = dataNode('div', 'identity-adv-tip');
-  tip.hidden = true;
-  box.append(tip);
-  const showTip = (row, event) => {
-    const chain = ancestorChain(row);
-    const branches = descendantPaths(row);
-    const lines = ['祖先：', pathText(chain), '', '子路径：'];
-    const prefix = chain.slice(0, -1);
-    if (branches.length <= 1 && branches[0] && branches[0].length === 1) {
-      lines.push(pathText(chain));
-    } else {
-      for (const branch of branches) lines.push(pathText(prefix.concat(branch)));
+  const nodeById = new Map();
+  const clearHighlight = () => {
+    for (const node of nodeById.values()) {
+      node.classList.remove('adv-path', 'adv-focus');
     }
-    tip.textContent = lines.join(String.fromCharCode(10));
-    tip.hidden = false;
-    const padding = 14;
-    const widthEstimate = Math.min(460, Math.max(260, tip.offsetWidth || 320));
-    const heightEstimate = tip.offsetHeight || 160;
-    tip.style.left = Math.max(8, Math.min(event.clientX + padding,
-        window.innerWidth - widthEstimate - 8)) + 'px';
-    tip.style.top = Math.max(8, Math.min(event.clientY + padding,
-        window.innerHeight - heightEstimate - 8)) + 'px';
+    for (const line of lineByChild.values()) line.classList.remove('path');
   };
-  const hideTip = () => { tip.hidden = true; };
+  const highlightPath = (row) => {
+    clearHighlight();
+    const ancestors = new Set(ancestorChain(row).map((item) => item.id));
+    const descendants = new Set();
+    const stack = [...(children.get(row.id) || [])];
+    while (stack.length) {
+      const item = stack.pop();
+      descendants.add(item.id);
+      stack.push(...(children.get(item.id) || []));
+    }
+    for (const [id, node] of nodeById) {
+      if (id === row.id) node.classList.add('adv-focus');
+      else if (ancestors.has(id) || descendants.has(id)) node.classList.add('adv-path');
+    }
+    for (const [id, line] of lineByChild) {
+      if (ancestors.has(id) || descendants.has(id)) line.classList.add('path');
+    }
+  };
 
   for (const row of nodes) {
     const point = position(row);
@@ -647,10 +650,10 @@ function advancementTree(adv) {
     };
     node.append(icon);
     node.append(dataNode('span', 'identity-adv-label', row.title || row.id));
+    nodeById.set(row.id, node);
     node.addEventListener('pointerdown', (event) => event.stopPropagation());
-    node.addEventListener('mouseenter', (event) => showTip(row, event));
-    node.addEventListener('mousemove', (event) => showTip(row, event));
-    node.addEventListener('mouseleave', hideTip);
+    node.addEventListener('mouseenter', () => highlightPath(row));
+    node.addEventListener('mouseleave', clearHighlight);
     node.addEventListener('click', () => {
       footer.textContent = (row.title || row.id) + ' · '
         + (row.done ? '已完成' : '未完成') + ' · ' + (row.description || '');
@@ -898,22 +901,138 @@ function renderDataDetail(root, uuid, data) {
   const stats = data.stats || {};
   const statBox = dataNode('div', 'identity-data-section');
   statBox.append(dataNode('h4', null, '统计'));
-  const statGrid = dataNode('div', 'identity-data-stats');
+  const statTabs = dataNode('div', 'identity-stat-tabs');
+  const statBody = dataNode('div', 'identity-stat-body');
+  const tabs = [
+    { id: 'custom', label: '通用' },
+    { id: 'items', label: '物品' },
+    { id: 'mobs', label: '生物' },
+  ];
   const labels = {
     play_time: '游玩时间', deaths: '死亡', mob_kills: '击杀生物',
     player_kills: '击杀玩家', walk_one_cm: '步行', sprint_one_cm: '疾跑',
-    fly_one_cm: '飞行', damage_dealt: '造成伤害',
+    fly_one_cm: '飞行', damage_dealt: '造成伤害', damage_taken: '受到伤害',
+    jump: '跳跃', crouch_one_cm: '潜行距离', climb_one_cm: '攀爬距离',
+    swim_one_cm: '游泳距离', fall_one_cm: '坠落距离', leave_game: '退出游戏',
+    time_since_death: '上次死亡至今', time_since_rest: '上次睡觉至今',
+    total_world_time: '世界总时间', open_chest: '打开箱子', open_barrel: '打开木桶',
+    sleep_in_bed: '睡床', interact_with_crafting_table: '使用工作台',
+    interact_with_furnace: '使用熔炉', enchant_item: '附魔', fish_caught: '钓鱼',
+    animals_bred: '繁殖动物', clean_armor: '清洗盔甲', traded_with_villager: '村民交易',
   };
-  let statCount = 0;
-  for (const [key, label] of Object.entries(labels)) {
-    if (stats[key] == null) continue;
-    statCount++;
-    const row = dataNode('div', 'identity-data-stat');
-    row.append(dataNode('span', null, label), dataNode('strong', null, String(stats[key])));
-    statGrid.append(row);
+  const formatStat = (key, value) => {
+    const number = Number(value) || 0;
+    if (key === 'play_time' || key === 'total_world_time' || key === 'time_since_death'
+        || key === 'time_since_rest') {
+      const hours = number / 20 / 3600;
+      return hours >= 1 ? hours.toFixed(1) + ' 小时' : Math.round(number / 20) + ' 秒';
+    }
+    if (key.endsWith('_one_cm')) return (number / 100).toFixed(1) + ' 米';
+    if (key === 'damage_dealt' || key === 'damage_taken') return (number / 10).toFixed(1);
+    return String(number);
+  };
+  const statItemRow = (id, count, withIcon) => {
+    const row = dataNode('div', 'identity-data-stat identity-stat-list-row');
+    const key = String(id || '');
+    const path = key.replace(/^minecraft:/, '');
+    if (withIcon) {
+      if (window.SamsaraItem?.icon) {
+        row.append(window.SamsaraItem.icon({ id: key, icon: path, name: path, count }, { size: 'sm' }));
+        row.addEventListener('mouseenter', (event) => {
+          window.SamsaraItem?.show?.({ id: key, icon: path, name: path, count }, event.currentTarget);
+        });
+        row.addEventListener('mouseleave', () => window.SamsaraItem?.hide?.());
+      } else {
+        const icon = document.createElement('img');
+        icon.src = '/items/' + path + '.png';
+        icon.alt = '';
+        icon.loading = 'lazy';
+        row.append(icon);
+      }
+    }
+    row.append(dataNode('span', 'identity-stat-name', path || key),
+      dataNode('strong', null, String(count)));
+    return row;
+  };
+  const renderStats = (tab) => {
+    statBody.replaceChildren();
+    if (tab === 'custom') {
+      const custom = stats.custom && typeof stats.custom === 'object'
+        ? stats.custom : Object.fromEntries(Object.entries(stats)
+          .filter(([key]) => key.startsWith('minecraft:')));
+      const entries = Object.entries(custom)
+        .filter(([, value]) => Number.isFinite(Number(value)));
+      if (!entries.length) {
+        statBody.append(dataNode('p', 'muted small', '没有统计数据。'));
+        return;
+      }
+      entries.sort((a, b) => Number(b[1]) - Number(a[1]));
+      const grid = dataNode('div', 'identity-data-stats');
+      for (const [key, value] of entries) {
+        const clean = key.replace(/^minecraft:/, '');
+        const row = dataNode('div', 'identity-data-stat');
+        row.append(dataNode('span', null, labels[clean] || clean),
+          dataNode('strong', null, formatStat(clean, value)));
+        grid.append(row);
+      }
+      statBody.append(grid);
+      return;
+    }
+    const groups = tab === 'items'
+      ? [['mined', '挖掘'], ['crafted', '合成'], ['used', '使用'],
+        ['picked_up', '拾取'], ['dropped', '丢弃'], ['broken', '损坏']]
+      : [['killed', '击杀'], ['killed_by', '被击杀']];
+    let total = 0;
+    for (const [key, label] of groups) {
+      const map = stats[tab] && stats[tab][key];
+      const entries = map && typeof map === 'object' ? Object.entries(map) : [];
+      if (!entries.length) continue;
+      total += entries.length;
+      const list = dataNode('div', 'identity-stat-list');
+      list.append(dataNode('div', 'identity-stat-list-title', label + ' · ' + entries.length));
+      entries.sort((a, b) => Number(b[1]) - Number(a[1]));
+      for (const [id, count] of entries.slice(0, 300)) {
+        list.append(statItemRow(id, count, tab === 'items'));
+      }
+      statBody.append(list);
+    }
+    if (!total) statBody.append(dataNode('p', 'muted small', '没有该分类的统计数据。'));
+  };
+  for (const tab of tabs) {
+    const button = dataNode('button', 'identity-stat-tab', tab.label);
+    button.type = 'button';
+    button.dataset.tab = tab.id;
+    button.addEventListener('click', () => {
+      for (const node of statTabs.querySelectorAll('.identity-stat-tab')) {
+        node.classList.toggle('active', node.dataset.tab === tab.id);
+      }
+      renderStats(tab.id);
+    });
+    statTabs.append(button);
   }
-  statBox.append(statCount ? statGrid : dataNode('p', 'muted small', '没有统计数据。'));
+  statTabs.firstChild?.classList.add('active');
+  statBox.append(statTabs, statBody);
+  renderStats('custom');
   root.append(statBox);
+}
+
+function openInlineEditor(box, uuid, scope) {
+  if (!box || !uuid) return;
+  let host = box.querySelector('.identity-inline-editor-host');
+  if (!host) {
+    host = dataNode('div', 'identity-inline-editor-host');
+    box.append(host);
+  }
+  if (!host.querySelector('iframe')) {
+    const frame = document.createElement('iframe');
+    const params = new URLSearchParams({ data: uuid, scope: scope || 'inventory' });
+    frame.src = '/identity-inventory-inline?' + params.toString();
+    frame.className = 'identity-inline-frame';
+    frame.title = '身份背包编辑';
+    host.append(frame);
+  }
+  host.hidden = false;
+  host.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
 function slotSection(title, items, scope, uuid) {
@@ -924,10 +1043,7 @@ function slotSection(title, items, scope, uuid) {
   edit.type = 'button';
   edit.title = '在物品栏编辑器中编辑' + title;
   edit.setAttribute('aria-label', '编辑' + title);
-  edit.addEventListener('click', () => {
-    document.getElementById('identity-data-dialog')?.close();
-    openGroupInventory(uuid, dataDisplayName(uuid), scope);
-  });
+  edit.addEventListener('click', () => openInlineEditor(box, uuid, scope));
   head.append(edit);
   box.append(head);
 
@@ -958,19 +1074,24 @@ function slotSection(title, items, scope, uuid) {
         ? '槽位 ' + slot + ' · ' + (item.name || item.id) + ' ×' + (item.count || 1)
         : '槽位 ' + slot + ' · 空';
       if (item) {
-        const icon = document.createElement('img');
-        icon.src = '/items/' + (item.icon || 'stone') + '.png';
-        icon.alt = '';
-        icon.loading = 'lazy';
-        cell.append(icon);
+        if (window.SamsaraItem?.icon) {
+          cell.append(window.SamsaraItem.icon(item, { size: 'sm' }));
+        } else {
+          const icon = document.createElement('img');
+          icon.src = '/items/' + (item.icon || 'stone') + '.png';
+          icon.alt = '';
+          icon.loading = 'lazy';
+          cell.append(icon);
+        }
         if (Number(item.count) > 1) {
           cell.append(dataNode('span', 'identity-data-slot-count', String(item.count)));
         }
+        cell.addEventListener('mouseenter', (event) => {
+          window.SamsaraItem?.show?.(item, event.currentTarget);
+        });
+        cell.addEventListener('mouseleave', () => window.SamsaraItem?.hide?.());
       }
-      cell.addEventListener('click', () => {
-        document.getElementById('identity-data-dialog')?.close();
-        openGroupInventory(uuid, dataDisplayName(uuid), scope);
-      });
+      cell.addEventListener('click', () => openInlineEditor(box, uuid, scope));
       grid.append(cell);
     }
     box.append(grid);

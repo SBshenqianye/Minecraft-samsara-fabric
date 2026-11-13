@@ -3240,12 +3240,15 @@ function cssEscape(text) {
 function stickyNavOffset() {
   const nav = $('global-nav');
   const header = document.querySelector('.app-header');
+  const section = document.querySelector('.section-tabs');
   const headerH = header ? header.offsetHeight : 0;
+  const sectionH = section ? section.offsetHeight : 0;
+  const base = headerH + sectionH + 14;
   if (nav) {
     const top = parseFloat(getComputedStyle(nav).top);
-    if (Number.isFinite(top)) return Math.max(headerH, top);
+    if (Number.isFinite(top)) return Math.max(base, top);
   }
-  return headerH + 14;
+  return base;
 }
 
 let navAlignTimer = 0;
@@ -3672,6 +3675,25 @@ on('action-default', 'click', () => window.SamsaraOutput?.restoreDefault?.());
 document.addEventListener('input', (event) => {
   if (event.target && event.target.id === 'search') render();
 });
+
+// 子元素有滚动条时只滚子元素；到边界也不带动父元素。没有滚动条才交给父/页面。
+document.addEventListener('wheel', (event) => {
+  if (event.defaultPrevented || event.ctrlKey || event.metaKey) return;
+  let node = event.target instanceof Element ? event.target : event.target?.parentElement;
+  while (node && node !== document.body && node !== document.documentElement) {
+    const style = getComputedStyle(node);
+    if (/(auto|scroll|overlay)/.test(style.overflowY)
+        && node.scrollHeight > node.clientHeight + 1) {
+      const dy = event.deltaY;
+      const canScroll = dy < 0
+        ? node.scrollTop > 0
+        : node.scrollTop + node.clientHeight < node.scrollHeight - 1;
+      if (!canScroll) event.preventDefault();
+      return;
+    }
+    node = node.parentElement;
+  }
+}, { passive: false, capture: true });
 
 // 染料距离、模式、上限等任一输入变化后，保护形状预览立即重算。
 // 事件派发在 body 上并冒泡；这里用捕获阶段保证无论目标在哪个子树都能收到。

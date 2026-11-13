@@ -592,14 +592,27 @@ defineExpose({ open: () => openWindow() });
 
 .global-inventory-panel :deep(.creative-tabs button) {
   flex: 0 0 auto;
-  min-height: 24px;
-  padding: 2px 8px;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  min-height: 26px;
+  padding: 0;
   border: 1px solid #373737;
   border-radius: 0;
   background: #8b8b8b;
   color: #3b3b3b;
   font-size: 11px;
   line-height: 1.2;
+}
+
+.global-inventory-panel :deep(.creative-tabs button img) {
+  width: 22px;
+  height: 22px;
+  image-rendering: pixelated;
+}
+
+.global-inventory-panel :deep(.creative-tabs-bottom) {
+  margin-top: 2px;
 }
 
 .global-inventory-panel :deep(.creative-tabs button.active) {
@@ -650,7 +663,8 @@ defineExpose({ open: () => openWindow() });
 .global-inventory-panel :deep(.creative-grid) {
   flex: 1 1 auto;
   display: grid;
-  grid-template-columns: repeat(auto-fill, var(--slot-size, 36px));
+  grid-template-columns: repeat(9, var(--slot-size, 36px));
+  justify-content: center;
   align-content: start;
   gap: 2px;
   min-height: 220px;

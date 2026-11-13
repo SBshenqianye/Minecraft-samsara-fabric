@@ -23,5 +23,5 @@ defineProps({ active: { type: Boolean, default: false } });
 
 <style scoped>
 .pin-icon { display: block; }
-.pin-icon.on { color: var(--accent); transform: rotate(-28deg); }
+.pin-icon.on { color: var(--accent); transform: rotate(28deg); }
 </style>

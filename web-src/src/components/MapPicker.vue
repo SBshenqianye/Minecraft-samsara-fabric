@@ -38,7 +38,7 @@
         >
           <template v-if="cluster.markers.length > 1">
             <span class="cluster-count">{{ cluster.markers.length }}</span>
-            <span v-if="!gridMarkers" class="marker-label">{{ cluster.label }}</span>
+            <span class="marker-label">{{ cluster.label }}</span>
           </template>
           <template v-else>
             <span v-if="cluster.marker.kind === 'player'" class="marker-head" :style="avatarStyle(cluster.marker)">
@@ -59,7 +59,7 @@
               size="sm"
               :show-count="false"
             />
-            <span v-if="!gridMarkers" class="marker-label">{{ cluster.marker.label }}</span>
+            <span class="marker-label">{{ cluster.marker.label }}</span>
           </template>
         </button>
       </div>
@@ -789,6 +789,13 @@ watch(() => props.markers, () => {
   background: rgba(43, 24, 66, .94);
 }
 
+/* 传送门方块用圆形遮罩，避免方角超出胶囊按钮。 */
+.map-marker.portal .marker-item,
+.map-marker.portal .marker-item img {
+  border-radius: 50%;
+  overflow: hidden;
+}
+
 .map-marker.active {
   border-color: #58a6ff;
   background: rgba(20, 50, 90, .94);
@@ -840,8 +847,9 @@ watch(() => props.markers, () => {
 .marker-large-chest {
   display: block;
   flex: 0 0 auto;
-  width: 40px;
-  height: auto;
+  width: auto;
+  height: 18px;
+  max-width: 34px;
   image-rendering: pixelated;
   object-fit: contain;
 }
@@ -857,16 +865,7 @@ watch(() => props.markers, () => {
 }
 
 /* 细档：每格一个图标，隐藏文字标签，避免 16/32/64px 网格里名字互相压住。 */
-.map-picker.grid-markers .map-marker {
-  gap: 0;
-  padding: 2px;
-  border-radius: 7px;
-}
-
-.map-picker.grid-markers .marker-label {
-  display: none;
-}
-
+/* 细档也显示完整标签，按钮尺寸与其它档位一致。 */
 .map-picker.grid-markers .cluster-count {
   min-width: 16px;
   height: 16px;

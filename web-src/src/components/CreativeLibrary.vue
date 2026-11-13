@@ -1,16 +1,19 @@
 <template>
   <section class="creative-library" aria-label="创造模式物品库">
-    <div class="creative-tabs" role="tablist" aria-label="物品分类">
+    <div class="creative-tabs creative-tabs-top" role="tablist" aria-label="物品分类">
       <button
-        v-for="tab in tabs"
+        v-for="tab in tabs.slice(0, 6)"
         :key="tab.id"
         type="button"
         role="tab"
         :aria-selected="category === tab.id ? 'true' : 'false'"
+        :aria-label="tab.label"
         :class="{ active: category === tab.id }"
         :title="tab.label"
         @click="category = tab.id"
-      >{{ tab.label }}</button>
+      >
+        <img :src="'/items/' + tab.icon + '.png'" alt="" loading="lazy" />
+      </button>
     </div>
 
     <div class="creative-toolbar">
@@ -44,6 +47,22 @@
       </p>
     </div>
 
+    <div class="creative-tabs creative-tabs-bottom" role="tablist" aria-label="更多物品分类">
+      <button
+        v-for="tab in tabs.slice(6)"
+        :key="tab.id"
+        type="button"
+        role="tab"
+        :aria-selected="category === tab.id ? 'true' : 'false'"
+        :aria-label="tab.label"
+        :class="{ active: category === tab.id }"
+        :title="tab.label"
+        @click="category = tab.id"
+      >
+        <img :src="'/items/' + tab.icon + '.png'" alt="" loading="lazy" />
+      </button>
+    </div>
+
     <p v-if="error" class="container-message error">{{ error }}</p>
   </section>
 </template>
@@ -65,17 +84,18 @@ const sortOptions = [
   { value: 'id', label: 'ID' },
 ];
 const tabs = [
-  { id: 'all', label: '全部' },
-  { id: 'building', label: '建筑' },
-  { id: 'decoration', label: '装饰' },
-  { id: 'redstone', label: '红石' },
-  { id: 'transport', label: '交通' },
-  { id: 'food', label: '食物' },
-  { id: 'tools', label: '工具' },
-  { id: 'combat', label: '战斗' },
-  { id: 'brewing', label: '酿造' },
-  { id: 'misc', label: '杂项' },
-  { id: 'debug', label: '调试方块' },
+  { id: 'building', label: '建筑方块', icon: 'bricks' },
+  { id: 'colored', label: '染色方块', icon: 'red_wool' },
+  { id: 'nature', label: '自然方块', icon: 'grass_block' },
+  { id: 'functional', label: '功能方块', icon: 'crafting_table' },
+  { id: 'redstone', label: '红石', icon: 'redstone' },
+  { id: 'search', label: '搜索物品', icon: 'compass' },
+  { id: 'tools', label: '工具与实用物品', icon: 'iron_pickaxe' },
+  { id: 'combat', label: '战斗用品', icon: 'iron_sword' },
+  { id: 'food', label: '食物与饮品', icon: 'apple' },
+  { id: 'ingredients', label: '原材料', icon: 'iron_ingot' },
+  { id: 'spawn_egg', label: '刷怪蛋', icon: 'cow_spawn_egg' },
+  { id: 'debug', label: '调试方块', icon: 'command_block' },
 ];
 
 // 调试方块原本挂在各页面工作台的物品库里；现在只在 Web 背包物品库保留一份。
@@ -102,7 +122,7 @@ const error = ref('');
 // 搜索/分类/排序挂到全局：Web 背包浮窗关闭再打开时组件会重建，但条件不重置。
 const state = globalThis.__samsaraCreativeLibrary
   || (globalThis.__samsaraCreativeLibrary = reactive({
-    query: '', category: 'all', sort: 'name',
+    query: '', category: 'search', sort: 'name',
   }));
 const { query, category, sort } = toRefs(state);
 const visibleCount = ref(PAGE);
@@ -110,43 +130,60 @@ const scrollBox = ref(null);
 let cachePromise = null;
 
 const KEYWORDS = {
-  building: ['planks', 'log', 'wood', 'stone', 'cobble', 'brick', 'concrete', 'terracotta',
-    'wool', 'glass', 'sand', 'dirt', 'gravel', 'quartz', 'purpur', 'prismarine', 'deepslate',
-    'blackstone', 'basalt', 'tuff', 'calcite', 'mud', 'leaves', 'sapling', 'stem', 'hyphae',
-    'sandstone', 'granite', 'diorite', 'andesite', 'netherrack', 'end_stone', 'obsidian',
-    'concrete_powder', 'glowstone', 'sea_lantern', 'shroomlight', 'moss', 'vine'],
-  decoration: ['flower', 'pot', 'painting', 'banner', 'carpet', 'torch', 'lantern', 'candle',
-    'sign', 'chain', 'item_frame', 'head', 'bed', 'skull', 'ladder', 'scaffolding', 'coral',
-    'candle', 'chiseled', 'bookshelf', 'campfire', 'bell', 'armor_stand', 'flower_pot'],
+  colored: ['wool', 'concrete', 'terracotta', 'stained_glass', 'candle', 'carpet',
+    'glazed_terracotta', 'banner', 'shulker_box', 'bed'],
+  building: ['planks', 'log', 'wood', 'stone', 'cobble', 'brick', 'deepslate',
+    'blackstone', 'basalt', 'tuff', 'calcite', 'quartz', 'purpur', 'prismarine',
+    'sandstone', 'granite', 'diorite', 'andesite', 'netherrack', 'end_stone',
+    'obsidian', 'glass', 'concrete', 'terracotta'],
+  nature: ['leaves', 'sapling', 'flower', 'grass', 'dirt', 'sand', 'gravel', 'clay',
+    'mud', 'moss', 'vine', 'mushroom', 'coral', 'kelp', 'seagrass', 'cactus',
+    'bamboo', 'sugar_cane', 'pumpkin', 'melon', 'cocoa', 'stem', 'hyphae',
+    'shroomlight', 'glow_lichen'],
+  functional: ['crafting_table', 'furnace', 'chest', 'barrel', 'hopper', 'beacon',
+    'anvil', 'enchanting_table', 'brewing_stand', 'cauldron', 'composter',
+    'smithing_table', 'loom', 'stonecutter', 'cartography_table', 'fletching_table',
+    'grindstone', 'lectern', 'jukebox', 'bell', 'respawn_anchor', 'lodestone',
+    'conduit', 'campfire', 'torch', 'lantern', 'chain', 'scaffolding', 'ladder',
+    'crafting', 'door', 'trapdoor', 'fence', 'stairs', 'slab', 'wall'],
   redstone: ['redstone', 'piston', 'repeater', 'comparator', 'observer', 'dispenser',
     'dropper', 'hopper', 'rail', 'lever', 'button', 'pressure_plate', 'daylight_detector',
     'tripwire', 'target', 'note_block', 'jukebox', 'lamp', 'copper_bulb', 'sculk_sensor',
-    'crafter', 'lectern'],
-  transport: ['minecart', 'boat', 'raft', 'saddle', 'elytra', 'rail'],
-  food: ['apple', 'bread', 'beef', 'porkchop', 'chicken', 'mutton', 'cod', 'salmon', 'cookie',
-    'cake', 'stew', 'soup', 'carrot', 'potato', 'beetroot', 'melon', 'berries', 'honey',
-    'kelp', 'mushroom_stew', 'rabbit_stew', 'pumpkin_pie', 'dried_kelp', 'sweet_berries'],
+    'crafter', 'lectern', 'tnt'],
   tools: ['pickaxe', 'axe', 'shovel', 'hoe', 'shears', 'flint_and_steel', 'fishing_rod',
-    'brush', 'sponge', 'bucket', 'compass', 'clock', 'map', 'lead', 'name_tag', 'trident'],
+    'brush', 'sponge', 'bucket', 'compass', 'clock', 'map', 'lead', 'name_tag', 'trident',
+    'elytra', 'minecart', 'boat', 'raft', 'saddle'],
   combat: ['sword', 'helmet', 'chestplate', 'leggings', 'boots', 'shield', 'bow', 'crossbow',
     'arrow', 'totem', 'mace', 'wind_charge'],
-  brewing: ['potion', 'glass_bottle', 'brewing_stand', 'blaze_powder', 'nether_wart',
-    'ghast_tear', 'spider_eye', 'glistering_melon', 'golden_carrot', 'fermented_spider_eye',
-    'dragon_breath', 'magma_cream', 'rabbit_foot', 'phantom_membrane', 'sugar', 'glowstone_dust'],
+  food: ['apple', 'bread', 'beef', 'porkchop', 'chicken', 'mutton', 'cod', 'salmon', 'cookie',
+    'cake', 'stew', 'soup', 'carrot', 'potato', 'beetroot', 'melon_slice', 'berries', 'honey',
+    'kelp', 'pumpkin_pie', 'sweet_berries', 'golden_apple', 'golden_carrot'],
+  ingredients: ['ingot', 'nugget', 'diamond', 'emerald', 'coal', 'charcoal', 'stick',
+    'string', 'feather', 'leather', 'bone', 'gunpowder', 'blaze_rod', 'blaze_powder',
+    'ender_pearl', 'ender_eye', 'nether_star', 'nether_wart', 'glowstone_dust',
+    'redstone', 'quartz', 'amethyst_shard', 'copper_ingot', 'raw_', 'scrap', 'shell'],
 };
 
 function classify(id) {
   const path = String(id || '').replace(/^minecraft:/, '').toLowerCase();
-  for (const key of ['combat', 'brewing', 'transport', 'redstone', 'food', 'tools', 'building', 'decoration']) {
+  if (path.endsWith('_spawn_egg')) return 'spawn_egg';
+  const order = ['colored', 'combat', 'food', 'tools', 'redstone', 'functional',
+    'nature', 'building', 'ingredients'];
+  for (const key of order) {
     if (KEYWORDS[key].some((word) => path.includes(word))) return key;
   }
-  return 'misc';
+  return categoryFallback(path);
+}
+
+function categoryFallback(path) {
+  if (path.includes('dye') || path.includes('potion')) return 'ingredients';
+  return 'functional';
 }
 
 const filtered = computed(() => {
   const text = query.value.trim().toLowerCase();
   let rows = category.value === 'debug' ? DEBUG_ITEMS : all.value;
-  if (category.value !== 'all' && category.value !== 'debug') {
+  if (category.value !== 'all' && category.value !== 'search' && category.value !== 'debug') {
     rows = rows.filter((row) => row._tab === category.value);
   }
   if (text) rows = filterItems(rows, text);

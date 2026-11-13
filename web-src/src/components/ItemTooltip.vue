@@ -2,6 +2,8 @@
   <Teleport to="body">
     <div
       v-if="itemTooltip.visible && itemTooltip.item"
+      ref="tipEl"
+      popover="manual"
       class="mc-item-tooltip"
       :class="'rarity-' + rarity"
       :style="{ left: itemTooltip.x + 'px', top: itemTooltip.y + 'px' }"
@@ -69,11 +71,25 @@
 </template>
 
 <script setup>
-import { computed } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import { itemTooltip } from './itemTooltip.js';
 import { zhAttribute, zhEffect, zhEnchantment, zhRarity } from './itemZh.js';
 
+const tipEl = ref(null);
 const item = computed(() => itemTooltip.item || {});
+
+// Web 背包在 top layer；tooltip 也放进 top layer，否则会被 popover 遮住。
+watch(() => itemTooltip.visible && !!itemTooltip.item, async (visible) => {
+  await nextTick();
+  const el = tipEl.value;
+  if (!el || typeof el.showPopover !== 'function') return;
+  try {
+    if (visible && !el.matches(':popover-open')) el.showPopover();
+    else if (!visible && el.matches(':popover-open')) el.hidePopover();
+  } catch {
+    // 浏览器不支持 popover 时退回普通 fixed 层。
+  }
+}, { flush: 'post' });
 
 const rarity = computed(() => {
   const value = String(item.value.rarity || 'common').toLowerCase();
@@ -175,6 +191,14 @@ function roman(value) {
 </script>
 
 <style scoped>
+.mc-item-tooltip[popover] {
+  inset: auto;
+  margin: 0;
+  padding: 8px 10px 8px;
+  border: 0;
+  color: inherit;
+}
+
 .mc-item-tooltip {
   position: fixed;
   z-index: 99999;

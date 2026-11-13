@@ -230,6 +230,8 @@ onBeforeUnmount(() => {
 }
 
 .fw-button {
+  display: grid;
+  place-items: center;
   width: 24px;
   height: 22px;
   padding: 0;

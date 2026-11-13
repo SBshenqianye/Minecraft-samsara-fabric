@@ -643,6 +643,20 @@ function onScrollbarTrackClick(event) {
   showPageScrollbar();
 }
 
+async function refreshWebVersion() {
+  const token = sessionStorage.getItem('samsara-token') || '';
+  if (!token) return;
+  try {
+    const response = await fetch('/api/status', { headers: { Authorization: 'Bearer ' + token } });
+    if (!response.ok) return;
+    const status = await response.json();
+    const node = document.getElementById('app-version');
+    if (node && status.webVersion) node.textContent = 'v' + status.webVersion;
+  } catch {
+    // 状态不可用时保留 v—。
+  }
+}
+
 onMounted(async () => {
   try {
     const doc = await loadLegacyDocument();
@@ -671,6 +685,8 @@ onMounted(async () => {
       if (started && !heroMatchesRoute()) applyRoute(true).catch(() => {});
     }, 450);
     maybePeekRail();
+    refreshWebVersion();
+    window.setTimeout(refreshWebVersion, 1200);
     window.setTimeout(loadMods, 400);
     window.addEventListener('resize', measureChrome, { passive: true });
     window.addEventListener('scroll', scheduleMeasure, { passive: true });

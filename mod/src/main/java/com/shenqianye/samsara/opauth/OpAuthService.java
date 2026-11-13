@@ -146,7 +146,7 @@ public final class OpAuthService {
                 continue;
             }
             Long last = lastReminder.get(item.getKey());
-            if (last != null && now - last < 300_000L) {
+            if (last != null) {
                 continue;
             }
             ServerPlayer player = current.getPlayerList().getPlayer(item.getKey());
