@@ -59,6 +59,7 @@ public class WebMapService {
     private static final List<String> DIMENSIONS =
             List.of("overworld", "the_nether", "the_end");
     private static final long MANIFEST_RESCAN_MS = 2000L;
+    private static final long PORTAL_CACHE_MS = 60_000L;
 
     private final Path worldRoot;
     private final MinecraftServer server;
@@ -68,6 +69,8 @@ public class WebMapService {
     private volatile StackManifest manifestCache;
     private volatile long manifestCheckedAt;
     private volatile long manifestStamp = Long.MIN_VALUE;
+    private volatile List<Map<String, Object>> portalCache = List.of();
+    private volatile long portalCacheAt = 0L;
 
     public WebMapService() {
         this(StoragePaths.get().worldRoot(), null);
@@ -129,8 +132,13 @@ public class WebMapService {
     public Map<String, Object> portals() {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("ok", true);
-        out.put("generatedAt", System.currentTimeMillis());
-        out.put("portals", portalSnapshot());
+        long now = System.currentTimeMillis();
+        if (now - portalCacheAt > PORTAL_CACHE_MS) {
+            portalCache = portalSnapshot();
+            portalCacheAt = now;
+        }
+        out.put("generatedAt", now);
+        out.put("portals", portalCache);
         return out;
     }
 
