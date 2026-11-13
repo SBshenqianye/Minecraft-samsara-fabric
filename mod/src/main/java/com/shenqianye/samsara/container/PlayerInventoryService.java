@@ -200,6 +200,8 @@ public final class PlayerInventoryService {
         boolean pendingWrite = false;
         long diskRevision;
         int dataVersion;
+        String outSource = "player";
+        String outData = "";
         Path queue = queueFile(ref.uuid, spec);
 
         if (online != null) {
@@ -208,26 +210,36 @@ public final class PlayerInventoryService {
             dataVersion = serverDataVersion;
             pendingWrite = Files.isRegularFile(queue);
         } else {
-            if (!Files.isRegularFile(file)) {
+            IdentityTarget identity = identityTarget(ref.uuid);
+            Path source = identity == null ? file : identity.file();
+            if (!Files.isRegularFile(source)) {
                 return error(404, "找不到玩家数据：" + ref.uuid);
             }
             try {
-                CompoundTag tag = readTag(file);
+                CompoundTag tag = readTag(source);
                 dataVersion = tag.getIntOr("DataVersion", 0);
                 slots = decodeOffline(tag, spec);
                 diskRevision = revisionOf(slots);
             } catch (IOException | RuntimeException e) {
                 return error(400, "读取玩家数据失败：" + e.getMessage());
             }
-            List<String> queued = readQueue(queue, spec);
-            if (queued != null) {
-                slots = queued;
-                pendingWrite = true;
+            if (identity != null) {
+                // 身份数据是根；不再叠加账号侧的旧排队写入，避免覆盖身份背包。
+                outSource = "identity";
+                outData = identity.data().toString();
+            } else {
+                List<String> queued = readQueue(queue, spec);
+                if (queued != null) {
+                    slots = queued;
+                    pendingWrite = true;
+                }
             }
         }
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("ok", true);
+        out.put("source", outSource);
+        if (!outData.isBlank()) out.put("data", outData);
         out.put("player", ref.model());
         out.put("scope", spec.id);
         out.put("online", online != null);
@@ -274,6 +286,12 @@ public final class PlayerInventoryService {
             out.put("slots", after);
             out.put("items", items(after, spec));
             return out;
+        }
+
+        IdentityTarget identity = identityTarget(ref.uuid);
+        if (identity != null) {
+            // 离线账号写身份背包：走 identity/playerdata，自动备份并校验 revision。
+            return writeIdentityOnThread(identity.data().toString(), spec, revision, slots, actor);
         }
 
         Path file = playerFile(ref.uuid);
@@ -698,6 +716,12 @@ public final class PlayerInventoryService {
         ServerPlayer online = null;
         if (uuid != null) {
             online = server.getPlayerList().getPlayer(uuid);
+            if (online == null) {
+                // data UUID / 组内任一账号 UUID 也要能定位到当前在线玩家。
+                com.shenqianye.samsara.identity.IdentityService identity =
+                        com.shenqianye.samsara.identity.IdentityService.getInstance();
+                if (identity != null) online = identity.onlineFor(uuid);
+            }
         } else {
             online = server.getPlayerList().getPlayerByName(ref);
             if (online != null) uuid = online.getUUID();
@@ -727,6 +751,25 @@ public final class PlayerInventoryService {
 
     private Path playerFile(UUID uuid) {
         return server.getWorldPath(LevelResource.PLAYER_DATA_DIR).resolve(uuid + ".dat");
+    }
+
+    /** 身份组的根数据在 identity/playerdata；账号 UUID 和 data UUID 都能解析到同一份。 */
+    private IdentityTarget identityTarget(UUID uuid) {
+        if (uuid == null) return null;
+        com.shenqianye.samsara.identity.IdentityService identity =
+                com.shenqianye.samsara.identity.IdentityService.getInstance();
+        if (identity == null) return null;
+        com.shenqianye.samsara.identity.IdentityConfig.Group group = identity.groupOf(uuid);
+        if (group == null) return null;
+        UUID data = group.dataUuid();
+        if (data == null) return null;
+        com.shenqianye.samsara.identity.IdentityDataSync sync = identity.dataSync();
+        if (sync == null) return null;
+        Path file = sync.identityData(data);
+        return Files.isRegularFile(file) ? new IdentityTarget(data, file) : null;
+    }
+
+    private record IdentityTarget(UUID data, Path file) {
     }
 
     private Path queueFile(UUID uuid, SlotSpec spec) {

@@ -2130,13 +2130,32 @@ public final class LocalWebServer {
     private static void sendBytes(HttpExchange exchange, int status, String type, byte[] body)
             throws IOException {
         exchange.getResponseHeaders().set("Content-Type", type);
-        exchange.getResponseHeaders().set("Cache-Control", "no-store");
+        exchange.getResponseHeaders().set("Cache-Control", cacheControl(exchange.getRequestURI().getPath()));
         exchange.getResponseHeaders().set("X-Content-Type-Options", "nosniff");
         securityHeaders(exchange);
         exchange.sendResponseHeaders(status, body.length);
         try (OutputStream out = exchange.getResponseBody()) {
             out.write(body);
         }
+    }
+
+    /** 静态资源/地图瓦片/头像允许浏览器缓存；业务 JSON 仍保持 no-store。 */
+    private static String cacheControl(String path) {
+        if (path == null) return "no-store";
+        if (path.startsWith("/vue/assets/") || path.startsWith("/ui/")
+                || path.startsWith("/items/") || path.startsWith("/textures/")) {
+            return "public, max-age=31536000, immutable";
+        }
+        if (path.equals("/api/user/map/head") || path.equals("/api/user/map/avatar")) {
+            return "public, max-age=86400";
+        }
+        if (path.equals("/api/user/map/tile")) {
+            return "public, max-age=3600";
+        }
+        if (path.equals("/api/items/schema")) {
+            return "public, max-age=3600";
+        }
+        return "no-store";
     }
 
     /**

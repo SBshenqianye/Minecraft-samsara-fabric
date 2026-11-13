@@ -163,6 +163,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import ItemIcon from './ItemIcon.vue';
 import PinIcon from './PinIcon.vue';
+import { readCache, writeCache } from '../composables/localCache.js';
 
 const props = defineProps({
   markers: { type: Array, default: () => [] },
@@ -367,6 +368,18 @@ const trailPaths = computed(() => {
     .filter((line) => line.points.split(' ').length > 1);
 });
 
+const regionKeys = computed(() => {
+  const dimension = findDimension();
+  if (!dimension || !Array.isArray(dimension.regions)) return null;
+  const keys = new Set();
+  for (const region of dimension.regions) {
+    if (Array.isArray(region) && region.length >= 2) {
+      keys.add(Number(region[0]) + ',' + Number(region[1]));
+    }
+  }
+  return keys;
+});
+
 function findDimension() {
   for (const stack of model.value?.stacks || []) {
     for (const dimension of stack.dimensions || []) {
@@ -379,11 +392,17 @@ function findDimension() {
 }
 
 async function loadModel() {
+  const cached = readCache('samsara.map.model.v1', 24 * 60 * 60 * 1000);
+  if (cached) {
+    model.value = cached;
+    applyStack();
+  }
   try {
     const token = sessionStorage.getItem('samsara-token') || '';
     const response = await fetch('/api/map', { headers: { Authorization: 'Bearer ' + token } });
     if (!response.ok) return;
     model.value = await response.json();
+    writeCache('samsara.map.model.v1', model.value);
     applyStack();
   } catch {
     // ignore
@@ -453,9 +472,12 @@ function rebuildTiles() {
   const maxRx = Math.floor((left + viewW.value * scale.value) / 512);
   const minRz = Math.floor(top / 512);
   const maxRz = Math.floor((top + viewH.value * scale.value) / 512);
+  const knownRegions = regionKeys.value;
   const out = [];
   for (let rx = minRx; rx <= maxRx; rx++) {
     for (let rz = minRz; rz <= maxRz; rz++) {
+      // 没有 region 文件的位置不发请求：否则每次开图都会打出一堆 404 并占用 HTTP 线程。
+      if (knownRegions && !knownRegions.has(rx + ',' + rz)) continue;
       const key = [stackId.value, props.dimension, rx, rz, tileScale, 1, 6].join('|');
       const url = '/api/user/map/tile?stack=' + encodeURIComponent(stackId.value)
         + '&dim=' + encodeURIComponent(props.dimension)

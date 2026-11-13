@@ -7,10 +7,13 @@
 
 ### 优化
 - **容器索引性能**：`/api/containers` 列表查询不再对每个容器调用 `getBlockState`（会触发区块加载）。生产环境 5000 容器列表从持续 700%+ CPU、每秒多次 200ms GC 降到空闲约 1%；区块卸载回调改为只读传入的 `LevelChunk`，不再在卸载时重新加载区块，消除 `Trying to schedule tick in not loaded position` 与 `Can't keep up` 刷屏。
+- **天网首屏缓存**：容器列表、玩家、地图模型、传送门、物品 schema 写入浏览器 localStorage；首次打开或 Ctrl+Shift+R 先用上次数据立即渲染，再后台刷新。页面改为首次访问才挂载，避免一进天网就把配置/身份/权限等所有页面一起请求。
+- **HTTP 缓存**：静态资源、地图瓦片、头像、物品 schema 返回 `Cache-Control`，瓦片/头像不再 `no-store`；地图只为真实存在的 region 请求瓦片，避免几十个 404 占用 HTTP 线程。
 
 ### 修复
 - **data UUID 统计为空**：统计 JSON 根为 `stats`，且原版键带 `minecraft:` 前缀；现在同时兼容两层结构与带/不带前缀的键，游玩时间、死亡、击杀、步行、疾跑、飞行、伤害等恢复正常。
 - **身份数据被空账号覆盖**：当 `state.lastWriter` 丢失但 identity 数据文件已存在时，优先把身份数据恢复到当前账号；只有身份数据不存在时才用当前账号初始化，避免“进入服务器后 Web 背包变空”。
+- **天网玩家背包读错文件**：`/api/inventory?player=<dataUuid>` 现在会解析身份组并读取 `identity/playerdata/<dataUuid>.dat`；在线时也能从 data UUID 找到在线玩家。xh_unpkire 的 11 件物品在 Web 玩家窗口恢复正常显示。
 - **垃圾桶与 Web 背包细节**：垃圾桶改用原版创造背包右下角图标；垃圾桶提示改为临时 toast；data UUID 详情背包/末影箱复用物品栏组件；Web 背包浮窗位置持久化。
 
 ## Web 0.56.0（2026-11-13）· 天网容器形态、头像与地图层级

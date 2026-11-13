@@ -256,6 +256,7 @@ import MapPicker from '../components/MapPicker.vue';
 import Segmented from '../components/Segmented.vue';
 import DimensionPicker from '../components/DimensionPicker.vue';
 import { useLiveRefresh } from '../composables/useLiveRefresh.js';
+import { readCache, writeCache } from '../composables/localCache.js';
 import { itemCursor } from '../composables/itemCursor.js';
 
 const props = defineProps({ embedded: { type: Boolean, default: false } });
@@ -299,6 +300,11 @@ let windowZ = 90;
 let windowCascade = 0;
 const allDimensions = ref(false);
 const lastDimension = ref('minecraft:overworld');
+const CACHE_CONTAINERS = (dimension) => 'samsara.sky.containers.v1:' + (dimension || 'all');
+const CACHE_PLAYERS = 'samsara.sky.players.v1';
+const CACHE_MAP = 'samsara.map.model.v1';
+const CACHE_PORTALS = 'samsara.sky.portals.v1';
+const CACHE_SCHEMA = 'samsara.items.schema.v1';
 let searchTimer = null;
 const containers = ref([]);
 const indexSize = ref(0);
@@ -533,7 +539,18 @@ const selectedMarkerId = computed(() =>
   selectedPlayerId.value || (selected.value ? rowKey(selected.value.container) : ''));
 
 onMounted(() => {
-  if (token.value) connect();
+  if (token.value) {
+    // 有 token 时先用本地缓存立即渲染，后台再校验连接并刷新。
+    connected.value = true;
+    const cachedPlayers = readCache(CACHE_PLAYERS, 24 * 60 * 60 * 1000);
+    if (cachedPlayers && Array.isArray(cachedPlayers)) players.value = cachedPlayers;
+    const cachedContainers = readCache(CACHE_CONTAINERS(filters.dimension), 24 * 60 * 60 * 1000);
+    if (cachedContainers && Array.isArray(cachedContainers.containers)) {
+      containers.value = cachedContainers.containers;
+      indexSize.value = Number(cachedContainers.indexSize || 0);
+    }
+    connect();
+  }
 });
 
 onBeforeUnmount(() => {
@@ -543,10 +560,15 @@ onBeforeUnmount(() => {
 });
 
 async function loadPlayers() {
+  const cached = readCache(CACHE_PLAYERS, 60 * 1000);
+  if (cached && Array.isArray(cached) && !players.value.length) {
+    players.value = cached;
+  }
   try {
     const result = await api('/api/server/players');
     if (result.status === 200 && result.data.ok) {
       players.value = result.data.players || [];
+      writeCache(CACHE_PLAYERS, players.value);
     }
   } catch {
     // 玩家位置不可用时只显示容器。
@@ -554,10 +576,13 @@ async function loadPlayers() {
 }
 
 async function loadPortals() {
+  const cached = readCache(CACHE_PORTALS, 24 * 60 * 60 * 1000);
+  if (cached && Array.isArray(cached)) portals.value = cached;
   try {
     const result = await api('/api/map/portals');
     if (result.status === 200 && result.data.ok) {
       portals.value = result.data.portals || [];
+      writeCache(CACHE_PORTALS, portals.value);
     }
   } catch {
     // 传送门 POI 不可用时不影响地图。
@@ -673,45 +698,57 @@ function logout() {
 }
 
 async function loadDimensions() {
+  const cached = readCache(CACHE_MAP, 24 * 60 * 60 * 1000);
+  if (cached) applyMapModel(cached);
   try {
     const result = await api('/api/map');
     if (result.status !== 200) return;
-    const list = [];
-    const seen = new Set();
-    const groups = [];
-    for (const stack of result.data.stacks || []) {
-      const groupDimensions = [];
-      for (const dimension of stack.dimensions || []) {
-        if (!dimension.id) continue;
-        groupDimensions.push({ id: dimension.id, name: dimension.name || dimension.id });
-        if (seen.has(dimension.id)) continue;
-        seen.add(dimension.id);
-        list.push({ id: dimension.id, name: dimension.name || dimension.id });
-      }
-      if (groupDimensions.length) {
-        groups.push({
-          id: stack.id,
-          label: stack.label || stack.name || stack.id,
-          dimensions: groupDimensions,
-        });
-      }
-    }
-    if (groups.length) stackGroups.value = groups;
-    if (list.length) {
-      dimensions.value = list;
-      if (!seen.has(filters.dimension)) filters.dimension = list[0].id;
-      if (!seen.has(playerDimension.value)) playerDimension.value = filters.dimension || list[0].id;
-      if (allDimensions.value) filters.dimension = '';
-    }
+    writeCache(CACHE_MAP, result.data);
+    applyMapModel(result.data);
   } catch {
     // 保留默认三维度
   }
 }
 
+function applyMapModel(data) {
+  const list = [];
+  const seen = new Set();
+  const groups = [];
+  for (const stack of data?.stacks || []) {
+    const groupDimensions = [];
+    for (const dimension of stack.dimensions || []) {
+      if (!dimension.id) continue;
+      groupDimensions.push({ id: dimension.id, name: dimension.name || dimension.id });
+      if (seen.has(dimension.id)) continue;
+      seen.add(dimension.id);
+      list.push({ id: dimension.id, name: dimension.name || dimension.id });
+    }
+    if (groupDimensions.length) {
+      groups.push({
+        id: stack.id,
+        label: stack.label || stack.name || stack.id,
+        dimensions: groupDimensions,
+      });
+    }
+  }
+  if (groups.length) stackGroups.value = groups;
+  if (list.length) {
+    dimensions.value = list;
+    if (!seen.has(filters.dimension)) filters.dimension = list[0].id;
+    if (!seen.has(playerDimension.value)) playerDimension.value = filters.dimension || list[0].id;
+    if (allDimensions.value) filters.dimension = '';
+  }
+}
+
 async function loadSchema() {
+  const cached = readCache(CACHE_SCHEMA, 24 * 60 * 60 * 1000);
+  if (cached) schema.value = cached;
   try {
     const result = await api('/api/items/schema');
-    if (result.status === 200 && result.data.ok) schema.value = result.data.schema || {};
+    if (result.status === 200 && result.data.ok) {
+      schema.value = result.data.schema || {};
+      writeCache(CACHE_SCHEMA, schema.value);
+    }
   } catch {
     // schema 不可用时仍可做数量/拖拽编辑
   }
@@ -720,10 +757,21 @@ async function loadSchema() {
 async function search() {
   loading.value = true;
   error.value = '';
+  const q = (filters.q || '').trim();
+  const cacheKey = CACHE_CONTAINERS(filters.dimension);
+  if (!q) {
+    // 强制刷新 / 首次打开：先显示上次的容器列表，避免白屏等待。
+    const cached = readCache(cacheKey, 24 * 60 * 60 * 1000);
+    if (cached && Array.isArray(cached.containers)) {
+      containers.value = cached.containers;
+      indexSize.value = Number(cached.indexSize || 0);
+      message.value = '';
+      messageKind.value = '';
+    }
+  }
   try {
     const params = new URLSearchParams();
     if (filters.dimension) params.set('dimension', filters.dimension);
-    const q = (filters.q || '').trim();
     if (q) params.set('q', q);
     const result = await api('/api/containers?' + params.toString());
     if (result.status !== 200 || !result.data.ok) {
@@ -731,6 +779,12 @@ async function search() {
     }
     containers.value = result.data.containers || [];
     indexSize.value = result.data.indexSize || 0;
+    if (!q) {
+      writeCache(cacheKey, {
+        containers: containers.value,
+        indexSize: indexSize.value,
+      });
+    }
     if (!containers.value.length) {
       message.value = q ? '没有容器包含匹配该物品。' : '没有找到容器；可点“刷新索引”。';
       messageKind.value = '';

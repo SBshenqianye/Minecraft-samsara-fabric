@@ -176,21 +176,21 @@
             <aside id="global-nav" class="side-nav" aria-label="页内导航"></aside>
           </div>
           <div class="content">
-            <LotteryPage v-show="page === 'lottery'" />
+            <LotteryPage v-if="visitedPages.has('lottery')" v-show="page === 'lottery'" />
             <TrackPage v-if="page === 'track'" />
             <DiffPage v-if="page === 'diff'" />
             <ContainerPage v-if="page === 'containers'" embedded />
             <InventoryPage v-if="page === 'inventory'" />
             <ConfigEditorPage v-if="page === 'config-editor'" />
-            <ConfigPage v-show="page === 'config'" />
-            <ClaimRangePage v-show="page === 'claim-range'" />
-            <OutputPage v-show="page === 'output'" />
-            <PermissionsPage v-show="page === 'permissions'" />
-            <MapPage v-show="page === 'map'" />
-            <AnnouncementsPage v-show="page === 'announcements'" />
-            <WorldStackPage v-show="page === 'world-stack'" />
-            <IdentityPage v-show="page === 'identity'" />
-            <ServerPage v-show="page === 'server'" />
+            <ConfigPage v-if="visitedPages.has('config')" v-show="page === 'config'" />
+            <ClaimRangePage v-if="visitedPages.has('claim-range')" v-show="page === 'claim-range'" />
+            <OutputPage v-if="visitedPages.has('output')" v-show="page === 'output'" />
+            <PermissionsPage v-if="visitedPages.has('permissions')" v-show="page === 'permissions'" />
+            <MapPage v-if="visitedPages.has('map')" v-show="page === 'map'" />
+            <AnnouncementsPage v-if="visitedPages.has('announcements')" v-show="page === 'announcements'" />
+            <WorldStackPage v-if="visitedPages.has('world-stack')" v-show="page === 'world-stack'" />
+            <IdentityPage v-if="visitedPages.has('identity')" v-show="page === 'identity'" />
+            <ServerPage v-if="visitedPages.has('server')" v-show="page === 'server'" />
             <ModConfigPage v-if="page === 'mod-config'" />
           </div>
         </main>
@@ -297,6 +297,15 @@ const LEGACY_ROUTES = {
 
 const workspace = computed(() => route.meta.workspace || 'samsara');
 const page = computed(() => route.meta.page || 'lottery');
+// 页面首次访问时才挂载；之后保留实例，避免来回切换重复请求。
+const visitedPages = ref(new Set());
+watch(page, (value) => {
+  if (value && !visitedPages.value.has(value)) {
+    const next = new Set(visitedPages.value);
+    next.add(value);
+    visitedPages.value = next;
+  }
+}, { immediate: true });
 const activeWorkspace = computed(() => workspace.value);
 const activeModId = computed(() => String(route.params.modId || ''));
 const activeSection = computed(() => {
