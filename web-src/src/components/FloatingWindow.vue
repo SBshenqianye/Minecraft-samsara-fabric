@@ -2,6 +2,7 @@
   <section
     ref="root"
     class="floating-window"
+    popover="manual"
     :class="{ pinned, active }"
     :style="style"
     @pointerdown="$emit('focus')"
@@ -12,15 +13,6 @@
         <span v-if="subtitle" class="fw-sub">{{ subtitle }}</span>
       </div>
       <span class="spacer"></span>
-      <button
-        type="button"
-        class="fw-button"
-        :class="{ on: pinned }"
-        :title="pinned ? '取消保持：点击外部关闭' : '保持窗口：点击外部不关闭'"
-        :aria-label="pinned ? '取消保持窗口' : '保持窗口'"
-        @pointerdown.stop
-        @click.stop="$emit('pin')"
-      ><PinIcon :active="pinned" /></button>
       <button
         v-if="canMinimize"
         type="button"
@@ -33,6 +25,15 @@
       <button
         type="button"
         class="fw-button"
+        :class="{ on: pinned }"
+        :title="pinned ? '取消保持：点击外部关闭' : '保持窗口：点击外部不关闭'"
+        :aria-label="pinned ? '取消保持窗口' : '保持窗口'"
+        @pointerdown.stop
+        @click.stop="$emit('pin')"
+      ><PinIcon :active="pinned" /></button>
+      <button
+        type="button"
+        class="fw-button fw-close"
         title="关闭"
         aria-label="关闭"
         @pointerdown.stop
@@ -136,6 +137,14 @@ onMounted(() => {
       // 忽略损坏的位置记录。
     }
   }
+  // 放入 top layer：原生 dialog / Element Plus 弹层打开时，Web 背包仍显示在最上层。
+  try {
+    if (typeof root.value?.showPopover === 'function' && !root.value.matches(':popover-open')) {
+      root.value.showPopover();
+    }
+  } catch {
+    // 浏览器不支持 popover 时退化为普通 fixed 层。
+  }
   // 捕获阶段先于页面其它点击逻辑；未保持的窗口在点击外部时自行关闭。
   document.addEventListener('pointerdown', onDocumentPointer, true);
 });
@@ -143,6 +152,13 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('pointermove', onDrag);
   document.removeEventListener('pointerdown', onDocumentPointer, true);
+  try {
+    if (typeof root.value?.hidePopover === 'function' && root.value.matches(':popover-open')) {
+      root.value.hidePopover();
+    }
+  } catch {
+    // ignore
+  }
 });
 </script>
 
@@ -156,6 +172,22 @@ onBeforeUnmount(() => {
   border-radius: 12px;
   background: var(--panel);
   box-shadow: 0 18px 48px rgba(0, 0, 0, .55);
+}
+
+/* popover 进入 top layer 后去掉 UA 默认的 inset/margin，位置仍由内联 left/top 控制。 */
+.floating-window[popover] {
+  inset: auto;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  color: inherit;
+  background: var(--panel);
+}
+
+.fw-close:hover {
+  background: #c42b1c;
+  color: #fff;
+  border-color: #c42b1c;
 }
 
 .floating-window.active {

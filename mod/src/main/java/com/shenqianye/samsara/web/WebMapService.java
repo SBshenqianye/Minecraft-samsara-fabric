@@ -268,8 +268,60 @@ public class WebMapService {
             item.put("targetDimension", target);
             out.add(item);
         }
+        // 下界门配对：原版按 1:8 坐标换算后，在目标维度 128 格内找最近的门。
+        // 找不到时仍给出换算后的目标点，前端可定位到大致位置。
+        for (Map<String, Object> item : out) {
+            if (!"nether".equals(item.get("portalKind"))) continue;
+            String dim = String.valueOf(item.get("dimension"));
+            String shortDim = shortDimOf(dim);
+            boolean fromOverworld = "overworld".equals(shortDim);
+            if (!fromOverworld && !"the_nether".equals(shortDim)) continue;
+            String targetDim = withShortDim(dim, fromOverworld ? "the_nether" : "overworld");
+            double x = number(item.get("x"));
+            double z = number(item.get("z"));
+            double expectedX = fromOverworld ? x / 8.0 : x * 8.0;
+            double expectedZ = fromOverworld ? z / 8.0 : z * 8.0;
+            Map<String, Object> best = null;
+            double bestDistance = Double.MAX_VALUE;
+            for (Map<String, Object> other : out) {
+                if (other == item || !"nether".equals(other.get("portalKind"))) continue;
+                if (!targetDim.equals(String.valueOf(other.get("dimension")))) continue;
+                double distance = Math.hypot(number(other.get("x")) - expectedX,
+                        number(other.get("z")) - expectedZ);
+                if (distance < bestDistance) {
+                    bestDistance = distance;
+                    best = other;
+                }
+            }
+            item.put("targetDimension", targetDim);
+            if (best != null && bestDistance <= 128.0) {
+                item.put("targetId", best.get("id"));
+                item.put("targetX", best.get("x"));
+                item.put("targetY", best.get("y"));
+                item.put("targetZ", best.get("z"));
+            } else {
+                item.put("targetX", round1(expectedX));
+                item.put("targetY", 64.0);
+                item.put("targetZ", round1(expectedZ));
+            }
+        }
         out.sort(Comparator.comparing(item -> String.valueOf(item.get("id"))));
         return out;
+    }
+
+    private static double number(Object value) {
+        return value instanceof Number n ? n.doubleValue() : Double.parseDouble(String.valueOf(value));
+    }
+
+    private static String shortDimOf(String dimension) {
+        if (dimension == null) return "";
+        int cut = Math.max(dimension.lastIndexOf('/'), dimension.indexOf(':'));
+        return cut < 0 ? dimension : dimension.substring(cut + 1);
+    }
+
+    private static String withShortDim(String dimension, String shortDim) {
+        int cut = Math.max(dimension.lastIndexOf('/'), dimension.indexOf(':'));
+        return cut < 0 ? shortDim : dimension.substring(0, cut + 1) + shortDim;
     }
 
     private static void scanPortalChunk(ServerLevel level, String dimension, LevelChunk chunk,

@@ -869,7 +869,7 @@
           <h3 id="server-audit-diff-title">差异</h3>
           <p class="dialog-sub">预览快照与当前文件的差异；回滚前请确认影响范围。</p>
         </div>
-        <button id="server-audit-diff-close" class="ghost" type="button">关闭</button>
+        <button id="server-audit-diff-close" class="ghost dialog-close" type="button" title="关闭" aria-label="关闭">×</button>
       </div>
       <div id="server-audit-changes" class="server-audit-changes"></div>
       <div id="server-audit-diffs" class="server-audit-diffs"></div>
@@ -1004,7 +1004,7 @@
         </div>
         <div class="dialog-head-actions">
           <button id="world-stack-snapshot-refresh" class="ghost" type="button">刷新快照占用</button>
-          <button class="ghost" type="button" data-dialog-close="world-stack-timeline-dialog">关闭</button>
+          <button class="ghost dialog-close" type="button" data-dialog-close="world-stack-timeline-dialog" title="关闭" aria-label="关闭">×</button>
         </div>
       </div>
       <div id="world-stack-timeline-error" class="world-stack-error" role="alert" hidden></div>
@@ -1025,7 +1025,7 @@
           <h3>归档 / 删除栈层</h3>
           <p class="dialog-sub">危险操作：先预览，确认后排队；重启时把维度和元数据移到 stack-archive 备份，不直接删除。栈顶 world 不能归档。</p>
         </div>
-        <button class="ghost" type="button" data-dialog-close="world-stack-archive-dialog">关闭</button>
+        <button class="ghost dialog-close" type="button" data-dialog-close="world-stack-archive-dialog" title="关闭" aria-label="关闭">×</button>
       </div>
       <div id="world-stack-archive-error" class="world-stack-error" role="alert" hidden></div>
       <div id="world-stack-archive-preview" class="world-stack-preview" hidden></div>

@@ -118,13 +118,13 @@ async function editDataLabel(uuid) {
 }
 
 /** 打开全局 Vue 背包弹窗（身份组 data UUID）。 */
-function openGroupInventory(dataUuid, groupName) {
+function openGroupInventory(dataUuid, groupName, scope = 'inventory') {
   if (!dataUuid) {
     identityMessage('该身份组还没有 data UUID', 'error');
     return;
   }
   window.dispatchEvent(new CustomEvent('samsara:identity-inventory', {
-    detail: { data: dataUuid, name: groupName || '' },
+    detail: { data: dataUuid, name: groupName || '', scope },
   }));
 }
 
@@ -336,6 +336,24 @@ function groupCard(group, index) {
 
   const actions = document.createElement('div');
   actions.className = 'card-actions';
+  const detail = document.createElement('button');
+  detail.type = 'button';
+  detail.className = 'ghost';
+  detail.textContent = '数据详情';
+  detail.title = '查看该身份组 data UUID 的背包、末影箱、成就、统计与备份';
+  detail.disabled = !group.data;
+  detail.addEventListener('click', () => {
+    if (group.data) openDataDialog(group.data);
+  });
+  const backup = document.createElement('button');
+  backup.type = 'button';
+  backup.className = 'ghost';
+  backup.textContent = '备份数据';
+  backup.title = '备份该身份组 data UUID 的玩家数据、成就与统计';
+  backup.disabled = !group.data;
+  backup.addEventListener('click', () => {
+    if (group.data) backupData(group.data);
+  });
   const inventory = document.createElement('button');
   inventory.type = 'button';
   inventory.className = 'ghost';
@@ -357,7 +375,7 @@ function groupCard(group, index) {
     I.dirty = true;
     renderAll();
   });
-  actions.append(inventory, preview, remove);
+  actions.append(detail, backup, inventory, preview, remove);
 
   const previewOutput = document.createElement('pre');
   previewOutput.className = 'card-preview';
@@ -471,25 +489,66 @@ function advancementTree(adv) {
   const footer = dataNode('div', 'identity-adv-footer muted small',
     '共 ' + nodes.length + ' 个成就节点，已获得 ' + doneNodes + ' 个。');
 
-  const xs = nodes.map((row) => Number(row.x) || 0);
-  const ys = nodes.map((row) => Number(row.y) || 0);
-  const minX = Math.min(...xs);
-  const maxX = Math.max(...xs);
-  const minY = Math.min(...ys);
-  const maxY = Math.max(...ys);
-  const UNIT = 72;
-  const PAD = 34;
-  const width = Math.max(320, (maxX - minX) * UNIT + PAD * 2);
-  const height = Math.max(260, (maxY - minY) * UNIT + PAD * 2);
+  const byId = new Map();
+  for (const row of nodes) byId.set(row.id, row);
+
+  // 按父子关系重新排版，而不是直接使用原版 x/y（同一坐标会有很多节点重叠）。
+  const children = new Map();
+  const roots = [];
+  for (const row of nodes) {
+    if (row.parent && byId.has(row.parent) && row.parent !== row.id) {
+      if (!children.has(row.parent)) children.set(row.parent, []);
+      children.get(row.parent).push(row);
+    } else {
+      roots.push(row);
+    }
+  }
+  const sortRows = (a, b) => String(a.title || a.id)
+    .localeCompare(String(b.title || b.id), 'zh-CN');
+  for (const list of children.values()) list.sort(sortRows);
+  roots.sort(sortRows);
+
+  const COL = 96;
+  const ROW = 92;
+  const PAD = 42;
+  const placed = new Map();
+  const visiting = new Set();
+  let leaf = 0;
+  const place = (row, depth) => {
+    if (visiting.has(row.id)) return leaf * COL;
+    visiting.add(row.id);
+    const kids = (children.get(row.id) || []).filter((child) => !visiting.has(child.id));
+    let x;
+    if (!kids.length) {
+      x = leaf * COL;
+      leaf += 1;
+    } else {
+      const xs = kids.map((child) => place(child, depth + 1));
+      x = xs.reduce((sum, value) => sum + value, 0) / xs.length;
+    }
+    visiting.delete(row.id);
+    placed.set(row.id, { x, y: depth * ROW });
+    return x;
+  };
+  for (const root of roots) place(root, 0);
+  for (const row of nodes) {
+    if (!placed.has(row.id)) {
+      placed.set(row.id, { x: leaf * COL, y: 0 });
+      leaf += 1;
+    }
+  }
+
+  const maxX = Math.max(0, ...[...placed.values()].map((point) => point.x));
+  const maxY = Math.max(0, ...[...placed.values()].map((point) => point.y));
+  const width = Math.max(320, maxX + PAD * 2);
+  const height = Math.max(260, maxY + PAD * 2);
   canvas.style.width = width + 'px';
   canvas.style.height = height + 'px';
 
-  const position = (row) => ({
-    x: (Number(row.x) - minX) * UNIT + PAD,
-    y: (Number(row.y) - minY) * UNIT + PAD,
-  });
-  const byId = new Map();
-  for (const row of nodes) byId.set(row.id, row);
+  const position = (row) => {
+    const point = placed.get(row.id) || { x: 0, y: 0 };
+    return { x: point.x + PAD, y: point.y + PAD };
+  };
 
   const svgNs = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(svgNs, 'svg');
@@ -510,13 +569,69 @@ function advancementTree(adv) {
   }
   canvas.append(svg);
 
+  const ancestorChain = (row) => {
+    const chain = [];
+    const seen = new Set();
+    let current = row;
+    while (current && !seen.has(current.id)) {
+      seen.add(current.id);
+      chain.push(current);
+      current = current.parent ? byId.get(current.parent) : null;
+    }
+    return chain.reverse();
+  };
+
+  const descendantPaths = (row) => {
+    const paths = [];
+    const stack = [[row, []]];
+    while (stack.length) {
+      const [current, prefix] = stack.pop();
+      const path = prefix.concat(current);
+      const kids = children.get(current.id) || [];
+      if (!kids.length) {
+        paths.push(path);
+      } else {
+        for (const child of kids) stack.push([child, path]);
+      }
+    }
+    return paths;
+  };
+
+  const pathText = (path) => path.map((item) =>
+    String(item.title || item.id || '?')).join(' > ');
+
+  const tip = dataNode('div', 'identity-adv-tip');
+  tip.hidden = true;
+  box.append(tip);
+  const showTip = (row, event) => {
+    const chain = ancestorChain(row);
+    const branches = descendantPaths(row);
+    const lines = ['祖先：', pathText(chain), '', '子路径：'];
+    const prefix = chain.slice(0, -1);
+    if (branches.length <= 1 && branches[0] && branches[0].length === 1) {
+      lines.push(pathText(chain));
+    } else {
+      for (const branch of branches) lines.push(pathText(prefix.concat(branch)));
+    }
+    tip.textContent = lines.join(String.fromCharCode(10));
+    tip.hidden = false;
+    const padding = 14;
+    const widthEstimate = Math.min(460, Math.max(260, tip.offsetWidth || 320));
+    const heightEstimate = tip.offsetHeight || 160;
+    tip.style.left = Math.max(8, Math.min(event.clientX + padding,
+        window.innerWidth - widthEstimate - 8)) + 'px';
+    tip.style.top = Math.max(8, Math.min(event.clientY + padding,
+        window.innerHeight - heightEstimate - 8)) + 'px';
+  };
+  const hideTip = () => { tip.hidden = true; };
+
   for (const row of nodes) {
     const point = position(row);
     const node = dataNode('button', 'identity-adv-node '
       + (row.done ? 'done' : 'todo') + ' frame-' + (row.frame || 'task'));
     node.style.left = (point.x - 22) + 'px';
     node.style.top = (point.y - 22) + 'px';
-    node.title = (row.title || row.id) + String.fromCharCode(10)
+    node.title = pathText(ancestorChain(row)) + String.fromCharCode(10)
       + (row.description || '') + String.fromCharCode(10)
       + (row.done ? '已完成' : '未完成');
     const icon = document.createElement('img');
@@ -533,6 +648,9 @@ function advancementTree(adv) {
     node.append(icon);
     node.append(dataNode('span', 'identity-adv-label', row.title || row.id));
     node.addEventListener('pointerdown', (event) => event.stopPropagation());
+    node.addEventListener('mouseenter', (event) => showTip(row, event));
+    node.addEventListener('mousemove', (event) => showTip(row, event));
+    node.addEventListener('mouseleave', hideTip);
     node.addEventListener('click', () => {
       footer.textContent = (row.title || row.id) + ' · '
         + (row.done ? '已完成' : '未完成') + ' · ' + (row.description || '');
@@ -678,8 +796,10 @@ function openDataDialog(uuid) {
     titleBox.append(title, sub);
     const close = document.createElement('button');
     close.type = 'button';
-    close.className = 'ghost';
-    close.textContent = '关闭';
+    close.className = 'ghost dialog-close';
+    close.textContent = '×';
+    close.title = '关闭';
+    close.setAttribute('aria-label', '关闭');
     close.addEventListener('click', () => dialog.close());
     head.append(titleBox, close);
     content = document.createElement('div');
@@ -751,8 +871,8 @@ function renderDataDetail(root, uuid, data) {
   }
   root.append(chips);
 
-  root.append(itemSection('背包', data.inventory));
-  root.append(itemSection('末影箱', data.enderItems));
+  root.append(slotSection('背包', data.inventory, 'inventory', uuid));
+  root.append(slotSection('末影箱', data.enderItems, 'ender', uuid));
   const adv = data.advancements || {};
   const advBox = dataNode('div', 'identity-data-section identity-data-wide');
   const displayedDone = Array.isArray(adv.nodes)
@@ -794,6 +914,68 @@ function renderDataDetail(root, uuid, data) {
   }
   statBox.append(statCount ? statGrid : dataNode('p', 'muted small', '没有统计数据。'));
   root.append(statBox);
+}
+
+function slotSection(title, items, scope, uuid) {
+  const box = dataNode('div', 'identity-data-section');
+  const head = dataNode('div', 'identity-data-section-head');
+  head.append(dataNode('h4', null, title + ' · ' + (items || []).length));
+  const edit = dataNode('button', 'chip-action', '✎');
+  edit.type = 'button';
+  edit.title = '在物品栏编辑器中编辑' + title;
+  edit.setAttribute('aria-label', '编辑' + title);
+  edit.addEventListener('click', () => {
+    document.getElementById('identity-data-dialog')?.close();
+    openGroupInventory(uuid, dataDisplayName(uuid), scope);
+  });
+  head.append(edit);
+  box.append(head);
+
+  const map = new Map();
+  for (const item of items || []) {
+    const slot = Number(item.slot);
+    if (Number.isFinite(slot)) map.set(slot, item);
+  }
+  const range = (start, end) => {
+    const values = [];
+    for (let i = start; i <= end; i += 1) values.push(i);
+    return values;
+  };
+  const rows = scope === 'ender'
+    ? [{ label: '末影箱 0–26', slots: range(0, 26) }]
+    : [
+      { label: '装备 / 副手 36–40', slots: [36, 37, 38, 39, 40] },
+      { label: '主背包 9–35', slots: range(9, 35) },
+      { label: '快捷栏 0–8', slots: range(0, 8) },
+    ];
+  for (const row of rows) {
+    box.append(dataNode('div', 'identity-data-slot-title', row.label));
+    const grid = dataNode('div', 'identity-data-slot-grid');
+    for (const slot of row.slots) {
+      const item = map.get(slot);
+      const cell = dataNode('div', 'identity-data-slot' + (item ? ' filled' : ''));
+      cell.title = item
+        ? '槽位 ' + slot + ' · ' + (item.name || item.id) + ' ×' + (item.count || 1)
+        : '槽位 ' + slot + ' · 空';
+      if (item) {
+        const icon = document.createElement('img');
+        icon.src = '/items/' + (item.icon || 'stone') + '.png';
+        icon.alt = '';
+        icon.loading = 'lazy';
+        cell.append(icon);
+        if (Number(item.count) > 1) {
+          cell.append(dataNode('span', 'identity-data-slot-count', String(item.count)));
+        }
+      }
+      cell.addEventListener('click', () => {
+        document.getElementById('identity-data-dialog')?.close();
+        openGroupInventory(uuid, dataDisplayName(uuid), scope);
+      });
+      grid.append(cell);
+    }
+    box.append(grid);
+  }
+  return box;
 }
 
 function itemSection(title, items) {

@@ -2226,3 +2226,81 @@ img.glint { filter: drop-shadow(0 0 3px #b26cff) saturate(1.2); }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ---- 2026-11-13 UI 细节 ---- */
+/* 子元素滚动到边界时禁止带动父元素滚动。 */
+*, *::before, *::after { overscroll-behavior: contain; }
+html, body { overscroll-behavior: none; }
+
+/* 关闭按钮统一用 ×，保留 title/aria-label。 */
+.dialog-close {
+  min-width: 30px;
+  padding: 2px 8px;
+  font-size: 17px;
+  line-height: 1.05;
+}
+
+/* 成就树 hover 全路径浮层（不占布局）。 */
+.identity-adv-tip {
+  position: fixed;
+  z-index: 10000;
+  max-width: 460px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: rgba(15, 23, 32, .97);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .45);
+  color: #d7e2ef;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  pointer-events: none;
+}
+
+/* server.properties 的值列适当加宽，enum 不再换行。 */
+.entry { grid-template-columns: minmax(240px, 1fr) minmax(260px, 460px) auto; }
+.entry-control .segmented { flex-wrap: nowrap; }
+
+/* data UUID 详情：按物品栏显示真实槽位。 */
+.identity-data-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.identity-data-section-head h4 { margin: 0 0 8px; }
+.identity-data-slot-title {
+  margin: 6px 0 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.identity-data-slot-grid {
+  display: grid;
+  grid-template-columns: repeat(9, 34px);
+  gap: 3px;
+}
+.identity-data-slot {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 0;
+  background: #8b8b8b url('/ui/slot.png') center / 100% 100% no-repeat;
+  cursor: pointer;
+}
+.identity-data-slot:hover { box-shadow: inset 0 0 0 2px #ffffff; }
+.identity-data-slot img {
+  width: 28px;
+  height: 28px;
+  margin: 3px;
+  image-rendering: pixelated;
+}
+.identity-data-slot-count {
+  position: absolute;
+  right: 2px;
+  bottom: 1px;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  text-shadow: 0 0 2px #000, 0 0 2px #000;
+}

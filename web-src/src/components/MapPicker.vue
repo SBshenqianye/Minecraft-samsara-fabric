@@ -619,19 +619,49 @@ function prepareMarkers() {
   }
 }
 
-/** 点击列表/地图目标时，直接把地图定位到该标记并放大到合适层级。 */
-function focusOn(markerId, targetScale = 0.25) {
+/** 点击列表/地图目标时，先把地图定位到该标记，再选“刚好不与其它标记聚合”的缩放层级。 */
+function isolatingScale(marker) {
+  const others = props.markers.filter((row) => row.id !== marker.id
+    && (!row.dimension || row.dimension === props.dimension));
+  for (let i = SCALES.length - 1; i >= 0; i--) {
+    const candidate = SCALES[i];
+    if (candidate <= MAX_GRID_SCALE) return candidate;
+    const index = Math.max(0, SCALES.indexOf(candidate));
+    const zoomIn = SCALES.length - 1 - index;
+    const radius = Math.max(MAX_GRID_SPREAD, 64 - zoomIn * 5);
+    let nearest = Infinity;
+    for (const other of others) {
+      const dx = Number(other.x) - Number(marker.x);
+      const dz = Number(other.z) - Number(marker.z);
+      nearest = Math.min(nearest, Math.hypot(dx, dz) / candidate);
+    }
+    if (nearest > radius + 40) return candidate;
+  }
+  return MIN_SCALE;
+}
+
+function focusOn(markerId, targetScale = null) {
   const marker = props.markers.find((row) => row.id === markerId);
   if (!marker) return false;
   centerX.value = Number(marker.x);
   centerZ.value = Number(marker.z);
+  scale.value = Math.max(MIN_SCALE, Math.min(MAX_SCALE,
+    targetScale == null ? isolatingScale(marker) : targetScale));
+  closeClusterPopup();
+  rebuildTiles();
+  return true;
+}
+
+function focusOnPoint(x, z, targetScale = 0.25) {
+  centerX.value = Number(x);
+  centerZ.value = Number(z);
   scale.value = Math.max(MIN_SCALE, Math.min(MAX_SCALE, targetScale));
   closeClusterPopup();
   rebuildTiles();
   return true;
 }
 
-defineExpose({ focusOn });
+defineExpose({ focusOn, focusOnPoint });
 
 onMounted(() => {
   loadModel();

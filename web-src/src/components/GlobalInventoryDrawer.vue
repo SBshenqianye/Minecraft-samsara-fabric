@@ -51,19 +51,11 @@
                 :revision="revision"
                 :editable="true"
                 :trash="false"
+                :trash-inline="true"
                 :show-toolbar="false"
                 @change="onChange"
                 @select="onWorkbenchSelect"
               />
-              <button
-                class="creative-trash global-inventory-trash"
-                type="button"
-                title="删除光标上的物品"
-                aria-label="垃圾桶"
-                @click="workbench?.trashCursor()"
-              >
-                <img :src="trashIconSrc" alt="" draggable="false" />
-              </button>
             </div>
           </div>
           <CreativeLibrary class="global-inventory-library" @pick="onPick" />
@@ -96,7 +88,6 @@ import ItemEditor from './ItemEditor.vue';
 const open = ref(false);
 const pinned = ref(false);
 const WEB_SLOTS = 68; // 41 格玩家背包 + 27 格末影箱
-const trashIconSrc = '/ui/creative_trash.png';
 const initialWidth = Math.min(1120, Math.max(880, window.innerWidth - 40));
 const initialHeight = Math.min(940, Math.max(680, window.innerHeight - 60));
 const initialX = Math.max(20, window.innerWidth - initialWidth - 20);
@@ -167,8 +158,7 @@ function onKeydown(event) {
       || target.tagName === 'SELECT' || target.isContentEditable)) {
     return;
   }
-  // 大弹窗/确认框真正可见时不抢 E（Element Plus 关闭的弹层仍留在 DOM 里）。
-  if (dialogBlocking()) return;
+  // Web 背包是全局最高优先级：data UUID 详情等弹窗打开时也允许 E 唤出。
   event.preventDefault();
   toggleWindow();
 }
@@ -450,8 +440,12 @@ defineExpose({ open: () => openWindow() });
 
 /* 缩小槽位并让格子区按内容收窄，腾出下半屏给创造物品库。 */
 .global-inventory-panel :deep(.slot-grid) {
-  --slot-size: 32px;
-  gap: 3px;
+  --slot-size: 36px;
+  gap: 2px;
+}
+
+.global-inventory-panel {
+  --slot-size: 36px;
 }
 
 .global-inventory-panel :deep(.workbench-grids) {
@@ -572,6 +566,7 @@ defineExpose({ open: () => openWindow() });
 
 /* 创造物品库也用原版 GUI 灰底与页签样式（「全部」在第一位） */
 .global-inventory-panel :deep(.creative-library) {
+  --slot-size: 36px;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -584,7 +579,11 @@ defineExpose({ open: () => openWindow() });
 }
 
 .global-inventory-panel :deep(.creative-tabs) {
-  border: 0;
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  border: 2px solid #373737;
+  border-bottom: 0;
   border-radius: 0;
   background: #8b8b8b;
   padding: 2px;
@@ -592,27 +591,89 @@ defineExpose({ open: () => openWindow() });
 }
 
 .global-inventory-panel :deep(.creative-tabs button) {
-  border: 1px solid #555;
-  border-radius: 2px;
-  background: #c6c6c6;
-  color: #2b2b2b;
+  flex: 0 0 auto;
+  min-height: 24px;
+  padding: 2px 8px;
+  border: 1px solid #373737;
+  border-radius: 0;
+  background: #8b8b8b;
+  color: #3b3b3b;
+  font-size: 11px;
+  line-height: 1.2;
 }
 
 .global-inventory-panel :deep(.creative-tabs button.active) {
-  background: #ffffff;
-  color: #2b2b2b;
-  border-color: #ffffff;
+  background: #c6c6c6;
+  color: #000000;
+  border-color: #373737;
+  border-bottom-color: #c6c6c6;
+  box-shadow: inset 0 1px 0 #ffffff;
 }
 
-.global-inventory-panel :deep(.creative-toolbar) { color: #2b2b2b; }
+.global-inventory-panel :deep(.creative-toolbar) {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+  color: #2b2b2b;
+}
+
+.global-inventory-panel :deep(.creative-toolbar input[type='search']) {
+  flex: 1 1 120px;
+  min-width: 90px;
+  height: 24px;
+  min-height: 24px;
+  padding: 1px 6px;
+  border: 1px solid #373737;
+  border-radius: 0;
+  background: #ffffff;
+  color: #222222;
+  font-size: 11px;
+}
+
+.global-inventory-panel :deep(.creative-toolbar .samsara-segmented) {
+  flex: 0 0 auto;
+  height: 24px;
+  padding: 0;
+  border: 1px solid #373737;
+  border-radius: 5px;
+  background: #8b8b8b;
+}
+
+.global-inventory-panel :deep(.creative-toolbar .el-segmented__item) {
+  padding: 0 6px;
+  border-radius: 4px;
+  line-height: 22px;
+  font-size: 10px;
+}
 
 .global-inventory-panel :deep(.creative-grid) {
   flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, var(--slot-size, 36px));
+  align-content: start;
+  gap: 2px;
+  min-height: 220px;
+  max-height: none;
+  padding: 4px;
   border: 2px solid #373737;
   border-radius: 0;
   background: #8b8b8b;
-  min-height: 220px;
-  max-height: none;
+}
+
+.global-inventory-panel :deep(.creative-slot) {
+  width: var(--slot-size, 36px);
+  height: var(--slot-size, 36px);
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: #8b8b8b url('/ui/slot.png') center / 100% 100% no-repeat;
+}
+
+.global-inventory-panel :deep(.creative-slot:hover) {
+  background-color: #c6c6c6;
+  box-shadow: inset 0 0 0 2px #ffffff;
 }
 </style>
 

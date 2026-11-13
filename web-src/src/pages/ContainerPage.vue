@@ -189,7 +189,7 @@
                 <span class="sky-row-main">
                   <strong class="sky-row-title">{{ player.name || player.uuid }}</strong>
                   <span class="sky-row-meta">
-                    {{ shortDimension(player.dimension || '') }}<template v-if="player.lastSeen"> · {{ player.lastSeen }}</template>
+                    {{ player.dimension ? shortDimension(player.dimension) : '维度未知' }}<template v-if="player.lastSeen"> · {{ player.lastSeen }}</template>
                   </span>
                 </span>
                 <span class="sky-row-badge" :class="player.online ? 'online' : 'offline'">
@@ -432,7 +432,7 @@ const filteredPlayers = computed(() => {
     if (playerStatus.value === 'online' && player.online !== true) return false;
     if (playerStatus.value === 'offline' && player.online === true) return false;
     if (playerScope.value === 'current' && playerDimension.value
-        && player.dimension && player.dimension !== playerDimension.value) return false;
+        && player.dimension !== playerDimension.value) return false;
     return true;
   });
 });
@@ -530,6 +530,10 @@ const markers = computed(() => {
       kind: 'portal',
       portalKind: portal.portalKind,
       targetDimension: portal.targetDimension,
+      targetId: portal.targetId,
+      targetX: portal.targetX,
+      targetY: portal.targetY,
+      targetZ: portal.targetZ,
       icon: portal.icon,
     }));
   return rows.concat(people, portalRows);
@@ -850,10 +854,18 @@ async function scan() {
   }
 }
 
-function selectMarker(id) {
+async function selectMarker(id) {
   if (String(id).startsWith('portal:')) {
     const portal = portals.value.find((row) => row.id === id);
-    if (portal?.targetDimension) switchDimension(portal.targetDimension);
+    if (portal?.targetDimension) {
+      await switchDimension(portal.targetDimension);
+      await nextTick();
+      if (portal.targetId) {
+        mapPicker.value?.focusOn(portal.targetId);
+      } else if (Number.isFinite(Number(portal.targetX)) && Number.isFinite(Number(portal.targetZ))) {
+        mapPicker.value?.focusOnPoint(portal.targetX, portal.targetZ, 0.25);
+      }
+    }
     return;
   }
   if (String(id).startsWith('player:')) {
@@ -883,7 +895,7 @@ async function focusMapMarker(id, dimension) {
     await search();
   }
   await nextTick();
-  mapPicker.value?.focusOn(id, 0.25);
+  mapPicker.value?.focusOn(id);
 }
 
 function openPlayerWindow(player) {

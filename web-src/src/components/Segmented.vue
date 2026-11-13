@@ -62,6 +62,17 @@ function onUpdate(value) {
   white-space: nowrap;
 }
 
+/* 首尾按钮外侧保留容器圆角，避免直角。 */
+.samsara-segmented :deep(.el-segmented__item:first-child) {
+  border-top-left-radius: 6px;
+  border-bottom-left-radius: 6px;
+}
+
+.samsara-segmented :deep(.el-segmented__item:last-child) {
+  border-top-right-radius: 6px;
+  border-bottom-right-radius: 6px;
+}
+
 .samsara-segmented :deep(.el-segmented__item-selected) {
   box-shadow: 0 1px 4px rgba(0, 0, 0, .28);
 }

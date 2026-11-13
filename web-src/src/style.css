@@ -312,3 +312,13 @@
 
 .app-shell.no-nav { grid-template-columns: minmax(0, 1fr); }
 .app-shell.no-nav .ia-side { display: none; }
+
+/* 子元素滚动到边界时禁止带动父元素滚动。 */
+*, *::before, *::after { overscroll-behavior: contain; }
+html, body { overscroll-behavior: none; }
+.dialog-close {
+  min-width: 30px;
+  padding: 2px 8px;
+  font-size: 17px;
+  line-height: 1.05;
+}

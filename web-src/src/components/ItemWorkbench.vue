@@ -75,6 +75,18 @@
               @drop-slot="onSectionDrop(section, $event)"
             />
           </section>
+          <button
+            v-if="trashInline && rowIndex === layoutRows.length - 1"
+            class="workbench-trash-inline"
+            :class="{ armed: !!cursor }"
+            type="button"
+            title="垃圾桶：拿起物品后点这里删除（或把物品拖进来）"
+            @click="trashCursor"
+            @dragover.prevent
+            @drop.prevent="trashDrop"
+          >
+            <img :src="trashIconSrc" alt="垃圾桶" draggable="false" />
+          </button>
         </div>
         <p v-if="!layout.length" class="muted small">没有可显示的槽位。</p>
       </div>
@@ -100,6 +112,7 @@ const props = defineProps({
   revision: { type: Number, default: 0 },
   disabled: { type: Boolean, default: false },
   trash: { type: Boolean, default: true },
+  trashInline: { type: Boolean, default: false },
   unlimitedStack: { type: Boolean, default: false },
   autoStack: { type: Boolean, default: false },
   hasMore: { type: Boolean, default: false },
@@ -605,6 +618,29 @@ defineExpose({
   font-size: 10px;
   line-height: 1.35;
 }
+
+.workbench-trash-inline {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  align-self: flex-end;
+  width: var(--slot-size, 48px);
+  height: var(--slot-size, 48px);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: #8b8b8b url('/ui/slot.png') center / 100% 100% no-repeat;
+  cursor: pointer;
+}
+
+.workbench-trash-inline img {
+  width: 72%;
+  height: 72%;
+  image-rendering: pixelated;
+}
+
+.workbench-trash-inline:hover { box-shadow: inset 0 0 0 2px #fff; }
+.workbench-trash-inline.armed { box-shadow: inset 0 0 0 2px #d9534f; }
 
 .workbench-trash {
   display: grid;
