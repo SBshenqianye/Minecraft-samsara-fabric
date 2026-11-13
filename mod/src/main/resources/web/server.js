@@ -212,6 +212,7 @@
   let auditEntries = [];
   let auditOffset = 0;
   let auditHasMore = false;
+  let auditTotal = 0;
   let auditLoading = false;
 
   function auditMessage(text, kind) {
@@ -233,14 +234,19 @@
       const page = Array.isArray(data.entries) ? data.entries : [];
       auditEntries = auditEntries.concat(page);
       auditOffset += page.length;
-      auditHasMore = Boolean(data.hasMore) || page.length >= 30;
+      auditTotal = Number(data.total || 0);
+      auditHasMore = data.total != null ? auditOffset < auditTotal : page.length >= 30;
       renderAudit();
-      auditMessage('已加载 ' + auditEntries.length + ' 条审计记录'
-        + (auditHasMore ? '；可继续加载更早记录。' : '；写请求前自动快照。'), 'ok');
+      auditMessage('已加载 ' + auditEntries.length
+        + (auditTotal ? ' / ' + auditTotal : '')
+        + ' 条审计记录' + (auditHasMore ? '；可继续加载更早记录。' : '；写请求前自动快照。'), 'ok');
     } catch (error) {
       auditMessage(error.message || '读取审计失败', 'error');
     } finally {
       auditLoading = false;
+      // renderAudit 在请求完成前就执行时会把按钮画成“加载中…”并禁用；
+      // 请求结束后必须重绘一次，否则“加载更多”永远停在禁用状态。
+      renderAudit();
     }
   }
 

@@ -23,13 +23,22 @@ const pointerY = ref(12);
 const cursorEl = ref(null);
 
 // Web 背包在 top layer；跟随光标的物品也必须进入 top layer，否则会被背包遮住。
-watch(() => !!itemCursor.item, async (visible) => {
+// tooltip 显示后同样在 top layer，需要把光标重新提到 tooltip 之上。
+watch(() => [!!itemCursor.item, itemCursor.raise || 0], async ([visible, raise]) => {
   await nextTick();
   const el = cursorEl.value;
   if (!el || typeof el.showPopover !== 'function') return;
   try {
-    if (visible && !el.matches(':popover-open')) el.showPopover();
-    else if (!visible && el.matches(':popover-open')) el.hidePopover();
+    if (visible) {
+      if (raise) {
+        if (el.matches(':popover-open')) el.hidePopover();
+        el.showPopover();
+      } else if (!el.matches(':popover-open')) {
+        el.showPopover();
+      }
+    } else if (el.matches(':popover-open')) {
+      el.hidePopover();
+    }
   } catch {
     // ignore
   }

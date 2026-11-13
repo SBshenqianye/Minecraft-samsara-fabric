@@ -3,6 +3,7 @@ package com.shenqianye.samsara.identity;
 import com.shenqianye.samsara.Samsara;
 import com.shenqianye.samsara.storage.StoragePaths;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.SharedConstants;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtAccounter;
@@ -20,8 +21,10 @@ import net.minecraft.world.level.storage.TagValueInput;
 import net.minecraft.world.level.storage.TagValueOutput;
 
 import java.io.IOException;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -152,6 +155,31 @@ public final class IdentityService {
 
     public IdentityDataSync dataSync() {
         return dataSync;
+    }
+
+    /**
+     * 新建一份不绑定任何玩家的空白 data：只写入最小玩家 NBT（DataVersion + 空背包）。
+     * 这样空白 data 可以先编辑背包，再在赋值时批量复制给多个账号，后续互不同步。
+     */
+    public UUID createBlankData() throws IOException {
+        if (dataSync == null) throw new IOException("数据服务尚未初始化");
+        UUID data = UUID.randomUUID();
+        Path target = dataSync.identityData(data);
+        Files.createDirectories(target.getParent());
+        CompoundTag tag = new CompoundTag();
+        tag.putInt("DataVersion", SharedConstants.WORLD_VERSION);
+        tag.put("Inventory", new ListTag());
+        tag.put("EnderItems", new ListTag());
+        Path staged = target.resolveSibling(target.getFileName() + ".staged");
+        NbtIo.writeCompressed(tag, staged);
+        try {
+            Files.move(staged, target, StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException e) {
+            Files.move(staged, target, StandardCopyOption.REPLACE_EXISTING);
+        }
+        IdentityAudit.log(identityRoot, "web_data_create_blank", "web", data, "blank");
+        return data;
     }
 
     public Path identityRoot() {

@@ -13,6 +13,7 @@ import com.shenqianye.samsara.season.PlayerRegistry;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
+import java.io.IOException;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
@@ -338,8 +339,15 @@ public final class WebIdentityService implements IdentityWebService {
     @Override
     public Map<String, Object> generate() {
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("ok", true);
-        out.put("data", UUID.randomUUID().toString());
+        try {
+            UUID data = IdentityService.getInstance().createBlankData();
+            out.put("ok", true);
+            out.put("data", data.toString());
+            out.put("message", "已创建空白 data，可直接编辑背包或赋值给多个账号。");
+        } catch (IOException e) {
+            out.put("ok", false);
+            out.put("error", "创建空白 data 失败：" + e.getMessage());
+        }
         return out;
     }
 

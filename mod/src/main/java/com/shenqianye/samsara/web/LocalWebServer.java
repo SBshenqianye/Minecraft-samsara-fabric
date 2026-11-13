@@ -1344,12 +1344,14 @@ public final class LocalWebServer {
                 int offset = Math.max(0, intParam(query, "offset", 0));
                 int limit = Math.max(1, Math.min(100, intParam(query, "limit", 30)));
                 List<Map<String, Object>> entries = WebAuditService.get().listPage(offset, limit);
+                int total = WebAuditService.get().total();
                 Map<String, Object> out = new LinkedHashMap<>();
                 out.put("ok", true);
                 out.put("entries", entries);
                 out.put("offset", offset);
                 out.put("limit", limit);
-                out.put("hasMore", entries.size() >= limit);
+                out.put("total", total);
+                out.put("hasMore", offset + entries.size() < total);
                 json(exchange, 200, out);
                 return;
             }
@@ -1819,7 +1821,8 @@ public final class LocalWebServer {
                 return;
             }
             if ("POST".equals(method) && ("/api/items/describe".equals(path)
-                    || "/api/items/build".equals(path) || "/api/items/raw".equals(path))) {
+                    || "/api/items/build".equals(path) || "/api/items/raw".equals(path)
+                    || "/api/items/craft".equals(path))) {
                 String body;
                 try {
                     body = readBody(exchange);
@@ -1830,7 +1833,8 @@ public final class LocalWebServer {
                 }
                 Map<String, Object> result = "/api/items/describe".equals(path)
                         ? itemService.describe(body) : "/api/items/raw".equals(path)
-                        ? itemService.raw(body) : itemService.build(body);
+                        ? itemService.raw(body) : "/api/items/craft".equals(path)
+                        ? itemService.craft(body) : itemService.build(body);
                 Object requested = result.get("status");
                 status = requested instanceof Number number ? number.intValue()
                         : result.get("ok") == Boolean.TRUE ? 200 : 400;

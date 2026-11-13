@@ -36,8 +36,9 @@
         <p class="muted small">需要管理端 token；请先在任意管理页连接。</p>
       </div>
       <div v-else class="global-inventory-body">
-        <div class="global-inventory-main">
+        <div class="global-inventory-main" ref="mainEl" :style="{ '--slot-size': slotSize + 'px' }">
           <div class="global-inventory-slots">
+            <CraftingBench class="global-inventory-crafting" />
             <div class="global-inventory-grid-wrap">
               <ItemWorkbench
                 ref="workbench"
@@ -78,18 +79,22 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from 'vue';
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import FloatingWindow from './FloatingWindow.vue';
 import ItemWorkbench from './ItemWorkbench.vue';
 import CreativeLibrary from './CreativeLibrary.vue';
+import CraftingBench from './CraftingBench.vue';
 import ItemEditor from './ItemEditor.vue';
 
 const open = ref(false);
 const pinned = ref(false);
 const WEB_SLOTS = 68; // 41 格玩家背包 + 27 格末影箱
-const initialWidth = Math.min(1120, Math.max(880, window.innerWidth - 40));
-const initialHeight = Math.min(940, Math.max(680, window.innerHeight - 60));
-const initialX = Math.max(20, window.innerWidth - initialWidth - 20);
+const initialWidth = Math.min(1680, Math.max(980, window.innerWidth - 40));
+const initialHeight = Math.min(1000, Math.max(720, window.innerHeight - 60));
+const initialX = Math.max(2, window.innerWidth - initialWidth - 20);
+const slotSize = ref(40);
+const mainEl = ref(null);
+let sizeObserver = null;
 const loading = ref(false);
 const saving = ref(false);
 const connected = ref(false);
@@ -141,13 +146,40 @@ onMounted(() => {
   token = sessionStorage.getItem('samsara-token') || '';
   connected.value = !!token;
   window.addEventListener('keydown', onKeydown);
+  updateSlotSize();
+  window.addEventListener('resize', updateSlotSize);
+  window.requestAnimationFrame(updateSlotSize);
+  if (typeof ResizeObserver === 'function' && mainEl.value) {
+    sizeObserver = new ResizeObserver(updateSlotSize);
+    sizeObserver.observe(mainEl.value);
+  }
+});
+
+watch(open, async (visible) => {
+  if (!visible) return;
+  await nextTick();
+  updateSlotSize();
+  window.setTimeout(updateSlotSize, 60);
+  window.setTimeout(updateSlotSize, 240);
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown);
+  window.removeEventListener('resize', updateSlotSize);
+  sizeObserver?.disconnect();
   window.clearTimeout(liveTimer);
   if (dirty.value && !saving.value) save();
 });
+
+function updateSlotSize() {
+  const el = mainEl.value;
+  if (!el) return;
+  const rect = el.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  const byWidth = Math.floor(((rect.width - 22) / 2 - 18) / 9);
+  const byHeight = Math.floor((rect.height - 150) / 9);
+  slotSize.value = Math.max(32, Math.min(56, byWidth, byHeight));
+}
 
 function onKeydown(event) {
   if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
@@ -383,30 +415,38 @@ defineExpose({ open: () => openWindow() });
   flex-direction: column;
   gap: 10px;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
 }
 
 .global-inventory-main {
   display: grid;
-  flex: 0 0 auto;
-  grid-template-columns: max-content minmax(320px, 420px);
-  align-items: start;
-  justify-content: start;
-  gap: 10px;
-  min-height: 360px;
+  flex: 1 1 auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: stretch;
+  justify-content: stretch;
+  gap: 12px;
+  width: 100%;
+  min-height: 0;
 }
 
 .global-inventory-slots {
   display: flex;
   flex-direction: column;
+  gap: 8px;
   min-width: 0;
   min-height: 0;
+  height: 100%;
+  overflow: auto;
+}
+
+.global-inventory-crafting {
+  flex: 0 0 auto;
 }
 
 .global-inventory-grid-wrap {
   position: relative;
-  width: max-content;
-  max-width: 100%;
+  width: 100%;
+  max-width: none;
   margin-top: 0;
 }
 
@@ -441,17 +481,16 @@ defineExpose({ open: () => openWindow() });
 
 /* 缩小槽位并让格子区按内容收窄，腾出下半屏给创造物品库。 */
 .global-inventory-panel :deep(.slot-grid) {
-  --slot-size: 36px;
   gap: 2px;
 }
 
 .global-inventory-panel {
-  --slot-size: 36px;
+  --slot-size: 40px;
 }
 
 .global-inventory-panel :deep(.workbench-grids) {
-  width: max-content;
-  min-width: 380px;
+  width: 100%;
+  min-width: 0;
   padding: 6px;
 }
 
@@ -567,11 +606,10 @@ defineExpose({ open: () => openWindow() });
 
 /* 创造物品库也用原版 GUI 灰底与页签样式（「全部」在第一位） */
 .global-inventory-panel :deep(.creative-library) {
-  --slot-size: 36px;
   display: flex;
   flex-direction: column;
-  height: auto;
-  max-height: 100%;
+  width: 100%;
+  height: 100%;
   min-height: 0;
   gap: 6px;
   padding: 6px;
@@ -669,8 +707,8 @@ defineExpose({ open: () => openWindow() });
   justify-content: center;
   align-content: start;
   gap: 2px;
-  min-height: 220px;
-  max-height: min(560px, calc(100vh - 360px));
+  min-height: 0;
+  max-height: none;
   padding: 4px;
   border: 2px solid #373737;
   border-radius: 0;

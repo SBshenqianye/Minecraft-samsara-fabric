@@ -521,7 +521,9 @@ async function libraryPick(row) {
       signature: data.signature || data.id,
     });
     // 和原版创造模式一样：点击创造物品先放到光标上，再点槽位放下。
-    // 不再因为“当前选中了某个空槽位”就直接塞进去，否则 Shift+点击拿不到一组。
+    // 旧的光标物品直接被替换（等同删除），不能保留上一个槽位的来源标记。
+    itemCursor.sourceId = null;
+    itemCursor.sourceIndex = null;
     cursor.value = item;
     cursorOrigin.value = null;
   } catch (e) {

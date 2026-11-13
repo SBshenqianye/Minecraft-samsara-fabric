@@ -42,6 +42,9 @@ public final class WebAuditService {
     private final Path serverRoot;
     private final Path configRoot;
     private final Path root;
+    private volatile List<String> indexCache;
+    private long indexSourceTime;
+    private final Object indexLock = new Object();
 
     private WebAuditService() {
         Path game;
@@ -92,7 +95,7 @@ public final class WebAuditService {
             String id = "wa-" + System.currentTimeMillis() + "-" + SEQ.incrementAndGet();
             Path dir = root.resolve(id);
             Path filesDir = dir.resolve("files");
-            Files.createDirectories(filesDir);
+            Files.createDirectories(filesDir); indexCache = null;
             List<FileInfo> files = new ArrayList<>();
             long[] total = {0};
             for (Path scope : scopes()) {
@@ -145,7 +148,7 @@ public final class WebAuditService {
         try {
             String id = "wa-" + System.currentTimeMillis() + "-" + SEQ.incrementAndGet();
             Path dir = root.resolve(id);
-            Files.createDirectories(dir);
+            Files.createDirectories(dir); indexCache = null;
             String body = snapshotJson == null ? "{}" : snapshotJson;
             Files.writeString(dir.resolve(fileName), body, StandardCharsets.UTF_8);
             Entry entry = new Entry();
@@ -170,27 +173,49 @@ public final class WebAuditService {
         return listPage(0, limit <= 0 ? Integer.MAX_VALUE : limit);
     }
 
-    /** 审计分页：按目录时间倒序跳过 offset 条，只解析当前页 manifest。 */
+    /** 审计分页：索引只构建一次；翻页只读当前页 manifest，避免每次 O(n) 扫全目录。 */
     public List<Map<String, Object>> listPage(int offset, int limit) {
         int skip = Math.max(0, offset);
         int max = limit <= 0 ? 30 : Math.min(200, limit);
         List<Map<String, Object>> out = new ArrayList<>();
-        if (!Files.isDirectory(root)) return out;
-        try (Stream<Path> stream = Files.list(root)) {
-            for (Path dir : (Iterable<Path>) stream.filter(Files::isDirectory)
-                    .sorted(Comparator.reverseOrder())::iterator) {
-                if (skip > 0) {
-                    skip--;
-                    continue;
-                }
-                Entry entry = readManifest(dir);
-                if (entry == null) continue;
-                out.add(entry.toMap());
-                if (out.size() >= max) break;
-            }
-        } catch (IOException ignored) {
+        List<String> ids = index();
+        for (int i = skip; i < ids.size() && out.size() < max; i++) {
+            Entry entry = readManifest(root.resolve(ids.get(i)));
+            if (entry != null) out.add(entry.toMap());
         }
         return out;
+    }
+
+    /** 审计记录总数，供前端判断是否还有下一页。 */
+    public int total() {
+        return index().size();
+    }
+
+    private List<String> index() {
+        long modified = 0L;
+        try {
+            modified = Files.isDirectory(root) ? Files.getLastModifiedTime(root).toMillis() : 0L;
+        } catch (IOException ignored) {
+        }
+        List<String> cache = indexCache;
+        if (cache != null && modified <= indexSourceTime) return cache;
+        synchronized (indexLock) {
+            cache = indexCache;
+            if (cache != null && modified <= indexSourceTime) return cache;
+            List<String> ids = new ArrayList<>();
+            if (Files.isDirectory(root)) {
+                try (Stream<Path> stream = Files.list(root)) {
+                    stream.filter(Files::isDirectory)
+                            .map(path -> path.getFileName().toString())
+                            .sorted(Comparator.reverseOrder())
+                            .forEach(ids::add);
+                } catch (IOException ignored) {
+                }
+            }
+            indexCache = ids;
+            indexSourceTime = modified;
+            return ids;
+        }
     }
 
     public Map<String, Object> preview(String id) {
@@ -421,7 +446,7 @@ public final class WebAuditService {
         try {
             Path dir = root.resolve(id);
             Path filesDir = dir.resolve("files");
-            Files.createDirectories(filesDir);
+            Files.createDirectories(filesDir); indexCache = null;
             List<FileInfo> files = new ArrayList<>();
             long[] total = {0};
             for (Path scope : scopes()) capturePath(scope, filesDir, files, total);
@@ -463,7 +488,7 @@ public final class WebAuditService {
     }
 
     private void writeManifest(Path dir, Entry entry) throws IOException {
-        Files.createDirectories(dir);
+        Files.createDirectories(dir); indexCache = null;
         Path temp = dir.resolve("manifest.json.tmp");
         Files.writeString(temp, GSON.toJson(entry), StandardCharsets.UTF_8);
         Files.move(temp, dir.resolve("manifest.json"),

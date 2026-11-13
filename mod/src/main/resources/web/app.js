@@ -3336,6 +3336,9 @@ function clearPageSurfaces() {
       dialog.removeAttribute('open');
     }
   }
+  try {
+    window.SamsaraDialog?.closeAll?.();
+  } catch (error) { /* 框架尚未挂载 */ }
 }
 
 function leavePage(name) {
@@ -3462,7 +3465,7 @@ function appendNavItem(parent, item) {
   button.addEventListener('click', () => {
     if (typeof item.onClick === 'function') {
       item.onClick();
-      if (item.target) setNavActive(item.target);
+      if (item.target) scrollToTarget(item.target);
     } else if (item.target) {
       scrollToTarget(item.target);
     }

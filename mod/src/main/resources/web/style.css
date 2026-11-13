@@ -2109,7 +2109,7 @@ img.glint { filter: drop-shadow(0 0 3px #b26cff) saturate(1.2); }
 
 .identity-adv-viewport {
   position: relative;
-  height: 420px;
+  height: 630px;
   overflow: hidden;
   cursor: grab;
   touch-action: none;

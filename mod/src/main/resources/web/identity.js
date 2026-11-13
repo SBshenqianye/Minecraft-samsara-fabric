@@ -43,6 +43,25 @@ function shortUuid(uuid) {
   return uuid.length > 13 ? uuid.slice(0, 8) + '…' + uuid.slice(-4) : uuid;
 }
 
+/** 身份页统一使用 Element Plus 弹窗；旧 standalone 页面没有桥时退回原生 dialog。 */
+function showIdentityDialog(nativeId, title, width) {
+  const native = document.getElementById(nativeId);
+  const body = native ? native.querySelector('.dialog-body') : null;
+  if (body && window.SamsaraDialog) {
+    window.SamsaraDialog.open(nativeId, { title, width, content: body });
+    return;
+  }
+  if (native?.showModal) native.showModal();
+}
+
+function hideIdentityDialog(nativeId) {
+  if (window.SamsaraDialog) {
+    window.SamsaraDialog.close(nativeId);
+    return;
+  }
+  document.getElementById(nativeId)?.close();
+}
+
 function nextGroupId() {
   I.seq += 1;
   return 'g' + I.seq;
@@ -536,7 +555,10 @@ function advancementTree(adv) {
   const bar = dataNode('div', 'identity-adv-bar');
   bar.append(dataNode('span', 'muted small', '拖动平移 · 滚轮缩放 · 点击节点查看说明'));
   bar.append(dataNode('span', 'identity-adv-spacer'));
-  const reset = dataNode('button', 'ghost tiny', '重置视图');
+  const reset = dataNode('button', 'ghost tiny identity-adv-reset', '↺');
+  reset.type = 'button';
+  reset.title = '重置视图';
+  reset.setAttribute('aria-label', '重置视图');
   bar.append(reset);
   const viewport = dataNode('div', 'identity-adv-viewport');
   const canvas = dataNode('div', 'identity-adv-canvas');
@@ -856,42 +878,33 @@ async function fetchBackups(uuid, list) {
 }
 
 function openDataDialog(uuid) {
-  let dialog = document.getElementById('identity-data-dialog');
-  let content;
-  if (!dialog) {
-    dialog = document.createElement('dialog');
-    dialog.id = 'identity-data-dialog';
-    dialog.className = 'app-dialog identity-data-dialog';
-    const body = document.createElement('div');
-    body.className = 'dialog-body';
-    const head = document.createElement('div');
-    head.className = 'dialog-head';
-    const titleBox = document.createElement('div');
-    const title = document.createElement('h3');
-    title.textContent = 'data UUID 详情';
-    const sub = document.createElement('p');
-    sub.className = 'dialog-sub';
-    sub.textContent = '查看身份数据文件、成就、统计与备份位置；背包编辑在独立大窗口中完成。';
-    titleBox.append(title, sub);
-    const close = document.createElement('button');
-    close.type = 'button';
-    close.className = 'ghost dialog-close';
-    close.textContent = '×';
-    close.title = '关闭';
-    close.setAttribute('aria-label', '关闭');
-    close.addEventListener('click', () => dialog.close());
-    head.append(titleBox, close);
+  let content = document.getElementById('identity-data-content');
+  if (!content) {
     content = document.createElement('div');
     content.id = 'identity-data-content';
     content.className = 'identity-data-content';
-    body.append(head, content);
-    dialog.append(body);
-    document.body.append(dialog);
-  } else {
-    content = document.getElementById('identity-data-content');
   }
   content.replaceChildren(dataNode('p', 'muted', '加载中…'));
-  if (typeof dialog.showModal === 'function') dialog.showModal();
+  if (window.SamsaraDialog) {
+    window.SamsaraDialog.open('identity-data-dialog', {
+      title: 'data UUID 详情',
+      width: 'min(1500px, 96vw)',
+      content,
+    });
+  } else {
+    let dialog = document.getElementById('identity-data-dialog');
+    if (!dialog) {
+      dialog = document.createElement('dialog');
+      dialog.id = 'identity-data-dialog';
+      dialog.className = 'app-dialog identity-data-dialog';
+      const body = document.createElement('div');
+      body.className = 'dialog-body';
+      body.append(content);
+      dialog.append(body);
+      document.body.append(dialog);
+    }
+    if (typeof dialog.showModal === 'function') dialog.showModal();
+  }
   window.SamsaraUI.api('/api/identity/data?uuid=' + encodeURIComponent(uuid))
       .then((data) => renderDataDetail(content, uuid, data))
       .catch((e) => content.replaceChildren(dataNode('p', 'message error',
@@ -907,20 +920,10 @@ function renderDataDetail(root, uuid, data) {
     copyText(uuid);
     identityMessage('已复制 ' + uuid, 'ok');
   });
-  const backup = dataNode('button', 'ghost', '备份数据');
-  backup.type = 'button';
-  backup.addEventListener('click', () => backupData(uuid));
   const rename = dataNode('button', 'ghost', '命名/备注');
   rename.type = 'button';
   rename.addEventListener('click', () => editDataLabel(uuid));
-  const edit = dataNode('button', 'ghost identity-edit-link', '编辑身份组背包');
-  edit.type = 'button';
-  edit.title = '在独立大窗口中编辑该 data UUID 的背包';
-  edit.addEventListener('click', () => {
-    document.getElementById('identity-data-dialog')?.close();
-    openGroupInventory(uuid, dataDisplayName(uuid));
-  });
-  head.append(dataNode('code', 'identity-data-uuid', uuid), copy, rename, edit, backup);
+  head.append(dataNode('code', 'identity-data-uuid', uuid), copy, rename);
   root.append(head);
   if (!data.ok) {
     root.append(dataNode('p', 'message error', data.error || data.message || '读取失败'));
@@ -950,10 +953,10 @@ function renderDataDetail(root, uuid, data) {
   }
   root.append(chips);
 
-  const backpackSection = slotSection('背包', data.inventory, 'inventory', uuid);
+  const backpackSection = dataNode('div', 'identity-data-section identity-data-inventory');
   root.append(backpackSection);
-  root.append(slotSection('末影箱', data.enderItems, 'ender', uuid));
   window.setTimeout(() => openInlineEditor(backpackSection, uuid, 'inventory'), 60);
+  root.append(statSection(data.stats || {}));
   const adv = data.advancements || {};
   const advBox = dataNode('div', 'identity-data-section identity-data-wide');
   const displayedDone = Array.isArray(adv.nodes)
@@ -976,8 +979,8 @@ function renderDataDetail(root, uuid, data) {
   }
   root.append(advBox);
 
-  const stats = data.stats || {};
-  const statBox = dataNode('div', 'identity-data-section');
+  function statSection(stats) {
+  const statBox = dataNode('div', 'identity-data-section identity-data-stats-section');
   statBox.append(dataNode('h4', null, '统计'));
   const statTabs = dataNode('div', 'identity-stat-tabs');
   const statBody = dataNode('div', 'identity-stat-body');
@@ -1116,7 +1119,8 @@ function renderDataDetail(root, uuid, data) {
   statTabs.firstChild?.classList.add('active');
   statBox.append(statTabs, statBody);
   renderStats('custom');
-  root.append(statBox);
+  return statBox;
+  }
 }
 
 function openInlineEditor(box, uuid, scope) {
@@ -1781,7 +1785,7 @@ function openAssignDialog(uuid, name, role, type) {
   }
   const error = $i('assign-error');
   if (error) error.textContent = '';
-  dialog.showModal();
+  showIdentityDialog('assign-dialog', '放入身份组', '560px');
 }
 
 function applyAssignDialog() {
@@ -1795,7 +1799,7 @@ function applyAssignDialog() {
     if (error) error.textContent = '请选择目标组。';
     return;
   }
-  $i('assign-dialog')?.close();
+  hideIdentityDialog('assign-dialog');
   I.assign = null;
   assignRole(groupId, role, context.uuid, context.name);
 }
@@ -1920,7 +1924,7 @@ function openUuidDialog(group, role) {
   resolved.replaceChildren();
   const clearButton = $i('uuid-clear');
   if (clearButton) clearButton.hidden = role === 'data';
-  dialog.showModal();
+  showIdentityDialog('uuid-dialog', '选择 UUID', '620px');
   input.focus();
   if (input.value) resolveUuidInput();
 }
@@ -2042,7 +2046,7 @@ function applyUuidDialog() {
         + roleLabel(context.role) + ' UUID”区域。', 'error');
     return;
   }
-  $i('uuid-dialog').close();
+  hideIdentityDialog('uuid-dialog');
   I.uuidContext = null;
   I.selectedUuid = null;
   assignRole(context.groupId, context.role, uuid, '');
@@ -2051,7 +2055,7 @@ function applyUuidDialog() {
 async function clearUuidDialog() {
   const context = I.uuidContext;
   if (!context) return;
-  $i('uuid-dialog').close();
+  hideIdentityDialog('uuid-dialog');
   I.uuidContext = null;
   I.selectedUuid = null;
   clearRole(context.groupId, context.role);
@@ -2071,7 +2075,7 @@ function openRebindDialog(group, newData) {
   $i('rebind-error').textContent = '';
   const reject = document.querySelector('input[name="rebind-mode"][value="reject"]');
   if (reject) reject.checked = true;
-  $i('rebind-dialog').showModal();
+  showIdentityDialog('rebind-dialog', '重绑 data UUID', '620px');
 }
 
 async function applyRebind() {
@@ -2103,7 +2107,7 @@ async function applyRebind() {
         confirm: true,
       }),
     });
-    $i('rebind-dialog').close();
+    hideIdentityDialog('rebind-dialog');
     I.rebindGroup = null;
     applyModel(result);
     identityMessage(result.message || 'data UUID 已重绑', 'ok');
@@ -2400,7 +2404,7 @@ function wireEvents() {
   $i('assign-apply')?.addEventListener('click', applyAssignDialog);
   $i('assign-cancel')?.addEventListener('click', () => {
     I.assign = null;
-    $i('assign-dialog')?.close();
+    hideIdentityDialog('assign-dialog');
   });
 
   // HTML5 拖拽不会自动滚动长页面；靠近视口上下边缘时手动滚。
@@ -2423,10 +2427,10 @@ function wireEvents() {
     });
   }
   $i('uuid-apply')?.addEventListener('click', applyUuidDialog);
-  $i('uuid-cancel')?.addEventListener('click', () => $i('uuid-dialog').close());
+  $i('uuid-cancel')?.addEventListener('click', () => hideIdentityDialog('uuid-dialog'));
   $i('uuid-clear')?.addEventListener('click', clearUuidDialog);
   $i('rebind-apply')?.addEventListener('click', applyRebind);
-  $i('rebind-cancel')?.addEventListener('click', () => $i('rebind-dialog').close());
+  $i('rebind-cancel')?.addEventListener('click', () => hideIdentityDialog('rebind-dialog'));
   $i('rebind-generate')?.addEventListener('click', async () => {
     const uuid = await generateDataUuid(false);
     if (uuid) $i('rebind-input').value = uuid;

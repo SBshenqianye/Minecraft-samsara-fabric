@@ -12,6 +12,10 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.crafting.CraftingInput;
+import net.minecraft.world.item.crafting.CraftingRecipe;
+import net.minecraft.world.item.crafting.RecipeHolder;
+import net.minecraft.world.item.crafting.RecipeType;
 
 import java.lang.reflect.Type;
 import java.util.LinkedHashMap;
@@ -112,6 +116,67 @@ public final class ItemWebService {
             Map<String, Object> out = new LinkedHashMap<>();
             out.put("ok", true);
             out.put("item", ItemStackModel.describe(stack, registries, encoded));
+            return out;
+        });
+    }
+
+    /** 3×3 合成：按原版 RecipeManager 匹配，返回结果与一次合成后的剩余物品。 */
+    public Map<String, Object> craft(String body) {
+        Map<String, Object> request = parse(body);
+        if (request == null) return error(400, "请求体应为 JSON 对象");
+        return onServer(() -> {
+            RegistryAccess registries = registries();
+            if (registries == null) return error(503, "服务器未就绪");
+            List<ItemStack> grid = new java.util.ArrayList<>();
+            for (int i = 0; i < 9; i++) grid.add(ItemStack.EMPTY);
+            Object raw = request.get("slots");
+            if (raw instanceof List<?> list) {
+                for (int i = 0; i < Math.min(9, list.size()); i++) {
+                    Object value = list.get(i);
+                    if (value == null) continue;
+                    ItemStack stack = LotteryItemCodec.decode(String.valueOf(value), registries);
+                    if (!stack.isEmpty()) grid.set(i, stack);
+                }
+            }
+            CraftingInput input = CraftingInput.of(3, 3, grid);
+            var holder = server.getRecipeManager()
+                    .getRecipeFor(RecipeType.CRAFTING, input, server.overworld());
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("ok", true);
+            if (holder.isEmpty()) {
+                out.put("result", null);
+                out.put("remaining", List.of());
+                out.put("recipe", "");
+                return out;
+            }
+            RecipeHolder<CraftingRecipe> recipe = holder.get();
+            ItemStack result = recipe.value().assemble(input);
+            if (result == null || result.isEmpty()) {
+                out.put("result", null);
+                out.put("remaining", List.of());
+                out.put("recipe", recipe.id().identifier().toString());
+                return out;
+            }
+            String encoded = LotteryItemCodec.encode(result, registries);
+            out.put("result", ItemStackModel.compact(result, encoded));
+            List<ItemStack> remainders = recipe.value().getRemainingItems(input);
+            List<Map<String, Object>> remaining = new java.util.ArrayList<>(
+                    java.util.Collections.nCopies(9, null));
+            int remainderIndex = 0;
+            for (int i = 0; i < 9; i++) {
+                ItemStack stack = null;
+                if (remainders.size() == 9) {
+                    stack = remainders.get(i);
+                } else if (!grid.get(i).isEmpty() && remainderIndex < remainders.size()) {
+                    stack = remainders.get(remainderIndex++);
+                }
+                if (stack != null && !stack.isEmpty()) {
+                    remaining.set(i, ItemStackModel.compact(stack,
+                            LotteryItemCodec.encode(stack, registries)));
+                }
+            }
+            out.put("remaining", remaining);
+            out.put("recipe", recipe.id().identifier().toString());
             return out;
         });
     }

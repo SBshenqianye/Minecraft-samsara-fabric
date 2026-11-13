@@ -842,69 +842,80 @@ async function main() {
         await new Promise((resolve) => setTimeout(resolve, 200));
       }
       await new Promise((resolve) => setTimeout(resolve, 500));
-      const dialog = document.getElementById('identity-data-dialog');
-      const text = document.getElementById('identity-data-content')?.textContent || '';
+      const content = document.getElementById('identity-data-content');
+      const text = content?.textContent || '';
       const copyButton = [...document.querySelectorAll('#identity-data-content button')]
         .find((node) => node.textContent.includes('复制 UUID'));
+      const renameButton = [...document.querySelectorAll('#identity-data-content button')]
+        .find((node) => node.textContent.includes('命名/备注'));
       const backupButton = [...document.querySelectorAll('#identity-data-content button')]
         .find((node) => node.textContent.includes('备份数据'));
       const editButton = [...document.querySelectorAll('#identity-data-content button')]
         .find((node) => node.textContent.trim() === '编辑身份组背包');
-      const wasOpen = Boolean(dialog && dialog.open);
+      const wasOpen = Boolean(window.SamsaraDialog?.isOpen('identity-data-dialog')
+        || document.querySelector('.samsara-framework-dialog'));
       const inlineFrame = document.querySelector('#identity-data-content iframe');
       const inlineDoc = inlineFrame?.contentDocument;
       const inlineSections = inlineDoc
         ? [...inlineDoc.querySelectorAll('.identity-inline-section h4')].map((n) => n.textContent.trim())
         : [];
       const inlineText = inlineDoc?.body?.innerText || '';
-      const statTabs = dialog
-        ? [...dialog.querySelectorAll('.identity-stat-tabs:not(.identity-adv-tabs) button')]
+      const statTabs = content
+        ? [...content.querySelectorAll('.identity-stat-tabs:not(.identity-adv-tabs) button')]
           .map((n) => n.textContent.trim()) : [];
-      const advTabs = dialog
-        ? [...dialog.querySelectorAll('.identity-adv-tabs button')].map((n) => n.textContent.trim()) : [];
-      const itemsTab = dialog
-        ? [...dialog.querySelectorAll('.identity-stat-tabs:not(.identity-adv-tabs) button')]
+      const advTabs = content
+        ? [...content.querySelectorAll('.identity-adv-tabs button')].map((n) => n.textContent.trim()) : [];
+      const itemsTab = content
+        ? [...content.querySelectorAll('.identity-stat-tabs:not(.identity-adv-tabs) button')]
           .find((n) => n.textContent.trim() === '物品') : null;
       if (itemsTab) itemsTab.click();
       await new Promise((resolve) => setTimeout(resolve, 250));
-      const statBody = dialog?.querySelector('.identity-stat-body');
-      const statScrolls = Boolean(statBody && statBody.scrollHeight > statBody.clientHeight + 1);
-      if (editButton) editButton.click();
-      await new Promise((resolve) => setTimeout(resolve, 1600));
-      const bigDialog = document.querySelector('.identity-inventory-dialog');
-      const bigSlots = bigDialog ? bigDialog.querySelectorAll('.slot').length : 0;
-      const closeBig = bigDialog?.querySelector('.el-dialog__headerbtn');
-      if (closeBig) closeBig.click();
-      await new Promise((resolve) => setTimeout(resolve, 400));
-      if (dialog && dialog.open) dialog.close();
+      const statBody = content?.querySelector('.identity-stat-body');
+      const statOverflow = statBody ? getComputedStyle(statBody).overflowY : '';
+      const statScrolls = Boolean(statBody && statOverflow === 'auto'
+        && parseFloat(getComputedStyle(statBody).maxHeight) > 0);
+      const inventoryBox = content?.querySelector('.identity-data-inventory');
+      const statsBox = content?.querySelector('.identity-data-stats-section');
+      const sameRow = Boolean(inventoryBox && statsBox
+        && Math.abs(inventoryBox.getBoundingClientRect().top
+          - statsBox.getBoundingClientRect().top) <= 2);
+      const legacySlotGrids = content?.querySelectorAll(
+        '.identity-data-slot-title, .identity-data-slot-grid').length || 0;
+      const frameworkDialog = Boolean(document.querySelector('.samsara-framework-dialog'));
+      window.SamsaraDialog?.close('identity-data-dialog');
+      await new Promise((resolve) => setTimeout(resolve, 300));
       return { open: wasOpen, text,
-        hasCopy: Boolean(copyButton), hasBackup: Boolean(backupButton),
-        hasEdit: Boolean(editButton), hasBackupList: text.includes('备份记录'),
-        bigSlots, hasIframe: Boolean(inlineFrame),
+        hasCopy: Boolean(copyButton), hasRename: Boolean(renameButton),
+        hasDuplicateBackup: Boolean(backupButton), hasDuplicateEdit: Boolean(editButton),
+        hasBackupList: text.includes('备份记录'),
+        hasIframe: Boolean(inlineFrame),
         inlineSections, inlineHasPager: /上一页|下一页|分页/.test(inlineText),
-        statTabs, advTabs, statScrolls,
-        cardButton: [...document.querySelectorAll('#panel-identity .card-actions button')]
-          .some((node) => node.textContent.trim() === '编辑身份组背包'),
+        statTabs, advTabs, statScrolls, sameRow, legacySlotGrids, frameworkDialog,
         hasInventory: text.includes('背包'), hasEnder: text.includes('末影箱'),
         hasAdvancements: text.includes('成就') };
     })()`);
-    check('身份组 data UUID 可查看详情', identityData.open && identityData.hasInventory
-        && identityData.hasEnder && identityData.hasAdvancements
-        && identityData.hasCopy && identityData.hasBackup && identityData.hasEdit
-        && identityData.hasBackupList,
-        JSON.stringify({ open: identityData.open, hasInventory: identityData.hasInventory,
-          hasEnder: identityData.hasEnder, hasAdvancements: identityData.hasAdvancements,
-          hasCopy: identityData.hasCopy, hasBackup: identityData.hasBackup,
-          hasEdit: identityData.hasEdit, hasBackupList: identityData.hasBackupList,
+    check('身份组 data UUID 可查看详情', identityData.open
+        && identityData.hasCopy && identityData.hasRename && identityData.hasBackupList
+        && identityData.hasDuplicateBackup === false && identityData.hasDuplicateEdit === false,
+        JSON.stringify({ open: identityData.open,
+          hasCopy: identityData.hasCopy, hasRename: identityData.hasRename,
+          hasBackupList: identityData.hasBackupList,
+          hasDuplicateBackup: identityData.hasDuplicateBackup,
+          hasDuplicateEdit: identityData.hasDuplicateEdit,
           text: identityData.text.slice(0, 160) }));
-    check('详情内嵌背包+末影箱同一编辑器且不再分页',
+    check('身份页详情使用 Element Plus 框架弹窗', identityData.frameworkDialog === true,
+        JSON.stringify({ frameworkDialog: identityData.frameworkDialog }));
+    check('详情背包只保留内嵌编辑器且统计与背包同列',
         identityData.hasIframe === true
         && identityData.inlineSections.length === 2
         && identityData.inlineSections[0] === '背包'
         && identityData.inlineSections[1] === '末影箱'
-        && identityData.inlineHasPager === false,
+        && identityData.inlineHasPager === false
+        && identityData.legacySlotGrids === 0
+        && identityData.sameRow === true,
         JSON.stringify({ hasIframe: identityData.hasIframe,
-          sections: identityData.inlineSections, pager: identityData.inlineHasPager }));
+          sections: identityData.inlineSections, pager: identityData.inlineHasPager,
+          slotGrids: identityData.legacySlotGrids, sameRow: identityData.sameRow }));
     check('详情统计/成就不再整页滚动，成就按四类分页',
         identityData.statScrolls === true
         && identityData.statTabs.join('|') === '通用|物品|生物'
@@ -3159,13 +3170,13 @@ async function main() {
     })()`);
     try {
       await until("document.querySelector('.global-inventory-panel')"
-          + " && document.querySelectorAll('.global-inventory-panel .slot').length === 68",
+          + " && document.querySelectorAll('.global-inventory-grid-wrap .slot').length === 68",
           30000, '全局背包浮窗');
     } catch (e) {
       const state = await evaluate(`(() => ({
         tab: !!document.querySelector('.global-inventory-tab'),
         panel: !!document.querySelector('.global-inventory-panel'),
-        slots: document.querySelectorAll('.global-inventory-panel .slot').length,
+        slots: document.querySelectorAll('.global-inventory-grid-wrap .slot').length,
         overlay: !!document.querySelector('.el-overlay'),
         dialog: !!document.querySelector('dialog[open]'),
         token: Boolean(sessionStorage.getItem('samsara-token')),
@@ -3181,7 +3192,7 @@ async function main() {
       await new Promise((resolve) => setTimeout(resolve, 300));
       return ({
         panel: !!document.querySelector('.global-inventory-panel'),
-        slots: document.querySelectorAll('.global-inventory-panel .slot').length,
+        slots: document.querySelectorAll('.global-inventory-grid-wrap .slot').length,
         modeSwitch: !!document.querySelector('.global-inventory-panel .mode-switch'),
         saveButton: [...document.querySelectorAll('.global-inventory-panel button')]
           .some((button) => button.textContent.trim().startsWith('保存')),
@@ -3190,7 +3201,7 @@ async function main() {
           .some((button) => button.textContent.trim() === '调试方块'),
         labels: [...document.querySelectorAll('.global-inventory-panel .workbench-section-title')]
           .map((node) => node.textContent.trim()),
-        hints: [...document.querySelectorAll('.global-inventory-panel .slot .slot-hint')]
+        hints: [...document.querySelectorAll('.global-inventory-grid-wrap .slot .slot-hint')]
           .map((node) => node.getAttribute('src') || ''),
         split: (() => {
           const body = document.querySelector('.global-inventory-panel .global-inventory-body');
@@ -3229,14 +3240,39 @@ async function main() {
         && webInventoryUi.hints.some((src) => src.includes('slot_shield')),
         JSON.stringify(webInventoryUi.hints));
 
+    const inventoryLayout = await evaluate(`(() => {
+      const left = document.querySelector('.global-inventory-panel .global-inventory-slots');
+      const right = document.querySelector('.global-inventory-panel .creative-library');
+      const craft = document.querySelector('.global-inventory-panel .crafting-bench');
+      const result = document.querySelector('.global-inventory-panel .crafting-result');
+      if (!left || !right) return null;
+      const a = left.getBoundingClientRect();
+      const b = right.getBoundingClientRect();
+      return {
+        sameWidth: Math.abs(a.width - b.width) <= 2,
+        sameHeight: Math.abs(a.height - b.height) <= 2,
+        craftSlots: craft ? craft.querySelectorAll('.slot').length : 0,
+        result: Boolean(result),
+        slotSize: document.querySelector('.global-inventory-grid-wrap .slot')
+          ?.getBoundingClientRect().width || 0,
+        fillWidth: Math.abs((a.width + b.width + 12)
+          - document.querySelector('.global-inventory-main').getBoundingClientRect().width) <= 4,
+      };
+    })()`);
+    check('Web 背包生存栏与创造库等宽等高，并包含 3×3 合成栏',
+        inventoryLayout && inventoryLayout.sameWidth && inventoryLayout.sameHeight
+        && inventoryLayout.craftSlots === 9 && inventoryLayout.result === true
+        && inventoryLayout.slotSize >= 40 && inventoryLayout.fillWidth === true,
+        JSON.stringify(inventoryLayout));
+
     // 浮窗内搬运必须实时落库：点起 → 放下 → 服务端立刻可见，不需要保存按钮或确认弹窗。
     await evaluate(`(() => {
-      document.querySelectorAll('.global-inventory-panel .slot')[0].click();
+      document.querySelectorAll('.global-inventory-grid-wrap .slot')[0].click();
       return true;
     })()`);
     await sleep(400);
     await evaluate(`(() => {
-      document.querySelectorAll('.global-inventory-panel .slot')[1].click();
+      document.querySelectorAll('.global-inventory-grid-wrap .slot')[1].click();
       return true;
     })()`);
     await sleep(1500);
@@ -3312,9 +3348,9 @@ async function main() {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'e', bubbles: true }));
       return true;
     })()`);
-    await until("document.querySelector('.global-inventory-panel .slot')", 20000, 'Web 背包再次打开');
+    await until("document.querySelector('.global-inventory-grid-wrap .slot')", 20000, 'Web 背包再次打开');
     await evaluate(`(() => {
-      document.querySelectorAll('.global-inventory-panel .slot')[0].click();
+      document.querySelectorAll('.global-inventory-grid-wrap .slot')[0].click();
       return true;
     })()`);
     await until("document.querySelector('.global-inventory-editor .item-editor')", 20000, '专用组件编辑面板');
@@ -3338,7 +3374,7 @@ async function main() {
     await evaluate(`(() => {
       [...document.querySelectorAll('.global-inventory-editor button')]
         .find((b) => b.textContent.trim() === '×')?.click();
-      document.querySelectorAll('.global-inventory-panel .slot')[0].click();
+      document.querySelectorAll('.global-inventory-grid-wrap .slot')[0].click();
       return true;
     })()`);
     await sleep(500);

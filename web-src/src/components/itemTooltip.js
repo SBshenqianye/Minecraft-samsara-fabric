@@ -1,4 +1,5 @@
 import { reactive } from 'vue';
+import { itemCursor } from '../composables/itemCursor.js';
 
 // 全局物品悬浮提示：所有槽位/物品库共用同一套 Minecraft 风格 tooltip。
 export const itemTooltip = reactive({
@@ -23,6 +24,8 @@ export function showItemTooltip(item, event) {
   itemTooltip.item = item;
   itemTooltip.visible = true;
   moveItemTooltip(event);
+  // tooltip 也是 top layer；每次显示后把手中物品重新提到最上层，避免图标被概览盖住。
+  if (itemCursor.item) itemCursor.raise = (itemCursor.raise || 0) + 1;
 }
 
 export function moveItemTooltip(event) {

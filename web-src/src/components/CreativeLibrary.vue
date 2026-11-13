@@ -337,11 +337,12 @@ defineExpose({ reload: ensureAll });
 
 .creative-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(32px, 1fr));
-  gap: 3px;
+  grid-template-columns: repeat(9, var(--slot-size, 36px));
+  justify-content: center;
+  gap: 2px;
   align-content: start;
-  min-height: 200px;
-  max-height: 54vh;
+  flex: 1 1 auto;
+  min-height: 0;
   padding: 6px;
   overflow: auto;
   border: 1px solid var(--line);
