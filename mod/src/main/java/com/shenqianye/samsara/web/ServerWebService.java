@@ -229,6 +229,10 @@ public class ServerWebService {
         dedupeIdentityGroups(list);
         // 身份组之外的历史账号（改名/离线模式切换留下的 usercache/白名单）也按名字收口。
         dedupeNames(list);
+        for (Map<String, Object> row : list) {
+            row.putIfAbsent("skinUuid", row.getOrDefault("uuid", ""));
+            row.putIfAbsent("skinName", row.getOrDefault("name", ""));
+        }
         list.sort(Comparator
                 .comparing((Map<String, Object> row) -> Boolean.TRUE.equals(row.get("online")) ? 0 : 1)
                 .thenComparing(row -> String.valueOf(row.get("name")), String.CASE_INSENSITIVE_ORDER));
@@ -269,18 +273,35 @@ public class ServerWebService {
                     : "name:" + String.valueOf(group.name).toLowerCase(java.util.Locale.ROOT);
             Map<String, Object> previous = chosen.get(key);
             if (previous == null) {
+                decorateSkin(row, group);
                 chosen.put(key, row);
                 merged.add(row);
                 continue;
             }
             if (preferAccount(row, previous, group, onlineMode)) {
+                decorateSkin(row, group);
                 int index = merged.indexOf(previous);
                 if (index >= 0) merged.set(index, row);
                 chosen.put(key, row);
             }
         }
+        // 非身份组玩家用自己的 UUID 查皮肤；前端统一读取 skinUuid/skinName。
+        for (Map<String, Object> row : merged) {
+            if (!row.containsKey("skinUuid")) {
+                row.put("skinUuid", row.getOrDefault("uuid", ""));
+                row.put("skinName", row.getOrDefault("name", ""));
+            }
+        }
         rows.clear();
         rows.addAll(merged);
+    }
+
+    private static void decorateSkin(Map<String, Object> row, IdentityConfig.Group group) {
+        UUID skin = group.premiumUuid();
+        if (skin == null) skin = group.dataUuid();
+        if (skin == null) skin = group.offlineUuid();
+        if (skin != null) row.put("skinUuid", skin.toString());
+        row.put("skinName", row.getOrDefault("name", ""));
     }
 
     private static boolean preferAccount(Map<String, Object> candidate, Map<String, Object> current,

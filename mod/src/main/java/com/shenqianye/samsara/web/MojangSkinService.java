@@ -174,6 +174,18 @@ public final class MojangSkinService {
                     if (skin != null) return skin;
                 }
             }
+            // UUID 是离线 UUID 或该账号没有皮肤时，再按玩家名查一次正版档案；
+            // 同一身份组的正版账号通常能用名字拿到真实皮肤，避免直接回退默认 Steve。
+            if (name != null && id != null) {
+                String byName = lookupUuid(name);
+                if (byName != null && !byName.equals(id)) {
+                    String skinUrl = lookupSkinUrl(byName);
+                    if (skinUrl != null) {
+                        Skin skin = downloadSkin(skinUrl, false);
+                        if (skin != null) return skin;
+                    }
+                }
+            }
         } catch (Exception e) {
             Samsara.LOGGER.debug("[web] Mojang 皮肤解析失败 {} / {}: {}",
                     uuid, name, e.getMessage());

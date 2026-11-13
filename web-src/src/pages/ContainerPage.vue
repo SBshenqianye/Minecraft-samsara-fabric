@@ -265,6 +265,7 @@ const dimensions = ref([
 const filters = reactive({ dimension: 'minecraft:overworld', q: '' });
 const windows = ref([]);
 const players = ref([]);
+const portals = ref([]);
 const playerQuery = ref('');
 const playerStatus = ref('all');
 const playerScope = ref('current');
@@ -273,6 +274,7 @@ const containerContent = ref('all');
 const containerSource = ref('all');
 const selectedPlayerId = ref('');
 let playersTimer = null;
+let portalTimer = null;
 const activeWindow = ref('');
 let windowZ = 90;
 let windowCascade = 0;
@@ -440,6 +442,8 @@ const markers = computed(() => {
     .map((player) => ({
       id: 'player:' + player.uuid,
       uuid: player.uuid,
+      skinUuid: player.skinUuid || player.uuid,
+      skinName: player.skinName || player.name,
       x: Number(player.x),
       z: Number(player.z),
       dimension: player.dimension,
@@ -449,7 +453,21 @@ const markers = computed(() => {
       kind: 'player',
       online: player.online !== false,
     }));
-  return rows.concat(people);
+  const portalRows = portals.value
+    .filter((portal) => !filters.dimension || portal.dimension === filters.dimension)
+    .map((portal) => ({
+      id: portal.id,
+      x: portal.x,
+      z: portal.z,
+      dimension: portal.dimension,
+      label: portal.label,
+      sub: portal.x + ', ' + portal.y + ', ' + portal.z,
+      kind: 'portal',
+      portalKind: portal.portalKind,
+      targetDimension: portal.targetDimension,
+      icon: portal.icon,
+    }));
+  return rows.concat(people, portalRows);
 });
 
 const selectedMarkerId = computed(() =>
@@ -462,6 +480,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.clearTimeout(searchTimer);
   if (playersTimer) window.clearInterval(playersTimer);
+  if (portalTimer) window.clearInterval(portalTimer);
 });
 
 async function loadPlayers() {
@@ -472,6 +491,17 @@ async function loadPlayers() {
     }
   } catch {
     // 玩家位置不可用时只显示容器。
+  }
+}
+
+async function loadPortals() {
+  try {
+    const result = await api('/api/map/portals');
+    if (result.status === 200 && result.data.ok) {
+      portals.value = result.data.portals || [];
+    }
+  } catch {
+    // 传送门 POI 不可用时不影响地图。
   }
 }
 
@@ -513,9 +543,11 @@ function sourceLabel(row) {
 
 function playerAvatar(player) {
   const params = new URLSearchParams();
-  // 离线玩家没有 Mojang UUID，按玩家名字/ID 查皮肤；正版玩家也优先用当前名字。
-  if (player?.name) params.set('id', String(player.name));
-  else if (player?.uuid) params.set('id', String(player.uuid));
+  // 身份组可能用离线 UUID 登录，但皮肤要在组内正版 UUID 上查找。
+  const uuid = player?.skinUuid || player?.uuid;
+  const name = player?.skinName || player?.name;
+  if (uuid) params.set('uuid', String(uuid));
+  if (name) params.set('name', String(name));
   return '/api/user/map/head?' + params.toString();
 }
 
@@ -557,9 +589,10 @@ async function connect() {
     if (result.status !== 200) throw new Error(result.data.error || ('连接失败：' + result.status));
     sessionStorage.setItem('samsara-token', value);
     connected.value = true;
-    await Promise.all([loadDimensions(), loadSchema(), loadPlayers()]);
+    await Promise.all([loadDimensions(), loadSchema(), loadPlayers(), loadPortals()]);
     await search();
     if (!playersTimer) playersTimer = window.setInterval(loadPlayers, 4000);
+    if (!portalTimer) portalTimer = window.setInterval(loadPortals, 15000);
   } catch (e) {
     error.value = e.message || String(e);
     connected.value = false;
@@ -575,6 +608,7 @@ function logout() {
   connected.value = false;
   selected.value = null;
   containers.value = [];
+  portals.value = [];
   slots.value = [];
   items.value = [];
 }
@@ -694,6 +728,11 @@ async function scan() {
 }
 
 function selectMarker(id) {
+  if (String(id).startsWith('portal:')) {
+    const portal = portals.value.find((row) => row.id === id);
+    if (portal?.targetDimension) switchDimension(portal.targetDimension);
+    return;
+  }
   if (String(id).startsWith('player:')) {
     const player = players.value.find((row) => 'player:' + row.uuid === id);
     if (player) openPlayerWindow(player);
@@ -701,6 +740,16 @@ function selectMarker(id) {
   }
   const row = containers.value.find((candidate) => rowKey(candidate) === id);
   if (row) openContainer(row);
+}
+
+async function switchDimension(dimension) {
+  if (!dimension) return;
+  allDimensions.value = false;
+  filters.dimension = dimension;
+  lastDimension.value = dimension;
+  selected.value = null;
+  selectedPlayerId.value = '';
+  await search();
 }
 
 function openPlayerWindow(player) {
@@ -716,7 +765,8 @@ function openPlayerWindow(player) {
   windows.value.push({
     key,
     kind: 'player',
-    target: { uuid: player.uuid, name: player.name, online: player.online },
+    target: { uuid: player.uuid, name: player.name, online: player.online,
+      skinUuid: player.skinUuid, skinName: player.skinName },
     title: player.name || String(player.uuid).slice(0, 8),
     subtitle: (player.online ? '在线' : '离线') + ' · ' + player.uuid,
     width: 760,

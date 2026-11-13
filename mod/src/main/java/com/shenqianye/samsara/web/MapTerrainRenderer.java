@@ -27,7 +27,7 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * 把一个 region 文件渲染成地形小地图 PNG。
  *
- * <p>只读存档：按 {@code Heightmaps.MOTION_BLOCKING_NO_LEAVES}（回退 WORLD_SURFACE）
+ * <p>只读存档：按 {@code Heightmaps.WORLD_SURFACE}（回退 MOTION_BLOCKING_NO_LEAVES）
  * 找到每列最高的非空气方块，取它的原版地图色，再按南北/东西一格高度差做轻微明暗。渲染结果按 region/缩放级别缓存，
  * 不写世界数据，也不加载区块到服务器内存。
  *
@@ -189,9 +189,10 @@ final class MapTerrainRenderer {
         int maxY = maxSectionY * 16 + 15;
 
         long[] heightmap = chunk.getCompoundOrEmpty("Heightmaps")
-                .getLongArray("MOTION_BLOCKING_NO_LEAVES")
+                // WORLD_SURFACE 包含树叶/植被；MOTION_BLOCKING_NO_LEAVES 会让树林在地图上变秃。
+                .getLongArray("WORLD_SURFACE")
                 .orElseGet(() -> chunk.getCompoundOrEmpty("Heightmaps")
-                        .getLongArray("WORLD_SURFACE").orElse(null));
+                        .getLongArray("MOTION_BLOCKING_NO_LEAVES").orElse(null));
         if (heightmap == null) {
             return new Surface(heights, colors, waters);
         }

@@ -274,9 +274,12 @@ function groupCard(group, index) {
   avatar.alt = '';
   avatar.loading = 'lazy';
   avatar.title = group.name || '身份组头像';
-  const skinId = groupSkinId(group);
-  if (skinId) {
-    avatar.src = '/api/user/map/head?id=' + encodeURIComponent(skinId);
+  const skin = groupSkin(group);
+  if (skin.uuid || skin.name) {
+    const params = new URLSearchParams();
+    if (skin.uuid) params.set('uuid', skin.uuid);
+    if (skin.name) params.set('name', skin.name);
+    avatar.src = '/api/user/map/head?' + params.toString();
     avatar.addEventListener('error', () => { avatar.style.visibility = 'hidden'; });
   } else {
     avatar.style.visibility = 'hidden';
@@ -375,13 +378,11 @@ function groupOnline(group) {
   return [group.premium, group.offline].some((uuid) => uuid && I.online[uuid]);
 }
 
-/** 按服务器在线/离线模式选择头像：正版模式优先正版 UUID，离线模式优先离线 UUID。 */
-function groupSkinId(group) {
-  const preferred = I.onlineMode ? group.premium : group.offline;
-  const fallback = I.onlineMode ? group.offline : group.premium;
-  const uuid = preferred || fallback;
-  if (uuid) return I.names[uuid] || group.name || uuid;
-  return group.name || group.data || '';
+/** 头像始终优先用组内正版 UUID 查皮肤；显示名仍按当前服务器模式取在线/离线账号。 */
+function groupSkin(group) {
+  const uuid = group.premium || group.offline || group.data || '';
+  const name = I.names[uuid] || group.name || '';
+  return { uuid: uuid || '', name };
 }
 
 function renderZone(group, role, labelText, hintText) {

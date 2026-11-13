@@ -48,6 +48,7 @@
         <PlayerModel3D
           v-if="kind === 'player'"
           :uuid="target?.uuid || ''"
+          :skin-uuid="target?.skinUuid || ''"
           :name="target?.name || ''"
           :online="target?.online === true"
           :armor="armorMap"

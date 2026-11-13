@@ -30,7 +30,7 @@
           :key="cluster.id"
           type="button"
           class="map-marker"
-          :class="{ active: cluster.active, offline: cluster.offline, player: cluster.player, clustered: cluster.markers.length > 1 }"
+          :class="{ active: cluster.active, offline: cluster.offline, player: cluster.player, portal: cluster.marker?.kind === 'portal', clustered: cluster.markers.length > 1 }"
           :style="{ left: cluster.left + 'px', top: cluster.top + 'px' }"
           :title="cluster.title"
           @pointerdown.stop
@@ -229,12 +229,12 @@ const visibleMarkers = computed(() => {
       && marker.top > -40 && marker.top < viewH.value + 40);
 });
 
-const GRID_SCALE = 0.0625;       // 细档开始按方块格聚合，避免散开后跳变
-const MAX_GRID_SCALE = 0.015625; // 最细档一格方块一个可点击图标
+const GRID_SCALE = 0.015625;      // 最细档才按方块格聚合
+const MAX_GRID_SCALE = 0.015625;
 const MAX_GRID_SPREAD = 14;
 const clusterPopup = ref(null);
 const clusterPinned = ref(false);
-const gridMarkers = computed(() => scale.value <= GRID_SCALE + 1e-9);
+const gridMarkers = computed(() => scale.value <= MAX_GRID_SCALE + 1e-9);
 const maxZoom = computed(() => scale.value <= MAX_GRID_SCALE + 1e-9);
 
 /** 越放大，像素半径越小；粗档聚得多，细档自然拆开，不再某一档突然散开。 */
@@ -569,10 +569,12 @@ function loadAvatar(marker) {
     avatarUrls[marker.id] = cached;
     return;
   }
-  // 头像接口已经裁好 8×8 头部；离线玩家按名字/ID 查找，不再返回整张皮肤展开图。
-  const id = marker.label || marker.name || marker.uuid;
-  if (!id) return;
-  const url = '/api/user/map/head?id=' + encodeURIComponent(id);
+  // 头像接口已经裁好 8×8 头部；优先用身份组正版 UUID，离线玩家仍按名字回退。
+  const params = new URLSearchParams();
+  if (marker.skinUuid || marker.uuid) params.set('uuid', String(marker.skinUuid || marker.uuid));
+  if (marker.skinName || marker.label) params.set('name', String(marker.skinName || marker.label));
+  if (!params.toString()) return;
+  const url = '/api/user/map/head?' + params.toString();
   avatarLoading.add(marker.id);
   const image = new Image();
   image.crossOrigin = 'anonymous';
@@ -715,6 +717,12 @@ watch(() => props.markers, () => {
   color: #d6ffe9;
 }
 
+.map-marker.portal {
+  border-color: #c084fc;
+  color: #f3e8ff;
+  background: rgba(43, 24, 66, .94);
+}
+
 .map-marker.active {
   border-color: #58a6ff;
   background: rgba(20, 50, 90, .94);
@@ -763,22 +771,13 @@ watch(() => props.markers, () => {
   height: 18px;
 }
 
-/* 大箱子图标：横向/纵向各用一张宽高比不同的原版大箱子图。 */
 .marker-large-chest {
   display: block;
   flex: 0 0 auto;
+  width: 40px;
+  height: auto;
   image-rendering: pixelated;
   object-fit: contain;
-}
-
-.marker-large-chest.axis-x {
-  width: 44px;
-  height: auto;
-}
-
-.marker-large-chest.axis-z {
-  width: auto;
-  height: 44px;
 }
 
 .cluster-large-chest {
@@ -802,15 +801,6 @@ watch(() => props.markers, () => {
   display: none;
 }
 
-.map-picker.grid-markers .marker-head,
-.map-picker.grid-markers .marker-item {
-  width: 14px;
-  height: 14px;
-}
-
-.map-picker.grid-markers .marker-large-chest.axis-x { width: 26px; }
-.map-picker.grid-markers .marker-large-chest.axis-z { height: 26px; }
-
 .map-picker.grid-markers .cluster-count {
   min-width: 16px;
   height: 16px;
@@ -818,30 +808,7 @@ watch(() => props.markers, () => {
   font-size: 9px;
 }
 
-/* 最细档一格方块 64px，图标放大到接近格子大小，仍然每个都独立可点。 */
-.map-picker.max-zoom .map-marker {
-  padding: 3px;
-  border-radius: 9px;
-}
-
-.map-picker.max-zoom .marker-head,
-.map-picker.max-zoom .marker-item {
-  width: 38px;
-  height: 38px;
-}
-
-.map-picker.max-zoom .marker-large-chest.axis-x { width: 104px; }
-.map-picker.max-zoom .marker-large-chest.axis-z { height: 104px; }
-
-.map-picker.max-zoom .marker-initial {
-  font-size: 18px;
-}
-
-.map-picker.max-zoom .cluster-count {
-  min-width: 38px;
-  height: 38px;
-  font-size: 15px;
-}
+/* 最细档一格方块 64px；所有档位按钮图标保持同一屏幕尺寸。 */
 
 .map-controls {
   position: absolute;

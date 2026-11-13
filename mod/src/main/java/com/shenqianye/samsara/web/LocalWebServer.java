@@ -1119,6 +1119,10 @@ public final class LocalWebServer {
                 json(exchange, 200, mapService.players());
                 return;
             }
+            if ("/api/map/portals".equals(path)) {
+                json(exchange, 200, mapService.portals());
+                return;
+            }
             if ("/api/map/live".equals(path)) {
                 json(exchange, 200, mapService.live());
                 return;

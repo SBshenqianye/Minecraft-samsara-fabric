@@ -1970,6 +1970,12 @@ async function main() {
         && Number(namedSearch.total) > 0,
         JSON.stringify({ total: namedSearch.total, q: namedSearch.q }));
 
+    const portalPois = await fetch(base + '/api/map/portals', { headers: authHeaders })
+      .then((response) => response.json());
+    check('地图 POI 接口返回下界/末地传送门列表', portalPois.ok === true
+        && Array.isArray(portalPois.portals),
+        JSON.stringify({ ok: portalPois.ok, count: portalPois.portals?.length || 0 }));
+
     const fundInv = await fetch(base + '/api/lottery/fund', { headers: authHeaders })
       .then((response) => response.json());
     check('基金仓库可读取且至少 54 格', fundInv.ok === true

@@ -52,7 +52,7 @@ public final class ContainerIndexService {
     private static final int CONTAINERS_PER_TICK = 24;
     private static final long FLUSH_INTERVAL_MS = 2000L;
     private static final long SCAN_COOLDOWN_MS = 3000L;
-    private static final int MAX_LIST = 500;
+    private static final int MAX_LIST = 5000;
 
     private static final ContainerIndexService INSTANCE = new ContainerIndexService();
 

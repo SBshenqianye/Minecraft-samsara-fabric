@@ -29,6 +29,7 @@ import java.util.stream.Stream;
 final class WebMapTileCache {
     static final long DEFAULT_MAX_BYTES = 512L * 1024 * 1024L;
     private static final int MEMORY_ENTRIES = 96;
+    private static final String RENDER_VERSION = "v2";
     private static final Pattern SAFE = Pattern.compile("[^A-Za-z0-9_.-]");
 
     private final Path root;
@@ -154,6 +155,7 @@ final class WebMapTileCache {
     Path pathFor(String stackId, String dimensionKey, int regionX, int regionZ,
                  int scale, boolean shading, long mtime, long size) {
         Path path = root.resolve(safe(stackId))
+                .resolve(RENDER_VERSION)
                 .resolve(dimensionPath(dimensionKey))
                 .resolve(Integer.toString(scale))
                 .resolve(shading ? "1" : "0")
@@ -268,7 +270,7 @@ final class WebMapTileCache {
 
     private static String memoryKey(String stackId, String dimensionKey, int regionX, int regionZ,
                                     int scale, boolean shading, long mtime, long size) {
-        return stackId + "|" + dimensionKey + "|" + regionX + "|" + regionZ + "|" + scale
+        return RENDER_VERSION + "|" + stackId + "|" + dimensionKey + "|" + regionX + "|" + regionZ + "|" + scale
                 + "|" + shading + "|" + mtime + "|" + size;
     }
 

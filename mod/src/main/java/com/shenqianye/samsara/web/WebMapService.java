@@ -14,10 +14,16 @@ import com.shenqianye.samsara.season.StackLayer;
 import com.shenqianye.samsara.season.StackManifest;
 import com.shenqianye.samsara.season.StackPaths;
 import com.shenqianye.samsara.storage.StoragePaths;
+import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.LevelChunkSection;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -117,6 +123,149 @@ public class WebMapService {
     /** 地图实时层：已加载实体/玩家轨迹与最近操作；仅内存，不写世界数据。 */
     public Map<String, Object> live() {
         return liveService.snapshot(true);
+    }
+
+    /** 地图 POI：已加载区块里的下界传送门 / 末地传送门，点击可切到对应维度。 */
+    public Map<String, Object> portals() {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ok", true);
+        out.put("generatedAt", System.currentTimeMillis());
+        out.put("portals", portalSnapshot());
+        return out;
+    }
+
+    private List<Map<String, Object>> portalSnapshot() {
+        MinecraftServer current = server;
+        if (current == null) return List.of();
+        try {
+            if (current.isSameThread()) return scanPortals(current);
+            CompletableFuture<List<Map<String, Object>>> future = new CompletableFuture<>();
+            current.execute(() -> {
+                try {
+                    future.complete(scanPortals(current));
+                } catch (Throwable t) {
+                    future.completeExceptionally(t);
+                }
+            });
+            return future.get(4, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            Samsara.LOGGER.debug("[web] 读取传送门 POI 失败: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    private static List<Map<String, Object>> scanPortals(MinecraftServer server) {
+        List<PortalHit> hits = new ArrayList<>();
+        Set<String> scannedChunks = new HashSet<>();
+        for (ServerLevel level : server.getAllLevels()) {
+            String dimension = level.dimension().identifier().toString();
+            // 只扫已加载区块，避免为了 POI 强制加载世界。
+            level.getChunkSource().chunkMap.forEachReadyToSendChunk(chunk -> {
+                if (scannedChunks.add(dimension + ':' + chunk.getPos().pack())) {
+                    scanPortalChunk(level, dimension, chunk, hits);
+                }
+            });
+            level.getChunkSource().chunkMap.forEachBlockTickingChunk(chunk -> {
+                if (scannedChunks.add(dimension + ':' + chunk.getPos().pack())) {
+                    scanPortalChunk(level, dimension, chunk, hits);
+                }
+            });
+        }
+        List<PortalCluster> clusters = new ArrayList<>();
+        for (PortalHit hit : hits) {
+            PortalCluster found = null;
+            for (PortalCluster cluster : clusters) {
+                if (cluster.kind.equals(hit.kind) && cluster.dimension.equals(hit.dimension)
+                        && Math.abs(cluster.x - hit.x) <= 4 && Math.abs(cluster.y - hit.y) <= 4
+                        && Math.abs(cluster.z - hit.z) <= 4) {
+                    found = cluster;
+                    break;
+                }
+            }
+            if (found == null) {
+                clusters.add(new PortalCluster(hit.kind, hit.dimension, hit.x, hit.y, hit.z));
+            } else {
+                found.add(hit.x, hit.y, hit.z);
+            }
+        }
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (PortalCluster cluster : clusters) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            String kind = cluster.kind;
+            boolean nether = "nether".equals(kind);
+            String shortDim = cluster.dimension.replace("minecraft:", "");
+            String target = nether
+                    ? ("the_nether".equals(shortDim) ? "minecraft:overworld" : "minecraft:the_nether")
+                    : ("the_end".equals(shortDim) ? "minecraft:overworld" : "minecraft:the_end");
+            item.put("id", "portal:" + cluster.dimension + ":" + kind + ":"
+                    + Math.round(cluster.x) + ":" + Math.round(cluster.y) + ":" + Math.round(cluster.z));
+            item.put("kind", "portal");
+            item.put("portalKind", kind);
+            item.put("dimension", cluster.dimension);
+            item.put("x", round1(cluster.x));
+            item.put("y", round1(cluster.y));
+            item.put("z", round1(cluster.z));
+            item.put("label", nether ? "下界传送门" : "末地传送门");
+            item.put("icon", nether ? "nether_portal" : "end_portal_frame");
+            item.put("targetDimension", target);
+            out.add(item);
+        }
+        out.sort(Comparator.comparing(item -> String.valueOf(item.get("id"))));
+        return out;
+    }
+
+    private static void scanPortalChunk(ServerLevel level, String dimension, LevelChunk chunk,
+                                        List<PortalHit> hits) {
+        LevelChunkSection[] sections = chunk.getSections();
+        int minSectionY = level.getMinSectionY();
+        int baseX = chunk.getPos().getMinBlockX();
+        int baseZ = chunk.getPos().getMinBlockZ();
+        for (int index = 0; index < sections.length; index++) {
+            LevelChunkSection section = sections[index];
+            if (section == null || section.hasOnlyAir()) continue;
+            if (!section.maybeHas(state ->
+                    state.is(Blocks.NETHER_PORTAL) || state.is(Blocks.END_PORTAL))) {
+                continue;
+            }
+            int baseY = (minSectionY + index) << 4;
+            for (int y = 0; y < 16; y++) {
+                for (int z = 0; z < 16; z++) {
+                    for (int x = 0; x < 16; x++) {
+                        BlockState state = section.getBlockState(x, y, z);
+                        if (state.is(Blocks.NETHER_PORTAL)) {
+                            hits.add(new PortalHit("nether", dimension, baseX + x, baseY + y, baseZ + z));
+                        } else if (state.is(Blocks.END_PORTAL)) {
+                            hits.add(new PortalHit("end", dimension, baseX + x, baseY + y, baseZ + z));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private record PortalHit(String kind, String dimension, int x, int y, int z) {
+    }
+
+    private static final class PortalCluster {
+        private final String kind;
+        private final String dimension;
+        private double x, y, z;
+        private int count = 1;
+
+        private PortalCluster(String kind, String dimension, int x, int y, int z) {
+            this.kind = kind;
+            this.dimension = dimension;
+            this.x = x;
+            this.y = y;
+            this.z = z;
+        }
+
+        private void add(int x, int y, int z) {
+            count += 1;
+            this.x += (x - this.x) / count;
+            this.y += (y - this.y) / count;
+            this.z += (z - this.z) / count;
+        }
     }
 
     /** 天网地图：只含玩家的长轨迹（3 小时窗口，按调用方上限抽样）。 */

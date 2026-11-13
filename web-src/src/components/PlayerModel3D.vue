@@ -23,6 +23,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 const props = defineProps({
   uuid: { type: String, default: '' },
+  skinUuid: { type: String, default: '' },
   name: { type: String, default: '' },
   online: { type: Boolean, default: false },
   armor: { type: Object, default: () => ({}) },
@@ -46,9 +47,15 @@ const poses = [
 ];
 
 const query = computed(() => {
-  // 与玩家列表头像使用完全相同的 ID 查找，避免同一玩家列表有皮肤、纸盒人却没有。
-  const id = props.name || props.uuid;
-  return id ? 'id=' + encodeURIComponent(id) : '';
+  // 身份组用 skinUuid（通常是正版 UUID）查真实皮肤；离线 UUID 仅作最后回退。
+  const params = new URLSearchParams();
+  if (props.skinUuid) params.set('uuid', props.skinUuid);
+  if (props.name) params.set('name', props.name);
+  if (!params.toString()) {
+    if (props.uuid) params.set('uuid', props.uuid);
+    else return '';
+  }
+  return params.toString();
 });
 const skinSrc = computed(() => '/api/user/map/avatar?' + query.value);
 
@@ -431,7 +438,7 @@ onMounted(() => {
 watch([rotX, rotY, pose], draw);
 watch(() => props.armor, draw, { deep: true });
 watch([skinVersion, armorVersion], draw);
-watch(() => [props.uuid, props.name], () => {
+watch(() => [props.uuid, props.skinUuid, props.name], () => {
   resetView();
   loadSkin();
 });
