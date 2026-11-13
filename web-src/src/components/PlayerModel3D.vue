@@ -307,12 +307,17 @@ function drawFace(ctx, face) {
   const [ux, uy, uw, uh] = face.uv;
   if (!face.img || uw <= 0 || uh <= 0) return;
   const s0 = face.s0, s1 = face.s1, s2 = face.s2;
-  const a = (s1[0] - s0[0]) / uw;
-  const b = (s1[1] - s0[1]) / uw;
+  let a = (s1[0] - s0[0]) / uw;
+  let b = (s1[1] - s0[1]) / uw;
   const c = (s2[0] - s0[0]) / uh;
   const d = (s2[1] - s0[1]) / uh;
-  const e = s0[0] - a * ux - c * uy;
-  const f = s0[1] - b * ux - d * uy;
+  const origin = face.flip ? s1 : s0;
+  if (face.flip) {
+    a = -a;
+    b = -b;
+  }
+  const e = origin[0] - a * ux - c * uy;
+  const f = origin[1] - b * ux - d * uy;
   const s3 = [s1[0] + s2[0] - s0[0], s1[1] + s2[1] - s0[1]];
   ctx.save();
   ctx.imageSmoothingEnabled = false;
@@ -348,7 +353,7 @@ function draw() {
   const pitch = rotX.value * Math.PI / 180;
   const faces = [];
 
-  const addPart = (part, uvMap, expand, img, bias) => {
+  const addPart = (part, uvMap, expand, img, bias, mirror = false) => {
     const box = BOX[part];
     const geom = expand ? expandBox(box, expand) : box;
     const tf = partTransform(part);
@@ -357,12 +362,15 @@ function draw() {
       const rotated = points.map((p) => rotateView(p, yaw, pitch));
       const normal = cross(sub(rotated[1], rotated[0]), sub(rotated[2], rotated[0]));
       if (normal[2] <= 0.0001) continue;
-      // 皮肤 UV 的 right/left 是“角色自身”的左右；几何 +X 面是角色左侧，
-      // 因此 +X 面取 left 贴图、-X 面取 right 贴图，否则头颅两侧会反。
-      const uv = face === 'right' ? uvMap.left : face === 'left' ? uvMap.right : uvMap[face];
+      // 皮肤 UV 的 right/left 是“角色自身”的左右；几何 +X 面是角色左侧。
+      // 普通四肢取反；旧 64x32 皮肤的左侧肢体是右侧的镜像，取同侧 UV 并水平翻转。
+      const uv = mirror
+        ? (face === 'right' ? uvMap.right : face === 'left' ? uvMap.left : uvMap[face])
+        : (face === 'right' ? uvMap.left : face === 'left' ? uvMap.right : uvMap[face]);
       faces.push({
         img,
         uv,
+        flip: mirror,
         s0: project(rotated[0]),
         s1: project(rotated[1]),
         s2: project(rotated[2]),
@@ -373,7 +381,9 @@ function draw() {
   };
 
   const baseUV = skinLegacy ? MIRRORED : UV_BASE;
-  for (const part of PARTS) addPart(part, baseUV[part], 0, skinImage, 0);
+  for (const part of PARTS) {
+    addPart(part, baseUV[part], 0, skinImage, 0, skinLegacy && part.endsWith('-left'));
+  }
   // 第二层皮肤用略大的盒子，透明区域自然露出底层。
   if (!skinLegacy) {
     for (const part of PARTS) addPart(part, UV_OVERLAY[part], 0.5, skinImage, 0.02);
@@ -381,7 +391,8 @@ function draw() {
   for (const part of PARTS) {
     for (const url of armorLayersFor(part)) {
       const img = armorImage(url);
-      if (img) addPart(part, MIRRORED[part], 0.9, img, 0.04);
+      // 盔甲贴图是 64x32 单侧布局，左侧肢体要把右腿/右臂镜像过去。
+      if (img) addPart(part, MIRRORED[part], 0.9, img, 0.04, part.endsWith('-left'));
     }
   }
 

@@ -44,18 +44,14 @@
             <span v-if="cluster.marker.kind === 'player'" class="marker-head" :style="avatarStyle(cluster.marker)">
               <span v-if="!avatarUrls[cluster.marker.id]" class="marker-initial">{{ initialOf(cluster.marker) }}</span>
             </span>
-            <span v-if="cluster.marker.largeChest" class="marker-chest-pair" :class="'axis-' + (cluster.marker.chestAxis || 'x')">
-              <ItemIcon
-                :item="{ id: cluster.marker.icon || 'chest', name: cluster.marker.label, count: 1 }"
-                size="sm"
-                :show-count="false"
-              />
-              <ItemIcon
-                :item="{ id: cluster.marker.icon || 'chest', name: cluster.marker.label, count: 1 }"
-                size="sm"
-                :show-count="false"
-              />
-            </span>
+            <img
+              v-else-if="cluster.marker.largeChest"
+              class="marker-large-chest"
+              :class="'axis-' + (cluster.marker.chestAxis === 'z' ? 'z' : 'x')"
+              :src="largeChestSrc(cluster.marker)"
+              alt=""
+              draggable="false"
+            />
             <ItemIcon
               v-else
               class="marker-item"
@@ -110,18 +106,14 @@
             :aria-label="markerName(marker)"
             @click="chooseClusterMarker(marker)"
           >
-            <span v-if="marker.largeChest" class="marker-chest-pair cluster-chest-pair" :class="'axis-' + (marker.chestAxis || 'x')">
-              <ItemIcon
-                :item="{ id: marker.icon || 'chest', name: marker.label }"
-                size="sm"
-                :show-count="false"
-              />
-              <ItemIcon
-                :item="{ id: marker.icon || 'chest', name: marker.label }"
-                size="sm"
-                :show-count="false"
-              />
-            </span>
+            <img
+              v-if="marker.largeChest"
+              class="marker-large-chest cluster-large-chest"
+              :class="'axis-' + (marker.chestAxis === 'z' ? 'z' : 'x')"
+              :src="largeChestSrc(marker)"
+              alt=""
+              draggable="false"
+            />
             <ItemIcon
               v-else-if="marker.kind !== 'player'"
               :item="{ id: marker.icon || 'chest', name: marker.label }"
@@ -555,6 +547,12 @@ function initialOf(marker) {
   return /^[A-Za-z0-9\u4e00-\u9fff]/.test(name) ? name.charAt(0).toUpperCase() : '?';
 }
 
+function largeChestSrc(marker) {
+  const prefix = String(marker.icon || '').includes('trapped')
+    ? 'large_trapped_chest' : 'large_chest';
+  return '/items/' + prefix + '_' + (marker.chestAxis === 'z' ? 'z' : 'x') + '.png';
+}
+
 function avatarStyle(marker) {
   const url = avatarUrls[marker.id];
   if (!url) return {};
@@ -765,29 +763,27 @@ watch(() => props.markers, () => {
   height: 18px;
 }
 
-/* 大箱子在手机上占两格：沿 X 并排横向、沿 Z 并排纵向。 */
-.marker-chest-pair {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0;
+/* 大箱子图标：横向/纵向各用一张宽高比不同的原版大箱子图。 */
+.marker-large-chest {
+  display: block;
   flex: 0 0 auto;
+  image-rendering: pixelated;
+  object-fit: contain;
 }
 
-.marker-chest-pair.axis-x { flex-direction: row; }
-.marker-chest-pair.axis-z { flex-direction: column; }
-
-.marker-chest-pair :deep(.item-icon-view) {
-  width: 22px;
-  height: 22px;
+.marker-large-chest.axis-x {
+  width: 44px;
+  height: auto;
 }
 
-.marker-chest-pair :deep(.item-icon-view img) {
-  width: 22px;
-  height: 22px;
+.marker-large-chest.axis-z {
+  width: auto;
+  height: 44px;
 }
 
-.cluster-chest-pair { margin-top: 2px; }
+.cluster-large-chest {
+  margin-top: 2px;
+}
 
 .marker-label {
   max-width: 130px;
@@ -812,11 +808,8 @@ watch(() => props.markers, () => {
   height: 14px;
 }
 
-.map-picker.grid-markers .marker-chest-pair :deep(.item-icon-view),
-.map-picker.grid-markers .marker-chest-pair :deep(.item-icon-view img) {
-  width: 13px;
-  height: 13px;
-}
+.map-picker.grid-markers .marker-large-chest.axis-x { width: 26px; }
+.map-picker.grid-markers .marker-large-chest.axis-z { height: 26px; }
 
 .map-picker.grid-markers .cluster-count {
   min-width: 16px;
@@ -837,11 +830,8 @@ watch(() => props.markers, () => {
   height: 38px;
 }
 
-.map-picker.max-zoom .marker-chest-pair :deep(.item-icon-view),
-.map-picker.max-zoom .marker-chest-pair :deep(.item-icon-view img) {
-  width: 50px;
-  height: 50px;
-}
+.map-picker.max-zoom .marker-large-chest.axis-x { width: 104px; }
+.map-picker.max-zoom .marker-large-chest.axis-z { height: 104px; }
 
 .map-picker.max-zoom .marker-initial {
   font-size: 18px;

@@ -2931,6 +2931,7 @@ async function main() {
           const cell = [...document.querySelectorAll('.cluster-cell')]
             .find((n) => n.querySelector('.marker-head'));
           if (cell) {
+            window.__e2ePlayerCellHasChest = !!cell.querySelector('.item-icon-view');
             window.__e2eClusterLabels = [...document.querySelectorAll('.cluster-cell-label')]
               .map((n) => n.textContent.trim());
             cell.click();
@@ -2982,12 +2983,16 @@ async function main() {
         })(),
         errors: window.__e2eErrors?.length || 0,
         clusterLabels: window.__e2eClusterLabels || [],
+        playerCellHasChest: window.__e2ePlayerCellHasChest === true,
       };
     })()`);
     check('聚合网格显示容器/玩家名字',
         skyUnified.clusterLabels.length >= 2
         && skyUnified.clusterLabels.every((text) => text.length > 0),
         JSON.stringify(skyUnified.clusterLabels));
+    check('玩家聚合单元只显示头像，不额外渲染箱子图标',
+        skyUnified.playerCellHasChest === false,
+        JSON.stringify({ playerCellHasChest: skyUnified.playerCellHasChest }));
     check('天网只保留一个页面，玩家背包浮窗为 68 格且合并末影箱',
         skyUnified.path === '/samsara/sky/containers'
         && skyUnified.section === '天网'
