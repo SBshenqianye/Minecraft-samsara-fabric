@@ -549,6 +549,8 @@ function advancementTree(adv) {
   };
   viewport.addEventListener('pointerdown', (event) => {
     if (event.button !== 0) return;
+    // 长按拖动时不要连带选中成就节点文字。
+    event.preventDefault();
     drag = { x: event.clientX, y: event.clientY, tx, ty };
     try { viewport.setPointerCapture?.(event.pointerId); } catch { /* 合成事件没有真实 pointer */ }
     viewport.classList.add('dragging');

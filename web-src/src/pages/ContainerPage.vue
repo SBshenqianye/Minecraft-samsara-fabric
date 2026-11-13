@@ -47,7 +47,7 @@
           <section class="sky-result-col">
             <div class="sky-result-title">
               <strong>容器结果</strong>
-              <span class="muted small">索引 {{ indexSize }} 个 · 当前 {{ visibleContainers.length }} 个</span>
+              <span class="muted small">索引 {{ indexSize }} 个（全维度） · 当前维度 {{ visibleContainers.length }} 个</span>
               <span class="spacer"></span>
               <span class="muted small">{{ loading ? '读取中…' : '' }}</span>
             </div>
@@ -422,7 +422,6 @@ function shortDimension(dimension) {
 const markers = computed(() => {
   const rows = visibleContainers.value
     .filter((row) => !filters.dimension || row.dimension === filters.dimension)
-    .slice(0, 300)
     .map((row) => ({
       id: rowKey(row),
       x: row.x,
@@ -679,11 +678,8 @@ function queueSearch() {
 function setDimensionScope(value) {
   const next = value === 'all';
   if (next === allDimensions.value) return;
-  toggleAllDimensions();
-}
-
-function toggleAllDimensions() {
-  if (allDimensions.value) {
+  allDimensions.value = next;
+  if (next) {
     lastDimension.value = filters.dimension || lastDimension.value;
     filters.dimension = '';
   } else {

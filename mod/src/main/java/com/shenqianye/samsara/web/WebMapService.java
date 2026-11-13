@@ -38,6 +38,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -71,6 +73,14 @@ public class WebMapService {
     private volatile long manifestStamp = Long.MIN_VALUE;
     private volatile List<Map<String, Object>> portalCache = List.of();
     private volatile long portalCacheAt = 0L;
+    private volatile boolean portalRegionScanRunning = false;
+    private volatile boolean portalRegionScanDone = false;
+    private volatile List<Map<String, Object>> portalRegionCache = List.of();
+    private final ExecutorService portalScanner = Executors.newSingleThreadExecutor(runnable -> {
+        Thread thread = new Thread(runnable, "samsara-web-portal-scan");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     public WebMapService() {
         this(StoragePaths.get().worldRoot(), null);
@@ -132,7 +142,13 @@ public class WebMapService {
     public Map<String, Object> portals() {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("ok", true);
+        startPortalRegionScan();
         long now = System.currentTimeMillis();
+        if (portalRegionScanDone) {
+            out.put("generatedAt", now);
+            out.put("portals", portalRegionCache);
+            return out;
+        }
         if (now - portalCacheAt > PORTAL_CACHE_MS) {
             portalCache = portalSnapshot();
             portalCacheAt = now;
@@ -140,6 +156,36 @@ public class WebMapService {
         out.put("generatedAt", now);
         out.put("portals", portalCache);
         return out;
+    }
+
+    /** 后台一次性扫描当前栈层所有 region 文件，避免必须上线加载区块才能看到传送门。 */
+    private void startPortalRegionScan() {
+        if (portalRegionScanDone || portalRegionScanRunning) return;
+        portalRegionScanRunning = true;
+        portalScanner.execute(() -> {
+            try {
+                List<PortalHit> hits = new ArrayList<>();
+                List<StackLayer> layers = layers(worldRoot);
+                StackLayer top = layers.isEmpty() ? null : layers.get(0);
+                if (top != null) {
+                    for (String shortDim : DIMENSIONS) {
+                        Path dir = regionDir(worldRoot, top, shortDim);
+                        if (dir == null) continue;
+                        String dimension = StackPaths.key(top, shortDim).identifier().toString();
+                        for (MapTerrainRenderer.PortalPos pos : MapTerrainRenderer.scanPortals(dir)) {
+                            hits.add(new PortalHit(pos.kind(), dimension, pos.x(), pos.y(), pos.z()));
+                        }
+                    }
+                }
+                portalRegionCache = clusterPortals(hits);
+                portalRegionScanDone = true;
+            } catch (Exception e) {
+                Samsara.LOGGER.warn("[web] 全图传送门扫描失败: {}", e.getMessage());
+                portalRegionScanDone = true;
+            } finally {
+                portalRegionScanRunning = false;
+            }
+        });
     }
 
     private List<Map<String, Object>> portalSnapshot() {
@@ -179,6 +225,10 @@ public class WebMapService {
                 }
             });
         }
+        return clusterPortals(hits);
+    }
+
+    private static List<Map<String, Object>> clusterPortals(List<PortalHit> hits) {
         List<PortalCluster> clusters = new ArrayList<>();
         for (PortalHit hit : hits) {
             PortalCluster found = null;

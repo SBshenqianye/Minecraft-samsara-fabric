@@ -2104,6 +2104,8 @@ img.glint { filter: drop-shadow(0 0 3px #b26cff) saturate(1.2); }
   overflow: hidden;
   cursor: grab;
   touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
   background:
     radial-gradient(circle at 50% 40%, rgba(88, 166, 255, .08), transparent 55%),
     linear-gradient(rgba(255, 255, 255, .03) 1px, transparent 1px),

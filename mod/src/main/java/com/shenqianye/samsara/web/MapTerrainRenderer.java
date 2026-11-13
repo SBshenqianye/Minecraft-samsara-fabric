@@ -21,8 +21,11 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.List;
+import java.util.ArrayList;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Stream;
 
 /**
  * 把一个 region 文件渲染成地形小地图 PNG。
@@ -113,6 +116,83 @@ final class MapTerrainRenderer {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         ImageIO.write(image, "png", out);
         return out.toByteArray();
+    }
+
+    /** 扫描 region 文件里的下界/末地传送门；不加载区块，用于地图 POI 的一次性全图索引。 */
+    static List<PortalPos> scanPortals(Path regionDir) throws IOException {
+        List<PortalPos> out = new ArrayList<>();
+        if (!Files.isDirectory(regionDir)) {
+            return out;
+        }
+        List<Path> files;
+        try (Stream<Path> stream = Files.list(regionDir)) {
+            files = stream.filter(path -> path.getFileName().toString()
+                    .matches("r\\.-?\\d+\\.-?\\d+\\.mca")).toList();
+        }
+        for (Path file : files) {
+            String name = file.getFileName().toString();
+            String[] parts = name.substring(2, name.length() - 4).split("\\.");
+            if (parts.length != 2) continue;
+            int regionX;
+            int regionZ;
+            try {
+                regionX = Integer.parseInt(parts[0]);
+                regionZ = Integer.parseInt(parts[1]);
+            } catch (NumberFormatException e) {
+                continue;
+            }
+            try (RegionFile region = new RegionFile(STORAGE, file, regionDir, false)) {
+                for (int cz = 0; cz < 32; cz += 1) {
+                    for (int cx = 0; cx < 32; cx += 1) {
+                        ChunkPos pos = new ChunkPos(regionX * 32 + cx, regionZ * 32 + cz);
+                        try (DataInputStream in = region.getChunkDataInputStream(pos)) {
+                            if (in == null) continue;
+                            scanPortalChunk(net.minecraft.nbt.NbtIo.read(in),
+                                    pos.getMinBlockX(), pos.getMinBlockZ(), out);
+                        } catch (IOException | RuntimeException e) {
+                            // 单区块损坏不阻塞全图扫描。
+                        }
+                    }
+                }
+            } catch (IOException e) {
+                // region 文件损坏/被占用时跳过。
+            }
+        }
+        return out;
+    }
+
+    private static void scanPortalChunk(CompoundTag chunk, int baseX, int baseZ,
+                                        List<PortalPos> out) {
+        Map<Integer, Section> sections = new HashMap<>();
+        ListTag sectionTags = chunk.getListOrEmpty("sections");
+        for (int i = 0; i < sectionTags.size(); i += 1) {
+            CompoundTag sectionTag = sectionTags.getCompoundOrEmpty(i);
+            int y = sectionTag.getIntOr("Y", 0);
+            Section section = Section.from(sectionTag);
+            if (section.hasPortal()) {
+                sections.put(y, section);
+            }
+        }
+        for (Map.Entry<Integer, Section> entry : sections.entrySet()) {
+            int sectionY = entry.getKey();
+            Section section = entry.getValue();
+            int y0 = sectionY << 4;
+            for (int ly = 0; ly < 16; ly += 1) {
+                for (int lz = 0; lz < 16; lz += 1) {
+                    for (int lx = 0; lx < 16; lx += 1) {
+                        String id = section.blockAt(lx, ly, lz);
+                        if ("minecraft:nether_portal".equals(id)) {
+                            out.add(new PortalPos("nether", baseX + lx, y0 + ly, baseZ + lz));
+                        } else if ("minecraft:end_portal".equals(id)) {
+                            out.add(new PortalPos("end", baseX + lx, y0 + ly, baseZ + lz));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    record PortalPos(String kind, int x, int y, int z) {
     }
 
     private static int colorAt(Surface[][] surfaces, int regionX, int regionZ, int bx, int bz) {
@@ -295,6 +375,15 @@ final class MapTerrainRenderer {
             int index = (ly << 8) | (lz << 4) | lx;
             int value = (int) unpack(data, bits, index);
             return palette.get(Math.min(value, palette.size() - 1));
+        }
+
+        boolean hasPortal() {
+            for (String id : palette) {
+                if ("minecraft:nether_portal".equals(id) || "minecraft:end_portal".equals(id)) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         private static String paletteName(Tag tag) {
