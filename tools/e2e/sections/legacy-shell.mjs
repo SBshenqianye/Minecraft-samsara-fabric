@@ -14,6 +14,20 @@ const PAGES = [
     extra: () => document.querySelectorAll('#panel-identity .identity-row, #panel-identity tbody tr').length >= 0,
   },
   {
+    route: '/samsara/config/advanced',
+    label: '高级配置 / config',
+    panel: '#panel-config',
+    global: 'SamsaraUI',
+    extra: () => document.querySelectorAll('#files .file-block').length >= 1,
+  },
+  {
+    route: '/samsara/config/claim-range',
+    label: '圈地范围 / claim-range',
+    panel: '#panel-claim-range',
+    global: 'SamsaraUI',
+    extra: () => Boolean(document.getElementById('claim-range-files')?.textContent.trim()),
+  },
+  {
     route: '/samsara/config/editor',
     label: '配置编辑器 / config-editor',
     panel: '#panel-config-editor',

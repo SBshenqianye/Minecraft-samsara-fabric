@@ -1,6 +1,5 @@
 /* Vue 应用外壳：保留现有 style.css 的变量与组件，只补少量容器页样式。 */
 .legacy-host,
-.legacy-panel-host,
 .tab-shell {
   display: contents;
 }

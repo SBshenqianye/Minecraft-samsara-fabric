@@ -34,7 +34,27 @@
           当前文件夹没有配置文件；从左侧文件夹树选择其他位置。
         </p>
         <div class="mod-editor-host">
-          <LegacyPanel panel-id="panel-config-editor" />
+          <div id="panel-config-editor" class="panel-stack">
+            <section class="panel">
+              <div class="panel-head">
+                <div>
+                  <h2>配置编辑器</h2>
+                  <p class="panel-sub">PageSpec / FormSpec 驱动：samsara YAML、服务器本体与第三方 YAML/JSON/TOML/properties。第三方与服务器配置需先预览确认，写入前自动备份。</p>
+                </div>
+                <div class="panel-tools">
+                  <label class="search-box">
+                    <span aria-hidden="true">⌕</span>
+                    <input id="config-editor-search" type="search" placeholder="搜索页面 / 字段 / 分组">
+                  </label>
+                  <span id="config-editor-summary" class="muted small"></span>
+                </div>
+              </div>
+              <div id="config-editor-message" class="message" role="status"></div>
+              <div class="config-editor-layout">
+                <div id="config-editor-body" class="config-editor-body"></div>
+              </div>
+            </section>
+          </div>
         </div>
       </section>
     </div>
@@ -46,7 +66,6 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { getToken, useApi } from '../composables/useApi.js';
 import TabShell from '../components/TabShell.vue';
-import LegacyPanel from '../components/LegacyPanel.vue';
 import FolderTree from '../components/FolderTree.vue';
 import { useLegacyPage } from '../composables/useLegacyPage.js';
 

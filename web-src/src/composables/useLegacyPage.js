@@ -2,7 +2,7 @@ import { onMounted } from 'vue';
 import { waitForElement } from '../legacy/document.js';
 
 /**
- * 复杂旧页面的 Vue 壳：等 LegacyPanel 挂载后，再按页加载旧脚本并激活。
+ * 复杂旧页面的 Vue 壳：等页面 panel 挂载后，再按页加载旧脚本并激活。
  * 这样旧脚本不再进入全局 legacy/admin.js，页面仍然由 Vue 路由和生命周期管理。
  */
 async function waitForGlobal(name, timeoutMs = 10000) {
