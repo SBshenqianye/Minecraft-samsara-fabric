@@ -333,11 +333,14 @@ async function main() {
     }
 
     // ---- 世界栈操作时间线（模态浮窗） ----
+    await navigate(base + '/samsara/world/stack');
+    await until("document.getElementById('panel-world-stack') && window.SamsaraWorldStack",
+        20000, '世界栈页');
     const stackTimeline = await evaluate(`(async () => {
-      window.SamsaraUI.setActiveTab('world-stack');
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      await sleep(300);
       await window.SamsaraWorldStack.load();
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await sleep(500);
       const openButton = document.getElementById('world-stack-timeline-open');
       openButton?.click();
       await new Promise((resolve) => setTimeout(resolve, 900));
@@ -440,10 +443,9 @@ async function main() {
 
     // ---- 栈层图片：卡片 16:9 视觉区、上传鉴权/类型校验、删除后回退 ----
     const iconLayout = await evaluate(`(async () => {
-      [...document.querySelectorAll('.top-tab')].find((tab) => tab.dataset.section === 'mods')?.click();
-      window.SamsaraUI.setActiveTab('world-stack');
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
       await window.SamsaraWorldStack.load();
-      await new Promise((resolve) => setTimeout(resolve, 700));
+      await sleep(700);
       const cards = [...document.querySelectorAll('#world-stack-list .world-stack-card')];
       const visuals = [...document.querySelectorAll('#world-stack-list .world-stack-card-visual')];
       const frames = [...document.querySelectorAll('#world-stack-list .world-stack-icon-frame')];
@@ -572,8 +574,6 @@ async function main() {
 
     // ---- 归档入口：只保留卡片按钮 + 模态预览，不排队 ----
     const archiveEntry = await evaluate(`(async () => {
-      [...document.querySelectorAll('.top-tab')].find((tab) => tab.dataset.section === 'mods')?.click();
-      window.SamsaraUI.setActiveTab('world-stack');
       await window.SamsaraWorldStack.load();
       await new Promise((resolve) => setTimeout(resolve, 500));
       const card = [...document.querySelectorAll('#world-stack-list .world-stack-card')]
@@ -1461,7 +1461,13 @@ async function main() {
       const leftColumn = first ? first.querySelector('.map-stack-column') : null;
       const leftChildren = leftColumn ? [...leftColumn.children] : [];
       const voidGaps = document.querySelectorAll('#map-overview-stacks .map-stack-void').length;
-      const status = document.getElementById('map-overview-status')?.textContent || '';
+      const statusDeadline = Date.now() + 6000;
+      let status = '';
+      while (Date.now() < statusDeadline) {
+        status = document.getElementById('map-overview-status')?.textContent || '';
+        if (status.includes('在线 1 人')) break;
+        await wait(150);
+      }
       const canvases = first ? first.querySelectorAll('.map-stack-thumb').length : 0;
       const endInSide = Boolean(first?.querySelector('.map-stack-end .map-stack-panel'));
       const playersData = await window.SamsaraUI.api('/api/map/players');
@@ -2925,6 +2931,13 @@ async function main() {
           && Date.now() < deadline) {
         await sleep(150);
       }
+      // 窗口先出现，背包槽位与 3D 模型随后异步渲染；等数据稳定再断言。
+      const playerDeadline = Date.now() + 15000;
+      while (Date.now() < playerDeadline
+          && (document.querySelectorAll('.floating-window .inventory-window-player .slot').length < 68
+            || !document.querySelector('.floating-window .inventory-window-player .pm3d-model'))) {
+        await sleep(150);
+      }
       const win = [...document.querySelectorAll('.floating-window')]
         .find((w) => w.querySelector('.inventory-window-player'));
       const rows = win ? [...win.querySelectorAll('.workbench-row')]
@@ -2953,8 +2966,13 @@ async function main() {
         gearSlotWidth: gear?.querySelector('.slot')?.getBoundingClientRect().width || 0,
         mainSlotWidth: main?.querySelector('.slot')?.getBoundingClientRect().width || 0,
         gearColumns: (() => {
-          const g = gear?.querySelector('.slot-grid');
-          return g ? getComputedStyle(g).gridTemplateColumns.split(' ').length : 0;
+          const grids = gear ? [...gear.querySelectorAll('.slot-grid')] : [];
+          return grids.length ? getComputedStyle(grids[0]).gridTemplateColumns.split(' ').length : 0;
+        })(),
+        offhandColumns: (() => {
+          const grids = gear ? [...gear.querySelectorAll('.slot-grid')] : [];
+          return grids.length > 1
+            ? getComputedStyle(grids[grids.length - 1]).gridTemplateColumns.split(' ').length : 0;
         })(),
         errors: window.__e2eErrors?.length || 0,
         clusterLabels: window.__e2eClusterLabels || [],
@@ -2979,10 +2997,12 @@ async function main() {
     check('玩家窗口 3D 纸盒人在装备行，装备/主背包等宽且快捷栏在下',
         skyUnified.doll === true && skyUnified.dollInGear === true
         && skyUnified.gearTop === true && skyUnified.hotbarBelow === true
-        && skyUnified.gearColumns === 1 && skyUnified.gearSlotWidth >= 40
+        && skyUnified.gearColumns === 4 && skyUnified.offhandColumns === 1
+        && skyUnified.gearSlotWidth >= 40
         && Math.abs(skyUnified.gearSlotWidth - skyUnified.mainSlotWidth) <= 1,
         JSON.stringify({ doll: skyUnified.doll, dollInGear: skyUnified.dollInGear,
           gearTop: skyUnified.gearTop, hotbarBelow: skyUnified.hotbarBelow,
+          gearColumns: skyUnified.gearColumns, offhandColumns: skyUnified.offhandColumns,
           gear: skyUnified.gearSlotWidth, main: skyUnified.mainSlotWidth }));
 
     // Web 背包已改为 samsara 全局浮窗（右侧「背包」标签 / E 键），旧路由重定向回玩家背包。
@@ -3037,7 +3057,7 @@ async function main() {
           .some((button) => button.textContent.trim().startsWith('保存')),
         library: !!document.querySelector('.global-inventory-panel .creative-library .creative-slot'),
         debugTab: [...document.querySelectorAll('.global-inventory-panel .creative-tabs button')]
-          .some((button) => button.textContent.trim() === '调试方块'),
+          .some((button) => (button.getAttribute('title') || button.getAttribute('aria-label') || '').trim() === '调试方块'),
         labels: [...document.querySelectorAll('.global-inventory-panel .workbench-section-title')]
           .map((node) => node.textContent.trim()),
         hints: [...document.querySelectorAll('.global-inventory-grid-wrap .slot .slot-hint')]
@@ -3202,7 +3222,7 @@ async function main() {
         inputs: panel ? panel.querySelectorAll('input, textarea, select').length : 0,
         gridW: grid ? Math.round(grid.getBoundingClientRect().width) : 0,
         chips: document.querySelectorAll('.global-inventory-panel .cursor-chip').length,
-        trash: document.querySelectorAll('.global-inventory-panel .creative-trash').length,
+        trash: document.querySelectorAll('.global-inventory-grid-wrap .workbench-trash-inline').length,
       };
     })()`);
     check('组件编辑使用 Web 背包专用面板、无光标 chip、垃圾桶在原版位置',
@@ -3539,8 +3559,8 @@ async function main() {
         userPage.errors.slice(0, 3).join(' | '));
 
     // ---- 路由切回管理端：Vue 外壳与旧页面逻辑仍可用 ----
-    await navigate(base + '/');
-    await until("window.SamsaraUI && document.querySelector('.app-header')",
+    await navigate(base + '/samsara/config/advanced');
+    await until("window.SamsaraUI && document.getElementById('panel-config')",
         20000, '返回管理端');
     const adminReturn = await evaluate(`(() => ({
       header: !!document.querySelector('.app-header'),

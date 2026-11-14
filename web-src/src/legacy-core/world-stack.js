@@ -1,3 +1,5 @@
+import './stack-icon.js';
+
 'use strict';
 
 // 世界栈：本地 world 导入、栈位排序、归档，以及重启时任务的进度/结果。
