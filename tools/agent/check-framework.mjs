@@ -15,7 +15,6 @@ const LEGACY_CORE_IMPORT_ALLOW = new Set([
   'web-src/src/legacy/user.js',
   'web-src/src/pages/ConfigEditorPage.vue',
   'web-src/src/pages/IdentityPage.vue',
-  'web-src/src/pages/LotteryPage.vue',
   'web-src/src/pages/MapPage.vue',
   'web-src/src/pages/ModConfigPage.vue',
   'web-src/src/pages/OutputPage.vue',
@@ -25,7 +24,6 @@ const LEGACY_CORE_IMPORT_ALLOW = new Set([
 const LEGACY_PAGE_ALLOW = new Set([
   'web-src/src/pages/ConfigEditorPage.vue',
   'web-src/src/pages/IdentityPage.vue',
-  'web-src/src/pages/LotteryPage.vue',
   'web-src/src/pages/MapPage.vue',
   'web-src/src/pages/ModConfigPage.vue',
   'web-src/src/pages/OutputPage.vue',

@@ -65,6 +65,16 @@
 - 新增 `tools/e2e/sections/server.mjs`（15 条）；`server` section **15/15**；全量 E2E **281/281**。
 - 提交：`refactor(web): migrate server panels to Vue`。
 
+### 阶段 4 完成记录（经济业务）
+
+- `pages/lottery/model.js` 增加统计行、轮次徽标/分区、待领取/保险/历史行、概览大屏比例、价值表行等纯函数（单测 8 项）。
+- 新增 `LotteryPage` 原生页面 + `lottery/EconomyDashboard.vue`（基金/乐透/保险/历史走势四卡）与 `lottery/ValueTable.vue`（服务端分页 + 搜索/分类/排序 + 加载更多）。
+- 概览、轮次/奖池、待领取、保险、历史全部 Vue 渲染；基金仓库继续复用 `PoolInventoryPage` + `ItemWorkbench`。
+- 页内导航改用 `#page-nav`；`PageNav` / `AdminLayout` 在旧 `clearNav()` 之后恢复 `no-nav`，避免侧栏被隐藏。
+- 删除 `legacy-core/lottery.js`；`LotteryPage` 从 `check-framework.mjs` 白名单移除（`value-table.js` 仍供旧用户端使用）。
+- 新增 `tools/e2e/sections/lottery.mjs`（9 条）；`lottery` section **9/9**；全量 E2E **281/281**。
+- 提交：`refactor(web): migrate lottery panels to Vue`。
+
 ## 门禁
 
 ```powershell

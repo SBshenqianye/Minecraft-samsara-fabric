@@ -478,6 +478,10 @@ async function applyRoute(force = false) {
       rememberTarget('mods.' + activeModId.value, 'files', route.path);
     }
   }
+  // 旧面板激活会 clearNav 并给 app-shell 加 no-nav；Vue 页面自带页内导航时要恢复。
+  if (pageNavState.title) {
+    document.querySelector('main.app-shell')?.classList.remove('no-nav');
+  }
 }
 
 function applyLegacyPanel(name) {

@@ -12,9 +12,9 @@
 | `/legacy.html`、`/legacy-user.html`、`/style.css`、旧 `/web/*.js` | ✅ 已删除，HTTP 404 |
 | `LegacyPanel` | ✅ 已删除 |
 | `mod/src/main/resources/web/*.js` | ✅ 已清零 |
-| `web-src/src/legacy-core/` | ⚠️ 保留 17 个内核模块（约 1.50 万行）；阶段 1 已把世界栈卡片列表迁到 Vue，阶段 3 已删除 `server.js` |
+| `web-src/src/legacy-core/` | ⚠️ 保留 16 个内核模块（约 1.44 万行）；阶段 1 已把世界栈卡片列表迁到 Vue，阶段 3 删除 `server.js`，阶段 4 删除 `lottery.js` |
 | `web-src/src/legacy/` | ⚠️ 保留 3 个桥接文件：`admin.js`、`document.js`、`user.js` |
-| 使用 `useLegacyPage` 的页面 | ⚠️ 7 个：config-editor、identity、lottery、map、mod-config、output、world-stack |
+| 使用 `useLegacyPage` 的页面 | ⚠️ 6 个：config-editor、identity、map、mod-config、output、world-stack |
 | `old-project/` | ⚠️ 15 个历史 Java 文件，属于旧 chunkmanager 参考，不参与构建 |
 
 ## 为什么保留内核
@@ -27,7 +27,7 @@
 - 输出格式：contenteditable 富文本、chips、撤销/重做
 - 身份组：权限树、背包 iframe、UUID 重绑
 - 本体服务器：配置/备份/RCON/审计四个面板（阶段 3 已拆成 Vue，只保留 `properties` 解析等纯逻辑在 `pages/server/model.js`）
-- 经济业务：基金、乐透、保险
+- 经济业务：基金、乐透、保险（阶段 4 已迁 Vue；基金仓库继续复用 `ItemWorkbench`）
 - 高级配置/圈地：`app.js` 的配置渲染与圈地预览
 
 当前策略是“页面由 Vue 路由/组件挂载，内核按页动态加载”，不再有全局静态脚本和 HTML 回退。
@@ -80,13 +80,12 @@ npm run check
 
 按收益排序：
 
-1. `lottery.js` 概览/轮次/奖池/历史/保险 → Vue（阶段 4；基金仓库复用 ItemWorkbench）
-2. `identity.js` 权限树/详情/UUID 重绑 → Vue（阶段 5；背包 iframe 最后处理）
-3. `output.js` 外围工具栏/预览 → Vue（阶段 6；contenteditable 内核保留）
-4. `map.js` 控制层/图层/标记 → Vue（阶段 7；canvas/tile 内核保留）
-5. `app.js` 配置/圈地 → Vue（阶段 8；圈地 canvas 预览保留）
-6. `world-stack.js` 时间线/排序/导入 → Vue（阶段 1/2 已迁卡片与对话框）
+1. `identity.js` 权限树/详情/UUID 重绑 → Vue（阶段 5；背包 iframe 最后处理）
+2. `output.js` 外围工具栏/预览 → Vue（阶段 6；contenteditable 内核保留）
+3. `map.js` 控制层/图层/标记 → Vue（阶段 7；canvas/tile 内核保留）
+4. `app.js` 配置/圈地 → Vue（阶段 8；圈地 canvas 预览保留）
+5. `world-stack.js` 时间线/排序/导入 → Vue（阶段 1/2 已迁卡片与对话框）
 
-已完成：阶段 1、2a、2b（世界栈）、阶段 3（本体四面板，`server.js` 已删除）。
+已完成：阶段 1、2a、2b（世界栈）、阶段 3（本体四面板，`server.js` 已删除）、阶段 4（经济业务，`lottery.js` 已删除）。
 
 每拆一个，就从 `check-framework.mjs` 白名单移除对应页面，守卫会自动阻止回退。

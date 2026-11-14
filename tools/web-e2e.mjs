@@ -200,6 +200,7 @@ async function main() {
       document.getElementById('server-reload')?.click();
       return true;
     })()`);
+    await sleep(700);
     await until("document.querySelectorAll('#server-config-files > details.file-block').length >= 6",
         15000, '服务器配置重载');
 
@@ -215,7 +216,7 @@ async function main() {
       const sameLabel = save.textContent;
       const pauseBefore = find('pause-when-empty-seconds')?.querySelector('input')?.value || '';
       resetOf(find('pause-when-empty-seconds'))?.click();
-      await new Promise((resolve) => setTimeout(resolve, 120));
+      await new Promise((resolve) => setTimeout(resolve, 350));
       const pauseAfter = find('pause-when-empty-seconds')?.querySelector('input')?.value || '';
       return { sameLabel, pauseBefore, pauseAfter, changedLabel: save.textContent };
     })()`);
@@ -229,6 +230,7 @@ async function main() {
       document.getElementById('server-reload')?.click();
       return true;
     })()`);
+    await sleep(700);
     await until("document.querySelectorAll('#server-config-files > details.file-block').length >= 6",
         15000, '服务器配置重载');
 
@@ -993,10 +995,10 @@ async function main() {
         20000, '经济业务死人乐透页');
     const lotteryNav = await evaluate(`(async () => {
       await new Promise((resolve) => setTimeout(resolve, 700));
-      const items = [...document.querySelectorAll('#global-nav .nav-item')]
+      const items = [...document.querySelectorAll('#page-nav .nav-item')]
         .map((node) => node.textContent.trim());
       return {
-        title: document.querySelector('#global-nav .nav-title')?.textContent.trim() || '',
+        title: document.querySelector('#page-nav .nav-title')?.textContent.trim() || '',
         items,
         saveHidden: document.getElementById('save')?.hidden,
       };
@@ -1011,7 +1013,7 @@ async function main() {
     await until("location.pathname === '/samsara/economy/fund'", 15000, '经济业务服务器基金页');
     const fundNav = await evaluate(`(async () => {
       await new Promise((resolve) => setTimeout(resolve, 700));
-      return [...document.querySelectorAll('#global-nav .nav-item')]
+      return [...document.querySelectorAll('#page-nav .nav-item')]
         .map((node) => node.textContent.trim());
     })()`);
     check('经济业务服务器基金页包含物品价值表且不再有只读基金面板', 
@@ -2572,8 +2574,9 @@ async function main() {
         header: box('.ia-header'),
         section,
         rail: box('.workspace-rail'),
-        nav: box('#global-nav'),
+        nav: box('#page-nav .nav-title') ? box('#page-nav') : box('#global-nav'),
         navTitle: box('.ia-side .section-subnav .subnav-title')
+          || box('#page-nav .nav-title')
           || box('#global-nav .nav-title'),
         cardTitle: cardRect ? { top: Math.round(cardRect.top),
           text: card.textContent.trim().slice(0, 24) } : null,
@@ -2591,7 +2594,8 @@ async function main() {
           return { top: Math.round(rect.top), height: Math.round(rect.height) };
         };
         return { y: Math.round(window.scrollY), header: box('.ia-header'),
-          section: box('.section-tabs'), rail: box('.workspace-rail'), nav: box('#global-nav') };
+          section: box('.section-tabs'), rail: box('.workspace-rail'),
+          nav: box('#page-nav .nav-title') ? box('#page-nav') : box('#global-nav') };
       })()`));
     }
     check('管理端滚动时 header / 二级栏 / 页内导航分层吸附',

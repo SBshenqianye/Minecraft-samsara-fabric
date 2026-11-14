@@ -56,6 +56,12 @@ function watchScroll() {
   window.addEventListener('scroll', scrollHandler, { passive: true });
 }
 
+watch(() => state.title, (title) => {
+  if (!title) return;
+  // 旧脚本 clearNav 会给 app-shell 加 no-nav；Vue 页内导航出现时要恢复侧栏。
+  document.querySelector('main.app-shell')?.classList.remove('no-nav');
+}, { flush: 'post' });
+
 watch(() => state.items, watchScroll, { deep: true });
 
 onMounted(watchScroll);
