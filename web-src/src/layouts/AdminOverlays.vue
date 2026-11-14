@@ -23,21 +23,6 @@
   </div>
 </div>
 
-<dialog id="server-audit-diff-wrap" class="app-dialog server-audit-dialog">
-  <div class="dialog-body">
-    <div class="dialog-head">
-      <div>
-        <h3 id="server-audit-diff-title">差异</h3>
-        <p class="dialog-sub">预览快照与当前文件的差异；回滚前请确认影响范围。</p>
-      </div>
-      <button id="server-audit-diff-close" class="ghost dialog-close" type="button" title="关闭" aria-label="关闭">×</button>
-    </div>
-    <div id="server-audit-changes" class="server-audit-changes"></div>
-    <div id="server-audit-diffs" class="server-audit-diffs"></div>
-    <pre id="server-audit-diff" class="server-audit-diff" aria-live="polite" hidden></pre>
-  </div>
-</dialog>
-
 <dialog id="uuid-dialog" class="app-dialog">
   <form method="dialog" class="dialog-body" id="uuid-form">
     <h3 id="uuid-title">选择 UUID</h3>
@@ -139,26 +124,6 @@
     </div>
   </form>
 </dialog>
-
-<dialog id="player-dialog" class="app-dialog">
-  <form method="dialog" class="dialog-body" id="player-form">
-    <h3 id="player-dialog-title">选择玩家</h3>
-    <p id="player-dialog-note" class="dialog-sub">从服务器已知玩家中选择；在线玩家优先。</p>
-    <label class="search-box">
-      <span aria-hidden="true">⌕</span>
-      <input id="player-search" type="search" placeholder="搜索玩家名 / UUID">
-    </label>
-    <div id="player-list" class="player-list"></div>
-    <div class="dialog-actions">
-      <span class="spacer"></span>
-      <button type="button" id="player-cancel" class="ghost">取消</button>
-    </div>
-  </form>
-</dialog>
-
-
-
-
 
 <dialog id="config-editor-preview-dialog" class="app-dialog">
   <form method="dialog" class="dialog-body">

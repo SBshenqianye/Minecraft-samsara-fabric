@@ -45,23 +45,21 @@
         </div>
       </div>
 
+      <!-- 本体页的按钮属于页面自己（ServerPage / ServerConsolePage），hero 只负责标题与说明。 -->
       <div id="server-actions" class="page-hero-main" :hidden="!serverMode">
         <div class="page-hero-text">
-          <h1 id="server-action-title" class="page-hero-title">服务器配置</h1>
-          <p id="server-action-hint" class="page-hero-hint muted small"></p>
-        </div>
-        <div class="tab-actions-buttons page-hero-buttons">
-          <button id="server-reload" class="ghost" type="button">重新读取</button>
-          <button id="server-save" class="primary" type="button">保存并重载</button>
-          <button id="server-backup-create" class="primary" type="button" hidden>创建备份</button>
+          <h1 id="server-action-title" class="page-hero-title">{{ serverTitle }}</h1>
+          <p id="server-action-hint" class="page-hero-hint muted small">{{ serverHint }}</p>
         </div>
       </div>
     </section>
 
-    <!-- 旧脚本仍按 id / data-panel 查找这些 Tab；视觉上由 ia.css 隐藏。 -->
+    <!-- 旧脚本仍按 id / data-panel 查找这些 Tab；视觉上由 ia.css 隐藏。点击直接走路由。 -->
     <nav class="ia-legacy-tabs" aria-hidden="true">
-      <button class="top-tab active" type="button" data-section="mods">samsara</button>
-      <button class="top-tab" type="button" data-section="server">本体</button>
+      <button class="top-tab" :class="{ active: !serverMode }" type="button"
+          data-section="mods" @click="goWorkspace('mods')">samsara</button>
+      <button class="top-tab" :class="{ active: serverMode }" type="button"
+          data-section="server" @click="goWorkspace('server')">本体</button>
     </nav>
 
     <nav id="mods-tabs" class="ia-legacy-tabs" aria-hidden="true">
@@ -78,19 +76,44 @@
     </nav>
 
     <nav id="server-tabs" class="ia-legacy-tabs" aria-hidden="true">
-      <button class="tab active" type="button" data-server-panel="server-config-panel">服务器配置</button>
-      <button class="tab" type="button" data-server-panel="server-backup-panel">存档备份</button>
-      <button class="tab" type="button" data-server-panel="server-console-panel">RCON 控制台</button>
-      <button class="tab" type="button" data-server-panel="server-audit-panel">Web 审计</button>
+      <button v-for="tab in SERVER_TABS" :key="tab.panel" class="tab" type="button"
+          :class="{ active: activeServerPanel === tab.panel }"
+          :data-server-panel="tab.panel" @click="goServerPanel(tab.panel)">{{ tab.label }}</button>
     </nav>
   </header>
 </template>
 
 <script setup>
+import { useRouter } from 'vue-router';
+
 defineProps({
   crumbs: { type: Array, default: () => [] },
   workspaceShort: { type: String, default: 'samsara' },
   serverMode: { type: Boolean, default: false },
   heroTextOnly: { type: Boolean, default: false },
+  serverTitle: { type: String, default: '服务器配置' },
+  serverHint: { type: String, default: '' },
+  activeServerPanel: { type: String, default: '' },
 });
+
+const router = useRouter();
+
+const SERVER_TABS = [
+  { panel: 'server-config-panel', label: '服务器配置', path: '/vanilla/config' },
+  { panel: 'server-backup-panel', label: '存档备份', path: '/vanilla/backup' },
+  { panel: 'server-console-panel', label: 'RCON 控制台', path: '/vanilla/console' },
+  { panel: 'server-audit-panel', label: 'Web 审计', path: '/samsara/system/audit' },
+];
+
+function goWorkspace(section) {
+  const target = section === 'server' ? '/vanilla/config' : '/samsara/economy';
+  if (router.currentRoute.value.path !== target) router.push(target);
+}
+
+function goServerPanel(panel) {
+  const tab = SERVER_TABS.find((item) => item.panel === panel);
+  if (tab && router.currentRoute.value.path !== tab.path) router.push(tab.path);
+}
+
+defineExpose({ SERVER_TABS });
 </script>

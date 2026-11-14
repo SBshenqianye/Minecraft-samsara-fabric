@@ -3,6 +3,7 @@ import batch5 from './batch5.mjs';
 import legacyShell from './legacy-shell.mjs';
 import output from './output.mjs';
 import permissions from './permissions.mjs';
+import server from './server.mjs';
 import serverConsole from './server-console.mjs';
 import skyInventory from './sky-inventory.mjs';
 import worldStack from './world-stack.mjs';
@@ -15,6 +16,7 @@ export const sections = {
   announcements,
   output,
   permissions,
+  server,
   'server-console': serverConsole,
   'legacy-shell': legacyShell,
   'world-stack': worldStack,

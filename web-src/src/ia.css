@@ -306,7 +306,7 @@
   overflow: visible;
 }
 
-.ia-side:has(> .side-nav[hidden]) {
+.ia-side:not(:has(> .side-nav:not([hidden]))) {
   display: none;
 }
 

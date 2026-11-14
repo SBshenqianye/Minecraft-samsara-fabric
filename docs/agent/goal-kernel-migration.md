@@ -55,6 +55,16 @@
 - `world-stack` section 9/9；全量 E2E **281/281**。
 - 提交：`refactor(web): move world-stack timeline dialog to Vue`。
 
+### 阶段 3 完成记录（本体四面板）
+
+- `pages/server/model.js` 承接全部纯逻辑：properties 解析/默认值/规格表、草稿脏值比较、JSON 名单默认条目、玩家与审计/备份展示数据、§ 颜色文本解析（含单测 17 项）。
+- 新增 `ServerConfigPanel.vue`（分组/搜索/折叠/恢复默认/MOTD 色板/JSON 名单/玩家选择）、`ServerBackupPanel.vue`（统计/时间线/任务/文件位置/创建与恢复预览）、`ServerAuditPanel.vue`（列表/加载更多/文件级 diff/回滚）、`ChatTextEditor.vue`、`SegmentedButtons.vue`、`PlayerPickerDialog.vue`。
+- 新增原生页内导航：`composables/usePageNav.js` + `components/PageNav.vue`（`#page-nav`），不再依赖旧 `buildNav`；`AdminLayout` 在原生导航出现时清掉 `#global-nav`。
+- `app.js` 连接回调改为按路由判断本体页，避免把页面切回配置。
+- 删除 `legacy-core/server.js`（2150 行），`ServerPage.vue` 不再使用 `useLegacyPage`；从 `check-framework.mjs` 白名单移除。
+- 新增 `tools/e2e/sections/server.mjs`（15 条）；`server` section **15/15**；全量 E2E **281/281**。
+- 提交：`refactor(web): migrate server panels to Vue`。
+
 ## 门禁
 
 ```powershell

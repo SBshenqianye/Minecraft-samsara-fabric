@@ -39,6 +39,8 @@ declare module 'vue' {
     ItemWorkbench: typeof import('./src/components/ItemWorkbench.vue')['default']
     MapPicker: typeof import('./src/components/MapPicker.vue')['default']
     ModeSwitch: typeof import('./src/components/ModeSwitch.vue')['default']
+    NavItems: typeof import('./src/components/NavItems.vue')['default']
+    PageNav: typeof import('./src/components/PageNav.vue')['default']
     PinIcon: typeof import('./src/components/PinIcon.vue')['default']
     PlayerDoll: typeof import('./src/components/PlayerDoll.vue')['default']
     PlayerModel3D: typeof import('./src/components/PlayerModel3D.vue')['default']

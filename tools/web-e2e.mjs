@@ -115,7 +115,7 @@ async function main() {
         JSON.stringify(pageKit));
 
     const server = await evaluate(`(() => ({
-      nav: document.querySelector('#global-nav .nav-title')?.textContent.trim() || '',
+      nav: document.querySelector('#page-nav .nav-title')?.textContent.trim() || '',
       tabs: [...document.querySelectorAll('#server-tabs .tab')].map((tab) => tab.textContent.replace(/\\s+/g, ' ').trim()),
       files: document.querySelectorAll('#server-config-files > details.file-block').length,
       groups: document.querySelectorAll('#server-config-files .group-block').length,
@@ -197,7 +197,7 @@ async function main() {
 
     // MOTD 测试会修改草稿；重新读取，避免影响后续“未保存计数”断言。
     await evaluate(`(async () => {
-      if (window.SamsaraServer?.reload) await window.SamsaraServer.reload();
+      document.getElementById('server-reload')?.click();
       return true;
     })()`);
     await until("document.querySelectorAll('#server-config-files > details.file-block').length >= 6",
@@ -226,7 +226,7 @@ async function main() {
 
     // 恢复默认测试会修改草稿；再重载一次，避免影响后续断言。
     await evaluate(`(async () => {
-      if (window.SamsaraServer?.reload) await window.SamsaraServer.reload();
+      document.getElementById('server-reload')?.click();
       return true;
     })()`);
     await until("document.querySelectorAll('#server-config-files > details.file-block').length >= 6",
@@ -247,14 +247,16 @@ async function main() {
     check('文件可折叠', collapse.fileClosed);
     check('分组可折叠', collapse.groupClosed);
 
-    const search = await evaluate(`(() => {
+    const search = await evaluate(`(async () => {
       const input = document.getElementById('server-config-search');
       input.value = 'motd';
       input.dispatchEvent(new Event('input', { bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, 250));
       const visible = document.querySelectorAll('#server-config-files > details.file-block').length;
       const keys = [...document.querySelectorAll('#server-config-files .entry-key')].map((node) => node.textContent.trim());
       input.value = '';
       input.dispatchEvent(new Event('input', { bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, 250));
       return { visible, keys, restored: document.querySelectorAll('#server-config-files > details.file-block').length };
     })()`);
     check('搜索只显示匹配项', search.visible === 1 && search.keys.length === 1, JSON.stringify(search.keys));
@@ -313,7 +315,7 @@ async function main() {
         document.getElementById('server-backup-preview').hidden = true;
       }
       return {
-        nav: document.querySelector('#global-nav .nav-title')?.textContent.trim() || '',
+        nav: document.querySelector('#page-nav .nav-title')?.textContent.trim() || '',
         nodes: nodes.length,
         current: nodes.filter((node) => node.classList.contains('current')).length,
         hasRollback: Boolean(rollback),
@@ -2056,18 +2058,21 @@ async function main() {
 
     // ---- 一级分栏：切到“本体”后经济业务标签不能残留 ----
     const sectionSwitch = await evaluate(`(async () => {
-      const lottery = document.getElementById('panel-lottery');
       document.querySelector('.top-tab[data-section="mods"]')?.click();
-      await new Promise((resolve) => setTimeout(resolve, 200));
-      window.SamsaraUI.setActiveTab('lottery');
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await new Promise((resolve) => setTimeout(resolve, 700));
+      const modsPath = location.pathname;
       document.querySelector('.top-tab[data-section="server"]')?.click();
-      await new Promise((resolve) => setTimeout(resolve, 400));
-      const visible = lottery ? getComputedStyle(lottery).display !== 'none' : false;
-      return { visible };
+      await new Promise((resolve) => setTimeout(resolve, 900));
+      return {
+        modsPath,
+        path: location.pathname,
+        lotteryPanels: document.querySelectorAll('#panel-lottery').length,
+        serverPanel: !!document.querySelector('#server-config-panel:not([hidden])'),
+      };
     })()`);
-    check('切到本体后经济业务面板隐藏', sectionSwitch.visible === false,
-        JSON.stringify(sectionSwitch));
+    check('切到本体后经济业务面板隐藏', sectionSwitch.modsPath === '/samsara/economy'
+        && sectionSwitch.path === '/vanilla/config' && sectionSwitch.lotteryPanels === 0
+        && sectionSwitch.serverPanel === true, JSON.stringify(sectionSwitch));
 
     // ---- Web 审计：写请求前快照，可预览回滚 ----
     const noAuthAudit = await fetch(base + '/api/audit');
@@ -2398,9 +2403,12 @@ async function main() {
     check('本体工作区直接路由可用', iaVanilla.path === '/vanilla/config'
         && iaVanilla.panelVisible && iaVanilla.crumb === '服务器配置',
         JSON.stringify(iaVanilla));
+    await until("document.querySelector('#page-nav .nav-title')"
+        + " || document.querySelector('#global-nav .nav-title')", 15000, '本体页内导航');
     const navFit = await evaluate(`(() => {
       const side = document.querySelector('.ia-side');
-      const nav = document.querySelector('#global-nav');
+      const nav = document.querySelector('#page-nav .nav-title')
+        ? document.getElementById('page-nav') : document.getElementById('global-nav');
       if (!side || !nav) return { sideW: 0, navW: 0, navH: 0, navScrollH: 0 };
       return {
         sideW: Math.round(side.getBoundingClientRect().width),

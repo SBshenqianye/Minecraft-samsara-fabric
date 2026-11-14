@@ -91,5 +91,30 @@ export function useApi({
     return result.data;
   }
 
-  return { request, json };
+  /**
+   * 下载接口：直接取二进制，不经过 JSON 解析。
+   * 只在确实需要文件流的页面使用（例如备份下载）。
+   */
+  async function download(path, filename) {
+    const headers = {};
+    const value = token();
+    if (value) headers.Authorization = 'Bearer ' + value;
+    const response = await fetch(path, { headers });
+    if (response.status === 401) {
+      onUnauthorized?.();
+      throw new ApiError('token 无效或已失效', 401, null);
+    }
+    if (!response.ok) throw new ApiError('HTTP ' + response.status, response.status, null);
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename || 'download';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  return { request, json, download };
 }

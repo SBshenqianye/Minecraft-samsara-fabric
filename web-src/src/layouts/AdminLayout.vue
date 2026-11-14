@@ -5,6 +5,9 @@
       :workspace-short="workspaceShort"
       :server-mode="serverMode"
       :hero-text-only="heroTextOnly"
+      :server-title="serverHero.title"
+      :server-hint="serverHero.hint"
+      :active-server-panel="actingServerPanel"
     />
 
     <WorkspaceRail
@@ -31,6 +34,7 @@
 
         <main class="app-shell" :class="{ 'no-nav': !route.meta.panel && route.meta.page !== 'server' }">
           <div class="ia-side">
+            <PageNav />
             <aside id="global-nav" class="side-nav" aria-label="页内导航"></aside>
           </div>
           <div class="content">
@@ -72,6 +76,8 @@ import AdminOverlays from './AdminOverlays.vue';
 import WorkspaceRail from './WorkspaceRail.vue';
 import SectionNav from './SectionNav.vue';
 import PageScrollbar from './PageScrollbar.vue';
+import PageNav from '../components/PageNav.vue';
+import { pageNavState } from '../composables/usePageNav.js';
 import IdentityInventoryDialog from '../components/IdentityInventoryDialog.vue';
 import GlobalInventoryDrawer from '../components/GlobalInventoryDrawer.vue';
 import FrameworkDialogHost from '../components/FrameworkDialogHost.vue';
@@ -102,6 +108,9 @@ const {
 } = useAdminNavigation(route, mods);
 
 const serverMode = computed(() => workspace.value === 'vanilla' || page.value === 'server');
+const actingServerPanel = computed(() => route.meta.serverPanel || 'server-config-panel');
+const serverHero = computed(() => SERVER_HERO[actingServerPanel.value]
+  || { title: String(route.meta.title || '服务器配置'), hint: '' });
 
 let started = false;
 let lastApplied = '';
@@ -187,6 +196,8 @@ onMounted(async () => {
     window.SamsaraUI?.onConnected?.(() => {
       loadMods();
       refreshWebVersion();
+      // 原生 Vue 页面没有旧页面钩子，用 DOM 事件通知它们 token 已可用。
+      window.dispatchEvent(new CustomEvent('samsara:connected'));
     });
     await nextTick();
     await applyRoute(true);
@@ -214,6 +225,16 @@ onUnmounted(() => {
   window.removeEventListener('scroll', scheduleMeasure);
   window.clearTimeout(measureTimer);
   window.clearTimeout(navAlignTimer);
+});
+
+watch(() => pageNavState.title, (title) => {
+  if (!title) return;
+  // Vue 页面自带页内导航时，清掉旧脚本留下的 #global-nav，避免两套导航同时出现。
+  const nav = document.getElementById('global-nav');
+  if (nav) {
+    nav.replaceChildren();
+    nav.hidden = true;
+  }
 });
 
 watch(() => route.path, async () => {
@@ -342,17 +363,14 @@ const SERVER_HERO = {
 };
 
 /** 路由变化时同步更新 hero，避免等内容 panel 激活后才更新造成闪动。 */
+function syncServerHero() {
+  // 标题与说明由 AppHeader 按路由 meta 绑定，这里只保证 hero 模式正确。
+  heroTextOnly.value = false;
+}
+
 function syncHeroFromRoute() {
   if (serverMode.value) {
     showHero('server');
-    const panel = route.meta.serverPanel || 'server-config-panel';
-    const meta = SERVER_HERO[panel];
-    if (meta) {
-      const title = document.getElementById('server-action-title');
-      const hint = document.getElementById('server-action-hint');
-      if (title) title.textContent = meta.title;
-      if (hint) hint.textContent = meta.hint;
-    }
     return;
   }
   if (workspace.value === 'mods') {
@@ -400,7 +418,11 @@ function heroMatchesRoute() {
 function showHero(mode, title, hint) {
   // server / page 的显隐由 AppHeader 的 serverMode / heroTextOnly 响应式控制；
   // 旧页面（legacy）的标题与按钮仍由 app.js 的 TAB_ACTIONS 写入 DOM。
-  if (mode === 'server') return;
+  if (mode === 'server') {
+    heroTextOnly.value = false;
+    syncServerHero();
+    return;
+  }
   heroTextOnly.value = mode === 'page';
   if (mode === 'page') {
     const titleNode = document.getElementById('action-title');
@@ -417,26 +439,17 @@ async function applyRoute(force = false) {
   if (force || key !== lastApplied) {
     lastApplied = key;
     if (workspace.value === 'vanilla' || page.value === 'server') {
-      if (route.meta.native) {
-        // 原生 server 页面（当前是 RCON）不需要旧 panel 激活，也不要页内导航。
-        hideLegacyChrome();
-        const save = document.getElementById('server-save');
-        const create = document.getElementById('server-backup-create');
-        if (save) save.hidden = true;
-        if (create) create.hidden = true;
-      } else {
-        document.querySelector('main.app-shell')?.classList.remove('no-nav');
-        guarded(() => window.SamsaraServer?.showPanel?.(route.meta.serverPanel || 'server-config-panel'));
-      }
-      showHero('server');
+      // 本体页与 Web 审计都是原生 Vue 页面：面板只由路由 meta.serverPanel 决定。
+      document.body.classList.remove('server-section');
+      document.querySelector('main.app-shell')?.classList.remove('no-nav');
+      syncServerHero();
       if (page.value === 'server' && workspace.value === 'samsara') {
-        // 审计页属于 samsara 工作区，不要显示“本体”的旧一级分栏样式。
+        // 审计页属于 samsara 工作区，不应该套用本体的一级分栏。
         document.body.classList.remove('server-section');
       }
     } else if (workspace.value === 'mods') {
       guarded(() => window.SamsaraServer?.leaveServer?.());
-      window.SamsaraConfigEditor?.setSourceFilter?.('third-party');
-      window.SamsaraConfigEditor?.setNavEnabled?.(false);
+      window.SamsaraConfigEditor?.setSourceFilter?.('third-party');      window.SamsaraConfigEditor?.setNavEnabled?.(false);
       hideLegacyChrome();
       showHero('page', String(route.meta.title || '配置文件'), HERO_HINTS['mod-config']);
     } else {

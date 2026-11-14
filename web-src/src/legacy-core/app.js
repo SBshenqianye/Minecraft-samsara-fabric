@@ -3761,9 +3761,11 @@ async function runConnectHooks() {
       // 同上
     }
   }
-  const inServerSection = window.SamsaraServer
+  // 本体页已迁到 Vue：用路由判断，避免连接回调把页面切回 samsara 配置。
+  const inServerSection = (window.SamsaraServer
       && window.SamsaraServer.state
-      && window.SamsaraServer.state.section === 'server';
+      && window.SamsaraServer.state.section === 'server')
+      || /^\/(vanilla|samsara\/system\/audit)(\/|$)/.test(window.location.pathname);
   if (!inServerSection) {
     setActiveTab(state.tab || 'config');
   }
