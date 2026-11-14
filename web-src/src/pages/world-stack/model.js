@@ -61,3 +61,40 @@ const ICON_LABELS = {
 export function stackIconLabel(source) {
   return ICON_LABELS[source] || ICON_LABELS.placeholder;
 }
+
+export function fmtBytes(value) {
+  const bytes = Number(value) || 0;
+  if (bytes <= 0) return '0 B';
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+  let size = bytes;
+  let unit = 0;
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024;
+    unit += 1;
+  }
+  return size.toFixed(unit === 0 ? 0 : 1) + ' ' + units[unit];
+}
+
+export function fmtTime(value) {
+  if (!value) return '—';
+  try { return new Date(value).toLocaleString(); } catch (e) { return String(value); }
+}
+
+const SOURCE_NAMES = {
+  current: '当前世界',
+  layer: '栈层',
+  imported: '导入',
+  demoted: '被压入的栈顶',
+  'new-world': '新世界',
+  initial: '初始',
+  legacy: '旧数据',
+};
+
+export function sourceName(source) {
+  return SOURCE_NAMES[source] || source || '—';
+}
+
+/** 非栈顶按 index 升序；不修改输入数组。 */
+export function sortStacksByIndex(stacks) {
+  return (Array.isArray(stacks) ? stacks.slice() : []).sort((a, b) => a.index - b.index);
+}

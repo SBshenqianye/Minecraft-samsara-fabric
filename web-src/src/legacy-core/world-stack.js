@@ -1,4 +1,10 @@
 import './stack-icon.js';
+import {
+  fmtBytes,
+  fmtTime,
+  sortStacksByIndex,
+  sourceName,
+} from '../pages/world-stack/model.js';
 
 'use strict';
 
@@ -96,42 +102,11 @@ import './stack-icon.js';
   }
 
   function nonTop() {
-    return stacks().filter((stack) => !stack.top)
-      .sort((a, b) => a.index - b.index);
+    return sortStacksByIndex(stacks().filter((stack) => !stack.top));
   }
 
   function byId(id) {
     return stacks().find((stack) => stack.id === id) || null;
-  }
-
-  function fmtBytes(value) {
-    const bytes = Number(value) || 0;
-    if (bytes <= 0) return '0 B';
-    const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
-    let size = bytes;
-    let unit = 0;
-    while (size >= 1024 && unit < units.length - 1) {
-      size /= 1024;
-      unit += 1;
-    }
-    return size.toFixed(unit === 0 ? 0 : 1) + ' ' + units[unit];
-  }
-
-  function fmtTime(value) {
-    if (!value) return '—';
-    try { return new Date(value).toLocaleString(); } catch (e) { return String(value); }
-  }
-
-  function sourceName(source) {
-    return ({
-      current: '当前世界',
-      layer: '栈层',
-      imported: '导入',
-      demoted: '被压入的栈顶',
-      'new-world': '新世界',
-      initial: '初始',
-      legacy: '旧数据',
-    })[source] || source || '—';
   }
 
   function appendChip(parent, label, value) {

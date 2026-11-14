@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { stackIconLabel, stackMapRegion, stackMapTileUrl } from './model.js';
+import {
+  fmtBytes,
+  fmtTime,
+  sortStacksByIndex,
+  sourceName,
+  stackIconLabel,
+  stackMapRegion,
+  stackMapTileUrl,
+} from './model.js';
 
 describe('world-stack icon model', () => {
   it('出生点所在 region 已生成时直接使用', () => {
@@ -54,5 +62,33 @@ describe('world-stack icon model', () => {
     expect(stackIconLabel('map')).toBe('出生点地图');
     expect(stackIconLabel('placeholder')).toBe('暂无图标');
     expect(stackIconLabel('unknown')).toBe('暂无图标');
+  });
+
+  it('字节数按 KiB/MiB/GiB 展示', () => {
+    expect(fmtBytes(0)).toBe('0 B');
+    expect(fmtBytes(1023)).toBe('1023 B');
+    expect(fmtBytes(1024)).toBe('1.0 KiB');
+    expect(fmtBytes(1024 * 1024)).toBe('1.0 MiB');
+    expect(fmtBytes(5.5 * 1024 * 1024 * 1024)).toBe('5.5 GiB');
+    expect(fmtBytes(null)).toBe('0 B');
+  });
+
+  it('时间格式化对空值回退为破折号', () => {
+    expect(fmtTime('')).toBe('—');
+    expect(fmtTime(null)).toBe('—');
+    expect(typeof fmtTime('2026-11-14T00:00:00Z')).toBe('string');
+    expect(fmtTime('2026-11-14T00:00:00Z')).not.toBe('—');
+  });
+
+  it('世界来源与排序稳定', () => {
+    expect(sourceName('current')).toBe('当前世界');
+    expect(sourceName('legacy')).toBe('旧数据');
+    expect(sourceName('custom')).toBe('custom');
+    expect(sourceName(undefined)).toBe('—');
+    const input = [{ id: 'b', index: 2 }, { id: 'a', index: 0 }];
+    const sorted = sortStacksByIndex(input);
+    expect(sorted.map((item) => item.id)).toEqual(['a', 'b']);
+    expect(input.map((item) => item.id)).toEqual(['b', 'a']);
+    expect(sortStacksByIndex(null)).toEqual([]);
   });
 });
