@@ -1,60 +1,13 @@
 'use strict';
 
+import {
+  stackMapRegion,
+  stackMapTileUrl,
+  stackIconLabel,
+} from '../pages/world-stack/model.js';
+
 // 世界栈卡片图标：自定义上传 > 存档 icon.png > 出生点地图缩略图。
 // 地图页、世界栈页与公开用户端共用；不依赖地图 canvas。
-// ---- 世界栈卡片图标：自定义上传 > 存档 icon.png > 出生点地图缩略图 ----
-
-function stackMapRegion(stack) {
-  const rawSpawn = stack && (stack.spawn || (Number.isFinite(Number(stack.spawnX))
-    ? { x: stack.spawnX, y: stack.spawnY, z: stack.spawnZ } : null));
-  const spawn = rawSpawn;
-  let rx = spawn && Number.isFinite(Number(spawn.x))
-    ? Math.floor(Number(spawn.x) / 512) : null;
-  let rz = spawn && Number.isFinite(Number(spawn.z))
-    ? Math.floor(Number(spawn.z) / 512) : null;
-  const dimensions = Array.isArray(stack && stack.dimensions) ? stack.dimensions : [];
-  const overworld = dimensions.find((dim) => dim && dim.dim === 'overworld') || dimensions[0];
-  const regions = overworld && Array.isArray(overworld.regions)
-    ? overworld.regions.filter((item) => Array.isArray(item) && item.length >= 2) : [];
-  const contains = (x, z) => regions.some((item) => item[0] === x && item[1] === z);
-  if (rx != null && rz != null && (regions.length === 0 || contains(rx, rz))) {
-    return { rx, rz };
-  }
-  if (regions.length === 0) return null;
-  if (rx == null || rz == null) {
-    return { rx: regions[0][0], rz: regions[0][1] };
-  }
-  // 出生点所在 region 没有生成时，选离出生点最近的一个，避免卡片长期空白。
-  let best = regions[0];
-  let bestDistance = Infinity;
-  for (const item of regions) {
-    const dx = (item[0] + 0.5) * 512 - Number(spawn.x);
-    const dz = (item[1] + 0.5) * 512 - Number(spawn.z);
-    const distance = dx * dx + dz * dz;
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      best = item;
-    }
-  }
-  return { rx: best[0], rz: best[1] };
-}
-
-function stackMapTileUrl(stack) {
-  const region = stackMapRegion(stack);
-  if (!region) return '';
-  // 图标是 <img> 请求，无法携带 Bearer；用公开只读用户端 tile。
-  return '/api/user/map/tile?stack=' + encodeURIComponent(stack.id)
-    + '&dim=overworld&rx=' + region.rx + '&rz=' + region.rz + '&scale=4&shade=1&v=6';
-}
-
-function stackIconLabel(source) {
-  return ({
-    upload: '自定义图标',
-    save: '存档图标',
-    map: '出生点地图',
-    placeholder: '暂无图标',
-  })[source] || '暂无图标';
-}
 
 function buildStackIcon(stack, options) {
   const opts = options || {};
@@ -148,4 +101,4 @@ window.SamsaraStackIcon = {
   mapTileUrl: stackMapTileUrl,
 };
 
-export { buildStackIcon, stackMapTileUrl, stackMapRegion };
+export { buildStackIcon, stackMapTileUrl, stackMapRegion, stackIconLabel };
