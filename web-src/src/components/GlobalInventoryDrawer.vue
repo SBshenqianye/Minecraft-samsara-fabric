@@ -85,6 +85,7 @@ import ItemWorkbench from './ItemWorkbench.vue';
 import CreativeLibrary from './CreativeLibrary.vue';
 import CraftingBench from './CraftingBench.vue';
 import ItemEditor from './ItemEditor.vue';
+import { getToken, useApi } from '../composables/useApi.js';
 
 const open = ref(false);
 const pinned = ref(false);
@@ -122,6 +123,12 @@ function applyEditorItem(item) {
   workbench.value?.applyExternalItem(item);
 }
 let token = '';
+const { request: api } = useApi({
+  token: () => token,
+  onUnauthorized: () => {
+    connected.value = false;
+  },
+});
 let liveTimer = null;
 let localVersion = 0;
 let flushPromise = null;
@@ -143,7 +150,7 @@ const layout = [
   { label: '末影箱 41–67（27 格）', start: 41, size: 27, columns: 9, row: 'storage', zone: 'storage', gap: true },
 ];
 onMounted(() => {
-  token = sessionStorage.getItem('samsara-token') || '';
+  token = getToken();
   connected.value = !!token;
   window.addEventListener('keydown', onKeydown);
   updateSlotSize();
@@ -194,18 +201,6 @@ function onKeydown(event) {
   toggleWindow();
 }
 
-function dialogBlocking() {
-  if (document.querySelector('dialog[open]')) return true;
-  return [...document.querySelectorAll('.el-overlay')].some((node) => {
-    if (node.getAttribute('aria-hidden') === 'true') return false;
-    if (typeof node.checkVisibility === 'function') {
-      return node.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true });
-    }
-    const style = window.getComputedStyle(node);
-    return style.display !== 'none' && style.visibility !== 'hidden';
-  });
-}
-
 function openWindow() {
   open.value = true;
   // 默认未保持：点击窗口外部即收起；点 ⌖ 才保持窗口一直存在。
@@ -235,29 +230,11 @@ function toggleWindow() {
 }
 
 async function bootstrap() {
-  token = sessionStorage.getItem('samsara-token') || '';
+  token = getToken();
   connected.value = !!token;
   if (!token) return;
   loadSchema();
   await load();
-}
-
-async function api(path, options = {}) {
-  const headers = Object.assign({ Authorization: 'Bearer ' + token }, options.headers || {});
-  if (options.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
-  const response = await fetch(path, Object.assign({}, options, { headers }));
-  const text = await response.text();
-  let data = {};
-  try {
-    data = text ? JSON.parse(text) : {};
-  } catch {
-    data = { error: text };
-  }
-  if (response.status === 401) {
-    connected.value = false;
-    throw new Error('token 无效或已失效');
-  }
-  return { status: response.status, data };
 }
 
 async function loadSchema() {

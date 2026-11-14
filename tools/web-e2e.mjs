@@ -8,195 +8,32 @@
 // 只读/可回退：不会保存配置、不会创建/恢复备份；玩家选择测试会新增后立即删除草稿。
 // 退出码 0 表示全部通过。
 
-import { spawn } from 'node:child_process';
 import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
+import {
+  closePage,
+  createReporter,
+  launchPage,
+  parseArgs,
+  sleep,
+} from './e2e/harness.mjs';
 
 const args = parseArgs(process.argv.slice(2));
 const base = (args.base || process.env.SAMSARA_WEB || 'http://127.0.0.1:8730').replace(/\/+$/, '');
 const token = args.token || process.env.SAMSARA_TOKEN || 'testtoken';
 const explicitBrowser = args.browser || process.env.SAMSARA_BROWSER;
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-function parseArgs(argv) {
-  const out = {};
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
-    if (!arg.startsWith('--')) continue;
-    const key = arg.slice(2);
-    const next = argv[i + 1];
-    if (next && !next.startsWith('--')) {
-      out[key] = next;
-      i++;
-    } else {
-      out[key] = true;
-    }
-  }
-  return out;
-}
-
-function firstExisting(candidates) {
-  for (const candidate of candidates) {
-    if (candidate && fs.existsSync(candidate)) return candidate;
-  }
-  return null;
-}
-
-function browserPath() {
-  if (explicitBrowser) return explicitBrowser;
-  const pf = process.env.ProgramFiles || 'C:\\Program Files';
-  const pf86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
-  const local = process.env.LOCALAPPDATA || '';
-  return firstExisting([
-    path.join(pf86, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
-    path.join(pf, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
-    path.join(local, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
-    path.join(pf, 'Google', 'Chrome', 'Application', 'chrome.exe'),
-    path.join(pf86, 'Google', 'Chrome', 'Application', 'chrome.exe'),
-    path.join(local, 'Google', 'Chrome', 'Application', 'chrome.exe'),
-  ]);
-}
-
-async function freePort() {
-  const net = await import('node:net');
-  return new Promise((resolve, reject) => {
-    const server = net.createServer();
-    server.on('error', reject);
-    server.listen(0, '127.0.0.1', () => {
-      const port = server.address().port;
-      server.close(() => resolve(port));
-    });
-  });
-}
-
-class CDP {
-  constructor(url) {
-    this.url = url;
-    this.nextId = 1;
-    this.pending = new Map();
-    this.listeners = new Map();
-    this.ws = null;
-  }
-
-  open() {
-    return new Promise((resolve, reject) => {
-      this.ws = new WebSocket(this.url);
-      const timer = setTimeout(() => reject(new Error('CDP 连接超时')), 10000);
-      this.ws.onopen = () => { clearTimeout(timer); resolve(); };
-      this.ws.onerror = (event) => { clearTimeout(timer); reject(new Error('CDP 连接失败: ' + event.message)); };
-      this.ws.onmessage = (event) => {
-        let message;
-        try { message = JSON.parse(event.data); } catch (e) { return; }
-        if (message.id && this.pending.has(message.id)) {
-          const { resolve: ok, reject: fail } = this.pending.get(message.id);
-          this.pending.delete(message.id);
-          if (message.error) fail(new Error(message.error.message || JSON.stringify(message.error)));
-          else ok(message.result);
-          return;
-        }
-        if (message.method) {
-          const list = this.listeners.get(message.method) || [];
-          this.listeners.set(message.method, []);
-          for (const listener of list) listener(message.params);
-        }
-      };
-    });
-  }
-
-  send(method, params = {}) {
-    const id = this.nextId++;
-    const payload = JSON.stringify({ id, method, params });
-    return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      this.ws.send(payload);
-    });
-  }
-
-  once(method, timeoutMs = 15000) {
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('等待 ' + method + ' 超时')), timeoutMs);
-      const list = this.listeners.get(method) || [];
-      list.push((params) => { clearTimeout(timer); resolve(params); });
-      this.listeners.set(method, list);
-    });
-  }
-
-  close() {
-    try { this.ws.close(); } catch (e) { /* ignore */ }
-  }
-}
-
-const results = [];
-function check(name, ok, detail = '') {
-  results.push({ name, ok: Boolean(ok), detail });
-  console.log((ok ? '  PASS  ' : '  FAIL  ') + name + (detail ? '  · ' + detail : ''));
-}
+const { check, summary } = createReporter();
 
 async function main() {
-  if (typeof WebSocket !== 'function') {
-    throw new Error('当前 Node 没有全局 WebSocket；需要 Node 22+（本项目使用 24）');
-  }
-  const executable = browserPath();
-  if (!executable) {
-    throw new Error('找不到 Edge/Chrome；用 --browser <path> 指定');
-  }
-  const port = await freePort();
-  const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'samsara-e2e-'));
+  const session = await launchPage({ explicitBrowser });
+  const { cdp, executable, profile } = session;
   console.log('samsara · Web 冒烟 E2E');
   console.log('base   : ' + base);
   console.log('browser: ' + executable);
   console.log('profile: ' + profile);
   console.log('');
 
-  const child = spawn(executable, [
-    '--headless=new',
-    '--disable-gpu',
-    '--no-first-run',
-    '--no-default-browser-check',
-    '--disable-extensions',
-    '--window-size=1440,1000',
-    '--remote-debugging-port=' + port,
-    '--user-data-dir=' + profile,
-    'about:blank',
-  ], { stdio: ['ignore', 'ignore', 'pipe'] });
-
-  let devtools = '';
-  child.stderr.on('data', (chunk) => {
-    const match = String(chunk).match(/DevTools listening on (ws:\/\/\S+)/);
-    if (match) devtools = match[1];
-  });
-
-  let cdp = null;
   try {
-    // 新版 Edge 在部分环境不再把 DevTools 地址写到 stderr，直接探测 /json/version。
-    for (let i = 0; i < 100 && !devtools; i++) {
-      await sleep(100);
-      if (devtools) break;
-      try {
-        const info = await fetch('http://127.0.0.1:' + port + '/json/version').then((r) => r.json());
-        if (info && info.webSocketDebuggerUrl) devtools = info.webSocketDebuggerUrl;
-      } catch (e) { /* retry */ }
-    }
-    if (!devtools) throw new Error('浏览器没有输出 DevTools 地址');
-    let targets = [];
-    for (let i = 0; i < 50; i++) {
-      try {
-        const response = await fetch('http://127.0.0.1:' + port + '/json/list');
-        targets = await response.json();
-        if (targets.some((target) => target.type === 'page')) break;
-      } catch (e) { /* retry */ }
-      await sleep(100);
-    }
-    const page = targets.find((target) => target.type === 'page');
-    if (!page) throw new Error('找不到页面 target');
-
-    cdp = new CDP(page.webSocketDebuggerUrl);
-    await cdp.open();
-    await cdp.send('Page.enable');
-    await cdp.send('Runtime.enable');
-
     async function evaluate(expression, awaitPromise = true) {
       const result = await cdp.send('Runtime.evaluate', {
         expression,
@@ -3733,20 +3570,10 @@ async function main() {
     const errors = await evaluate('window.__e2eErrors || []');
     check('没有未捕获的页面脚本错误', errors.length === 0, errors.slice(0, 3).join(' | '));
   } finally {
-    if (cdp) cdp.close();
-    try { child.kill(); } catch (e) { /* ignore */ }
-    await sleep(300);
-    try { fs.rmSync(profile, { recursive: true, force: true }); } catch (e) { /* ignore */ }
+    await closePage(session);
   }
 
-  const failed = results.filter((result) => !result.ok);
-  console.log('');
-  console.log('结果：' + (results.length - failed.length) + ' / ' + results.length + ' 通过');
-  if (failed.length) {
-    console.log('失败：');
-    for (const item of failed) console.log('  - ' + item.name + (item.detail ? ' · ' + item.detail : ''));
-    process.exitCode = 1;
-  }
+  if (summary() > 0) process.exitCode = 1;
 }
 
 main().catch((error) => {

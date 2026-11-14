@@ -163,6 +163,7 @@ import ItemIcon from './ItemIcon.vue';
 import BlockModelIcon from './BlockModelIcon.vue';
 import PinIcon from './PinIcon.vue';
 import { readCache, writeCache } from '../composables/localCache.js';
+import { useApi } from '../composables/useApi.js';
 
 const props = defineProps({
   markers: { type: Array, default: () => [] },
@@ -172,6 +173,7 @@ const props = defineProps({
   showTrails: { type: Boolean, default: true },
 });
 const emit = defineEmits(['select']);
+const { request } = useApi();
 
 // 与世界地图 map.js 同一套缩放档位与「格/像素」口径；交互实现彼此独立。
 // 最细两档是这次新增的：0.015625 时一格方块占 64px，正好放一个可点击图标。
@@ -229,8 +231,7 @@ const visibleMarkers = computed(() => {
       && marker.top > -40 && marker.top < viewH.value + 40);
 });
 
-const GRID_SCALE = 0.015625;      // 最细档才按方块格聚合
-const MAX_GRID_SCALE = 0.015625;
+const MAX_GRID_SCALE = 0.015625;  // 最细档才按方块格聚合
 const MAX_GRID_SPREAD = 14;
 const clusterPopup = ref(null);
 const clusterPinned = ref(false);
@@ -397,10 +398,9 @@ async function loadModel() {
     applyStack();
   }
   try {
-    const token = sessionStorage.getItem('samsara-token') || '';
-    const response = await fetch('/api/map', { headers: { Authorization: 'Bearer ' + token } });
-    if (!response.ok) return;
-    model.value = await response.json();
+    const result = await request('/api/map');
+    if (!result.ok) return;
+    model.value = result.data;
     writeCache('samsara.map.model.v1', model.value);
     applyStack();
   } catch {
@@ -410,13 +410,9 @@ async function loadModel() {
 
 async function loadTrails() {
   try {
-    const token = sessionStorage.getItem('samsara-token') || '';
-    const response = await fetch('/api/map/player-trails?limit=400', {
-      headers: { Authorization: 'Bearer ' + token },
-    });
-    if (!response.ok) return;
-    const data = await response.json();
-    if (Array.isArray(data.players)) trailPlayers.value = data.players;
+    const result = await request('/api/map/player-trails?limit=400');
+    if (!result.ok) return;
+    if (Array.isArray(result.data.players)) trailPlayers.value = result.data.players;
   } catch {
     // 轨迹不可用时不打断地图
   }
@@ -566,12 +562,6 @@ function endPan() {
 function initialOf(marker) {
   const name = String(marker.label || marker.name || '?').trim();
   return /^[A-Za-z0-9\u4e00-\u9fff]/.test(name) ? name.charAt(0).toUpperCase() : '?';
-}
-
-function largeChestSrc(marker) {
-  const prefix = String(marker.icon || '').includes('trapped')
-    ? 'large_trapped_chest' : 'large_chest';
-  return '/items/' + prefix + '_' + (marker.chestAxis === 'z' ? 'z' : 'x') + '.png';
 }
 
 function avatarStyle(marker) {

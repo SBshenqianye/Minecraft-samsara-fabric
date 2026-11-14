@@ -192,6 +192,7 @@
 import { reactive, ref, watch } from 'vue';
 import EnumPicker from './EnumPicker.vue';
 import ItemIcon from './ItemIcon.vue';
+import { useApi } from '../composables/useApi.js';
 
 const props = defineProps({
   item: { type: Object, default: null },
@@ -405,19 +406,13 @@ function buildPatch() {
   return patch;
 }
 
-async function postJson(path, payload) {
-  const token = sessionStorage.getItem('samsara-token') || '';
-  const response = await fetch(path, {
+const { json } = useApi();
+
+function postJson(path, payload) {
+  return json(path, {
     method: 'POST',
-    headers: {
-      Authorization: 'Bearer ' + token,
-      'Content-Type': 'application/json',
-    },
     body: JSON.stringify(payload),
-  });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok || !body.ok) throw new Error(body.error || '应用物品失败');
-  return body;
+  }, '应用物品失败');
 }
 
 function applyItem(item) {

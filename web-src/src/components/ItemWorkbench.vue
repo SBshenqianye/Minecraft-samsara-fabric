@@ -101,6 +101,7 @@ import { ElMessage } from 'element-plus';
 import ItemSlotGrid from './ItemSlotGrid.vue';
 import { hideItemTooltip, showItemTooltip } from './itemTooltip.js';
 import { clearItemCursor, itemCursor, nextWorkbenchId } from '../composables/itemCursor.js';
+import { useApi } from '../composables/useApi.js';
 
 const props = defineProps({
   slots: { type: Array, default: () => [] },
@@ -158,7 +159,8 @@ const trashIconSrc = '/ui/creative_trash.png';
 let dragSource = null;
 // 同一 encoded + 数量反复出现（拿半组、放回、合并）时不必每次都请求服务端重编码。
 const countCache = new Map();
-
+const { json } = useApi();
+const api = (path, options) => json(path, options, '物品操作失败');
 
 const modeLabel = computed(() => {
   if (props.mode === 'live') return '实时';
@@ -273,17 +275,6 @@ function firstEmptySlot() {
 function findMergeTarget(index, item) {
   if (!props.autoStack || !item) return null;
   return localItems.value.find((row) => row.slot !== index && sameSignature(row, item)) || null;
-}
-
-async function api(path, options) {
-  const token = sessionStorage.getItem('samsara-token') || '';
-  const headers = Object.assign({ Authorization: 'Bearer ' + token }, options.headers || {});
-  if (options.body) headers['Content-Type'] = 'application/json';
-  const response = await fetch(path, Object.assign({}, options, { headers }));
-  const data = await response.json().catch(() => ({}));
-  if (response.status === 401) throw new Error('token 无效或已失效');
-  if (!response.ok || data.ok === false) throw new Error(data.error || '物品操作失败');
-  return data;
 }
 
 async function withCount(item, count) {
@@ -542,24 +533,6 @@ function applyEditorItem(item) {
     setSlot(selectedIndex.value, item);
   }
   commit('edit');
-}
-
-function closeEditor() {
-  selectedIndex.value = null;
-  hideItemTooltip();
-}
-
-function removeSelected() {
-  if (selectedIndex.value === null) return;
-  if (!localSlots.value[selectedIndex.value] && !cursor.value) return;
-  if (!localSlots.value[selectedIndex.value] && cursor.value
-      && cursorOrigin.value === selectedIndex.value) {
-    cursor.value = null;
-    cursorOrigin.value = null;
-  } else {
-    setSlot(selectedIndex.value, null);
-  }
-  commit('interact');
 }
 
 function resetSelection() {

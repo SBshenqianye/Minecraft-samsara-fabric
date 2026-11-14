@@ -8,7 +8,9 @@
 >
 > **v0.48.1 起**：管理端 header 由 `AdminLayout.vue` 自绘（品牌/版本/面包屑/连接/操作栏），旧 header 不再导入；`.top-tabs` / `#mods-tabs` / `#server-tabs` 仅保留隐藏 DOM 兼容旧脚本和 E2E。header 必须是 sticky 容器本身（不要再套等高层 wrapper）；二级 Tab 贴 header，`#global-nav` 在二级 Tab 下方。`/user` 使用独立的公开信息壳层。
 >
-> **v0.49.0 起**：所有页面统一 `PageHeader` 横幅（标题/说明/徽标/主操作）；samsara 二级分区使用 `router.js` 的 `SECTION_NAV` 渲染三级左侧子页导航；面包屑固定为“工作区 / 二级分区 / 当前子页”。`/server/*` 只做 redirect，规范路径是 `/vanilla/*`；配置编辑器用 `setSourceFilter` 按来源过滤。内部路由应用必须包在 `legacyNavGuard` 中，避免旧 `setActiveTab` 桥接二次导航。
+> **v0.49.0 起**：所有页面使用 `AdminLayout` 顶部统一 hero 横幅（`PageHeader.vue` 已于后续版本删除）；samsara 二级分区使用 `navigation.js` 的 `SECTION_NAV` 渲染三级左侧子页导航；面包屑固定为“工作区 / 二级分区 / 当前子页”。`/server/*` 只做 redirect，规范路径是 `/vanilla/*`；配置编辑器用 `setSourceFilter` 按来源过滤。内部路由应用必须包在 `legacyNavGuard` 中，避免旧 `setActiveTab` 桥接二次导航。
+>
+> **v0.58.0 起（P0/P1/P2 收口）**：`AdminLayout` 改用 `<router-view>` + `keep-alive :include="KEEP_ALIVE_PAGES"`，删除手写页面栈；工作区/分区/子页/旧链接别名统一到 `navigation.js`；HTTP/token 统一到 `composables/useApi.js`，连接态统一到 `composables/useAuth.js`；删除不可达的 `InventoryPage.vue` 与未使用的 `PageHeader.vue`。壳层拆成 `AppHeader` / `WorkspaceRail` / `SectionNav` / `PageScrollbar`；设计变量迁到 `tokens.css`；Element Plus 组件按需 + API 样式显式引入；新增 ESLint、`vue-tsc`、Vitest 与 `npm run check`。
 
 ## 1. 生命周期契约
 
@@ -86,17 +88,21 @@ mount(ctx) {
 
 - 源目录 `web-src/`；构建命令 `cd web-src && npm.cmd ci && npm.cmd run build`。
 - Vite `base=/vue/`，输出 `mod/src/main/resources/web/vue/`；构建产物必须提交，保证 `gradle clean build` 不需要 npm。
-- 结构：`layouts/AdminLayout.vue` 管共享 header/工作区导航/二级 Tab/token 弹窗/浮窗；`pages/*.vue` 每个路由页面一个文件；`components/TabShell.vue` 是可复用页面壳；`components/LegacyPanel.vue` 负责把旧 panel 挂到页面里；`components/ItemSlotGrid.vue` 是容器/背包共用槽位网格；`components/FolderTree.vue` 是其他模组递归文件夹树。
+- 结构：`navigation.js` 维护工作区 / 二级分区 / 三级子页 / 旧链接别名；`layouts/AdminLayout.vue` 只管共享 header、导航壳、路由视图与浮窗；`pages/*.vue` 每个路由页面一个文件；`components/TabShell.vue` 是可复用页面壳；`components/LegacyPanel.vue` 负责把旧 panel 挂到页面里；`components/ItemSlotGrid.vue` 是容器/背包共用槽位网格；`components/FolderTree.vue` 是其他模组递归文件夹树。
 - 路由：`/vanilla/*`、`/samsara/economy|sky|config|world|community|system/*`、`/mods/<modId>/<file...>`；旧 `/config`、`/config-editor`、`/claim-range`、`/identity`、`/output`、`/permissions`、`/map`、`/announcements`、`/world-stack`、`/lottery`、`/containers` 保留 alias；`/server/*` 只做前端 redirect 到 `/vanilla/*`（审计例外：`/server/audit` 与 `/vanilla/audit` 都 redirect 到 `/samsara/system/audit`）。
-- 新增二级页时：先在 `pages/XxxPage.vue` 写页面，再在 `router.js` 加路由与 `meta`（`workspace`、`section`、`page`、`panel`），把子页加入 `SECTION_NAV`，最后在 `AdminLayout` 的页面栈里加 `v-show`/`v-if` 和 `sections` 映射。`meta.title` 必须与三级导航文案一致。
+- **AdminLayout 不再手写页面栈**：内容区是 `<router-view>`，页面选择只由 `router.js` 的 `component` 决定；需要跨路由保留状态的页面加入 `navigation.js` 的 `KEEP_ALIVE_PAGES`，并在页面里 `defineOptions({ name: 'XxxPage' })` 声明同名组件。
+- 新增页面：先写 `pages/XxxPage.vue`，再在 `router.js` 加路由与 `meta`（`workspace`、`section`、`page`、`panel`、`subpage`），需要三级导航时加入 `navigation.js` 的 `SECTION_NAV`，最后把 SPA 路径加到 `WebSecurity.staticResource`。`meta.title` 必须与三级导航文案一致；不要再改 `AdminLayout` 的模板。
 - 配置来源过滤：`/samsara/config/editor` 调 `setSourceFilter('samsara')`；其他模组页调 `setSourceFilter('third-party')`；`/vanilla/config` 仍由 `server.js` 管服务器本体配置。不要在同一页混显示不同 source。
-- 横幅：全站唯一横幅是 `AdminLayout` 顶部 hero（`#mods-actions` / `#server-actions`），统一显示面包屑、标题、说明和全局操作；页面标题/说明由 AdminLayout 按路由写入，内容区不再使用 `PageHeader` 或另造标题横幅。页面自己的刷新/查询/保存按钮留在内容区（`TabShell` 的 actions 或普通 toolbar）。
-- Element Plus 按需引入：Vite 用 `unplugin-vue-components` + `ElementPlusResolver`；不要在 `main.js` 全局 `import 'element-plus/dist/index.css'`。`ElMessage` / `ElMessageBox` 等 API 显式 import，图标按需 import。
+- 横幅：全站唯一横幅是 `AdminLayout` 顶部 hero（`#mods-actions` / `#server-actions`），统一显示面包屑、标题、说明和全局操作；页面标题/说明由 AdminLayout 按路由写入。`PageHeader.vue` 已删除，内容区不要再造标题横幅；页面自己的刷新/查询/保存按钮留在内容区（`TabShell` 的 actions 或普通 toolbar）。
+- HTTP 与 token：统一走 `composables/useApi.js`（`request` 返回 `{ status, ok, data }`，`json` 严格抛错；`getToken` / `setToken` / `clearToken` 统一管理 `samsara-token`）。需要连接态的页面用 `composables/useAuth.js`，不要再复制 token 输入框、`/api/status` 校验与 401 处理。
+- Element Plus：Vite 用 `unplugin-vue-components` + `ElementPlusResolver` 按需引入组件；`main.js` 目前仍显式 `import 'element-plus/dist/index.css'`，因为 `ElMessageBox` / `ElMessage` 等 API 组件的样式不经过模板解析器。若后续改成 API 样式按需引入，必须同步更新本文件、`samsara-web` skill 与 E2E 的弹窗断言。
 - 第三层页面内导航继续用旧 `#global-nav`（`buildNav`）；其他模组页可调用 `SamsaraConfigEditor.setNavEnabled(false)` 隐藏全局导航，改用自己的文件夹树。
 - 不在浏览器内编译模板：必须用 SFC 预编译；CSP 继续禁止 `unsafe-eval`。
 - Vue 页面文本使用插值/`textContent`，禁止 `innerHTML`；旧页面壳通过 DOM API `importNode/appendChild` 挂载。
-- 切页必须清理：定时器、事件监听、地图动画、轮询、dialog；Vue 组件卸载时调用对应旧页面的停止/清理入口。
+- 切页必须清理：定时器、事件监听、地图动画、轮询、dialog；Vue 组件卸载时调用对应旧页面的停止/清理入口。常驻页面（`KEEP_ALIVE_PAGES`）用 `onActivated/onDeactivated` 处理轮询与动画的启停。
 - 共享状态用 composables，不引入 Pinia/TypeScript/第二套 UI 框架。
+- 工程化检查：`cd web-src && npm.cmd run check` 依次执行 ESLint、`vue-tsc --noEmit`、Vitest 与 Vite 构建。纯逻辑（搜索、缓存、写入模式、HTTP 层、导航表）优先补 `src/**/*.test.js`，不要把全部回归都压在 `tools/web-e2e.mjs`。
+- 构建拆包：`vite.config.js` 把 `vue` / `element-plus` / 其他 `node_modules` 分到独立 vendor chunk；业务页面继续按路由懒加载，不要重新在 `AdminLayout` 里静态 import 页面。
 
 ## 7. 维护检查清单
 

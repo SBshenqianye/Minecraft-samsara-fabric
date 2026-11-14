@@ -46,7 +46,10 @@ public final class WebSecurity {
         return tokenEquals(expected, bearerToken(authorization));
     }
 
-    /** 静态资源路径白名单（固定路径，不做任何路径拼接）。 */
+    /**
+     * 静态资源路径白名单（固定路径，不做任何路径拼接）。
+     * 新增 SPA 路径时同步 web-src/src/router.js；这里保留旧链接兜底，统一返回同一个 Vue 入口。
+     */
     public static String staticResource(String path) {
         return switch (path) {
             case "/", "/index.html", "/user", "/containers",

@@ -247,7 +247,6 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
-import { ElMessage, ElMessageBox } from 'element-plus';
 import FloatingWindow from '../components/FloatingWindow.vue';
 import GlobalItemCursor from '../components/GlobalItemCursor.vue';
 import InventoryWindow from '../components/InventoryWindow.vue';
@@ -255,21 +254,38 @@ import ItemIcon from '../components/ItemIcon.vue';
 import MapPicker from '../components/MapPicker.vue';
 import Segmented from '../components/Segmented.vue';
 import DimensionPicker from '../components/DimensionPicker.vue';
-import { useLiveRefresh } from '../composables/useLiveRefresh.js';
+import { useAuth } from '../composables/useAuth.js';
 import { readCache, writeCache } from '../composables/localCache.js';
-import { itemCursor } from '../composables/itemCursor.js';
 
 const props = defineProps({ embedded: { type: Boolean, default: false } });
 const embedded = computed(() => props.embedded);
 
-const token = ref(sessionStorage.getItem('samsara-token') || '');
-const tokenInput = ref(token.value);
-const connected = ref(false);
-const connecting = ref(false);
+const {
+  token,
+  tokenInput,
+  connected,
+  connecting,
+  error,
+  connect,
+  logout,
+  api,
+} = useAuth({
+  onConnected: async () => {
+    await Promise.all([loadDimensions(), loadSchema(), loadPlayers(), loadPortals()]);
+    await search();
+    if (!playersTimer) playersTimer = window.setInterval(loadPlayers, 4000);
+    if (!portalTimer) portalTimer = window.setInterval(loadPortals, 15000);
+  },
+  onDisconnected: () => {
+    selected.value = null;
+    containers.value = [];
+    portals.value = [];
+    slots.value = [];
+    items.value = [];
+  },
+});
 const loading = ref(false);
 const scanning = ref(false);
-const saving = ref(false);
-const error = ref('');
 const message = ref('');
 const messageKind = ref('');
 const dimensions = ref([
@@ -311,63 +327,8 @@ const indexSize = ref(0);
 const selected = ref(null);
 const mapPicker = ref(null);
 const slots = ref([]);
-const baselineSlots = ref([]);
 const items = ref([]);
-const revision = ref(0);
-const dirty = ref(false);
-const mode = ref('simulate');
 const schema = ref({});
-const cursorPending = computed(() => !!itemCursor.item);
-let liveTimer = null;
-let saveQueued = false;
-
-const liveState = useLiveRefresh({
-  mode: () => 'simulate',
-  key: () => selected.value
-    ? `${selected.value.container?.dimension}:${selected.value.container?.x},${selected.value.container?.y},${selected.value.container?.z}`
-    : '',
-  canRefresh: () => connected.value && !!selected.value && !dirty.value
-    && !saving.value && !loading.value && !cursorPending.value,
-  fetchSnapshot: async (signal) => {
-    const row = selected.value?.container;
-    if (!row) return null;
-    const params = new URLSearchParams({
-      dimension: row.dimension, x: String(row.x), y: String(row.y), z: String(row.z),
-    });
-    const result = await api('/api/containers/read?' + params.toString(), { signal });
-    return result.status === 200 && result.data.ok ? result.data : null;
-  },
-  applySnapshot: (snapshot) => {
-    if (dirty.value || saving.value || cursorPending.value || !selected.value) return false;
-    const incoming = (snapshot.container?.slots || []).slice();
-    if (sameSlots(incoming, baselineSlots.value)) return false;
-    selected.value = snapshot;
-    slots.value = incoming;
-    baselineSlots.value = incoming.slice();
-    items.value = (snapshot.items || []).slice();
-    revision.value = snapshot.container?.revision || revision.value;
-    message.value = '检测到容器内物品变化，已同步最新内容。';
-    messageKind.value = 'ok';
-    return true;
-  },
-});
-
-const modeOptions = [
-  { id: 'live', label: '实时', hint: '每次操作立即写入；未加载区块会排队，加载后应用。' },
-  { id: 'preset', label: '预设', hint: '本地编辑，点保存一次性提交。' },
-  { id: 'simulate', label: '模拟', hint: '只在本地演练，不会写入服务器。' },
-];
-
-const currentModeHint = computed(() =>
-  modeOptions.find((option) => option.id === mode.value)?.hint || '');
-
-const layout = computed(() => [{
-  label: `容器槽位 0–${Math.max(0, (selected.value?.container?.size || slots.value.length) - 1)}`,
-  start: 0,
-  size: selected.value?.container?.size || slots.value.length,
-  columns: (selected.value?.container?.size || 9) <= 3
-    ? Math.max(1, selected.value?.container?.size || 1) : 9,
-}]);
 
 const containerTypeOptions = [
   { value: 'all', label: '全部类型' },
@@ -648,59 +609,6 @@ function rowKey(row) {
   return row.dimension + ':' + row.x + ',' + row.y + ',' + row.z;
 }
 
-async function api(path, options = {}) {
-  const headers = Object.assign({ Authorization: 'Bearer ' + token.value }, options.headers || {});
-  if (options.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
-  const response = await fetch(path, Object.assign({}, options, { headers }));
-  const text = await response.text();
-  let data = {};
-  try {
-    data = text ? JSON.parse(text) : {};
-  } catch {
-    data = { error: text };
-  }
-  if (response.status === 401) {
-    connected.value = false;
-    throw new Error('token 无效或已失效');
-  }
-  return { status: response.status, data };
-}
-
-async function connect() {
-  connecting.value = true;
-  error.value = '';
-  try {
-    const value = (tokenInput.value || '').trim();
-    if (!value) throw new Error('请输入 token');
-    token.value = value;
-    const result = await api('/api/status');
-    if (result.status !== 200) throw new Error(result.data.error || ('连接失败：' + result.status));
-    sessionStorage.setItem('samsara-token', value);
-    connected.value = true;
-    await Promise.all([loadDimensions(), loadSchema(), loadPlayers(), loadPortals()]);
-    await search();
-    if (!playersTimer) playersTimer = window.setInterval(loadPlayers, 4000);
-    if (!portalTimer) portalTimer = window.setInterval(loadPortals, 15000);
-  } catch (e) {
-    error.value = e.message || String(e);
-    connected.value = false;
-  } finally {
-    connecting.value = false;
-  }
-}
-
-function logout() {
-  sessionStorage.removeItem('samsara-token');
-  token.value = '';
-  tokenInput.value = '';
-  connected.value = false;
-  selected.value = null;
-  containers.value = [];
-  portals.value = [];
-  slots.value = [];
-  items.value = [];
-}
-
 async function loadDimensions() {
   const cached = readCache(CACHE_MAP, 24 * 60 * 60 * 1000);
   if (cached) applyMapModel(cached);
@@ -817,15 +725,6 @@ function setDimensionScope(value) {
     filters.dimension = lastDimension.value || dimensions.value[0]?.id || 'minecraft:overworld';
   }
   search();
-}
-
-async function searchAllDimensions() {
-  if (filters.dimension) {
-    filters.dimension = '';
-  } else {
-    filters.dimension = dimensions.value[0]?.id || 'minecraft:overworld';
-  }
-  await search();
 }
 
 async function scan() {
@@ -991,145 +890,10 @@ function closeWindow(win) {
   if (selectedPlayerId.value === win.key) selectedPlayerId.value = '';
 }
 
-async function reloadContainer() {
-  if (!selected.value) return;
-  await openContainer(selected.value.container);
-  message.value = '已重置为服务器当前内容。';
-  messageKind.value = '';
-}
-
 function samePos(a, b) {
   return a && b && a.dimension === b.dimension && a.x === b.x && a.y === b.y && a.z === b.z;
 }
 
-function sameSlots(a, b) {
-  const left = a || [];
-  const right = b || [];
-  if (left.length !== right.length) return false;
-  for (let i = 0; i < left.length; i++) {
-    if ((left[i] || '') !== (right[i] || '')) return false;
-  }
-  return true;
-}
-
-function onWorkbenchChange(payload) {
-  if (!selected.value) return;
-  slots.value = payload.slots;
-  items.value = payload.items;
-  dirty.value = !sameSlots(payload.slots, baselineSlots.value);
-  if (!dirty.value) {
-    liveTimer && clearTimeout(liveTimer);
-    return;
-  }
-  if (mode.value !== 'live' || payload.pending) {
-    if (mode.value === 'live' && payload.pending) {
-      message.value = '光标上还有物品，放下后才会实时写入。';
-      messageKind.value = '';
-    }
-    return;
-  }
-  liveTimer && clearTimeout(liveTimer);
-  liveTimer = setTimeout(() => {
-    liveTimer = null;
-    save(true);
-  }, 150);
-}
-
-async function setMode(next) {
-  if (next === mode.value) return;
-  if (next === 'live' && dirty.value) {
-    try {
-      await ElMessageBox.confirm(
-        '切换到实时模式会立即把当前修改写入容器；未加载区块会排队。继续？',
-        '切换到实时模式',
-        { confirmButtonText: '切换并写入', cancelButtonText: '取消', type: 'warning' },
-      );
-    } catch {
-      return;
-    }
-  }
-  mode.value = next;
-  if (next === 'live' && dirty.value) await save(true);
-}
-
-async function confirmSave() {
-  if (!selected.value) return;
-  try {
-    await ElMessageBox.confirm(
-      `将写入 ${selected.value.container.dimension} ${selected.value.container.x},`
-        + `${selected.value.container.y},${selected.value.container.z}；revision ${revision.value}。`,
-      '确认保存容器',
-      { confirmButtonText: '确认写入', cancelButtonText: '取消', type: 'warning' },
-    );
-  } catch {
-    return;
-  }
-  await save(false);
-}
-
-async function save(silent) {
-  if (saving.value || !selected.value) {
-    if (!selected.value) return;
-    saveQueued = true;
-    return;
-  }
-  saving.value = true;
-  error.value = '';
-  try {
-    const container = selected.value.container;
-    const result = await api('/api/containers/write', {
-      method: 'POST',
-      body: JSON.stringify({
-        dimension: container.dimension,
-        x: container.x,
-        y: container.y,
-        z: container.z,
-        revision: revision.value,
-        slots: slots.value,
-      }),
-    });
-    if (result.status === 409) {
-      revision.value = result.data.currentRevision || revision.value;
-      await reloadContainer();
-      throw new Error('保存冲突：容器已被其他操作修改，已重新读取。');
-    }
-    if ((result.status !== 200 && result.status !== 202) || !result.data.ok) {
-      throw new Error(result.data.error || '保存失败');
-    }
-    dirty.value = false;
-    if (result.data.queued) {
-      // 未加载区块的写入只是排队，缓存内容还是旧的；不要把界面回滚到旧快照。
-      if (result.data.container) {
-        selected.value = Object.assign({}, selected.value, {
-          container: Object.assign({}, selected.value.container, { source: 'pending' }),
-        });
-      }
-      message.value = '目标区块未加载，已排队；区块加载后自动写入。';
-      messageKind.value = '';
-    } else {
-      if (result.data.container) {
-        selected.value = Object.assign({}, selected.value, { container: result.data.container });
-        revision.value = result.data.container.revision;
-        slots.value = (result.data.container.slots || slots.value).slice();
-        selected.value.items = result.data.items || selected.value.items;
-      }
-      message.value = '已写入容器。';
-      messageKind.value = 'ok';
-    }
-    baselineSlots.value = slots.value.slice();
-    await search();
-  } catch (e) {
-    error.value = e.message || String(e);
-    if (!silent) ElMessage.error(error.value);
-  } finally {
-    saving.value = false;
-    liveState.invalidate();
-    if (saveQueued) {
-      saveQueued = false;
-      if (dirty.value) save(true);
-    }
-  }
-}
 </script>
 
 <style scoped>

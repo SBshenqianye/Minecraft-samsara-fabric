@@ -44,12 +44,14 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { getToken, useApi } from '../composables/useApi.js';
 import TabShell from '../components/TabShell.vue';
 import LegacyPanel from '../components/LegacyPanel.vue';
 import FolderTree from '../components/FolderTree.vue';
 
 const route = useRoute();
 const router = useRouter();
+const { json } = useApi();
 const error = ref('');
 const message = ref('');
 const pages = ref([]);
@@ -107,7 +109,7 @@ onMounted(async () => {
     return;
   }
   ui.onConnected?.(() => reload());
-  const token = sessionStorage.getItem('samsara-token');
+  const token = getToken();
   if (token) {
     await waitFor(() => window.SamsaraUI.getToken && window.SamsaraUI.getToken(), 20000);
     await reload();
@@ -125,19 +127,13 @@ watch(() => route.params.modId, () => {
 async function reload() {
   error.value = '';
   message.value = '';
-  const token = sessionStorage.getItem('samsara-token');
+  const token = getToken();
   if (!token) {
     error.value = '需要先在管理端输入 token。';
     return;
   }
   try {
-    const response = await fetch('/api/config/pages', {
-      headers: { Authorization: 'Bearer ' + token },
-    });
-    const body = await response.json();
-    if (!response.ok || body.ok === false) {
-      throw new Error(body.error || '读取配置页面失败');
-    }
+    const body = await json('/api/config/pages', {}, '读取配置页面失败');
     const all = body.pages || [];
     pages.value = all.filter((page) => page.source === 'third-party'
       && groupId(page) === modId.value);

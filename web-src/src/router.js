@@ -14,8 +14,6 @@ const IdentityPage = () => import('./pages/IdentityPage.vue');
 const ServerPage = () => import('./pages/ServerPage.vue');
 const ContainerPage = () => import('./pages/ContainerPage.vue');
 const IdentityInventoryInline = () => import('./pages/IdentityInventoryInline.vue');
-const InventoryPage = () => import('./pages/InventoryPage.vue');
-const PoolInventoryPage = () => import('./pages/PoolInventoryPage.vue');
 const TrackPage = () => import('./pages/TrackPage.vue');
 const DiffPage = () => import('./pages/DiffPage.vue');
 const ModConfigPage = () => import('./pages/ModConfigPage.vue');
@@ -70,42 +68,7 @@ function normalizeAliases(routes) {
   }
 }
 
-/**
- * 二级分区下的三级导航。label 必须与对应路由 meta.title 完全一致。
- * 旧专用页（经济业务）继续使用页内锚点导航，所以这里不重复列。
- */
-export const SECTION_NAV = {
-  sky: [
-    { id: 'track', label: '轨迹回看', target: '/samsara/sky/track' },
-    { id: 'diff', label: 'Diff 回看', target: '/samsara/sky/diff' },
-    { id: 'sky', label: '天网', target: '/samsara/sky/containers' },
-  ],
-  world: [
-    { id: 'map', label: '地图', target: '/samsara/world/map' },
-    { id: 'world-stack', label: '世界栈', target: '/samsara/world/stack' },
-  ],
-  config: [
-    { id: 'config-editor', label: '配置编辑', target: '/samsara/config/editor' },
-    { id: 'config', label: '高级配置', target: '/samsara/config/advanced' },
-    { id: 'claim-range', label: '圈地范围', target: '/samsara/config/claim-range' },
-    { id: 'output', label: '输出', target: '/samsara/config/output' },
-    { id: 'permissions', label: '权限', target: '/samsara/config/permissions' },
-  ],
-  community: [
-    { id: 'announcements', label: '公告', target: '/samsara/community/announcements' },
-    { id: 'identity', label: '身份组', target: '/samsara/community/identity' },
-  ],
-  system: [
-    { id: 'audit', label: 'Web 审计', target: '/samsara/system/audit' },
-  ],
-  economy: [
-    { id: 'overview', label: '概览', target: '/samsara/economy' },
-    { id: 'fund', label: '服务器基金', target: '/samsara/economy/fund' },
-    { id: 'lottery', label: '死人乐透', target: '/samsara/economy/lottery' },
-    { id: 'insurance', label: '保险', target: '/samsara/economy/insurance' },
-  ],
-};
-
+// 工作区 / 二级分区 / 三级子页 / 旧链接别名统一维护在 navigation.js。
 const routes = [
     {
       path: '/',
@@ -220,8 +183,9 @@ const routes = [
       ],
     },
     { path: '/containers', name: 'containers', component: ContainerPage },
+    // 仅由旧 identity.js 的 iframe 使用（frame.src = '/identity-inventory-inline?...'）。
+    // 管理端不再直接导航到这里；身份组背包主入口是全局 IdentityInventoryDialog。
     { path: '/identity-inventory-inline', name: 'identity-inventory-inline', component: IdentityInventoryInline },
-    // 身份组背包已改为全局大窗口（IdentityInventoryDialog），不再有独立 iframe 页面。
     { path: '/identity-inventory', redirect: '/samsara/community/identity' },
     { path: '/user', name: 'user', component: UserPage },
   { path: '/:pathMatch(.*)*', redirect: '/samsara/economy' },

@@ -7,4 +7,6 @@
 <script setup>
 import TabShell from '../components/TabShell.vue';
 import LegacyPanel from '../components/LegacyPanel.vue';
+
+defineOptions({ name: 'PermissionsPage' });
 </script>

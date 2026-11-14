@@ -14,6 +14,8 @@ import TabShell from '../components/TabShell.vue';
 import LegacyPanel from '../components/LegacyPanel.vue';
 import PoolInventoryPage from './PoolInventoryPage.vue';
 
+defineOptions({ name: 'LotteryPage' });
+
 const route = useRoute();
 const isFundPage = computed(() => route.meta.subpage === 'fund');
 </script>

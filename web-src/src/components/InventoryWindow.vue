@@ -64,6 +64,7 @@ import PlayerModel3D from './PlayerModel3D.vue';
 import ModeSwitch from './ModeSwitch.vue';
 import { modeLabel, modeHint } from '../composables/writeModes.js';
 import { useLiveRefresh } from '../composables/useLiveRefresh.js';
+import { getToken, useApi } from '../composables/useApi.js';
 import { itemCursor } from '../composables/itemCursor.js';
 
 const props = defineProps({
@@ -74,7 +75,7 @@ const props = defineProps({
 const INV_SIZE = 41;
 const ENDER_SIZE = 27;
 
-const token = ref(sessionStorage.getItem('samsara-token') || '');
+const token = ref(getToken());
 const mode = ref('simulate');
 const loading = ref(false);
 const saving = ref(false);
@@ -90,6 +91,8 @@ const dirty = ref(false);
 const schema = ref({});
 let liveTimer = null;
 let saveQueued = false;
+
+const { request: api } = useApi({ token: () => token.value });
 
 const tokenKey = computed(() => props.kind === 'container'
   ? 'container:' + [props.target?.dimension, props.target?.x, props.target?.y, props.target?.z].join(',')
@@ -247,17 +250,6 @@ function inventoryPath(scope) {
     scope,
   });
   return '/api/inventory?' + params.toString();
-}
-
-async function api(path, options = {}) {
-  const headers = Object.assign({ Authorization: 'Bearer ' + token.value }, options.headers || {});
-  if (options.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
-  const response = await fetch(path, Object.assign({}, options, { headers }));
-  const text = await response.text();
-  let data = {};
-  try { data = text ? JSON.parse(text) : {}; } catch { data = { error: text }; }
-  if (response.status === 401) throw new Error('token 无效或已失效');
-  return { status: response.status, data };
 }
 
 async function loadSchema() {

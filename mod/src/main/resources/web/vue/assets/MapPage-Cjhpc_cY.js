@@ -1,1 +1,0 @@
-import{K as e,P as t,d as n,v as r}from"./runtime-core.esm-bundler-D4o8SaOV.js";import{t as i}from"./TabShell-B2x3AXZC.js";import{t as a}from"./LegacyPanel-DD-WPCNo.js";var o={__name:`MapPage`,setup(o){return(o,s)=>(t(),n(i,{name:`map`},{default:e(()=>[r(a,{"panel-id":`panel-map`})]),_:1}))}};export{o as default};

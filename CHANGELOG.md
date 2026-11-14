@@ -3,6 +3,22 @@
 > 面向玩家与服主的功能变化；实现细节、未达标项与证据见[《实现状态》](docs/实现状态.md)。
 > 每个版本按「新增 / 修复 / 优化 / 变更 / 重构 / 文档」分组，只写功能口径。
 
+## 重构 2026-11-14 · Web 前端 P0 收口（未发布）
+
+### 重构
+- **路由成为页面唯一来源**：管理端内容区改用 `<router-view>`，需要保留状态的页面通过 `keep-alive` 精确控制；删除 `AdminLayout` 里 20 个页面组件的手写 `v-if/v-show` 栈。新增页面不再需要改布局文件。
+- **信息架构单一来源**：工作区、二级分区、三级子页与旧链接别名集中到 `web-src/src/navigation.js`，`router.js` / `AdminLayout.vue` / `main.js` 不再各维护一份。
+- **HTTP 与 token 收口**：新增 `composables/useApi.js` 与 `useAuth.js`，替换容器、背包、地图、配置、物品工坊等 10 余处重复的 `fetch + Authorization + 401` 逻辑；token 只认 `samsara-token` 一个键。
+- **删除死代码**：移除不可达的 `InventoryPage.vue`（885 行）、未使用的 `PageHeader.vue`，以及 `AdminLayout` / `router.js` 中的死导入；`/identity-inventory-inline` 明确标注为旧 `identity.js` iframe 专用。
+- **壳层拆分**：`AdminLayout` 从约 960 行降到约 460 行，拆出 `AppHeader`、`WorkspaceRail`、`SectionNav`、`PageScrollbar`，以及 `useAdminNavigation` / `useMods` / `useWorkspaceRail` / `usePageScrollbar`；工作区导航与页面滚动条的状态和事件不再散落在布局里。
+- **CSS 所有权**：设计变量迁到 `web-src/src/tokens.css`；Vue 应用在构建期直接引入旧 `style.css` 供 `LegacyPanel` 使用，不再在 HTML 里运行时引用 `/style.css`。Element Plus 改为组件按需 + `ElMessage`/`ElMessageBox` 显式样式，主 CSS 从约 385 KB 降到约 125 KB（`element-plus` 组件样式另成 78 KB 缓存块）。
+- **工程化**：新增 ESLint 10、Vitest 5、`vue-tsc --noEmit` 与 30 个前端单测；`npm run check` 串起 lint / typecheck / test / build。E2E 的浏览器与 CDP 层抽到 `tools/e2e/harness.mjs`。
+- **构建拆包**：`vue`、`element-plus`、其他第三方依赖各自成 vendor chunk，页面继续按路由懒加载。
+
+### 修复
+- **Web 版本号偶发不刷新**：连接成功后补刷一次 `/api/status`，不再依赖挂载时那两次可能早于 token 注入的请求。
+- **容器页死代码**：清理 `ContainerPage` 中不再触发的保存/模式切换/轮询分支，避免后续误以为容器编辑仍走旧保存路径。
+
 ## 热修 2026-11-13 · 容器索引区块装卸风暴 / 统计为空 / 身份数据被覆盖
 
 ### 优化

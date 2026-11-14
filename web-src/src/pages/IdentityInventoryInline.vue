@@ -51,6 +51,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
 import ItemWorkbench from '../components/ItemWorkbench.vue';
+import { getToken, useApi } from '../composables/useApi.js';
 
 const dataUuid = ref('');
 const invSlots = ref([]);
@@ -67,6 +68,8 @@ const saving = ref(false);
 const error = ref('');
 const message = ref('');
 let token = '';
+// 旧 identity.js 的 iframe 页面：401 只回给调用方判断，不自动抛错/退出连接态。
+const { request: api } = useApi({ token: () => token, throwOnUnauthorized: false });
 
 const filledInv = computed(() => invSlots.value.filter(Boolean).length);
 const filledEnd = computed(() => endSlots.value.filter(Boolean).length);
@@ -80,18 +83,6 @@ const invLayout = [
   { label: '快捷栏 0–8', start: 0, size: 9, columns: 9, row: 'hotbar', zone: 'hotbar', gap: true },
 ];
 const endLayout = [{ label: '末影箱 0–26', start: 0, size: 27, columns: 9 }];
-
-async function api(path, options = {}) {
-  const response = await fetch(path, Object.assign({}, options, {
-    headers: Object.assign({
-      Authorization: 'Bearer ' + token,
-      'Content-Type': 'application/json',
-    }, options.headers || {}),
-  }));
-  let data = {};
-  try { data = await response.json(); } catch { data = {}; }
-  return { status: response.status, data };
-}
 
 function sameSlots(a, b) {
   const left = a || [];
@@ -191,7 +182,7 @@ async function save() {
 }
 
 onMounted(() => {
-  token = sessionStorage.getItem('samsara-token') || '';
+  token = getToken();
   const params = new URLSearchParams(location.search);
   dataUuid.value = params.get('data') || '';
   load();

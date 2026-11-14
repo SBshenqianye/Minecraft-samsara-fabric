@@ -102,6 +102,7 @@ import TabShell from '../components/TabShell.vue';
 import ItemWorkbench from '../components/ItemWorkbench.vue';
 import Segmented from '../components/Segmented.vue';
 import { useLiveRefresh } from '../composables/useLiveRefresh.js';
+import { useAuth } from '../composables/useAuth.js';
 import { itemCursor } from '../composables/itemCursor.js';
 import { filterItems } from '../composables/itemSearch.js';
 
@@ -120,13 +121,22 @@ const props = defineProps({
   embedded: { type: Boolean, default: false },
 });
 
-const token = ref(sessionStorage.getItem('samsara-token') || '');
-const tokenInput = ref(token.value);
-const connected = ref(false);
-const connecting = ref(false);
+const {
+  tokenInput,
+  connected,
+  connecting,
+  error,
+  connect,
+  api,
+} = useAuth({
+  autoConnect: true,
+  onConnected: async () => {
+    await loadSchema();
+    await load();
+  },
+});
 const loading = ref(false);
 const saving = ref(false);
-const error = ref('');
 const message = ref('');
 const slots = ref([]);
 const baselineSlots = ref([]);
@@ -216,48 +226,12 @@ function onResize() {
 }
 
 onMounted(() => {
-  if (token.value) connect();
   window.addEventListener('resize', onResize);
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', onResize);
 });
-
-async function api(path, options = {}) {
-  const headers = Object.assign({ Authorization: 'Bearer ' + token.value }, options.headers || {});
-  if (options.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
-  const response = await fetch(path, Object.assign({}, options, { headers }));
-  const text = await response.text();
-  let body = {};
-  try { body = text ? JSON.parse(text) : {}; } catch { body = { error: text }; }
-  if (response.status === 401) {
-    connected.value = false;
-    throw new Error('token 无效或已失效');
-  }
-  return { status: response.status, data: body };
-}
-
-async function connect() {
-  connecting.value = true;
-  error.value = '';
-  try {
-    const value = (tokenInput.value || '').trim();
-    if (!value) throw new Error('请输入 token');
-    token.value = value;
-    const result = await api('/api/status');
-    if (result.status !== 200) throw new Error(result.data.error || ('连接失败：' + result.status));
-    sessionStorage.setItem('samsara-token', value);
-    connected.value = true;
-    await loadSchema();
-    await load();
-  } catch (e) {
-    error.value = e.message || String(e);
-    connected.value = false;
-  } finally {
-    connecting.value = false;
-  }
-}
 
 async function loadSchema() {
   try {

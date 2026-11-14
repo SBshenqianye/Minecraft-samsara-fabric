@@ -72,7 +72,8 @@ import { computed, onMounted, reactive, ref, toRefs, watch } from 'vue';
 import ItemIcon from './ItemIcon.vue';
 import Segmented from './Segmented.vue';
 import { filterItems } from '../composables/itemSearch.js';
-import { hideItemTooltip, itemTooltip, moveItemTooltip, showItemTooltip } from './itemTooltip.js';
+import { useApi } from '../composables/useApi.js';
+import { hideItemTooltip, moveItemTooltip, showItemTooltip } from './itemTooltip.js';
 
 const emit = defineEmits(['pick']);
 
@@ -210,21 +211,7 @@ watch([category, query, sort], () => {
   visibleCount.value = PAGE;
 });
 
-async function api(path) {
-  const token = sessionStorage.getItem('samsara-token') || '';
-  const response = await fetch(path, { headers: { Authorization: 'Bearer ' + token } });
-  const text = await response.text();
-  let data = {};
-  try {
-    data = text ? JSON.parse(text) : {};
-  } catch {
-    data = { error: text };
-  }
-  if (!response.ok || data.ok === false) {
-    throw new Error(data.error || ('加载失败：' + response.status));
-  }
-  return data;
-}
+const { json } = useApi();
 
 async function ensureAll() {
   if (all.value.length) return all.value;
@@ -234,7 +221,11 @@ async function ensureAll() {
     let offset = 0;
     let total = Infinity;
     while (rows.length < total && offset < 4000) {
-      const data = await api(`/api/lottery/values?q=&sort=value-desc&offset=${offset}&limit=${PAGE}`);
+      const data = await json(
+        `/api/lottery/values?q=&sort=value-desc&offset=${offset}&limit=${PAGE}`,
+        {},
+        (result) => '加载失败：' + result.status,
+      );
       total = Number(data.total || 0);
       const page = data.values || [];
       rows.push(...page);

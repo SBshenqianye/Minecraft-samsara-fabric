@@ -9,4 +9,6 @@
 
 <script setup>
 import LegacyPanel from '../components/LegacyPanel.vue';
+
+defineOptions({ name: 'ServerPage' });
 </script>

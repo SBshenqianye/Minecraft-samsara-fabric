@@ -24,7 +24,15 @@ export default defineConfig({
     target: 'es2020',
     rollupOptions: {
       output: {
-        manualChunks: undefined,
+        // 第三方依赖单独成块，业务页面继续按路由懒加载；升级/改页面时缓存互不影响。
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined;
+          if (id.includes('element-plus') || id.includes('@element-plus')) {
+            return 'element-plus';
+          }
+          if (id.includes('/vue') || id.includes('@vue')) return 'vue';
+          return 'vendor';
+        },
       },
     },
   },

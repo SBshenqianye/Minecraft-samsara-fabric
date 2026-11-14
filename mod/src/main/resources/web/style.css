@@ -1,3 +1,8 @@
+/*
+ * 旧页面回退与 LegacyPanel 的组件样式。
+ * Vue 应用通过 web-src/src/main.js 引入本文件，设计变量在 web-src/src/tokens.css；
+ * 修改 :root 变量时两处一起改。
+ */
 :root {
   color-scheme: light dark;
   --fg: #17202a;

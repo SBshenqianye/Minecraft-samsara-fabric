@@ -58,7 +58,7 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import ItemWorkbench from './ItemWorkbench.vue';
 import ModeSwitch from './ModeSwitch.vue';
 import { modeHint } from '../composables/writeModes.js';
-import { itemCursor } from '../composables/itemCursor.js';
+import { getToken, useApi } from '../composables/useApi.js';
 
 const visible = ref(false);
 const loading = ref(false);
@@ -72,11 +72,11 @@ const baselineSlots = ref([]);
 const items = ref([]);
 const revision = ref(0);
 const dirty = ref(false);
-const cursorPending = computed(() => !!itemCursor.item);
 const mode = ref('simulate');
 const scope = ref('inventory');
 const schema = ref({});
 let token = '';
+const { request: api } = useApi({ token: () => token });
 let liveTimer = null;
 
 const title = computed(() => (groupName.value ? `编辑身份组背包 · ${groupName.value}` : '编辑身份组背包'));
@@ -98,7 +98,7 @@ function onOpen(event) {
   dataUuid.value = String(detail.data);
   groupName.value = String(detail.name || '');
   scope.value = detail.scope === 'ender' ? 'ender' : 'inventory';
-  token = sessionStorage.getItem('samsara-token') || '';
+  token = getToken();
   slots.value = [];
   items.value = [];
   dirty.value = false;
@@ -129,20 +129,6 @@ function setScope(next) {
   items.value = [];
   dirty.value = false;
   load();
-}
-
-async function api(path, options = {}) {
-  const headers = Object.assign({ Authorization: 'Bearer ' + token }, options.headers || {});
-  if (options.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
-  const response = await fetch(path, Object.assign({}, options, { headers }));
-  const text = await response.text();
-  let data = {};
-  try {
-    data = text ? JSON.parse(text) : {};
-  } catch {
-    data = { error: text };
-  }
-  return { status: response.status, data };
 }
 
 async function loadSchema() {

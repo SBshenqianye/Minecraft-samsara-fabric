@@ -39,6 +39,7 @@ import { ElMessage } from 'element-plus';
 import ItemIcon from './ItemIcon.vue';
 import ItemSlotGrid from './ItemSlotGrid.vue';
 import { itemCursor } from '../composables/itemCursor.js';
+import { useApi } from '../composables/useApi.js';
 import { hideItemTooltip, showItemTooltip } from './itemTooltip.js';
 
 const grid = ref(Array.from({ length: 9 }, () => null));
@@ -46,25 +47,13 @@ const result = ref(null);
 const recipeId = ref('');
 const busy = ref(false);
 let previewTimer = 0;
-let token = '';
+const { json: api } = useApi();
 
 const cursor = computed(() => itemCursor.item);
 const slots = computed(() => grid.value.map((item) => item?.encoded || ''));
 const items = computed(() => grid.value
   .map((item, slot) => (item ? Object.assign({}, item, { slot }) : null))
   .filter(Boolean));
-
-function api(path, options = {}) {
-  const headers = Object.assign({ Authorization: 'Bearer ' + token }, options.headers || {});
-  if (options.body) headers['Content-Type'] = 'application/json';
-  return fetch(path, Object.assign({}, options, { headers })).then(async (response) => {
-    const text = await response.text();
-    let data = {};
-    try { data = text ? JSON.parse(text) : {}; } catch { data = { error: text }; }
-    if (!response.ok || data.ok === false) throw new Error(data.error || '请求失败');
-    return data;
-  });
-}
 
 async function withCount(item, count) {
   if (Number(item.count) === count) return item;
@@ -209,7 +198,6 @@ onBeforeUnmount(() => {
   }
 });
 
-token = sessionStorage.getItem('samsara-token') || '';
 </script>
 
 <style scoped>

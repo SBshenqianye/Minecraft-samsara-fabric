@@ -85,12 +85,6 @@ const tint = computed(() => {
   return '#' + (value & 0xFFFFFF).toString(16).padStart(6, '0');
 });
 
-const tooltip = computed(() => {
-  const parts = [label.value, props.item.id || '', '数量 ' + count.value];
-  if (components.value) parts.push(components.value);
-  return parts.filter(Boolean).join('\n');
-});
-
 // 只有图标地址真正变化时才重试；地图拖动会不断重建 marker 对象，
 // 按对象深度监听会把失败的图标反复重置，表现为闪烁 / 破图。
 watch(src, () => {

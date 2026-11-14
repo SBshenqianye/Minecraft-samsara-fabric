@@ -100,15 +100,25 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
 import TabShell from '../components/TabShell.vue';
+import { useAuth } from '../composables/useAuth.js';
 
-const token = ref(sessionStorage.getItem('samsara-token') || '');
-const tokenInput = ref(token.value);
-const connected = ref(false);
-const connecting = ref(false);
-const error = ref('');
+const {
+  tokenInput,
+  connected,
+  connecting,
+  error,
+  connect,
+  api,
+} = useAuth({
+  autoConnect: true,
+  onConnected: async () => {
+    await loadStacks();
+    await loadStatus();
+  },
+});
 const message = ref('');
 const stacks = ref([]);
 const stack = ref('');
@@ -137,55 +147,12 @@ const statusText = computed(() => {
   return JSON.stringify(viewStatus.value, null, 2);
 });
 
-onMounted(() => {
-  if (token.value) connect();
-});
-
 watch(stack, () => {
   const list = dimensions.value;
   if (!list.some((item) => item.id === dimension.value)) {
     dimension.value = list[0]?.id || 'minecraft:overworld';
   }
 });
-
-async function api(path, options = {}) {
-  const headers = Object.assign({ Authorization: 'Bearer ' + token.value }, options.headers || {});
-  if (options.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
-  const response = await fetch(path, Object.assign({}, options, { headers }));
-  const text = await response.text();
-  let body = {};
-  try {
-    body = text ? JSON.parse(text) : {};
-  } catch {
-    body = { error: text };
-  }
-  if (response.status === 401) {
-    connected.value = false;
-    throw new Error('token 无效或已失效');
-  }
-  return { status: response.status, data: body };
-}
-
-async function connect() {
-  connecting.value = true;
-  error.value = '';
-  try {
-    const value = (tokenInput.value || '').trim();
-    if (!value) throw new Error('请输入 token');
-    token.value = value;
-    const status = await api('/api/status');
-    if (status.status !== 200) throw new Error(status.data.error || '连接失败');
-    sessionStorage.setItem('samsara-token', value);
-    connected.value = true;
-    await loadStacks();
-    await loadStatus();
-  } catch (e) {
-    error.value = e.message || String(e);
-    connected.value = false;
-  } finally {
-    connecting.value = false;
-  }
-}
 
 async function loadStacks() {
   const result = await api('/api/map');

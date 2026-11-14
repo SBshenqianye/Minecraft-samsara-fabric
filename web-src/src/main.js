@@ -1,33 +1,24 @@
 import { createApp } from 'vue';
 import App from './App.vue';
 import router from './router.js';
-import 'element-plus/dist/index.css';
+import { LEGACY_ALIASES } from './navigation.js';
+// 旧命令式面板的组件样式仍来自 legacy 资源；tokens.css 在其后接管 Vue 壳层的设计变量。
+import '../../mod/src/main/resources/web/style.css';
+import './tokens.css';
 import './style.css';
 import './ia.css';
 import './shell.css';
+// Element Plus 组件样式由 unplugin-vue-components 按需注入；
+// ElMessage / ElMessageBox 是 API 调用，不走模板解析器，需要显式引入。
+import 'element-plus/theme-chalk/base.css';
+import 'element-plus/theme-chalk/el-message.css';
+import 'element-plus/theme-chalk/el-message-box.css';
 
 window.SamsaraUseRouter = true;
 
-const LEGACY_HASH_ROUTES = {
-  config: '/config',
-  'config-editor': '/config-editor',
-  'claim-range': '/claim-range',
-  identity: '/identity',
-  output: '/output',
-  permissions: '/permissions',
-  map: '/map',
-  announcements: '/announcements',
-  'world-stack': '/world-stack',
-  lottery: '/lottery',
-  server: '/vanilla/config',
-  'server-backup': '/vanilla/backup',
-  'server-console': '/vanilla/console',
-  'server-audit': '/samsara/system/audit',
-  containers: '/containers',
-};
-
 const app = createApp(App).use(router);
 window.SamsaraRouter = router;
-const legacy = LEGACY_HASH_ROUTES[window.location.hash.replace(/^#/, '')];
+// 旧 hash 链接（#config、#lottery…）统一跳到规范路径，别名表在 navigation.js。
+const legacy = LEGACY_ALIASES[window.location.hash.replace(/^#/, '')];
 const boot = legacy ? router.replace(legacy) : Promise.resolve();
 boot.finally(() => app.mount('#app'));
