@@ -1,0 +1,33 @@
+name: Web
+
+on:
+  push:
+    paths:
+      - 'web-src/**'
+      - 'tools/agent/**'
+      - 'tools/e2e/**'
+      - 'mod/src/main/resources/web/vue/**'
+      - '.github/workflows/web.yml'
+  pull_request:
+    paths:
+      - 'web-src/**'
+      - 'tools/agent/**'
+      - 'tools/e2e/**'
+      - 'mod/src/main/resources/web/vue/**'
+      - '.github/workflows/web.yml'
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web-src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install
+      - name: Framework guard + lint + typecheck + test + build
+        run: npm run check

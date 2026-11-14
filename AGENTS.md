@@ -19,7 +19,7 @@
 
 ```powershell
 cd web-src
-npm.cmd run check    # lint + vue-tsc + vitest + vite build
+npm.cmd run check    # 框架守卫 + lint + vue-tsc + vitest + vite build
 npm.cmd run lint
 npm.cmd run typecheck
 npm.cmd run test
@@ -37,9 +37,10 @@ $env:JAVA_HOME='C:\Program Files\Java\jdk-26.0.2.1'
 - **HTTP/token 只用 `useApi` / `useAuth`**：不要复制 `fetch + Authorization + response.text()`。
 - **新增页面只改两处**：`router.js` + `WebSecurity.staticResource`；需要子导航时再加 `navigation.js`。
 - **需要保留状态的页面**：加入 `KEEP_ALIVE_PAGES`，并在页面里 `defineOptions({ name: 'XxxPage' })`。
-- **旧代码只修 bug**：新功能必须写在 `web-src/src/`；不要继续扩展 `mod/src/main/resources/web/*.js`。
+- **旧内核只修 bug**：新功能必须写在 `web-src/src/`；`legacy-core/` 只允许现有白名单页面按需加载，不要再新增 `/web/*.js` 静态脚本。
 - **不要引入 Pinia / TypeScript 大迁移 / 第二套 UI 框架**。
 - **禁止 `innerHTML`**；文本用插值或 `textContent`。
+- **框架守卫**：`npm run check` 会先跑 `tools/agent/check-framework.mjs`；新页面不得直接 `import legacy-core/`、不得使用 `useLegacyPage`、不得依赖 `window.Samsara*`、不得直接 `fetch`。规则见 `docs/agent/legacy-audit-and-guardrails.md`。
 
 ## 4. 单任务工作流
 

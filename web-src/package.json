@@ -11,7 +11,8 @@
     "typecheck": "vue-tsc --noEmit -p jsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "check": "npm run lint && npm run typecheck && npm run test && npm run build"
+    "check:framework": "node ../tools/agent/check-framework.mjs",
+    "check": "npm run check:framework && npm run lint && npm run typecheck && npm run test && npm run build"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",
