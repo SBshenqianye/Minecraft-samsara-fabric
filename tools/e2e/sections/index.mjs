@@ -4,6 +4,8 @@ import legacyShell from './legacy-shell.mjs';
 import output from './output.mjs';
 import permissions from './permissions.mjs';
 import serverConsole from './server-console.mjs';
+import skyInventory from './sky-inventory.mjs';
+import worldStack from './world-stack.mjs';
 
 /**
  * 页面级 E2E 注册表。
@@ -15,5 +17,7 @@ export const sections = {
   permissions,
   'server-console': serverConsole,
   'legacy-shell': legacyShell,
+  'world-stack': worldStack,
+  'sky-inventory': skyInventory,
   batch5,
 };
