@@ -71,7 +71,7 @@ batch 5 后，`mod/src/main/resources/web/` 只剩 `openapi.json` 一个静态 J
 
 ```text
 gradle test        541 tests / 0 failures
-npm run check      55 tests / 0 failures
+npm run check      58 tests / 0 failures
 web E2E            281 / 281 通过
 batch5 section     8 / 8 通过
 ```
