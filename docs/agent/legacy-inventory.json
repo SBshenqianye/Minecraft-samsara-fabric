@@ -1,14 +1,14 @@
 {
-  "generatedAt": "2026-11-14T08:18:16.209Z",
+  "generatedAt": "2026-11-14T08:58:09.207Z",
   "files": [
     {
       "file": "server.js",
-      "sizeKB": 85.2,
+      "sizeKB": 85.5,
       "page": "本体服务器",
       "route": "/vanilla/*",
       "note": "建议拆成 4 个页面",
-      "status": "pending",
-      "statusLabel": "⏳ pending",
+      "status": "in-progress",
+      "statusLabel": "🚧 in-progress",
       "ids": [
         "audit-diff-",
         "panel-server",
@@ -104,6 +104,7 @@
       ],
       "globals": [
         "SamsaraChatText",
+        "SamsaraNativeConsole",
         "SamsaraServer",
         "SamsaraUI",
         "SamsaraUIKit",
@@ -129,7 +130,7 @@
       "registerPages": [],
       "events": 29,
       "innerHtml": 0,
-      "risk": 275
+      "risk": 279
     },
     {
       "file": "app.js",
@@ -553,8 +554,8 @@
       "page": "输出格式",
       "route": "/samsara/config/output",
       "note": "contenteditable 富文本编辑器，中等复杂度",
-      "status": "pending",
-      "statusLabel": "⏳ pending",
+      "status": "shell-migrated",
+      "statusLabel": "🧩 shell-migrated",
       "ids": [],
       "domReads": 0,
       "panels": [],

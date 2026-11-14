@@ -20,6 +20,8 @@
 |---|---|---|---|
 | 公告 | `announcements.js` | `pages/AnnouncementsPage.vue` | `sections/announcements.mjs` |
 | 权限 | `permissions.js` | `pages/PermissionsPage.vue` | `sections/permissions.mjs` |
+| RCON 控制台 | `server.js` console 段 | `pages/ServerConsolePage.vue` | `sections/server-console.mjs` |
+| 输出格式（壳） | `output.js` | `pages/OutputPage.vue` | `sections/output.mjs`（内核按页加载，待抽纯逻辑） |
 
 ## 批次 1：中等复杂度、可独立迁移
 

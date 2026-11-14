@@ -35,6 +35,8 @@ const PAGE_MAP = {
 const STATUS_MAP = {
   'announcements.js': 'migrated',
   'permissions.js': 'migrated',
+  'output.js': 'shell-migrated',
+  'server.js': 'in-progress',
   'app.js': 'shell',
   'page-kit.js': 'shell',
   'chat-text.js': 'shared',
@@ -49,6 +51,7 @@ const STATUS_MAP = {
 
 const STATUS_LABEL = {
   migrated: '✅ migrated',
+  'shell-migrated': '🧩 shell-migrated',
   'in-progress': '🚧 in-progress',
   pending: '⏳ pending',
   shared: '🔗 shared',
@@ -138,7 +141,7 @@ const lines = [
   '',
   '## 状态汇总',
   '',
-  ...['migrated', 'in-progress', 'pending', 'shared', 'shell'].map((status) => {
+  ...['migrated', 'shell-migrated', 'in-progress', 'pending', 'shared', 'shell'].map((status) => {
     const list = files.filter((file) => file.status === status);
     if (!list.length) return null;
     return `- ${STATUS_LABEL[status]}：${list.map((file) => '`' + file.file + '`').join('、')}`;

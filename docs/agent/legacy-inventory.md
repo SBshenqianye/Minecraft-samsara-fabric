@@ -1,13 +1,13 @@
 # Legacy Web 迁移清单
 
 > 由 `node tools/agent/scan-legacy.mjs` 生成，提交前重新生成。
-> 扫描时间：2026-11-14T08:18:16.210Z
+> 扫描时间：2026-11-14T08:58:09.208Z
 
 ## 总览
 
 | 文件 | 状态 | KB | 页面 | 路由 | DOM 读取 | DOM id | 全局 | API | innerHTML | 风险分 | 建议 |
 |---|---|---:|---|---|---:|---:|---:|---:|---:|---:|---|
-| `server.js` | ⏳ pending | 85.2 | 本体服务器 | /vanilla/* | 78 | 47 | 6 | 14 | 0 | 275 | 建议拆成 4 个页面 |
+| `server.js` | 🚧 in-progress | 85.5 | 本体服务器 | /vanilla/* | 78 | 47 | 7 | 14 | 0 | 279 | 建议拆成 4 个页面 |
 | `app.js` | 🧱 shell | 140.7 | config / claim-range / 全局壳 | /samsara/config/* | 32 | 20 | 17 | 4 | 1 | 269 | 核心旧壳，最后处理 |
 | `map.js` | ⏳ pending | 112.7 | 地图 | /samsara/world/map | 35 | 35 | 6 | 5 | 0 | 236 | canvas/瓦片，保留渲染内核 |
 | `world-stack.js` | ⏳ pending | 68.5 | 世界栈 | /samsara/world/stack | 34 | 34 | 3 | 15 | 0 | 180 | 时间线 + 3D/图标 |
@@ -16,7 +16,7 @@
 | `config-editor.js` | ⏳ pending | 19.2 | 配置编辑 | /samsara/config/editor | 19 | 12 | 4 | 4 | 0 | 94 | PageSpec/FormSpec，最高复杂度 |
 | `user.js` | 🔗 shared | 10.9 | 未分类 | — | 7 | 6 | 6 | 5 | 0 | 48 |  |
 | `announcements.js` | ✅ migrated | 15.3 | 公告 | /samsara/community/announcements | 9 | 8 | 2 | 3 | 0 | 46 | 已迁移为原生 Vue，保留给 /legacy.html 回退 |
-| `output.js` | ⏳ pending | 28.1 | 输出格式 | /samsara/config/output | 0 | 0 | 3 | 4 | 0 | 37 | contenteditable 富文本编辑器，中等复杂度 |
+| `output.js` | 🧩 shell-migrated | 28.1 | 输出格式 | /samsara/config/output | 0 | 0 | 3 | 4 | 0 | 37 | contenteditable 富文本编辑器，中等复杂度 |
 | `permissions.js` | ✅ migrated | 12.3 | 权限 | /samsara/config/permissions | 0 | 0 | 4 | 2 | 0 | 24 | 已迁移为原生 Vue，保留给 /legacy.html 回退 |
 | `banners.js` | 🔗 shared | 16.9 | 共享横幅/粒子 | — | 0 | 0 | 1 | 0 | 0 | 20 | 视觉资源 |
 | `particles.js` | 🔗 shared | 13.2 | 共享粒子背景 | — | 0 | 0 | 1 | 0 | 0 | 16 | 视觉资源 |
@@ -30,7 +30,9 @@
 ## 状态汇总
 
 - ✅ migrated：`announcements.js`、`permissions.js`
-- ⏳ pending：`server.js`、`map.js`、`world-stack.js`、`identity.js`、`lottery.js`、`config-editor.js`、`output.js`
+- 🧩 shell-migrated：`output.js`
+- 🚧 in-progress：`server.js`
+- ⏳ pending：`map.js`、`world-stack.js`、`identity.js`、`lottery.js`、`config-editor.js`
 - 🔗 shared：`user.js`、`banners.js`、`particles.js`、`chat-text.js`、`form-kit.js`、`value-table.js`、`structured.js`、`item-ui.js`
 - 🧱 shell：`app.js`、`page-kit.js`
 
@@ -60,12 +62,12 @@
 
 ### `server.js`
 
-- 状态：⏳ pending
+- 状态：🚧 in-progress
 - 页面：本体服务器（/vanilla/*）
-- 大小：85.2 KB；DOM 读取：78；事件监听：29；innerHTML：0
+- 大小：85.5 KB；DOM 读取：78；事件监听：29；innerHTML：0
 - 建议：建议拆成 4 个页面
 - panel：`panel-server`、`server-action-hint`、`server-action-title`、`server-actions`、`server-audit-changes`、`server-audit-diff`、`server-audit-diff-close`、`server-audit-diff-title`、`server-audit-diff-wrap`、`server-audit-diffs`、`server-audit-list`、`server-audit-message`、`server-audit-panel`、`server-audit-refresh`、`server-backup-count`、`server-backup-create`、`server-backup-message`、`server-backup-panel`、`server-backup-pending`、`server-backup-preview`、`server-backup-stats`、`server-backup-timeline`、`server-config-count`、`server-config-files`、`server-config-message`、`server-config-panel`、`server-config-search`、`server-console-clear`、`server-console-command`、`server-console-complete`、`server-console-copy`、`server-console-filter`、`server-console-message`、`server-console-output`、`server-console-panel`、`server-console-quick`、`server-console-send`、`server-job-list`、`server-reload`、`server-save`、`server-tabs`
-- 全局：`SamsaraChatText`、`SamsaraServer`、`SamsaraUI`、`SamsaraUIKit`、`SamsaraUseRouter`、`SamsaraWorldStack`
+- 全局：`SamsaraChatText`、`SamsaraNativeConsole`、`SamsaraServer`、`SamsaraUI`、`SamsaraUIKit`、`SamsaraUseRouter`、`SamsaraWorldStack`
 - API：`/api/audit`、`/api/audit/preview`、`/api/audit/rollback`、`/api/server`、`/api/server/backups`、`/api/server/backups/delete`、`/api/server/backups/download`、`/api/server/backups/preview`、`/api/server/backups/preview-restore`、`/api/server/backups/restore`、`/api/server/config`、`/api/server/console`、`/api/server/console/complete`、`/api/server/players`
 - DOM id（47）：`audit-diff-`、`panel-server`、`player-cancel`、`player-dialog`、`player-dialog-title`、`player-list`、`player-search`、`server-action-hint`、`server-action-title`、`server-actions`、`server-audit-changes`、`server-audit-diff`、`server-audit-diff-close`、`server-audit-diff-title`、`server-audit-diff-wrap`、`server-audit-diffs`、`server-audit-list`、`server-audit-message`、`server-audit-panel`、`server-audit-refresh`、`server-backup-count`、`server-backup-create`、`server-backup-message`、`server-backup-panel`、`server-backup-pending`、`server-backup-preview`、`server-backup-stats`、`server-backup-timeline`、`server-config-count`、`server-config-files` …
 
@@ -155,7 +157,7 @@
 
 ### `output.js`
 
-- 状态：⏳ pending
+- 状态：🧩 shell-migrated
 - 页面：输出格式（/samsara/config/output）
 - 大小：28.1 KB；DOM 读取：0；事件监听：16；innerHTML：0
 - 建议：contenteditable 富文本编辑器，中等复杂度

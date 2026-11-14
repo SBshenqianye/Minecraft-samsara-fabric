@@ -13,6 +13,7 @@ const LotteryPage = () => import('./pages/LotteryPage.vue');
 const IdentityPage = () => import('./pages/IdentityPage.vue');
 const ServerPage = () => import('./pages/ServerPage.vue');
 const ContainerPage = () => import('./pages/ContainerPage.vue');
+const ServerConsolePage = () => import('./pages/ServerConsolePage.vue');
 const IdentityInventoryInline = () => import('./pages/IdentityInventoryInline.vue');
 const TrackPage = () => import('./pages/TrackPage.vue');
 const DiffPage = () => import('./pages/DiffPage.vue');
@@ -79,7 +80,18 @@ const routes = [
         // ---- 本体（Minecraft / Vanilla）----
         vanilla('vanilla/config', 'server-config-panel', '服务器配置'),
         vanilla('vanilla/backup', 'server-backup-panel', '存档备份'),
-        vanilla('vanilla/console', 'server-console-panel', 'RCON 控制台'),
+        {
+          path: 'vanilla/console',
+          component: ServerConsolePage,
+          meta: {
+            workspace: 'vanilla',
+            section: 'console',
+            page: 'server',
+            title: 'RCON 控制台',
+            serverPanel: 'server-console-panel',
+            native: true,
+          },
+        },
 
         // Web 审计属于 samsara Web 管理，不再放在“本体”工作区。
         {

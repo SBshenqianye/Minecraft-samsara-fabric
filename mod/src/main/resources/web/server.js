@@ -142,6 +142,7 @@
   }
 
   async function requestConsoleComplete() {
+    if (window.SamsaraNativeConsole) return;
     const input = $('server-console-command');
     if (!input) return;
     try {
@@ -177,6 +178,7 @@
   }
 
   async function runConsole(command) {
+    if (window.SamsaraNativeConsole) return;
     const raw = String(command || '').trim();
     if (!raw) return;
     if (dangerousCommand(raw)
@@ -2014,8 +2016,12 @@
     consoleSend.addEventListener('click', () => runConsole(consoleInput ? consoleInput.value : ''));
   }
   if (consoleInput) {
-    consoleInput.addEventListener('input', () => closeConsoleComplete());
+    consoleInput.addEventListener('input', () => {
+      if (window.SamsaraNativeConsole) return;
+      closeConsoleComplete();
+    });
     consoleInput.addEventListener('keydown', (event) => {
+      if (window.SamsaraNativeConsole) return;
       const popup = $('server-console-complete');
       const popupOpen = popup && !popup.hidden && consoleComplete.items.length > 0;
       if (event.key === 'Tab') {
@@ -2055,6 +2061,7 @@
   }
   if (consoleClear) {
     consoleClear.addEventListener('click', () => {
+      if (window.SamsaraNativeConsole) return;
       const output = $('server-console-output');
       if (output) output.textContent = '';
       consoleMessage('');
@@ -2081,6 +2088,7 @@
   const consoleFilter = $('server-console-filter');
   if (consoleFilter) {
     consoleFilter.addEventListener('input', () => {
+      if (window.SamsaraNativeConsole) return;
       const query = consoleFilter.value.trim().toLowerCase();
       for (const button of document.querySelectorAll('#server-console-quick [data-console-command]')) {
         button.hidden = Boolean(query) && !(button.textContent + ' ' + (button.dataset.consoleCommand || ''))
@@ -2094,6 +2102,7 @@
   const consoleCopy = $('server-console-copy');
   if (consoleCopy) {
     consoleCopy.addEventListener('click', async () => {
+      if (window.SamsaraNativeConsole) return;
       const output = $('server-console-output');
       const text = output ? output.textContent || '' : '';
       try {

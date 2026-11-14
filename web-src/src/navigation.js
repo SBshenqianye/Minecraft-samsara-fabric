@@ -98,4 +98,5 @@ export const KEEP_ALIVE_PAGES = [
   'WorldStackPage',
   'IdentityPage',
   'ServerPage',
+  'ServerConsolePage',
 ];

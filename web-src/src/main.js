@@ -15,6 +15,8 @@ import 'element-plus/theme-chalk/el-message.css';
 import 'element-plus/theme-chalk/el-message-box.css';
 
 window.SamsaraUseRouter = true;
+// 原生 RCON 控制台接管后，旧 server.js 的 console 监听只服务 /legacy.html 回退。
+window.SamsaraNativeConsole = true;
 
 const app = createApp(App).use(router);
 window.SamsaraRouter = router;

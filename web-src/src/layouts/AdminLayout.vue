@@ -426,7 +426,17 @@ async function applyRoute(force = false) {
   if (force || key !== lastApplied) {
     lastApplied = key;
     if (workspace.value === 'vanilla' || page.value === 'server') {
-      guarded(() => window.SamsaraServer?.showPanel?.(route.meta.serverPanel || 'server-config-panel'));
+      if (route.meta.native) {
+        // 原生 server 页面（当前是 RCON）不需要旧 panel 激活，也不要页内导航。
+        hideLegacyChrome();
+        const save = document.getElementById('server-save');
+        const create = document.getElementById('server-backup-create');
+        if (save) save.hidden = true;
+        if (create) create.hidden = true;
+      } else {
+        document.querySelector('main.app-shell')?.classList.remove('no-nav');
+        guarded(() => window.SamsaraServer?.showPanel?.(route.meta.serverPanel || 'server-config-panel'));
+      }
       showHero('server');
       if (page.value === 'server' && workspace.value === 'samsara') {
         // 审计页属于 samsara 工作区，不要显示“本体”的旧一级分栏样式。
@@ -445,6 +455,7 @@ async function applyRoute(force = false) {
         window.SamsaraConfigEditor?.setNavEnabled?.(true);
       }
       if (route.meta.panel) {
+        document.querySelector('main.app-shell')?.classList.remove('no-nav');
         guarded(() => applyLegacyPanel(route.meta.panel));
         showHero('legacy');
         if (route.meta.panel === 'lottery') {

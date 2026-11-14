@@ -20,7 +20,6 @@ export function loadLegacyAdminScripts() {
       await import('../../../mod/src/main/resources/web/config-editor.js');
       await import('../../../mod/src/main/resources/web/map.js');
       await import('../../../mod/src/main/resources/web/world-stack.js');
-      await import('../../../mod/src/main/resources/web/output.js');
       await import('../../../mod/src/main/resources/web/identity.js');
       await import('../../../mod/src/main/resources/web/server.js');
     })().catch((error) => {

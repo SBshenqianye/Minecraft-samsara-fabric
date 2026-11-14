@@ -1774,6 +1774,7 @@ async function main() {
     await until("window.SamsaraUI && document.getElementById('server-console-panel')"
         + " && !document.getElementById('server-console-panel').hidden", 20000, 'RCON 控制台路由');
     const consoleState = await evaluate(`(async () => {
+      // 原生控制台页面在 0.59.0 后接管；仍保留旧 RCON 断言以覆盖接口与 UI。
       const input = document.getElementById('server-console-command');
       const send = document.getElementById('server-console-send');
       input.value = 'list';
@@ -2287,26 +2288,26 @@ async function main() {
 
     // ---- 简单页逐路由验证（Vue page/view 直接打开） ----
     const simpleRoutes = [
-      ['/config-editor', 'panel-config-editor', '/config-editor'],
-      ['/announcements', 'panel-announcements', '/announcements'],
-      ['/output', 'panel-output', '/output'],
-      ['/permissions', 'panel-permissions', '/permissions'],
-      ['/identity', 'panel-identity', '/identity'],
-      ['/world-stack', 'panel-world-stack', '/world-stack'],
-      ['/lottery', 'panel-lottery', '/lottery'],
-      ['/server/config', 'server-config-panel', '/vanilla/config'],
-      ['/server/backup', 'server-backup-panel', '/vanilla/backup'],
-      ['/server/console', 'server-console-panel', '/vanilla/console'],
-      ['/server/audit', 'server-audit-panel', '/samsara/system/audit'],
-      ['/vanilla/audit', 'server-audit-panel', '/samsara/system/audit'],
+      ['/config-editor', '#panel-config-editor', '/config-editor'],
+      ['/announcements', '[data-page="announcements"]', '/announcements'],
+      ['/output', '#panel-output', '/output'],
+      ['/permissions', '[data-page="permissions"]', '/permissions'],
+      ['/identity', '#panel-identity', '/identity'],
+      ['/world-stack', '#panel-world-stack', '/world-stack'],
+      ['/lottery', '#panel-lottery', '/lottery'],
+      ['/server/config', '#server-config-panel', '/vanilla/config'],
+      ['/server/backup', '#server-backup-panel', '/vanilla/backup'],
+      ['/server/console', '#server-console-panel', '/vanilla/console'],
+      ['/server/audit', '#server-audit-panel', '/samsara/system/audit'],
+      ['/vanilla/audit', '#server-audit-panel', '/samsara/system/audit'],
     ];
-    for (const [path, panelId, expectedPath] of simpleRoutes) {
+    for (const [path, selector, expectedPath] of simpleRoutes) {
       await navigate(base + path);
-      await until("window.SamsaraUI && (() => { const p = document.getElementById('"
-          + panelId + "'); return p && !p.hidden && getComputedStyle(p).display !== 'none'; })()",
+      await until("window.SamsaraUI && (() => { const p = document.querySelector('"
+          + selector + "'); return p && !p.hidden && getComputedStyle(p).display !== 'none'; })()",
           20000, '路由 ' + path);
       const routeState = await evaluate(`(() => {
-        const panel = document.getElementById(${JSON.stringify(panelId)});
+        const panel = document.querySelector(${JSON.stringify(selector)});
         return {
           path: location.pathname,
           panelVisible: panel ? !panel.hidden

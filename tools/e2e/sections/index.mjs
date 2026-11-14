@@ -1,5 +1,7 @@
 import announcements from './announcements.mjs';
+import output from './output.mjs';
 import permissions from './permissions.mjs';
+import serverConsole from './server-console.mjs';
 
 /**
  * 页面级 E2E 注册表。
@@ -7,5 +9,7 @@ import permissions from './permissions.mjs';
  */
 export const sections = {
   announcements,
+  output,
   permissions,
+  'server-console': serverConsole,
 };
