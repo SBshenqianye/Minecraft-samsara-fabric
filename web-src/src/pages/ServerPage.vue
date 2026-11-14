@@ -82,8 +82,8 @@ const route = useRoute();
 useLegacyPage({
   panelIds: ['server-config-panel', 'server-backup-panel', 'server-audit-panel'],
   load: async () => {
-    await import('../../../mod/src/main/resources/web/world-stack.js');
-    await import('../../../mod/src/main/resources/web/server.js');
+    await import('../legacy-core/world-stack.js');
+    await import('../legacy-core/server.js');
   },
   activate: () => window.SamsaraServer?.showPanel?.(route.meta.serverPanel || 'server-config-panel'),
 });

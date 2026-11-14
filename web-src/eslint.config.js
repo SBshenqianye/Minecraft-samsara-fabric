@@ -7,6 +7,8 @@ export default [
     ignores: [
       'node_modules/**',
       '../mod/src/main/resources/web/vue/**',
+      // 旧命令式内核：按原样迁入并随包构建，不纳入新代码 lint 规则。
+      'src/legacy-core/**',
       'dist/**',
     ],
   },

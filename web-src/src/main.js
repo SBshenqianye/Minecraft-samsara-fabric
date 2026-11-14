@@ -3,7 +3,7 @@ import App from './App.vue';
 import router from './router.js';
 import { LEGACY_ALIASES } from './navigation.js';
 // 旧命令式面板的组件样式仍来自 legacy 资源；tokens.css 在其后接管 Vue 壳层的设计变量。
-import '../../mod/src/main/resources/web/style.css';
+import './legacy.css';
 import './tokens.css';
 import './style.css';
 import './ia.css';

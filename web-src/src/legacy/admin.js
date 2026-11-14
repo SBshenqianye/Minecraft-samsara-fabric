@@ -7,15 +7,15 @@ let scriptsPromise = null;
 export function loadLegacyAdminScripts() {
   if (!scriptsPromise) {
     scriptsPromise = (async () => {
-      await import('../../../mod/src/main/resources/web/structured.js');
-      await import('../../../mod/src/main/resources/web/form-kit.js');
-      await import('../../../mod/src/main/resources/web/particles.js');
-      await import('../../../mod/src/main/resources/web/banners.js');
-      await import('../../../mod/src/main/resources/web/item-ui.js');
-      await import('../../../mod/src/main/resources/web/value-table.js');
-      await import('../../../mod/src/main/resources/web/page-kit.js');
-      await import('../../../mod/src/main/resources/web/app.js');
-      await import('../../../mod/src/main/resources/web/chat-text.js');
+      await import('../legacy-core/structured.js');
+      await import('../legacy-core/form-kit.js');
+      await import('../legacy-core/particles.js');
+      await import('../legacy-core/banners.js');
+      await import('../legacy-core/item-ui.js');
+      await import('../legacy-core/value-table.js');
+      await import('../legacy-core/page-kit.js');
+      await import('../legacy-core/app.js');
+      await import('../legacy-core/chat-text.js');
     })().catch((error) => {
       scriptsPromise = null;
       throw error;

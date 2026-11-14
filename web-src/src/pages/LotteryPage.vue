@@ -141,7 +141,7 @@ defineOptions({ name: 'LotteryPage' });
 
 useLegacyPage({
   panelId: 'panel-lottery',
-  load: () => import('../../../mod/src/main/resources/web/lottery.js'),
+  load: () => import('../legacy-core/lottery.js'),
   activate: () => window.samsaraLottery?.activate?.(),
 });
 

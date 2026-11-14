@@ -37,7 +37,6 @@ declare module 'vue' {
     ItemSlotGrid: typeof import('./src/components/ItemSlotGrid.vue')['default']
     ItemTooltip: typeof import('./src/components/ItemTooltip.vue')['default']
     ItemWorkbench: typeof import('./src/components/ItemWorkbench.vue')['default']
-    LegacyPanel: typeof import('./src/components/LegacyPanel.vue')['default']
     MapPicker: typeof import('./src/components/MapPicker.vue')['default']
     ModeSwitch: typeof import('./src/components/ModeSwitch.vue')['default']
     PinIcon: typeof import('./src/components/PinIcon.vue')['default']

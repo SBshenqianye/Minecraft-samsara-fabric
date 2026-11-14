@@ -118,7 +118,7 @@ defineOptions({ name: 'MapPage' });
 
 useLegacyPage({
   panelId: 'panel-map',
-  load: () => import('../../../mod/src/main/resources/web/map.js'),
+  load: () => import('../legacy-core/map.js'),
   activate: () => window.SamsaraMap?.activate?.(),
 });
 </script>

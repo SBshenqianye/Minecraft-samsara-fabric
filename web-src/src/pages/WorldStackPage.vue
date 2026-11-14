@@ -92,7 +92,7 @@ defineOptions({ name: 'WorldStackPage' });
 
 useLegacyPage({
   panelId: 'panel-world-stack',
-  load: () => import('../../../mod/src/main/resources/web/world-stack.js'),
+  load: () => import('../legacy-core/world-stack.js'),
   activate: () => window.SamsaraWorldStack?.activate?.(),
 });
 </script>

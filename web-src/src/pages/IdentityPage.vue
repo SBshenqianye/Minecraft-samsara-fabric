@@ -113,7 +113,7 @@ defineOptions({ name: 'IdentityPage' });
 
 useLegacyPage({
   panelId: 'panel-identity',
-  load: () => import('../../../mod/src/main/resources/web/identity.js'),
+  load: () => import('../legacy-core/identity.js'),
   activate: () => window.SamsaraIdentity?.activate?.(),
 });
 </script>

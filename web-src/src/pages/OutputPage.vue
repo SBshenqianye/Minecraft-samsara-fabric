@@ -70,7 +70,7 @@ defineOptions({ name: 'OutputPage' });
 onMounted(async () => {
   // 输出编辑器仍是内容型内核；本页负责挂载，脚本按页加载而不是进全局 admin.js。
   await waitForElement('output-editor', 5000).catch(() => {});
-  await import('../../../mod/src/main/resources/web/output.js');
+  await import('../legacy-core/output.js');
   window.SamsaraOutput?.activate?.();
 });
 </script>

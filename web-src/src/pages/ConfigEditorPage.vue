@@ -32,7 +32,7 @@ defineOptions({ name: 'ConfigEditorPage' });
 
 useLegacyPage({
   panelId: 'panel-config-editor',
-  load: () => import('../../../mod/src/main/resources/web/config-editor.js'),
+  load: () => import('../legacy-core/config-editor.js'),
   afterLoad: () => window.SamsaraConfigEditor?.setSourceFilter?.('samsara'),
   activate: () => window.SamsaraConfigEditor?.activate?.(),
 });
