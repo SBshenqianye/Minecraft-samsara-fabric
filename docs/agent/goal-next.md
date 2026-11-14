@@ -48,6 +48,27 @@ npm run check     58 / 58
 Gradle test       541 / 0
 ```
 
+## 执行记录（2026-11-14）
+
+| 项目 | 结果 | 提交 |
+|---|---|---|
+| 1. section E2E | 新增 `world-stack` 9/9、`sky-inventory` 5/5；联合 25/25 | `test(web): add world-stack and sky inventory section E2E` |
+| 2. `app.js` 纯逻辑 | 新增 `pages/config/model.js` + 5 单测；搜索/条件显示/计数走 model | `refactor(web): extract advanced config pure model` |
+| 3. 0.60.1 验收 | 生产只读验收：世界栈 3/3 图标、配置 6 文件/116 项、`/user` 5 分区 | `docs(agent): record 0.60.1 production acceptance` |
+| 4. openapi 评估 | 保留静态契约 + `OpenApiContractTest` 锁路径；生成化条件写入文档 | `test(web): guard openapi paths against security whitelist` |
+| 5. lottery/server 纯逻辑 | 新增 `pages/lottery/model.js`、`pages/server/model.js` + 6 单测 | `refactor(web): extract lottery and server pure models` |
+| 6. 新功能 | 缺少具体 spec，暂不实现 | — |
+
+### 最终基线
+
+```text
+npm run check       69 / 69
+Gradle test        542 tests / 0 failures
+section E2E        25 / 25
+全量 E2E           281 / 281
+生产               0.60.1+1114.2224（本轮未重新部署）
+```
+
 ## 完成标志
 
 ```text
