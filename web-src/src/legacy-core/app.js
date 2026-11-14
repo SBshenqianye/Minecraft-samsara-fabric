@@ -180,6 +180,10 @@ async function loadStatus() {
 
 function renderStatus() {
   const container = $('status-chips');
+  if (window.__samsaraConfigVueStatus) {
+    // 运行状态面板由 Vue 渲染；内核仍保留 connect/load 流程。
+    return;
+  }
   if (!container) return;
   container.replaceChildren();
   const status = state.status;
