@@ -68,3 +68,6 @@ frp-dog.com.key
 # skill 库只走私有载体，公开库只拉取不上传
 .agents/
 docs/prompt history.txt
+
+# goal 插件状态（项目本地，不入库）
+.opencode/goals/
