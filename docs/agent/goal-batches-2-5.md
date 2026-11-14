@@ -84,6 +84,16 @@
 - 端点：`/api/lottery`、`/api/containers`、`/api/track`、`/api/status`、`/user`、`/`、`/openapi.json` 均 200；`/legacy.html`、`/legacy-user.html`、`/style.css`、`/app.js` 均 404
 - 旧 jar 备份：`backups/samsara/mod-jars/samsara-0.41.2.bak-20261114-batch5.jar`
 
+## 0.60.1 修复部署（2026-11-14）
+
+- 修复世界栈卡片图标缺失、天网背包浮窗时序与 E2E 路由等待；全量 E2E **281/281**。
+- `npm run check`：**58 / 58**；Gradle clean build：**541 tests / 0 failures**。
+- 生产 jar SHA-256：`91F2B206A26C740FDAE974146E21C77FCFB897C7C6C3696DFB86CB8F5F5B3D8A`
+- 构建 / 测试服 / 生产三处哈希一致。
+- 生产：`version=0.41.2`，`webVersion=0.60.1+1114.2224`。
+- 端点：`/api/lottery`、`/api/containers`、`/api/track`、`/api/status`、`/user`、`/`、`/openapi.json` 均 200；`/legacy.html`、`/app.js`、`/style.css` 均 404。
+- 旧 jar 备份：`backups/samsara/mod-jars/samsara-0.41.2.bak-20261114-web0601.jar`。
+
 ## 完成标志
 
 全部批次提交后：

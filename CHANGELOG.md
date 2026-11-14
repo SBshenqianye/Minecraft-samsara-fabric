@@ -3,6 +3,14 @@
 > 面向玩家与服主的功能变化；实现细节、未达标项与证据见[《实现状态》](docs/实现状态.md)。
 > 每个版本按「新增 / 修复 / 优化 / 变更 / 重构 / 文档」分组，只写功能口径。
 
+## 修复 2026-11-14 · Web 0.60.1（已发布）
+
+### 修复
+- **世界栈卡片图标恢复**：batch 5 按页加载后世界栈页不再加载 `map.js`，卡片缺少 16:9 图标区与上传/恢复按钮；抽出 `legacy-core/stack-icon.js` 与纯逻辑 `pages/world-stack/model.js`，地图、世界栈、公开用户端共用。
+- **天网玩家背包浮窗**：E2E 等待 68 槽位与 3D 纸盒人异步渲染后再断言，不再因首帧为空误判。
+- **E2E 稳定性**：世界栈时间线/归档/图标测试改为真实 Vue 路由导航；管理端回切测试改为 `/samsara/config/advanced`；全量 Web E2E **281/281** 通过。
+- **静态资源收口**：`item-lang.json` 从 `/web` 移到 `assets/samsara/lang/`，只走 classpath；`openapi.json` 保留为公开契约。评估见 `docs/agent/static-json-dependency-eval.md`。
+
 ## 重构 2026-11-14 · Agent 友好开发模式 + legacy 全量迁入 bundle（v0.60.0）
 
 ### 重构

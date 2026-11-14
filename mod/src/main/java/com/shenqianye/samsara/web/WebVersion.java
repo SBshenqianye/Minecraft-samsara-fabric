@@ -14,7 +14,7 @@ public final class WebVersion {
     }
 
     private static String resolve() {
-        String base = "0.60.0";
+        String base = "0.60.1";
         try {
             Path location = Path.of(WebVersion.class.getProtectionDomain()
                     .getCodeSource().getLocation().toURI());
