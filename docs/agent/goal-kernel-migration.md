@@ -39,6 +39,14 @@
 - `world-stack` section E2E **9/9**；全量 E2E **281/281**。
 - 提交：`refactor(web): render world-stack cards in Vue`。
 
+### 阶段 2a 完成记录（归档对话框）
+
+- 新增 `WorldStackArchiveDialog.vue`，预览/确认/排队全部走 `useApi`。
+- 从 `AdminOverlays.vue` 移除旧归档对话框。
+- 内核不再被页面调用 `previewArchive`；归档动作由 Vue 接管。
+- `world-stack` section E2E **9/9**。
+- 提交：`refactor(web): move world-stack archive dialog to Vue`。
+
 ## 门禁
 
 ```powershell
