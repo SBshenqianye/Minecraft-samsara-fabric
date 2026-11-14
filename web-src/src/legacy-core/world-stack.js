@@ -231,98 +231,10 @@ import {
   }
 
   function renderList() {
-    const { list } = ensureEls();
-    if (!list) return;
-    list.replaceChildren();
-    if (stacks().length === 0) {
-      const empty = document.createElement('p');
-      empty.className = 'muted small';
-      empty.textContent = '没有栈层数据；服务器启动后会自动创建 world 栈顶。';
-      list.append(empty);
-      return;
-    }
-    const ordered = stacks().slice().sort((a, b) => b.index - a.index);
-    for (const stack of ordered) {
-      const card = document.createElement('article');
-      card.className = 'world-stack-card' + (stack.top ? ' top' : '');
-      const head = document.createElement('div');
-      head.className = 'world-stack-card-head';
-      const title = document.createElement('div');
-      title.className = 'world-stack-card-title';
-      const name = document.createElement('strong');
-      name.textContent = stack.top ? 'world' : stack.id;
-      const badges = document.createElement('span');
-      badges.className = 'world-stack-badges';
-      const index = document.createElement('span');
-      index.className = 'world-stack-badge';
-      index.textContent = '#' + (stack.index + 1);
-      badges.append(index);
-      if (stack.top) {
-        const topBadge = document.createElement('span');
-        topBadge.className = 'world-stack-badge top';
-        topBadge.textContent = '栈顶';
-        badges.append(topBadge);
-      }
-      if (stack.loaded) {
-        const loaded = document.createElement('span');
-        loaded.className = 'world-stack-badge ok';
-        loaded.textContent = '已加载';
-        badges.append(loaded);
-      }
-      const src = document.createElement('span');
-      src.className = 'world-stack-badge';
-      src.textContent = sourceName(stack.source);
-      badges.append(src);
-      title.append(name, badges);
-      const actions = document.createElement('div');
-      actions.className = 'panel-tools';
-      if (!stack.top) {
-        const archive = document.createElement('button');
-        archive.type = 'button';
-        archive.className = 'ghost danger';
-        archive.textContent = '归档…';
-        archive.addEventListener('click', () => previewArchive(stack.id));
-        actions.append(archive);
-      }
-      head.append(title, actions);
-      const body = document.createElement('div');
-      body.className = 'world-stack-card-body';
-      const main = document.createElement('div');
-      main.className = 'world-stack-card-main';
-      const dims = (stack.dimensions || [])
-        .map((dim) => dim.id + ' ' + (dim.regions || 0))
-        .join(' · ');
-      const version = stack.versionName
-        ? stack.versionName + (stack.snapshot ? ' · 快照' : '')
-          + (stack.dataVersion ? ' · DataVersion ' + stack.dataVersion : '')
-        : (stack.dataVersion ? 'DataVersion ' + stack.dataVersion : '—');
-      appendRows(main, [
-        ['世界名', stack.saveName || '—'],
-        ['存档创建', fmtTime(stack.saveCreatedAt)],
-        ['最后游玩', fmtTime(stack.lastPlayed)],
-        ['存档版本', version],
-        ['种子', String(stack.seed)],
-        ['出生点', stack.spawnX + ', ' + stack.spawnY + ', ' + stack.spawnZ],
-        ['出生历史', stack.spawnCycles + ' 轮'],
-        ['维度 region', dims || '—'],
-        ['数据大小', fmtBytes(stack.dataBytes)],
-        ['来源', sourceName(stack.source) + (stack.importedFrom ? ' · ' + stack.importedFrom : '')],
-        ['加入栈时间', fmtTime(stack.createdAt)],
-        ['导入时间', stack.importedAt ? fmtTime(stack.importedAt) : '—'],
-        ['元数据', stack.metaPath],
-        ['维度', stack.dimensionsPath],
-      ]);
-      body.append(main);
-      if (window.SamsaraStackIcon?.build) {
-        body.append(window.SamsaraStackIcon.build(stack, {
-          admin: true,
-          onUpload: () => chooseIcon(stack),
-          onDelete: () => deleteIcon(stack),
-        }));
-      }
-      card.append(head, body);
-      list.append(card);
-    }
+    // 卡片列表由 Vue 渲染；内核只负责把最新模型推给页面。
+    window.dispatchEvent(new CustomEvent('samsara:world-stack-updated', {
+      detail: { stacks: stacks().slice() },
+    }));
   }
 
   function renderOrder() {
@@ -1760,6 +1672,10 @@ import {
     load,
     reload: load,
     refreshCount,
+    getStacks: () => stacks().slice(),
+    previewArchive,
+    chooseIcon,
+    deleteIcon,
   };
 
   if (document.readyState === 'loading') {

@@ -12,7 +12,7 @@
 | `/legacy.html`、`/legacy-user.html`、`/style.css`、旧 `/web/*.js` | ✅ 已删除，HTTP 404 |
 | `LegacyPanel` | ✅ 已删除 |
 | `mod/src/main/resources/web/*.js` | ✅ 已清零 |
-| `web-src/src/legacy-core/` | ⚠️ 保留 18 个内核模块（约 1.6 万行） |
+| `web-src/src/legacy-core/` | ⚠️ 保留 18 个内核模块（约 1.62 万行）；阶段 1 已把世界栈卡片列表迁到 Vue |
 | `web-src/src/legacy/` | ⚠️ 保留 3 个桥接文件：`admin.js`、`document.js`、`user.js` |
 | 使用 `useLegacyPage` 的页面 | ⚠️ 8 个：config-editor、identity、lottery、map、mod-config、output、server、world-stack |
 | `old-project/` | ⚠️ 15 个历史 Java 文件，属于旧 chunkmanager 参考，不参与构建 |

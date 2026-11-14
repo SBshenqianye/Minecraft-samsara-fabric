@@ -23,7 +23,12 @@
         <p class="panel-sub">world 固定是栈顶；旧栈层是 world 内部的自定义维度，按从栈底往上数（stack_0 是最下层）。卡片显示存档名、存档创建/最后游玩时间、版本、种子、出生点、维度和数据大小。</p>
       </div>
     </div>
-    <div id="world-stack-list" class="world-stack-list"></div>
+    <WorldStackCards
+      :stacks="stacks"
+      @archive="archiveStack"
+      @upload="uploadIcon"
+      @delete="deleteIcon"
+    />
   </section>
 
   <section class="panel" id="world-stack-order-panel">
@@ -85,14 +90,45 @@
 </template>
 
 <script setup>
+import { onUnmounted, ref } from 'vue';
 import TabShell from '../components/TabShell.vue';
 import { useLegacyPage } from '../composables/useLegacyPage.js';
+import WorldStackCards from './world-stack/WorldStackCards.vue';
 
 defineOptions({ name: 'WorldStackPage' });
+
+const stacks = ref([]);
+
+function onStackUpdate(event) {
+  stacks.value = Array.isArray(event.detail?.stacks) ? event.detail.stacks : [];
+}
+
+function archiveStack(stack) {
+  window.SamsaraWorldStack?.previewArchive?.(stack.id);
+}
+
+function uploadIcon(stack) {
+  window.SamsaraWorldStack?.chooseIcon?.(stack);
+}
+
+function deleteIcon(stack) {
+  window.SamsaraWorldStack?.deleteIcon?.(stack);
+}
 
 useLegacyPage({
   panelId: 'panel-world-stack',
   load: () => import('../legacy-core/world-stack.js'),
+  afterLoad: async () => {
+    window.__samsaraWorldStackVueList = true;
+    window.addEventListener('samsara:world-stack-updated', onStackUpdate);
+    await window.SamsaraWorldStack.load();
+    stacks.value = window.SamsaraWorldStack.getStacks?.() || [];
+  },
   activate: () => window.SamsaraWorldStack?.activate?.(),
+});
+
+onUnmounted(() => {
+  window.__samsaraWorldStackVueList = false;
+  window.removeEventListener('samsara:world-stack-updated', onStackUpdate);
 });
 </script>
