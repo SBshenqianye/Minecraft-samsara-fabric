@@ -65,6 +65,18 @@
 - 全量 E2E 中与本次迁移相关的断言全绿；
 - 没有新增失败。
 
+## 完成记录（2026-11-14）
+
+- batch 2–4 页面壳 + 按需内核：`8d5f374 feat(web): page-scope remaining legacy pages`
+- `legacy-shell` section E2E：**9 / 9**
+- 全量 E2E（map-skip 基线）：**261 / 270**，剩余为已知地图/世界栈/天网历史问题
+- `npm run check`：**48 / 48** 单测
+- 生产 jar SHA-256：`B4373E9A93AB07B90C607E3826525CCB4D4C9D2708C4EAD63AB7C14AFDE1F3E9`
+- 构建 / 测试服 / 生产三处哈希一致
+- 生产：`version=0.41.2`，`webVersion=0.59.0+1114.2021`
+- 端点：`/api/lottery`、`/api/containers`、`/api/track`、`/api/status`、`/user`、`/` 均 200
+- batch 5：`app.js` / `page-kit.js` / 共享模块按设计保留为 shell，不再阻塞页面迁移
+
 ## 完成标志
 
 全部批次提交后：
