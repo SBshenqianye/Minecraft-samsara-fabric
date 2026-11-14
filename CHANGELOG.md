@@ -3,6 +3,15 @@
 > 面向玩家与服主的功能变化；实现细节、未达标项与证据见[《实现状态》](docs/实现状态.md)。
 > 每个版本按「新增 / 修复 / 优化 / 变更 / 重构 / 文档」分组，只写功能口径。
 
+## 重构 2026-11-15 · 身份组/配置/圈地整页 Vue（Web 0.61.1，已发布）
+
+### 重构
+- **身份组整页 Vue**：设置、组卡片（拖拽/账号与 data 区域）、未进组账号与 data 池、相似 ID 推荐、UUID 选择/放入组/重绑弹窗、data 详情（备份、状态、统计分页、成就树、背包 iframe）、审计全部迁到 Vue；删除 `legacy-core/identity.js`。
+- **高级配置整页 Vue**：文件块、分组、条目控件（布尔/枚举/数值/敏感/文本/string-list/int-list/level-map/curve）、条件显示、搜索、保存/重载与运行状态全部 Vue；删除旧渲染器依赖。
+- **圈地范围整页 Vue**：条目与条件显示由 Vue 渲染，染料色板/图案浮窗、图案方向编辑、旗帜合成器、保护范围 canvas 调试保留为 `pages/config/claim-kernel.js` 算法内核，数据通过 getValue/setValue 注入。
+- **算法内核迁移**：曲线 canvas 编辑器、旗帜绘制、粒子预览移到 `web-src/src/pages/config/`，不再是 `legacy-core` 的页面依赖。
+- **验证**：`identity` 6/6、`server` 15/15、`lottery` 9/9、`output` 5/5、`map` 5/5、`app-config` 5/5，全量 Web E2E **281/281**。
+
 ## 重构 2026-11-15 · 命令式内核渐进迁移（Web 0.61.0，已发布）
 
 ### 重构

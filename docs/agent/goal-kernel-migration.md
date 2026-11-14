@@ -102,13 +102,14 @@
 - 新增 `tools/e2e/sections/map.mjs`（5 条）；`map` section **5/5**；全量 E2E **281/281**。
 - 提交：`refactor(web): move map controls to Vue`。
 
-### 阶段 8 完成记录（高级配置/圈地，状态层）
+### 阶段 8 完成记录（高级配置/圈地，整页 Vue）
 
-- `ConfigPage.vue` 原生渲染运行状态面板（6 个状态 chip + 警告条），直接走 `useApi` 的 `/api/status`；内核 `renderStatus()` 在 `__samsaraConfigVueStatus` 下跳过 DOM 写入。
-- 配置项渲染器、搜索过滤、条件显示、PageSpec 控件、圈地 canvas 预览与旗帜合成器继续留在 `app.js`（保留算法内核）。
-- **剩余边界（保留内核）**：`app.js` 仍是高级配置/圈地范围的渲染内核（约 3800 行）；配置页与圈地页未使用 `useLegacyPage`，但 DOM 仍由旧内核生成。
-- 新增 `tools/e2e/sections/app-config.mjs`（5 条）；`app-config` section **5/5**；全量 E2E **281/281**。
-- 提交：`refactor(web): render config status panel in Vue`。
+- 新增 `pages/config/useConfig.js`（模型/草稿/保存/重载/条件显示/状态）、`ConfigFileBlock.vue`、`ConfigEntry.vue`、`ConfigEntryControl.vue`（布尔/枚举/数值/敏感/文本/string-list/int-list/level-map/curve）、`StringListEditor.vue`、`IntListEditor.vue`、`CurveField.vue`、`ParticlePreview.vue`。
+- 配置编辑内核拆分到 `pages/config/`：`curve-kernel.js`（保留曲线 canvas 拖拽与容量预估算法）、`claim-kernel.js`（染料色板/图案浮窗、旗帜合成器、图案方向编辑、圈地 canvas 预览与几何算法）、`banners.js`、`particles.js`、`button-group.js`；数据读写通过 `getValue/setValue` 注入。
+- `ConfigPage.vue` / `ClaimRangePage.vue` 不再使用 `window.SamsaraUI` 的配置渲染函数：文件块、条目控件、条件显示、搜索、保存/重载、页内导航全部 Vue；`app.js` 的旧渲染器在这些页面通过 `__samsaraConfigVuePage` / `__samsaraClaimVuePage` 短路，不再写 DOM。
+- **保留边界**：`curve-kernel.js` 的 canvas 坐标算法、`claim-kernel.js` 的 canvas 预览/图案几何、`banners.js` 的旗帜绘制为不可替代算法；页面主体与数据层在 Vue。
+- `app-config` section **5/5**；全量 E2E **281/281**。
+- 提交：`refactor(web): migrate config and claim range pages to Vue`。
 
 ## 迁移收尾状态
 
@@ -116,10 +117,10 @@
 |---|---|---|
 | 3 server | `server.js` 删除，整页 Vue | 无 |
 | 4 lottery | `lottery.js` 删除，整页 Vue | `value-table.js`（旧用户端） |
-| 5 identity | 设置/路径 Vue | 卡片拖拽、池子、详情弹窗、重绑、审计 |
+| 5 identity | `identity.js` 删除，整页 Vue（设置/卡片/池子/详情/重绑/审计） | 背包编辑器仍是独立 iframe |
 | 6 output | 工具栏/信息/预览 Vue | contenteditable 画布、标签、撤销重做 |
 | 7 map | 复选框/按钮 Vue | canvas/tile、图层、总览、区块操作 |
-| 8 app | 运行状态 Vue | 配置渲染器、圈地 canvas、旗帜合成器 |
+| 8 app | 配置/圈地整页 Vue | 曲线 canvas、圈地 canvas 预览/旗帜绘制算法 |
 
 ## 门禁
 

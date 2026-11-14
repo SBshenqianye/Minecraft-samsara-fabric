@@ -22,7 +22,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onActivated, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useApi } from '../composables/useApi.js';
 import { clearPageNav, setPageNav } from '../composables/usePageNav.js';

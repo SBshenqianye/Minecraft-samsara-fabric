@@ -814,13 +814,14 @@ async function main() {
         await new Promise((resolve) => setTimeout(resolve, 900));
         window.scrollTo(0, 0);
         await new Promise((resolve) => setTimeout(resolve, 80));
+        const navId = page === 'config' ? 'page-nav' : 'global-nav';
         const rows = [];
-        const buttons = [...document.querySelectorAll('#global-nav .nav-item[data-target]')];
+        const buttons = [...document.querySelectorAll('#' + navId + ' .nav-item[data-target]')];
         for (const button of buttons.slice(0, 12)) {
           button.click();
           await new Promise((resolve) => setTimeout(resolve, 1100));
           const target = document.getElementById(button.dataset.target);
-          const nav = document.getElementById('global-nav');
+          const nav = document.getElementById(navId);
           const rect = target ? target.getBoundingClientRect() : null;
           rows.push({
             label: button.innerText.replace(/\\s+/g, ' ').trim().slice(0, 28),
@@ -1092,14 +1093,14 @@ async function main() {
       const modeRow = document.getElementById('cfg-entry-' + encodeURIComponent('claim-range|mode'));
       const fixedRow = document.getElementById('cfg-entry-' + encodeURIComponent('claim-range|fixedDistance'));
       const colorsRow = document.getElementById('cfg-entry-' + encodeURIComponent('claim-range|colorDistances'));
-      const navFor = (row) => document.querySelector('#global-nav .nav-item[data-target="' + row.id + '"]');
+      const navFor = (row) => document.querySelector('#page-nav .nav-item[data-target="' + row.id + '"]');
       const clickMode = (value) => {
         const button = modeRow.querySelector('.segmented-btn[data-value="' + value + '"]');
         if (button) button.click();
       };
 
       const initial = {
-        nav: document.querySelector('#global-nav .nav-title')?.textContent.trim() || '',
+        nav: document.querySelector('#page-nav .nav-title')?.textContent.trim() || '',
         fixedHidden: fixedRow.hidden,
         colorsHidden: colorsRow.hidden,
         mode: modeRow.querySelector('.segmented-btn.active')?.dataset.value || '',

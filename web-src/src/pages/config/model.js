@@ -57,3 +57,94 @@ export function configTotalEntries(model) {
     .filter((file) => file.id !== 'claim-range')
     .reduce((sum, file) => sum + (file.entries?.length || 0), 0);
 }
+
+/** 文件块标题（去掉 .yml 后缀）。 */
+export function fileTitle(file) {
+  return String(file?.name || '').replace(/\.yml$/, '');
+}
+
+export function entryElementId(fileId, path) {
+  return 'cfg-entry-' + encodeURIComponent(fileId + '|' + path);
+}
+
+export function groupElementId(fileId, group) {
+  return 'cfg-group-' + encodeURIComponent(fileId + '|' + group);
+}
+
+export function fileElementId(fileId) {
+  return 'cfg-file-' + encodeURIComponent(fileId);
+}
+
+const WIDE_TYPES = new Set(['string-list', 'int-list', 'level-map', 'template', 'curve']);
+
+export function isWideEntry(entry) {
+  return WIDE_TYPES.has(entry?.type)
+    || (entry?.description && entry.description.length > 110)
+    || (typeof entry?.default === 'string' && entry.default.length > 80);
+}
+
+/** 搜索 + 条件显示后的文件视图：分组顺序与旧渲染器一致。 */
+export function fileView(file, edits, query) {
+  const entries = (file.entries || []).filter((entry) => matchesQuery(file, entry, query));
+  const groups = [];
+  const index = new Map();
+  for (const entry of entries) {
+    const name = entry.group || '其他';
+    if (!index.has(name)) {
+      index.set(name, { name, entries: [] });
+      groups.push(index.get(name));
+    }
+    index.get(name).entries.push(entry);
+  }
+  return { entries, groups, count: entries.length };
+}
+
+/** 条件显示：无条件返回 true；条件无效或依赖缺失时按可见处理。 */
+export function entryVisible(file, entry, edits) {
+  if (!entry?.visibleWhen) return true;
+  const visible = isVisibleByCondition(file, entry.visibleWhen, edits);
+  return visible == null ? true : visible;
+}
+
+/** 保存时每个文件的 values（敏感字段不写回）。 */
+export function fileValues(file, edits) {
+  const values = {};
+  for (const entry of file.entries || []) {
+    if (entry.sensitive) continue;
+    values[entry.path] = currentValue(edits, file.id, entry);
+  }
+  return values;
+}
+
+/** 输入控件的类型归类，页面按类型选择组件。 */
+export function controlKind(entry) {
+  if (!entry) return 'text';
+  if (entry.sensitive) return 'sensitive';
+  if (entry.type === 'boolean') return 'boolean';
+  if (entry.type === 'enum') return 'enum';
+  if (entry.type === 'int' || entry.type === 'double') return 'number';
+  if (entry.type === 'int-list') return 'int-list';
+  if (entry.type === 'string-list') return 'string-list';
+  if (entry.type === 'level-map') return 'level-map';
+  if (entry.type === 'curve') return 'curve';
+  return 'text';
+}
+
+/** 数值输入的兜底值（旧渲染器在空值时回写默认值）。 */
+export function numericFallback(entry) {
+  return entry?.default == null ? '' : String(entry.default);
+}
+
+export function numberPlaceholder(entry) {
+  const fallback = numericFallback(entry);
+  return fallback === '' ? '默认：空' : '默认：' + fallback;
+}
+
+/** 布尔枚举：粒子预览需要知道主题。 */
+export function particleTheme(path) {
+  if (path === 'dayParticle') return 'day';
+  if (path === 'nightParticle') return 'night';
+  if (/Particle$/i.test(path) || /particle/i.test(path)) return 'dark';
+  return '';
+}
+

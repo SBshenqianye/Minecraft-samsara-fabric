@@ -99,7 +99,7 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, onMounted, watch } from 'vue';
+import { onActivated, onBeforeUnmount, onMounted, watch } from 'vue';
 import TabShell from '../components/TabShell.vue';
 import SegmentedButtons from '../components/SegmentedButtons.vue';
 import IdentityDialogs from './identity/IdentityDialogs.vue';
@@ -129,6 +129,8 @@ watch(
   () => identity.syncNav(),
   { deep: true, immediate: true },
 );
+
+onActivated(() => identity.syncNav());
 
 onMounted(() => {
   window.addEventListener('samsara:connected', onConnected);

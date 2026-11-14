@@ -5,6 +5,7 @@
       class="nav-item"
       :class="{ active: active === item.target }"
       :data-target="item.target || ''"
+      :hidden="item.hidden === true"
       @click="emit('select', item)"
     >
       <span>{{ item.label }}</span>

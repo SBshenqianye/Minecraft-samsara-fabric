@@ -165,7 +165,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onActivated, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { ElMessageBox } from 'element-plus';
 import { useRoute } from 'vue-router';
 import TabShell from '../components/TabShell.vue';
@@ -287,6 +287,8 @@ function onConnected() {
   load();
   valueTableRef.value?.ensure();
 }
+
+onActivated(syncNav);
 
 onMounted(() => {
   window.addEventListener('samsara:connected', onConnected);

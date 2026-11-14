@@ -33,11 +33,19 @@ function select(item) {
   active.value = item.target;
   const el = document.getElementById(item.target);
   if (!el) return;
-  // 目标顶部对齐吸顶的页内导航顶部，而不是浏览器窗口顶部。
+  const align = () => {
+    const nav = document.getElementById('page-nav');
+    const navTop = nav ? nav.getBoundingClientRect().top : 0;
+    const delta = el.getBoundingClientRect().top - navTop;
+    if (Math.abs(delta) > 1) window.scrollBy(0, delta);
+  };
+  // 目标顶部对齐吸顶的页内导航顶部；布局稳定后再校正一次。
   const nav = document.getElementById('page-nav');
   const navTop = nav ? nav.getBoundingClientRect().top : 0;
   const top = window.scrollY + el.getBoundingClientRect().top - navTop;
   window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+  window.setTimeout(align, 420);
+  window.setTimeout(align, 900);
 }
 
 function watchScroll() {

@@ -362,6 +362,8 @@ function syncConditionalNav() {
 }
 
 function render() {
+  // 高级配置已由 Vue 渲染；旧渲染器只保留给未迁移的入口。
+  if (window.__samsaraConfigVuePage) return;
   const container = $('files');
   if (!container) return;
   container.replaceChildren();
@@ -393,6 +395,7 @@ function render() {
 }
 
 function renderClaimRange() {
+  if (window.__samsaraClaimVuePage) return;
   const container = $('claim-range-files');
   if (!container) return;
   container.replaceChildren();
