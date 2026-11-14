@@ -133,8 +133,20 @@ function renderOutputEditor() {
     if (meta) meta.textContent = '';
     return;
   }
-  $o('output-meta').textContent = message.key + ' · ' + message.description
-      + ' · 变量 ' + (message.variables || []).length + ' · 按钮 ' + (message.buttons || []).length;
+  if (window.__samsaraOutputVueShell) {
+    // 外围信息栏由 Vue 渲染；内核只负责编辑器与标签。
+    window.dispatchEvent(new CustomEvent('samsara:output-selected', { detail: {
+      key: message.key,
+      description: message.description,
+      variables: (message.variables || []).length,
+      buttons: (message.buttons || []).length,
+      editable: message.editable !== false,
+      disabledReason: message.disabledReason || '',
+    } }));
+  } else {
+    $o('output-meta').textContent = message.key + ' · ' + message.description
+        + ' · 变量 ' + (message.variables || []).length + ' · 按钮 ' + (message.buttons || []).length;
+  }
   const auto = $o('output-auto-continue');
   if (auto) renderAutoContinue();
   const editable = message.editable !== false;
@@ -605,6 +617,15 @@ function scheduleOutputPreview() {
 async function renderOutputPreview() {
   const container = $o('output-preview');
   if (!container) return;
+  if (window.__samsaraOutputVueShell) {
+    // 预览由 Vue 按同一份 parts 调用 /api/output/preview 渲染。
+    window.dispatchEvent(new CustomEvent('samsara:output-parts', { detail: {
+      key: O.key,
+      parts: cloneParts(O.parts),
+      errors: clientErrors(),
+    } }));
+    return;
+  }
   container.replaceChildren();
   if (!O.key) return;
   const errors = clientErrors();
@@ -834,6 +855,12 @@ function editorDrop(event) {
 
 function renderAutoContinue() {
   const host = $o('output-auto-continue');
+  if (window.__samsaraOutputVueShell) {
+    window.dispatchEvent(new CustomEvent('samsara:output-auto', {
+      detail: { enabled: O.autoContinuePrefix },
+    }));
+    return;
+  }
   if (!host) return;
   host.textContent = '';
   if (!window.SamsaraUIKit) return;
@@ -903,5 +930,7 @@ window.SamsaraOutput = {
   reload: reloadOutput,
   restoreDefault: restoreOutputDefault,
   refreshCount,
+  /** Vue 外壳控制自动续行前缀（保存仍走旧内核的 config 写入）。 */
+  setAutoContinue: (enabled) => saveAutoContinue(Boolean(enabled)),
 };
 window.SamsaraUI.onConnect(loadOutput);

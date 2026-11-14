@@ -15,11 +15,22 @@
           <div class="panel-tools">
             <label class="search-box">
               <span aria-hidden="true">⌕</span>
-              <input id="output-search" type="search" placeholder="搜索消息 / 分组 / 说明" />
+              <input
+                id="output-search"
+                type="search"
+                placeholder="搜索消息 / 分组 / 说明"
+                @input="(event) => kernelSearch(event.target.value)"
+              />
             </label>
             <span class="inline-toggle">
               <span class="muted small">自动续行前缀</span>
-              <span id="output-auto-continue"></span>
+              <span id="output-auto-continue">
+                <SegmentedButtons
+                  :value="autoContinue ? 'true' : 'false'"
+                  :choices="AUTO_CHOICES"
+                  @change="(next) => setAutoContinue(next === 'true')"
+                />
+              </span>
             </span>
           </div>
         </div>
@@ -30,7 +41,7 @@
           <section class="output-edit-wrap">
             <div class="column-title">字段改写</div>
             <div id="output-disabled" class="output-disabled" hidden></div>
-            <div id="output-meta" class="output-meta"></div>
+            <div id="output-meta" class="output-meta">{{ metaText }}</div>
             <div
               id="output-editor"
               class="rich-editor"
@@ -51,7 +62,18 @@
 
           <section class="output-preview-wrap">
             <div class="column-title">渲染预览</div>
-            <div id="output-preview" class="output-preview"></div>
+            <div id="output-preview" class="output-preview">
+              <p v-if="previewHint" class="muted small">{{ previewHint }}</p>
+              <template v-else>
+                <span
+                  v-for="(fragment, index) in fragments"
+                  :key="index"
+                  :class="{ 'preview-button': fragment.clickable }"
+                  :style="fragment.style"
+                  :title="fragment.title"
+                >{{ fragment.text }}</span>
+              </template>
+            </div>
             <p class="muted small">预览由服务端渲染；按钮只显示标签，不执行命令。</p>
           </section>
         </div>
@@ -61,16 +83,94 @@
 </template>
 
 <script setup>
-import { onMounted } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import TabShell from '../components/TabShell.vue';
-import { waitForElement } from '../legacy/document.js';
+import SegmentedButtons from '../components/SegmentedButtons.vue';
+import { useApi } from '../composables/useApi.js';
+import { useLegacyPage } from '../composables/useLegacyPage.js';
+import { messageSummary, previewFragments } from './output/model.js';
 
 defineOptions({ name: 'OutputPage' });
 
-onMounted(async () => {
-  // 输出编辑器仍是内容型内核；本页负责挂载，脚本按页加载而不是进全局 admin.js。
-  await waitForElement('output-editor', 5000).catch(() => {});
-  await import('../legacy-core/output.js');
-  window.SamsaraOutput?.activate?.();
+const AUTO_CHOICES = [{ value: 'true', label: '开' }, { value: 'false', label: '关' }];
+const { request } = useApi();
+const selected = ref(null);
+const autoContinue = ref(true);
+const fragments = ref([]);
+const previewHint = ref('');
+let seq = 0;
+
+// 外围信息栏与预览由 Vue 接管，内核保留 contenteditable 画布与标签逻辑。
+window.__samsaraOutputVueShell = true;
+
+const metaText = computed(() => messageSummary(selected.value));
+
+function onSelected(event) {
+  selected.value = event.detail || null;
+}
+
+function onAuto(event) {
+  autoContinue.value = Boolean(event.detail?.enabled);
+}
+
+function onParts(event) {
+  const { key, parts, errors } = event.detail || {};
+  renderPreview(key, parts, errors || []);
+}
+
+async function renderPreview(key, parts, errors) {
+  const current = ++seq;
+  fragments.value = [];
+  previewHint.value = '';
+  if (!key) return;
+  if (errors.length) {
+    previewHint.value = '修正模板后才会生成预览：' + errors.join('；');
+    return;
+  }
+  try {
+    const result = await request('/api/output/preview', {
+      method: 'POST',
+      body: JSON.stringify({ key, parts }),
+    });
+    if (current !== seq) return;
+    if (!result.ok || result.data?.ok === false) {
+      throw new Error(result.data?.error || '预览失败');
+    }
+    fragments.value = previewFragments(result.data);
+    if (!fragments.value.length) previewHint.value = '（预览为空）';
+  } catch (error) {
+    if (current !== seq) return;
+    previewHint.value = error.message || '预览失败';
+  }
+}
+
+function setAutoContinue(enabled) {
+  autoContinue.value = enabled;
+  window.SamsaraOutput?.setAutoContinue?.(enabled);
+}
+
+function kernelSearch(value) {
+  // 内核监听 #output-search 的 input 事件刷新页内导航；这里只兜底触发一次。
+  const input = document.getElementById('output-search');
+  if (input && input.value !== value) input.value = value;
+}
+
+onMounted(() => {
+  window.addEventListener('samsara:output-selected', onSelected);
+  window.addEventListener('samsara:output-auto', onAuto);
+  window.addEventListener('samsara:output-parts', onParts);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('samsara:output-selected', onSelected);
+  window.removeEventListener('samsara:output-auto', onAuto);
+  window.removeEventListener('samsara:output-parts', onParts);
+  window.__samsaraOutputVueShell = false;
+});
+
+useLegacyPage({
+  panelId: 'output-editor',
+  load: () => import('../legacy-core/output.js'),
+  activate: () => window.SamsaraOutput?.activate?.(),
 });
 </script>

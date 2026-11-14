@@ -84,6 +84,15 @@
 - 新增 `tools/e2e/sections/identity.mjs`（6 条）；`identity` section **6/6**；全量 E2E **281/281**。
 - 提交：`refactor(web): move identity settings to Vue`。
 
+### 阶段 6 完成记录（输出格式，外围）
+
+- 新增 `pages/output/model.js`：预览片段颜色/粗斜/下划线样式、信息行、可点击提示（单测 3 项）。
+- `OutputPage.vue` 原生渲染搜索框、自动续行开关（`SegmentedButtons`）、消息信息行、服务端预览片段；预览请求走 `useApi`。
+- 内核 `output.js`：`__samsaraOutputVueShell` 下派发 `samsara:output-selected` / `samsara:output-auto` / `samsara:output-parts`，跳过自己的 meta/预览 DOM 写入，并暴露 `setAutoContinue()`。
+- **剩余边界（保留内核）**：contenteditable 画布、原子标签/按钮、拖放/撤销重做、变量/按钮面板、保存/恢复默认仍在 `output.js`；`OutputPage` 仍在守卫白名单。
+- `output` section **5/5**；全量 E2E **281/281**。
+- 提交：`refactor(web): move output toolbar and preview to Vue`。
+
 ## 门禁
 
 ```powershell
