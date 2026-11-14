@@ -8,7 +8,7 @@
         <p class="panel-sub">导入服务器本地 world 目录；导入/归档在服务器重启时执行，源目录只读保持不变。排序只改逻辑顺序，不重命名 stack_<span class="muted">n</span> 目录。</p>
       </div>
       <div class="panel-tools">
-        <button id="world-stack-timeline-open" class="ghost" type="button">操作时间线</button>
+        <button id="world-stack-timeline-open" class="ghost" type="button" @click="timelineOpen = true">操作时间线</button>
         <button id="world-stack-refresh" class="ghost" type="button">重新读取</button>
       </div>
     </div>
@@ -89,6 +89,7 @@
       :stack-id="archiveStackId"
       @archived="onArchived"
     />
+    <WorldStackTimelineDialog v-model="timelineOpen" />
   </section>
 </div>
 </TabShell>
@@ -100,12 +101,16 @@ import TabShell from '../components/TabShell.vue';
 import { useLegacyPage } from '../composables/useLegacyPage.js';
 import WorldStackArchiveDialog from './world-stack/WorldStackArchiveDialog.vue';
 import WorldStackCards from './world-stack/WorldStackCards.vue';
+import WorldStackTimelineDialog from './world-stack/WorldStackTimelineDialog.vue';
 
 defineOptions({ name: 'WorldStackPage' });
 
 const stacks = ref([]);
 const archiveOpen = ref(false);
 const archiveStackId = ref('');
+const timelineOpen = ref(false);
+// 在 kernel bind() 前告诉它：时间线按钮由 Vue 接管。
+window.__samsaraWorldStackVueTimeline = true;
 
 function onStackUpdate(event) {
   stacks.value = Array.isArray(event.detail?.stacks) ? event.detail.stacks : [];
@@ -144,6 +149,7 @@ useLegacyPage({
 
 onUnmounted(() => {
   window.__samsaraWorldStackVueList = false;
+  window.__samsaraWorldStackVueTimeline = false;
   window.removeEventListener('samsara:world-stack-updated', onStackUpdate);
 });
 </script>

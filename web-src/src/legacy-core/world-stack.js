@@ -1609,8 +1609,12 @@ import {
     const e = ensureEls();
     if (!e.list) return;
     if (e.refresh) e.refresh.addEventListener('click', load);
-    if (e.snapshotRefresh) e.snapshotRefresh.addEventListener('click', loadSnapshots);
-    if (e.timelineOpen) e.timelineOpen.addEventListener('click', openTimeline);
+    if (e.snapshotRefresh && !window.__samsaraWorldStackVueTimeline) {
+      e.snapshotRefresh.addEventListener('click', loadSnapshots);
+    }
+    if (e.timelineOpen && !window.__samsaraWorldStackVueTimeline) {
+      e.timelineOpen.addEventListener('click', openTimeline);
+    }
     if (e.iconInput) {
       e.iconInput.addEventListener('change', () => {
         const file = e.iconInput.files && e.iconInput.files[0];

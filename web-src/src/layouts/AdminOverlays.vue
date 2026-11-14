@@ -156,28 +156,7 @@
   </form>
 </dialog>
 
-<dialog id="world-stack-timeline-dialog" class="app-dialog world-stack-dialog">
-  <div class="dialog-body">
-    <div class="dialog-head">
-      <div>
-        <h3>操作时间线</h3>
-        <p class="dialog-sub">待执行任务会先列在最上面；重启完成后再生成可撤销的时间线节点。时间线线性、无分支，仅末端节点可撤销。撤销在停服后、下次启动前执行，先保留当前状态，失败回滚；源世界与归档不会自动删除。</p>
-      </div>
-      <div class="dialog-head-actions">
-        <button id="world-stack-snapshot-refresh" class="ghost" type="button">刷新快照占用</button>
-        <button class="ghost dialog-close" type="button" data-dialog-close="world-stack-timeline-dialog" title="关闭" aria-label="关闭">×</button>
-      </div>
-    </div>
-    <div id="world-stack-timeline-error" class="world-stack-error" role="alert" hidden></div>
-    <div id="world-stack-timeline" class="backup-timeline"></div>
-    <div id="world-stack-timeline-preview" class="world-stack-preview" hidden></div>
-    <div class="world-stack-snapshot-head">
-      <h3>撤销前安全快照</h3>
-      <p class="muted small">执行撤销时保留的当前栈状态。永不自动删除；确认不再需要回滚后可手动释放空间。</p>
-    </div>
-    <div id="world-stack-snapshots" class="world-stack-snapshots"></div>
-  </div>
-</dialog>
+
 
 
 
