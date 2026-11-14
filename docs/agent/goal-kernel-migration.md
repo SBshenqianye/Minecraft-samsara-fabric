@@ -43,9 +43,17 @@
 
 - 新增 `WorldStackArchiveDialog.vue`，预览/确认/排队全部走 `useApi`。
 - 从 `AdminOverlays.vue` 移除旧归档对话框。
-- 内核不再被页面调用 `previewArchive`；归档动作由 Vue 接管。
+- 页面不再调用内核 `previewArchive`；归档动作由 Vue 接管。
 - `world-stack` section E2E **9/9**。
 - 提交：`refactor(web): move world-stack archive dialog to Vue`。
+
+### 阶段 2b 完成记录（时间线/快照/恢复预览）
+
+- 新增 `WorldStackTimelineDialog.vue`：节点、job、manifest、导出、撤销预览、确认、快照清理全部 Vue。
+- 从 `AdminOverlays.vue` 移除旧时间线对话框。
+- 内核 `bind()` 跳过时间线按钮/快照刷新监听。
+- `world-stack` section 9/9；全量 E2E **281/281**。
+- 提交：`refactor(web): move world-stack timeline dialog to Vue`。
 
 ## 门禁
 
