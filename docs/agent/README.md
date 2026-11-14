@@ -19,8 +19,12 @@ AGENTS.md                         # 仓库级 Agent 开发约定
   scripts/samsara.sh
 
 docs/agent/
+  migration-board.md              # 全量迁移批次、依赖与状态
   tasks/_template.md              # 单页面迁移任务模板
   tasks/migrate-announcements.md  # 公告页样板
+  tasks/migrate-permissions.md    # 权限页样板
+  tasks/migrate-output.md         # 下一批：富文本编辑器
+  tasks/migrate-server-console.md # 下一批：RCON 控制台
   legacy-inventory.md             # scan-legacy 生成
   legacy-inventory.json
   prompts/system.md

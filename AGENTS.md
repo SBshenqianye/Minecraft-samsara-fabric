@@ -78,6 +78,8 @@ E2E 失败时先判断是否已知旧脚本问题（世界栈/地图/公告缓�
 
 ## 6. 迁移旧页面的固定顺序
 
+全量迁移的批次、依赖与状态见 `docs/agent/migration-board.md`。
+
 1. 扫描依赖：`node tools/agent/scan-legacy.mjs`（清单带 `status` 列）
 2. 生成任务与骨架：`node tools/agent/scaffold-page.mjs --name ...`
 3. 抽纯逻辑到 `web-src/src/pages/<page>/model.js` + 单测
