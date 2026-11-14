@@ -80,7 +80,8 @@ for (const file of walk(srcDir)) {
     violations.push(`${rel}: 禁止 innerHTML / insertAdjacentHTML / document.write`);
   }
 
-  if (!isLegacyCore && /from\s+['"][^'"]*legacy-core\//.test(text)
+  if (!isLegacyCore
+      && /(?:from\s+|import\s*\(\s*|import\s+)['"][^'"]*legacy-core\//.test(text)
       && !LEGACY_CORE_IMPORT_ALLOW.has(rel)) {
     violations.push(`${rel}: 新代码禁止直接 import legacy-core（先抽 model 或走 useLegacyPage）`);
   }
@@ -90,7 +91,8 @@ for (const file of walk(srcDir)) {
     violations.push(`${rel}: useLegacyPage 仅允许现有复杂页面使用；新页面请写原生 Vue`);
   }
 
-  if (!isLegacyCore && /from\s+['"][^'"]*\/legacy\//.test(text)
+  if (!isLegacyCore
+      && /(?:from\s+|import\s*\(\s*|import\s+)['"][^'"]*\/legacy\//.test(text)
       && !LEGACY_IMPORT_ALLOW.has(rel)) {
     violations.push(`${rel}: 禁止从 src/legacy/ 引入旧壳逻辑`);
   }
