@@ -1,7 +1,7 @@
 # Legacy Web 迁移清单
 
 > 由 `node tools/agent/scan-legacy.mjs` 生成，提交前重新生成。
-> 扫描时间：2026-11-14T12:55:38.599Z
+> 扫描时间：2026-11-14T14:13:06.995Z
 
 ## 总览
 
@@ -9,7 +9,7 @@
 |---|---|---:|---|---|---:|---:|---:|---:|---:|---:|---|
 | `server.js` | 🧩 shell-migrated | 85.5 | 本体服务器 | /vanilla/* | 78 | 47 | 7 | 14 | 0 | 279 | 建议拆成 4 个页面 |
 | `app.js` | 📦 bundled | 140.7 | config / claim-range / 全局壳 | /samsara/config/* | 32 | 20 | 17 | 4 | 1 | 269 | 核心旧壳，已作为 Vite 内核打包，不再走静态脚本 |
-| `map.js` | 🧩 shell-migrated | 112.7 | 地图 | /samsara/world/map | 35 | 35 | 6 | 5 | 0 | 236 | canvas/瓦片，保留渲染内核 |
+| `map.js` | 🧩 shell-migrated | 104.3 | 地图 | /samsara/world/map | 35 | 35 | 5 | 4 | 0 | 224 | canvas/瓦片，保留渲染内核 |
 | `world-stack.js` | 🧩 shell-migrated | 68.5 | 世界栈 | /samsara/world/stack | 34 | 34 | 3 | 15 | 0 | 180 | 时间线 + 3D/图标 |
 | `identity.js` | 🧩 shell-migrated | 91.4 | 身份组 | /samsara/community/identity | 4 | 3 | 5 | 13 | 0 | 116 | 列表 + 详情 + 背包 iframe |
 | `lottery.js` | 🧩 shell-migrated | 22 | 经济业务 | /samsara/economy | 23 | 21 | 3 | 4 | 1 | 101 | 金额/轮次/下注 |
@@ -24,11 +24,12 @@
 | `structured.js` | 📦 bundled | 4.6 | 共享结构化表单 | — | 0 | 0 | 1 | 0 | 0 | 8 | 共享组件 |
 | `item-ui.js` | 📦 bundled | 3.8 | 共享物品 UI | — | 0 | 0 | 1 | 0 | 0 | 7 | 已有 Vue ItemIcon/ItemTooltip |
 | `page-kit.js` | 📦 bundled | 4.2 | 旧页面生命周期 | — | 0 | 0 | 1 | 0 | 0 | 7 | 已随 Vite 内核打包，页面走 Vue 生命周期 |
+| `stack-icon.js` | 📦 bundled | 3.3 | 世界栈图标构建 | — | 0 | 0 | 1 | 0 | 0 | 6 | 地图/世界栈/用户端共用，纯逻辑已抽到 pages/world-stack/model.js |
 
 ## 状态汇总
 
 - 🧩 shell-migrated：`server.js`、`map.js`、`world-stack.js`、`identity.js`、`lottery.js`、`config-editor.js`、`output.js`
-- 📦 bundled：`app.js`、`user.js`、`banners.js`、`particles.js`、`chat-text.js`、`form-kit.js`、`value-table.js`、`structured.js`、`item-ui.js`、`page-kit.js`
+- 📦 bundled：`app.js`、`user.js`、`banners.js`、`particles.js`、`chat-text.js`、`form-kit.js`、`value-table.js`、`structured.js`、`item-ui.js`、`page-kit.js`、`stack-icon.js`
 
 ## 按迁移批次
 
@@ -80,11 +81,11 @@
 
 - 状态：🧩 shell-migrated
 - 页面：地图（/samsara/world/map）
-- 大小：112.7 KB；DOM 读取：35；事件监听：40；innerHTML：0
+- 大小：104.3 KB；DOM 读取：35；事件监听：36；innerHTML：0
 - 建议：canvas/瓦片，保留渲染内核
 - panel：`panel-map`
-- 全局：`SamsaraBanners`、`SamsaraMap`、`SamsaraMapApiBase`、`SamsaraStackIcon`、`SamsaraUI`、`SamsaraUserView`
-- API：`/api/diff/chunk/restore`、`/api/diff/view`、`/api/map`、`/api/user/map/avatar`、`/api/user/map/tile`
+- 全局：`SamsaraBanners`、`SamsaraMap`、`SamsaraMapApiBase`、`SamsaraUI`、`SamsaraUserView`
+- API：`/api/diff/chunk/restore`、`/api/diff/view`、`/api/map`、`/api/user/map/avatar`
 - DOM id（35）：`map-activity`、`map-canvas`、`map-chunk-grid-legend`、`map-chunk-mode`、`map-dim-anchors`、`map-dimension`、`map-fit`、`map-live`、`map-live-status`、`map-message`、`map-overview-stacks`、`map-overview-status`、`map-overview-toggle`、`map-players`、`map-reload`、`map-selection`、`map-shading`、`map-show-chunks`、`map-show-claims`、`map-show-entities`、`map-show-players`、`map-show-rare-names`、`map-show-separation`、`map-show-spawns`、`map-show-trails`、`map-stack`、`map-stack-overview`、`map-stack-players-`、`map-stage-anchor`、`map-stats` …
 
 ### `world-stack.js`
@@ -211,4 +212,12 @@
 - 大小：4.2 KB；DOM 读取：0；事件监听：2；innerHTML：0
 - 建议：已随 Vite 内核打包，页面走 Vue 生命周期
 - 全局：`SamsaraPageKit`
+
+### `stack-icon.js`
+
+- 状态：📦 bundled
+- 页面：世界栈图标构建（—）
+- 大小：3.3 KB；DOM 读取：0；事件监听：4；innerHTML：0
+- 建议：地图/世界栈/用户端共用，纯逻辑已抽到 pages/world-stack/model.js
+- 全局：`SamsaraStackIcon`
 

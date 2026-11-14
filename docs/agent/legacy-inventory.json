@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-14T12:55:38.589Z",
+  "generatedAt": "2026-11-14T14:13:06.992Z",
   "files": [
     {
       "file": "server.js",
@@ -198,7 +198,7 @@
     },
     {
       "file": "map.js",
-      "sizeKB": 112.7,
+      "sizeKB": 104.3,
       "page": "地图",
       "route": "/samsara/world/map",
       "note": "canvas/瓦片，保留渲染内核",
@@ -249,7 +249,6 @@
         "SamsaraBanners",
         "SamsaraMap",
         "SamsaraMapApiBase",
-        "SamsaraStackIcon",
         "SamsaraUI",
         "SamsaraUserView"
       ],
@@ -257,13 +256,12 @@
         "/api/diff/chunk/restore",
         "/api/diff/view",
         "/api/map",
-        "/api/user/map/avatar",
-        "/api/user/map/tile"
+        "/api/user/map/avatar"
       ],
       "registerPages": [],
-      "events": 40,
+      "events": 36,
       "innerHtml": 0,
-      "risk": 236
+      "risk": 224
     },
     {
       "file": "world-stack.js",
@@ -699,6 +697,26 @@
       "events": 2,
       "innerHtml": 0,
       "risk": 7
+    },
+    {
+      "file": "stack-icon.js",
+      "sizeKB": 3.3,
+      "page": "世界栈图标构建",
+      "route": "—",
+      "note": "地图/世界栈/用户端共用，纯逻辑已抽到 pages/world-stack/model.js",
+      "status": "bundled",
+      "statusLabel": "📦 bundled",
+      "ids": [],
+      "domReads": 0,
+      "panels": [],
+      "globals": [
+        "SamsaraStackIcon"
+      ],
+      "apis": [],
+      "registerPages": [],
+      "events": 4,
+      "innerHtml": 0,
+      "risk": 6
     }
   ]
 }

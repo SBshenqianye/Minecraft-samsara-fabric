@@ -29,6 +29,7 @@ const PAGE_MAP = {
   'particles.js': { page: '共享粒子背景', route: '—', note: '视觉资源' },
   'banners.js': { page: '共享横幅/粒子', route: '—', note: '视觉资源' },
   'user.js': { page: '公开用户端内核', route: '/user', note: '公开只读 API 适配，已由 UserPage.vue 挂载' },
+  'stack-icon.js': { page: '世界栈图标构建', route: '—', note: '地图/世界栈/用户端共用，纯逻辑已抽到 pages/world-stack/model.js' },
 };
 
 const STATUS_MAP = {
@@ -49,6 +50,7 @@ const STATUS_MAP = {
   'particles.js': 'bundled',
   'banners.js': 'bundled',
   'user.js': 'bundled',
+  'stack-icon.js': 'bundled',
 };
 
 const STATUS_LABEL = {

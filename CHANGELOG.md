@@ -14,7 +14,9 @@
 - **全部旧页面按页加载**：新增 `useLegacyPage`；`lottery`、`identity`、`config-editor`、`map`、`world-stack`、`server` 不再由 `legacy/admin.js` 全局加载，改为 Vue 页面挂载后按需加载并激活。
 - **batch 5 旧壳清理**：所有面板 DOM 直接嵌入 Vue 页面，删除 `LegacyPanel`、`legacy.html`/`legacy-user.html`、`/style.css` 与旧静态脚本路由；旧命令式内核迁入 `web-src/src/legacy-core/` 随 Vite 打包，公开 `/user` 页面结构改由 `UserPage.vue` 渲染，管理员浮窗统一由 `AdminOverlays.vue` 渲染。
 - **页面级 E2E**：新增 `tools/e2e/run.mjs` 与 `tools/e2e/sections/`，可只跑公告页或权限页；新增 `batch5` section 验证旧静态路径全部 404、`/user` 五分区与地图内核可用；全量 `web-e2e.mjs` 的公告/权限断言同步改为原生页面。
-- **回归基线**：公告页 section E2E 8/8；全量 E2E 公告段通过，既有世界栈/地图失败仍为旧脚本缓存 DOM 的历史问题。
+- **回归基线**：`legacy-shell` 11/11、`batch5` 8/8；全量 `web-e2e.mjs` **281/281** 通过，世界栈卡片/时间线、天网背包浮窗、路由切回管理端等历史失败已修复或改为按 Vue 路由稳定等待。
+- **内核纯逻辑抽取**：世界栈图标 region/URL/标签纯逻辑抽到 `web-src/src/pages/world-stack/model.js`，`legacy-core/stack-icon.js` 只保留 DOM 构建；新增 7 个单测，`npm run check` 55/55。
+- **静态 JSON 收口**：`item-lang.json` 从 `/web` 移到 `assets/samsara/lang/`，只走 classpath；新增 `ItemLangTest`。`openapi.json` 保留为 `/openapi.json` 公开契约，评估见 `docs/agent/static-json-dependency-eval.md`。
 
 ## 重构 2026-11-14 · Web 前端 P0 收口（未发布）
 

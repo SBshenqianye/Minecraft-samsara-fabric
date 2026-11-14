@@ -60,7 +60,7 @@
 
 ## 当前已知历史问题
 
-全量 E2E 有约 26–28 项旧地图/世界栈/天网时序失败，与本轮迁移无关。每批只需确认：
+全量 E2E 当前为 **281/281**；新增页面/改动后仍要求：
 - 本页 section E2E 全绿；
 - 全量 E2E 中与本次迁移相关的断言全绿；
 - 没有新增失败。
@@ -75,7 +75,7 @@
 - `legacy-shell` section E2E：**11 / 11**
 - `batch5` section E2E：**8 / 8**（旧路径全 404、`/user` 五分区、地图内核、无旧脚本请求）
 - 联合 section E2E（legacy-shell + batch5）：**19 / 19**
-- 全量 E2E（map-skip 基线）：**260 / 270**，剩余为已知地图/世界栈/天网历史问题（天网一项为时序偶发，单独复测通过）
+- 全量 E2E：**281 / 281** 通过（不再需要 map-skip 副本）
 - `npm run check`：**48 / 48** 单测；Gradle clean build：**540 tests / 0 failures**
 - batch 5 结果：`LegacyPanel`、`legacy.html`/`legacy-user.html`、`/style.css`、旧静态脚本路由全部删除；`app.js`/`page-kit.js`/共享内核迁入 `web-src/src/legacy-core/` 随 bundle 加载；`AdminOverlays.vue` 接管浮窗，`UserPage.vue` 接管公开端结构
 - 生产 jar SHA-256：`E083C7ABC98B20C240AC48366C2AC20955F324F5FE2BFC56807F4BB999560BE8`
