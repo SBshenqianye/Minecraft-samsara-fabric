@@ -18,51 +18,64 @@
           <select id="map-dimension"></select>
         </label>
         <label class="check-line">
-          <input id="map-show-claims" type="checkbox" checked>
+          <input id="map-show-claims" type="checkbox" :checked="options.claims"
+              @change="setOption('claims', $event.target.checked)">
           <span>显示圈地</span>
         </label>
         <label class="check-line">
-          <input id="map-show-chunks" type="checkbox" checked>
+          <input id="map-show-chunks" type="checkbox" :checked="options.chunks"
+              @change="setOption('chunks', $event.target.checked)">
           <span>区块网格</span>
         </label>
         <label class="check-line" title="区块操作模式默认开启；点击区块会先打开预览/确认，不会直接写世界。">
-          <input id="map-chunk-mode" type="checkbox" checked>
+          <input id="map-chunk-mode" type="checkbox" :checked="options.chunkMode"
+              @change="setOption('chunkMode', $event.target.checked)">
           <span>区块操作</span>
         </label>
         <label class="check-line">
-          <input id="map-show-spawns" type="checkbox" checked>
+          <input id="map-show-spawns" type="checkbox" :checked="options.spawns"
+              @change="setOption('spawns', $event.target.checked)">
           <span>显示出生点</span>
         </label>
         <label class="check-line">
-          <input id="map-shading" type="checkbox" checked>
+          <input id="map-shading" type="checkbox" :checked="options.shading"
+              @change="setOption('shading', $event.target.checked)">
           <span>高度明暗</span>
         </label>
         <label class="check-line">
-          <input id="map-show-players" type="checkbox" checked>
+          <input id="map-show-players" type="checkbox" :checked="options.players"
+              @change="setOption('players', $event.target.checked)">
           <span>显示玩家</span>
         </label>
         <label class="check-line">
-          <input id="map-show-entities" type="checkbox" checked>
+          <input id="map-show-entities" type="checkbox" :checked="options.entities"
+              @change="setOption('entities', $event.target.checked)">
           <span>实体</span>
         </label>
         <label class="check-line">
-          <input id="map-show-trails" type="checkbox" checked>
+          <input id="map-show-trails" type="checkbox" :checked="options.trails"
+              @change="setOption('trails', $event.target.checked)">
           <span>轨迹</span>
         </label>
         <label class="check-line">
-          <input id="map-show-rare-names" type="checkbox" checked>
+          <input id="map-show-rare-names" type="checkbox" :checked="options.rareNames"
+              @change="setOption('rareNames', $event.target.checked)">
           <span>稀有名字</span>
         </label>
         <label class="check-line">
-          <input id="map-show-separation" type="checkbox" checked>
+          <input id="map-show-separation" type="checkbox" :checked="options.separation"
+              @change="setOption('separation', $event.target.checked)">
           <span>排斥半径</span>
         </label>
-        <button id="map-fit" class="ghost" type="button">定位全部圈地</button>
-        <button id="map-zoom-out" class="ghost map-zoom-button" type="button" title="缩小">−</button>
+        <button id="map-fit" class="ghost" type="button" @click="fit">定位全部圈地</button>
+        <button id="map-zoom-out" class="ghost map-zoom-button" type="button" title="缩小"
+            @click="zoomOut">−</button>
         <span id="map-zoom-label" class="map-zoom-label">4 格/像素</span>
-        <button id="map-zoom-in" class="ghost map-zoom-button" type="button" title="放大">＋</button>
-        <button id="map-overview-toggle" class="ghost map-overview-toggle" type="button" aria-pressed="false">世界栈总览</button>
-        <button id="map-reload" class="ghost" type="button">重新读取</button>
+        <button id="map-zoom-in" class="ghost map-zoom-button" type="button" title="放大"
+            @click="zoomIn">＋</button>
+        <button id="map-overview-toggle" class="ghost map-overview-toggle" type="button"
+            aria-pressed="false" @click="toggleOverview">世界栈总览</button>
+        <button id="map-reload" class="ghost" type="button" @click="reload">重新读取</button>
       </div>
     </div>
     <div id="map-message" class="message" role="status"></div>
@@ -111,14 +124,65 @@
 </template>
 
 <script setup>
+import { reactive } from 'vue';
 import TabShell from '../components/TabShell.vue';
 import { useLegacyPage } from '../composables/useLegacyPage.js';
 
 defineOptions({ name: 'MapPage' });
 
+// 复选框与工具栏按钮由 Vue 绑定；canvas / tile / 图层内核仍由 map.js 负责。
+window.__samsaraMapVueControls = true;
+
+const options = reactive({
+  claims: true,
+  chunks: true,
+  chunkMode: true,
+  spawns: true,
+  shading: true,
+  players: true,
+  entities: true,
+  trails: true,
+  rareNames: true,
+  separation: true,
+});
+
+function syncOptions() {
+  const next = window.SamsaraMap?.getOptions?.();
+  if (next) Object.assign(options, next);
+}
+
+function setOption(name, value) {
+  options[name] = value;
+  window.SamsaraMap?.setOption?.(name, value);
+}
+
+function reload() {
+  window.SamsaraMap?.reload?.();
+}
+
+function fit() {
+  window.SamsaraMap?.fitView?.();
+}
+
+function zoomIn() {
+  window.SamsaraMap?.zoomIn?.();
+}
+
+function zoomOut() {
+  window.SamsaraMap?.zoomOut?.();
+}
+
+function toggleOverview() {
+  window.SamsaraMap?.toggleOverview?.();
+}
+
 useLegacyPage({
   panelId: 'panel-map',
   load: () => import('../legacy-core/map.js'),
-  activate: () => window.SamsaraMap?.activate?.(),
+  afterLoad: syncOptions,
+  activate: () => {
+    window.SamsaraMap?.activate?.();
+    syncOptions();
+  },
 });
 </script>

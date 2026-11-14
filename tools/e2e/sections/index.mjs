@@ -3,6 +3,7 @@ import batch5 from './batch5.mjs';
 import identity from './identity.mjs';
 import legacyShell from './legacy-shell.mjs';
 import lottery from './lottery.mjs';
+import map from './map.mjs';
 import output from './output.mjs';
 import permissions from './permissions.mjs';
 import server from './server.mjs';
@@ -18,6 +19,7 @@ export const sections = {
   announcements,
   identity,
   lottery,
+  map,
   output,
   permissions,
   server,

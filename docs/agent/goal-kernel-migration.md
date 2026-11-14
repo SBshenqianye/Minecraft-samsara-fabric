@@ -93,6 +93,14 @@
 - `output` section **5/5**；全量 E2E **281/281**。
 - 提交：`refactor(web): move output toolbar and preview to Vue`。
 
+### 阶段 7 完成记录（地图控制层）
+
+- `MapPage.vue` 原生渲染 10 个图层/网格复选框、定位/缩放/总览/重读按钮；复选框与按钮通过 `window.SamsaraMap.setOption()/fitView()/zoomIn()/zoomOut()/toggleOverview()` 调用内核。
+- 内核 `map.js`：新增 `applyOption(name)` 统一状态更新与 `getOptions()`；`__samsaraMapVueControls` 下跳过自己的复选框/按钮监听，避免重复绑定；栈层/维度下拉、缩放标签、总览文本仍由内核按实时数据写入。
+- **剩余边界（保留内核）**：canvas/tile 渲染、图层与标记、世界栈总览、区块操作预览、活动列表仍在 `map.js`；`MapPage` 仍在守卫白名单。
+- 新增 `tools/e2e/sections/map.mjs`（5 条）；`map` section **5/5**；全量 E2E **281/281**。
+- 提交：`refactor(web): move map controls to Vue`。
+
 ## 门禁
 
 ```powershell

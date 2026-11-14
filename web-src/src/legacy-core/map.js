@@ -2642,6 +2642,73 @@ import './stack-icon.js';
     renderNav();
   }
 
+  /** 复选框状态统一入口：Vue 控件的 setOption 与旧 DOM 监听都走这里。 */
+  function applyOption(name) {
+    const els2 = ensureEls();
+    switch (name) {
+      case 'claims':
+        if (state.overview) {
+          for (const panel of state.overviewPanels) drawOverviewPanel(panel);
+        } else {
+          draw();
+        }
+        break;
+      case 'chunks':
+        state.showChunks = els2.chunks ? els2.chunks.checked : state.showChunks;
+        storeFlag(STORE_CHUNKS, state.showChunks);
+        updateChunkLegend(16 / state.scale);
+        if (!state.overview) scheduleDraw();
+        break;
+      case 'chunkMode':
+        if (els2.chunkMode && !els2.chunkMode.checked && state.selectedChunk) {
+          state.selectedChunk = null;
+          state.chunkSummary = null;
+          renderSelection();
+          draw();
+        }
+        break;
+      case 'spawns':
+        draw();
+        break;
+      case 'entities':
+        state.showEntities = els2.showEntities ? els2.showEntities.checked : state.showEntities;
+        drawLiveLayer();
+        break;
+      case 'trails':
+        state.showTrails = els2.showTrails ? els2.showTrails.checked : state.showTrails;
+        drawLiveLayer();
+        break;
+      case 'rareNames':
+        state.showRareNames = els2.showRareNames
+          ? els2.showRareNames.checked : state.showRareNames;
+        drawLiveLayer();
+        break;
+      case 'separation':
+        state.showSeparation = els2.showSeparation
+          ? els2.showSeparation.checked : state.showSeparation;
+        draw();
+        break;
+      case 'players':
+        state.showPlayers = els2.showPlayers ? els2.showPlayers.checked : state.showPlayers;
+        if (state.overview) updateOverviewPlayers();
+        else schedulePlayerDraw();
+        break;
+      case 'shading':
+        state.shading = els2.shading ? els2.shading.checked : state.shading;
+        state.tiles.clear();
+        state.pending.clear();
+        state.thumbTiles.clear();
+        if (state.overview) {
+          for (const panel of state.overviewPanels) loadOverviewThumb(panel);
+        } else {
+          draw();
+        }
+        break;
+      default:
+        break;
+    }
+  }
+
   function bind() {
     document.documentElement.style.setProperty('--map-player-interp',
       (PLAYER_INTERP_MS / 1000) + 's');
@@ -2658,102 +2725,39 @@ import './stack-icon.js';
     if (dimension) {
       dimension.addEventListener('change', () => switchDimension(dimension.value));
     }
-    if (reload) reload.addEventListener('click', () => loadModel());
-    if (overviewToggle) {
-      overviewToggle.addEventListener('click', () => setOverview(!state.overview));
-    }
-    if (fit) {
-      fit.addEventListener('click', () => {
-        fitView();
-        draw();
-      });
-    }
-    if (zoomIn) zoomIn.addEventListener('click', () => setScale(state.scale / 2));
-    if (zoomOut) zoomOut.addEventListener('click', () => setScale(state.scale * 2));
-    if (claims) {
-      claims.addEventListener('change', () => {
-        if (state.overview) {
-          for (const panel of state.overviewPanels) drawOverviewPanel(panel);
-        } else {
+    if (!window.__samsaraMapVueControls) {
+      if (reload) reload.addEventListener('click', () => loadModel());
+      if (overviewToggle) {
+        overviewToggle.addEventListener('click', () => setOverview(!state.overview));
+      }
+      if (fit) {
+        fit.addEventListener('click', () => {
+          fitView();
           draw();
-        }
-      });
+        });
+      }
+      if (zoomIn) zoomIn.addEventListener('click', () => setScale(state.scale / 2));
+      if (zoomOut) zoomOut.addEventListener('click', () => setScale(state.scale * 2));
+      for (const [name, key] of [
+        ['claims', 'claims'], ['chunks', 'chunks'], ['chunkMode', 'chunkMode'],
+        ['spawns', 'spawns'], ['entities', 'showEntities'], ['trails', 'showTrails'],
+        ['rareNames', 'showRareNames'], ['separation', 'showSeparation'],
+        ['players', 'showPlayers'], ['shading', 'shading'],
+      ]) {
+        if (els[key]) els[key].addEventListener('change', () => applyOption(name));
+      }
     }
     if (chunks) {
       chunks.checked = state.showChunks;
-      chunks.addEventListener('change', () => {
-        state.showChunks = chunks.checked;
-        storeFlag(STORE_CHUNKS, state.showChunks);
-        updateChunkLegend(16 / state.scale);
-        if (!state.overview) {
-          scheduleDraw();
-        }
-      });
       updateChunkLegend(16 / state.scale);
     }
-    if (chunkMode) {
-      chunkMode.addEventListener('change', () => {
-        if (!chunkMode.checked && state.selectedChunk) {
-          state.selectedChunk = null;
-          state.chunkSummary = null;
-          renderSelection();
-          draw();
-        }
-      });
-    }
-    if (spawns) spawns.addEventListener('change', draw);
-    const { showEntities, showTrails, showSeparation } = ensureEls();
-    if (showEntities) {
-      state.showEntities = showEntities.checked;
-      showEntities.addEventListener('change', () => {
-        state.showEntities = showEntities.checked;
-        drawLiveLayer();
-      });
-    }
-    if (showTrails) {
-      state.showTrails = showTrails.checked;
-      showTrails.addEventListener('change', () => {
-        state.showTrails = showTrails.checked;
-        drawLiveLayer();
-      });
-    }
-    const showRareNames = els.showRareNames;
-    if (showRareNames) {
-      state.showRareNames = showRareNames.checked;
-      showRareNames.addEventListener('change', () => {
-        state.showRareNames = showRareNames.checked;
-        drawLiveLayer();
-      });
-    }
-    if (showSeparation) {
-      state.showSeparation = showSeparation.checked;
-      showSeparation.addEventListener('change', () => {
-        state.showSeparation = showSeparation.checked;
-        draw();
-      });
-    }
-    if (showPlayers) {
-      state.showPlayers = showPlayers.checked;
-      showPlayers.addEventListener('change', () => {
-        state.showPlayers = showPlayers.checked;
-        if (state.overview) updateOverviewPlayers();
-        else schedulePlayerDraw();
-      });
-    }
-    if (shading) {
-      state.shading = shading.checked;
-      shading.addEventListener('change', () => {
-        state.shading = shading.checked;
-        state.tiles.clear();
-        state.pending.clear();
-        state.thumbTiles.clear();
-        if (state.overview) {
-          for (const panel of state.overviewPanels) loadOverviewThumb(panel);
-        } else {
-          draw();
-        }
-      });
-    }
+    const optionEls = ensureEls();
+    if (optionEls.showEntities) state.showEntities = optionEls.showEntities.checked;
+    if (optionEls.showTrails) state.showTrails = optionEls.showTrails.checked;
+    if (optionEls.showRareNames) state.showRareNames = optionEls.showRareNames.checked;
+    if (optionEls.showSeparation) state.showSeparation = optionEls.showSeparation.checked;
+    if (showPlayers) state.showPlayers = showPlayers.checked;
+    if (shading) state.shading = shading.checked;
 
     canvas.addEventListener('pointerdown', (event) => {
       if (event.button !== 0) return;
@@ -2953,6 +2957,37 @@ import './stack-icon.js';
     reload: loadModel,
     loadModel,
     markStale: () => { state.stale = true; },
+    /** Vue 控制层：复选框/按钮统一走内核同一套状态更新。 */
+    setOption: (name, value) => {
+      const el = ensureEls()[{
+        claims: 'claims', chunks: 'chunks', chunkMode: 'chunkMode', spawns: 'spawns',
+        entities: 'showEntities', trails: 'showTrails', rareNames: 'showRareNames',
+        separation: 'showSeparation', players: 'showPlayers', shading: 'shading',
+      }[name]];
+      if (el && typeof value === 'boolean') el.checked = value;
+      applyOption(name);
+    },
+    fitView: () => {
+      fitView();
+      draw();
+    },
+    zoomIn: () => setScale(state.scale / 2),
+    zoomOut: () => setScale(state.scale * 2),
+    toggleOverview: () => setOverview(!state.overview),
+    getOptions: () => ({
+      claims: Boolean(ensureEls().claims?.checked),
+      chunks: state.showChunks,
+      chunkMode: Boolean(ensureEls().chunkMode?.checked),
+      spawns: Boolean(ensureEls().spawns?.checked),
+      entities: state.showEntities,
+      trails: state.showTrails,
+      rareNames: state.showRareNames,
+      separation: state.showSeparation,
+      players: state.showPlayers,
+      shading: state.shading,
+      overview: state.overview,
+      scale: state.scale,
+    }),
   };
 
 
