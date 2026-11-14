@@ -1,5 +1,6 @@
 import announcements from './announcements.mjs';
 import batch5 from './batch5.mjs';
+import identity from './identity.mjs';
 import legacyShell from './legacy-shell.mjs';
 import lottery from './lottery.mjs';
 import output from './output.mjs';
@@ -15,6 +16,7 @@ import worldStack from './world-stack.mjs';
  */
 export const sections = {
   announcements,
+  identity,
   lottery,
   output,
   permissions,

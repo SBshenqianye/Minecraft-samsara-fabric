@@ -47,6 +47,7 @@ declare module 'vue' {
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     Segmented: typeof import('./src/components/Segmented.vue')['default']
+    SegmentedButtons: typeof import('./src/components/SegmentedButtons.vue')['default']
     TabShell: typeof import('./src/components/TabShell.vue')['default']
   }
 }

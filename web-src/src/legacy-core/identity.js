@@ -172,6 +172,10 @@ function applyModel(model) {
   I.labels = config.dataLabels || {};
   I.onlineMode = model.onlineMode !== false;
   I.dirty = false;
+  // Vue 设置卡片依赖这份模型；内核仍是数据的唯一来源。
+  if (window.__samsaraIdentityVueSettings) {
+    window.dispatchEvent(new CustomEvent('samsara:identity-model', { detail: { model } }));
+  }
   renderAll();
 }
 
@@ -225,6 +229,8 @@ function renderDatalists() {
 }
 
 function renderSettings() {
+  // 设置卡片已由 Vue 接管；内核只负责保存时读取 I.settings。
+  if (window.__samsaraIdentityVueSettings) return;
   const enabled = $i('identity-enabled');
   const sync = $i('identity-sync');
   const maxOwners = $i('identity-max-owners');
@@ -2445,5 +2451,11 @@ window.SamsaraIdentity = {
   save: saveIdentity,
   reload: reloadIdentity,
   refreshCount: () => window.SamsaraUI.setTabCount('identity', I.groups.length),
+  /** Vue 设置卡片更新内核状态，保存按钮仍复用内核逻辑。 */
+  setSettings: (partial) => {
+    Object.assign(I.settings, partial || {});
+    I.dirty = true;
+  },
+  getModel: () => I.model,
 };
 window.SamsaraUI.onConnect(loadIdentity);

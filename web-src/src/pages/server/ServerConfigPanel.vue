@@ -249,7 +249,7 @@ import { computed, reactive, ref, watch } from 'vue';
 import { useApi } from '../../composables/useApi.js';
 import ChatTextEditor from './ChatTextEditor.vue';
 import PlayerPickerDialog from './PlayerPickerDialog.vue';
-import SegmentedButtons from './SegmentedButtons.vue';
+import SegmentedButtons from '../../components/SegmentedButtons.vue';
 import {
   FILE_META,
   JSON_SPECS,

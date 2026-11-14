@@ -8,32 +8,53 @@
         <p class="panel-sub">把多个账号入口映射到同一份玩家数据。卡片之间可以拖拽组合。账号类型只有两种：<strong>正版账号</strong>（Mojang）和<strong>离线账号</strong>（非正版）；「当前在线」是连接状态，和账号类型无关。</p>
       </div>
       <div class="panel-tools">
-        <button id="identity-add-group" class="ghost">新增组</button>
-        <button id="identity-audit" class="ghost">审计</button>
+        <button id="identity-add-group" class="ghost" type="button">新增组</button>
+        <button id="identity-audit" class="ghost" type="button">审计</button>
       </div>
     </div>
     <div id="identity-message" class="message" role="status"></div>
-    <div id="identity-path" class="path-line"></div>
-    <div id="identity-root" class="path-line"></div>
+    <div id="identity-path" class="path-line">{{ pathLine }}</div>
+    <div id="identity-root" class="path-line">{{ rootLine }}</div>
 
+    <!-- 设置卡片由 Vue 接管；内核 renderSettings() 通过 __samsaraIdentityVueSettings 跳过。 -->
     <div class="settings-grid">
       <div class="switch-card">
         <span class="switch-text">
           <strong>启用身份组</strong>
           <small>关闭时所有账号按自身 UUID 处理，不做数据同步。</small>
         </span>
-        <span id="identity-enabled" class="segmented-host"></span>
+        <span id="identity-enabled" class="segmented-host">
+          <SegmentedButtons
+            :value="settings.enabled ? 'true' : 'false'"
+            :choices="ENABLED_CHOICES"
+            @change="(next) => setSetting('enabled', next === 'true')"
+          />
+        </span>
       </div>
       <div class="switch-card">
         <span class="switch-text">
           <strong>切换账号时同步玩家数据</strong>
           <small>开启后，同组账号共享背包、位置、进度与统计。</small>
         </span>
-        <span id="identity-sync" class="segmented-host"></span>
+        <span id="identity-sync" class="segmented-host">
+          <SegmentedButtons
+            :value="settings.sync ? 'true' : 'false'"
+            :choices="SYNC_CHOICES"
+            @change="(next) => setSetting('sync', next === 'true')"
+          />
+        </span>
       </div>
       <label class="field-card">
         <span>宠物主人上限</span>
-        <input id="identity-max-owners" type="number" min="1" max="1024" step="1">
+        <input
+          id="identity-max-owners"
+          :value="settings.maxOwners"
+          type="number"
+          min="1"
+          max="1024"
+          step="1"
+          @input="(event) => setSetting('maxOwners', Number(event.target.value || 32))"
+        >
         <small>每个宠物的 owner 列表最多保留多少个主人。</small>
       </label>
     </div>
@@ -61,8 +82,8 @@
             <span>名称 / UUID</span>
             <input id="identity-resolve-input" type="text" placeholder="输入玩家名或 UUID" autocomplete="off">
           </label>
-          <button id="identity-resolve-button" class="ghost">解析</button>
-          <button id="identity-generate" class="ghost">生成 data UUID</button>
+          <button id="identity-resolve-button" class="ghost" type="button">解析</button>
+          <button id="identity-generate" class="ghost" type="button">生成 data UUID</button>
         </div>
       </div>
       <div id="identity-resolve-result" class="resolve-result" hidden></div>
@@ -106,14 +127,54 @@
 </template>
 
 <script setup>
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import TabShell from '../components/TabShell.vue';
+import SegmentedButtons from '../components/SegmentedButtons.vue';
 import { useLegacyPage } from '../composables/useLegacyPage.js';
+import { normalizeSettings } from './identity/model.js';
 
 defineOptions({ name: 'IdentityPage' });
+
+const ENABLED_CHOICES = [{ value: 'true', label: '启用' }, { value: 'false', label: '关闭' }];
+const SYNC_CHOICES = [{ value: 'true', label: '启用' }, { value: 'false', label: '关闭' }];
+
+const model = ref(null);
+const settings = reactive(normalizeSettings());
+const pathLine = computed(() => '配置文件：' + (model.value?.path || '—'));
+const rootLine = computed(() => '运行时数据：' + (model.value?.identityRoot || '—'));
+
+// 设置卡片由 Vue 渲染，通知内核跳过 renderSettings()。
+window.__samsaraIdentityVueSettings = true;
+
+function applyModel(next) {
+  model.value = next || null;
+  Object.assign(settings, normalizeSettings(next?.config));
+}
+
+function onModelEvent(event) {
+  applyModel(event.detail?.model);
+}
+
+function setSetting(key, value) {
+  settings[key] = value;
+  window.SamsaraIdentity?.setSettings?.({ [key]: value });
+}
+
+onMounted(() => {
+  window.addEventListener('samsara:identity-model', onModelEvent);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('samsara:identity-model', onModelEvent);
+  window.__samsaraIdentityVueSettings = false;
+});
 
 useLegacyPage({
   panelId: 'panel-identity',
   load: () => import('../legacy-core/identity.js'),
-  activate: () => window.SamsaraIdentity?.activate?.(),
+  activate: () => {
+    window.SamsaraIdentity?.activate?.();
+    applyModel(window.SamsaraIdentity?.getModel?.() || model.value);
+  },
 });
 </script>

@@ -75,6 +75,15 @@
 - 新增 `tools/e2e/sections/lottery.mjs`（9 条）；`lottery` section **9/9**；全量 E2E **281/281**。
 - 提交：`refactor(web): migrate lottery panels to Vue`。
 
+### 阶段 5 完成记录（身份组，控制层）
+
+- 新增 `pages/identity/model.js`：UUID 校验/短显示、账号类型、设置归一化、池子过滤（probe/占位名）、组卡片派生数据（单测 7 项）。
+- `IdentityPage.vue` 原生渲染设置卡片（启用、同步、主人上限、配置/运行路径）与页内工具按钮；配置变化经 `window.SamsaraIdentity.setSettings()` 回写内核，保存仍复用内核流程。
+- 内核 `identity.js`：`renderSettings()` 在 `__samsaraIdentityVueSettings` 下跳过，`applyModel()` 派发 `samsara:identity-model`，暴露 `setSettings()` / `getModel()`。
+- **剩余边界（保留内核）**：组卡片拖拽、UUID/data 池子渲染与分配、data 详情弹窗（统计/成就/内嵌背包 iframe）、重绑确认、审计输出仍在 `identity.js`；`IdentityPage` 仍在守卫白名单。
+- 新增 `tools/e2e/sections/identity.mjs`（6 条）；`identity` section **6/6**；全量 E2E **281/281**。
+- 提交：`refactor(web): move identity settings to Vue`。
+
 ## 门禁
 
 ```powershell

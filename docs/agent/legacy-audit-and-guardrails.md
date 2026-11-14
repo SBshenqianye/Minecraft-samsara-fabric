@@ -14,7 +14,7 @@
 | `mod/src/main/resources/web/*.js` | ✅ 已清零 |
 | `web-src/src/legacy-core/` | ⚠️ 保留 16 个内核模块（约 1.44 万行）；阶段 1 已把世界栈卡片列表迁到 Vue，阶段 3 删除 `server.js`，阶段 4 删除 `lottery.js` |
 | `web-src/src/legacy/` | ⚠️ 保留 3 个桥接文件：`admin.js`、`document.js`、`user.js` |
-| 使用 `useLegacyPage` 的页面 | ⚠️ 6 个：config-editor、identity、map、mod-config、output、world-stack |
+| 使用 `useLegacyPage` 的页面 | ⚠️ 6 个：config-editor、identity、map、mod-config、output、world-stack（identity 只剩卡片/池子/详情内核） |
 | `old-project/` | ⚠️ 15 个历史 Java 文件，属于旧 chunkmanager 参考，不参与构建 |
 
 ## 为什么保留内核
@@ -86,6 +86,6 @@ npm run check
 4. `app.js` 配置/圈地 → Vue（阶段 8；圈地 canvas 预览保留）
 5. `world-stack.js` 时间线/排序/导入 → Vue（阶段 1/2 已迁卡片与对话框）
 
-已完成：阶段 1、2a、2b（世界栈）、阶段 3（本体四面板，`server.js` 已删除）、阶段 4（经济业务，`lottery.js` 已删除）。
+已完成：阶段 1、2a、2b（世界栈）、阶段 3（本体四面板，`server.js` 已删除）、阶段 4（经济业务，`lottery.js` 已删除）、阶段 5（身份组控制层；卡片/池子/详情内核保留）。
 
 每拆一个，就从 `check-framework.mjs` 白名单移除对应页面，守卫会自动阻止回退。
