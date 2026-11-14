@@ -893,11 +893,14 @@ async function main() {
         && editor.previewText.includes('将修改'), JSON.stringify({ open: editor.previewOpen,
           text: editor.previewText }));
 
-    // ---- Web 公告：列表/表单/预览 ----
+    // ---- Web 公告：原生 Vue 页面 ----
+    await navigate(base + '/samsara/community/announcements');
+    await until("window.SamsaraUI && document.querySelector('[data-page=\"announcements\"]')",
+        20000, '原生公告页');
+    await until("document.querySelectorAll('#announcements-list .announcement-item').length >= 1",
+        20000, '公告列表');
     const announcements = await evaluate(`(async () => {
       const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-      window.SamsaraUI.setActiveTab('announcements');
-      await wait(1000);
       const items = document.querySelectorAll('#announcements-list .announcement-item').length;
       const fields = document.querySelectorAll('#announcements-editor .announcement-row').length;
       const preview = [...document.querySelectorAll('#announcements-editor button')]
@@ -905,26 +908,26 @@ async function main() {
       let previewText = '';
       if (preview) {
         preview.click();
-        await wait(900);
+        await wait(1200);
         previewText = document.querySelector('#announcement-preview')?.textContent || '';
       }
       return { items, fields, previewText,
+        page: !!document.querySelector('[data-page="announcements"]'),
+        legacyPanel: !!document.getElementById('panel-announcements'),
         summary: document.getElementById('announcements-summary')?.textContent || '',
         navHidden: document.getElementById('global-nav')?.hidden === true,
         navItems: document.querySelectorAll('#global-nav .nav-item').length,
-        noNav: document.querySelector('main.app-shell')?.classList.contains('no-nav') === true,
-        activePage: window.SamsaraUI.activePage?.(),
-        hasScope: Boolean(window.SamsaraUI.pageScope?.()) };
+        noNav: document.querySelector('main.app-shell')?.classList.contains('no-nav') === true };
     })()`);
     check('公告页加载列表与编辑表单', announcements.items >= 1
         && announcements.fields >= 5, JSON.stringify({ items: announcements.items,
           fields: announcements.fields }));
-    check('公告页不残留上一页导航', announcements.navHidden
-        && announcements.navItems === 0 && announcements.noNav
-        && announcements.activePage === 'announcements' && announcements.hasScope,
-        JSON.stringify({ hidden: announcements.navHidden, items: announcements.navItems,
-          noNav: announcements.noNav, page: announcements.activePage,
-          scope: announcements.hasScope }));
+    check('公告页为原生 Vue 页面且不残留旧 panel', announcements.page
+        && !announcements.legacyPanel
+        && announcements.navHidden && announcements.navItems === 0 && announcements.noNav,
+        JSON.stringify({ page: announcements.page, legacyPanel: announcements.legacyPanel,
+          hidden: announcements.navHidden, items: announcements.navItems,
+          noNav: announcements.noNav }));
     check('公告预览显示变量替换结果', announcements.previewText.includes('预览')
         && announcements.previewText.includes('聊天'), JSON.stringify({
           preview: announcements.previewText.slice(0, 160) }));

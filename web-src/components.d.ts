@@ -22,6 +22,7 @@ declare module 'vue' {
     ElOption: typeof import('element-plus/es')['ElOption']
     ElSegmented: typeof import('element-plus/es')['ElSegmented']
     ElSelect: typeof import('element-plus/es')['ElSelect']
+    ElSwitch: typeof import('element-plus/es')['ElSwitch']
     ElTag: typeof import('element-plus/es')['ElTag']
     EnumPicker: typeof import('./src/components/EnumPicker.vue')['default']
     FloatingWindow: typeof import('./src/components/FloatingWindow.vue')['default']

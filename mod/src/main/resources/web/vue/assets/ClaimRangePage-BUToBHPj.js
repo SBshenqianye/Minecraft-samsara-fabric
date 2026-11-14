@@ -1,1 +1,0 @@
-import{C as e,L as t,O as n,W as r}from"./element-plus-Ck_igXH0.js";import{t as i}from"./TabShell-TLgzMG6k.js";import{t as a}from"./LegacyPanel-ARxda3hY.js";var o=Object.assign({name:`ClaimRangePage`},{__name:`ClaimRangePage`,setup(o){return(o,s)=>(t(),e(i,{name:`claim-range`},{default:r(()=>[n(a,{"panel-id":`panel-claim-range`})]),_:1}))}});export{o as default};

@@ -5,13 +5,28 @@
 ## 运行
 
 ```powershell
-# 先启动测试服（Web 8722）
+# 全量回归（先启动测试服，Web 8722）
 node tools/web-e2e.mjs --base http://127.0.0.1:8722 --token <token>
+
+# 只跑某个页面/分区
+node tools/e2e/run.mjs --base http://127.0.0.1:8722 --token <token> --section announcements
+node tools/e2e/run.mjs --list
+
+# 两个都跑
+node tools/e2e/run.mjs --base http://127.0.0.1:8722 --token <token> --section announcements,permissions
 ```
 
 - `--browser <path>`：指定 Edge/Chrome。
 - `SAMSARA_E2E_SCREENSHOT=<path>`：结束时额外截一张图。
 - 退出码 0 表示全部断言通过；有失败时仍会跑完当前能继续的用例。
+
+## run.mjs 与 sections/
+
+- `run.mjs`：按 section 启动浏览器、注入 token、执行注册表里的页面级断言。
+- `sections/index.mjs`：section 注册表；新迁移页面加自己的模块。
+- `sections/announcements.mjs`：原生公告页样板（列表、编辑器、预览、dirty、无脚本错误）。
+
+section 测试默认注入 token；真实 token 对话框流程仍由全量 `web-e2e.mjs` 覆盖。
 
 ## harness.mjs
 

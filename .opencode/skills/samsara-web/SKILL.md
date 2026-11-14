@@ -15,6 +15,7 @@ description: samsara 仓库 Web 管理控制台（Vue + 原生 JS）的开发约
 
 - 源码：`web-src/`；vite 直接输出到 `mod/src/main/resources/web/vue/`。
 - 检查：`cd web-src && npm run check`（ESLint + vue-tsc + Vitest + build）。
+- Agent 规范：根目录 `AGENTS.md`；单页面任务在 `docs/agent/tasks/`。
 - 后端：`mod/src/main/java/com/shenqianye/samsara/web/`。
 - 信息架构：`web-src/src/navigation.js`（工作区/二级/三级/旧链接/keep-alive 名单）。
 - 壳层：`layouts/AdminLayout.vue`（router-view + 旧脚本桥）+ `AppHeader` / `WorkspaceRail` / `SectionNav` / `PageScrollbar`。
@@ -43,6 +44,8 @@ description: samsara 仓库 Web 管理控制台（Vue + 原生 JS）的开发约
 ## E2E 写法
 
 - 浏览器/CDP/结果统计在 `tools/e2e/harness.mjs`；场景仍在 `tools/web-e2e.mjs`，分区说明见 `tools/e2e/README.md`。
+- 页面级验证用 `node tools/e2e/run.mjs --section <page>`；新迁移页面在 `tools/e2e/sections/` 注册自己的断言。
+- 新迁移旧页先跑 `node tools/agent/scan-legacy.mjs`，再用 `node tools/agent/scaffold-page.mjs` 生成骨架和任务 spec。
 - 首次进入先真实点 `#token-input` / `#token-connect` 走完 UI，**成功之后**再 `Page.addScriptToEvaluateOnNewDocument` 注入 token。反例：一开始就注入会让 `token-dialog.open === false` 提前成立，后续连接断言全部偏掉。
 - 有副作用的用例（建箱子、写容器、写玩家背包、Web 背包）必须自带还原步骤。
 - 测试服配置与代码默认值不一致会让"恢复默认"类断言假失败，先核对 `server.properties`，再改代码。

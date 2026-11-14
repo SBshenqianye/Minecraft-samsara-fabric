@@ -3,6 +3,14 @@
 > 面向玩家与服主的功能变化；实现细节、未达标项与证据见[《实现状态》](docs/实现状态.md)。
 > 每个版本按「新增 / 修复 / 优化 / 变更 / 重构 / 文档」分组，只写功能口径。
 
+## 重构 2026-11-14 · Agent 友好开发模式 + 公告页原生迁移（未发布）
+
+### 重构
+- **Agent 工作流**：新增根目录 `AGENTS.md`、`docs/agent/tasks/` 任务模板，以及 `tools/agent/scan-legacy.mjs`（旧脚本依赖扫描）和 `tools/agent/scaffold-page.mjs`（页面骨架生成）。迁移任务现在以“单页面契约 + 允许修改文件 + 自动验证”为单位。
+- **公告页原生迁移**：`AnnouncementsPage.vue` 改为 Vue 原生页面，复用 `useAuth` / `useApi` / `TabShell`；保留列表、四组编辑器、保存/预览/发送/复制/删除与未保存提示；删除该页的 `LegacyPanel` 包装，`legacy/admin.js` 不再加载 `announcements.js`。
+- **页面级 E2E**：新增 `tools/e2e/run.mjs` 与 `tools/e2e/sections/announcements.mjs`，可只跑公告页 8 条断言；全量 `web-e2e.mjs` 的公告断言同步改为原生页面。
+- **回归基线**：公告页 section E2E 8/8；全量 E2E 公告段通过，既有世界栈/地图失败仍为旧脚本缓存 DOM 的历史问题。
+
 ## 重构 2026-11-14 · Web 前端 P0 收口（未发布）
 
 ### 重构

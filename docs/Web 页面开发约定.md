@@ -10,6 +10,8 @@
 >
 > **v0.49.0 起**：所有页面使用 `AdminLayout` 顶部统一 hero 横幅（`PageHeader.vue` 已于后续版本删除）；samsara 二级分区使用 `navigation.js` 的 `SECTION_NAV` 渲染三级左侧子页导航；面包屑固定为“工作区 / 二级分区 / 当前子页”。`/server/*` 只做 redirect，规范路径是 `/vanilla/*`；配置编辑器用 `setSourceFilter` 按来源过滤。内部路由应用必须包在 `legacyNavGuard` 中，避免旧 `setActiveTab` 桥接二次导航。
 >
+> **v0.59.0 起（Agent vertical slice）**：公告页已迁为原生 Vue，作为第一个样板；旧页迁移按 `AGENTS.md` 与 `docs/agent/tasks/` 的单页契约执行，每个页面只改允许的文件，并用 `tools/e2e/run.mjs --section <page>` 验证。
+>
 > **v0.58.0 起（P0/P1/P2 收口）**：`AdminLayout` 改用 `<router-view>` + `keep-alive :include="KEEP_ALIVE_PAGES"`，删除手写页面栈；工作区/分区/子页/旧链接别名统一到 `navigation.js`；HTTP/token 统一到 `composables/useApi.js`，连接态统一到 `composables/useAuth.js`；删除不可达的 `InventoryPage.vue` 与未使用的 `PageHeader.vue`。壳层拆成 `AppHeader` / `WorkspaceRail` / `SectionNav` / `PageScrollbar`；设计变量迁到 `tokens.css`；Element Plus 组件按需 + API 样式显式引入；新增 ESLint、`vue-tsc`、Vitest 与 `npm run check`。
 
 ## 1. 生命周期契约

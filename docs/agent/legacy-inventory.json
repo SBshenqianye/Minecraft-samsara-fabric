@@ -1,0 +1,479 @@
+{
+  "generatedAt": "2026-11-14T07:27:46.661Z",
+  "files": [
+    {
+      "file": "app.js",
+      "sizeKB": 140.7,
+      "page": "config / claim-range / 全局壳",
+      "route": "/samsara/config/*",
+      "note": "核心旧壳，最后处理",
+      "ids": [
+        "panel-"
+      ],
+      "panels": [
+        "panel-"
+      ],
+      "globals": [
+        "SamsaraAnnouncements",
+        "SamsaraBanners",
+        "SamsaraConfigEditor",
+        "SamsaraDialog",
+        "SamsaraIdentity",
+        "SamsaraMap",
+        "SamsaraOutput",
+        "SamsaraPageKit",
+        "SamsaraParticles",
+        "SamsaraPermissions",
+        "SamsaraServer",
+        "SamsaraStructured",
+        "SamsaraTabActions",
+        "SamsaraUI",
+        "SamsaraUIKit",
+        "SamsaraUseRouter",
+        "SamsaraWorldStack"
+      ],
+      "apis": [
+        "/api/config",
+        "/api/config/retention-estimate",
+        "/api/reload",
+        "/api/status"
+      ],
+      "registerPages": [],
+      "events": 74,
+      "innerHtml": 1,
+      "risk": 199
+    },
+    {
+      "file": "map.js",
+      "sizeKB": 112.7,
+      "page": "地图",
+      "route": "/samsara/world/map",
+      "note": "canvas/瓦片，保留渲染内核",
+      "ids": [
+        "map-stack-players-",
+        "panel-map"
+      ],
+      "panels": [
+        "panel-map"
+      ],
+      "globals": [
+        "SamsaraBanners",
+        "SamsaraMap",
+        "SamsaraMapApiBase",
+        "SamsaraStackIcon",
+        "SamsaraUI",
+        "SamsaraUserView"
+      ],
+      "apis": [
+        "/api/diff/chunk/restore",
+        "/api/diff/view",
+        "/api/map",
+        "/api/user/map/avatar",
+        "/api/user/map/tile"
+      ],
+      "registerPages": [],
+      "events": 40,
+      "innerHtml": 0,
+      "risk": 135
+    },
+    {
+      "file": "identity.js",
+      "sizeKB": 91.4,
+      "page": "身份组",
+      "route": "/samsara/community/identity",
+      "note": "列表 + 详情 + 背包 iframe",
+      "ids": [
+        "identity-data-content",
+        "identity-data-dialog",
+        "identity-group-"
+      ],
+      "panels": [],
+      "globals": [
+        "SamsaraDialog",
+        "SamsaraIdentity",
+        "SamsaraItem",
+        "SamsaraUI",
+        "SamsaraUIKit"
+      ],
+      "apis": [
+        "/api/identity",
+        "/api/identity/audit",
+        "/api/identity/data",
+        "/api/identity/data/backup",
+        "/api/identity/data/backups",
+        "/api/identity/data/label",
+        "/api/identity/data/list",
+        "/api/identity/generate",
+        "/api/identity/preview",
+        "/api/identity/rebind",
+        "/api/identity/reload",
+        "/api/identity/resolve",
+        "/api/user/map/head"
+      ],
+      "registerPages": [],
+      "events": 71,
+      "innerHtml": 0,
+      "risk": 112
+    },
+    {
+      "file": "server.js",
+      "sizeKB": 85.2,
+      "page": "本体服务器",
+      "route": "/vanilla/*",
+      "note": "建议拆成 4 个页面",
+      "ids": [
+        "audit-diff-",
+        "server-audit-list"
+      ],
+      "panels": [],
+      "globals": [
+        "SamsaraChatText",
+        "SamsaraServer",
+        "SamsaraUI",
+        "SamsaraUIKit",
+        "SamsaraUseRouter",
+        "SamsaraWorldStack"
+      ],
+      "apis": [
+        "/api/audit",
+        "/api/audit/preview",
+        "/api/audit/rollback",
+        "/api/server",
+        "/api/server/backups",
+        "/api/server/backups/delete",
+        "/api/server/backups/download",
+        "/api/server/backups/preview",
+        "/api/server/backups/preview-restore",
+        "/api/server/backups/restore",
+        "/api/server/config",
+        "/api/server/console",
+        "/api/server/console/complete",
+        "/api/server/players"
+      ],
+      "registerPages": [],
+      "events": 29,
+      "innerHtml": 0,
+      "risk": 107
+    },
+    {
+      "file": "world-stack.js",
+      "sizeKB": 68.5,
+      "page": "世界栈",
+      "route": "/samsara/world/stack",
+      "note": "时间线 + 3D/图标",
+      "ids": [],
+      "panels": [],
+      "globals": [
+        "SamsaraStackIcon",
+        "SamsaraUI",
+        "SamsaraWorldStack"
+      ],
+      "apis": [
+        "/api/world-stack",
+        "/api/world-stack/archive",
+        "/api/world-stack/archive/preview",
+        "/api/world-stack/icon",
+        "/api/world-stack/icon/delete",
+        "/api/world-stack/import",
+        "/api/world-stack/import/cancel",
+        "/api/world-stack/import/preview",
+        "/api/world-stack/reorder",
+        "/api/world-stack/timeline",
+        "/api/world-stack/timeline/cleanup",
+        "/api/world-stack/timeline/export",
+        "/api/world-stack/timeline/preview",
+        "/api/world-stack/timeline/restore",
+        "/api/world-stack/timeline/snapshots"
+      ],
+      "registerPages": [],
+      "events": 34,
+      "innerHtml": 0,
+      "risk": 78
+    },
+    {
+      "file": "config-editor.js",
+      "sizeKB": 19.2,
+      "page": "配置编辑",
+      "route": "/samsara/config/editor",
+      "note": "PageSpec/FormSpec，最高复杂度",
+      "ids": [],
+      "panels": [],
+      "globals": [
+        "SamsaraChatText",
+        "SamsaraConfigEditor",
+        "SamsaraUI",
+        "SamsaraUIKit"
+      ],
+      "apis": [
+        "/api/config",
+        "/api/config/pages",
+        "/api/config/preview",
+        "/api/reload"
+      ],
+      "registerPages": [],
+      "events": 13,
+      "innerHtml": 0,
+      "risk": 51
+    },
+    {
+      "file": "output.js",
+      "sizeKB": 28.1,
+      "page": "输出格式",
+      "route": "/samsara/config/output",
+      "note": "表单型，低风险",
+      "ids": [],
+      "panels": [],
+      "globals": [
+        "SamsaraOutput",
+        "SamsaraUI",
+        "SamsaraUIKit"
+      ],
+      "apis": [
+        "/api/config",
+        "/api/output",
+        "/api/output/preview",
+        "/api/output/reload"
+      ],
+      "registerPages": [],
+      "events": 16,
+      "innerHtml": 0,
+      "risk": 37
+    },
+    {
+      "file": "lottery.js",
+      "sizeKB": 22,
+      "page": "经济业务",
+      "route": "/samsara/economy",
+      "note": "金额/轮次/下注",
+      "ids": [],
+      "panels": [],
+      "globals": [
+        "SamsaraItem",
+        "SamsaraUI",
+        "SamsaraValueTable"
+      ],
+      "apis": [
+        "/api/lottery",
+        "/api/lottery/cancel",
+        "/api/lottery/draw",
+        "/api/lottery/values"
+      ],
+      "registerPages": [],
+      "events": 6,
+      "innerHtml": 1,
+      "risk": 36
+    },
+    {
+      "file": "user.js",
+      "sizeKB": 10.9,
+      "page": "未分类",
+      "route": "—",
+      "note": "",
+      "ids": [],
+      "panels": [],
+      "globals": [
+        "SamsaraItem",
+        "SamsaraMapApiBase",
+        "SamsaraStackIcon",
+        "SamsaraUI",
+        "SamsaraUserView",
+        "SamsaraValueTable"
+      ],
+      "apis": [
+        "/api/user/lottery",
+        "/api/user/lottery/values",
+        "/api/user/map",
+        "/api/user/status",
+        "/api/user/worlds"
+      ],
+      "registerPages": [],
+      "events": 1,
+      "innerHtml": 0,
+      "risk": 29
+    },
+    {
+      "file": "permissions.js",
+      "sizeKB": 12.3,
+      "page": "权限",
+      "route": "/samsara/config/permissions",
+      "note": "树形表单",
+      "ids": [],
+      "panels": [],
+      "globals": [
+        "SamsaraPermissions",
+        "SamsaraStructured",
+        "SamsaraUI",
+        "SamsaraUIKit"
+      ],
+      "apis": [
+        "/api/permissions",
+        "/api/permissions/reload"
+      ],
+      "registerPages": [],
+      "events": 6,
+      "innerHtml": 0,
+      "risk": 24
+    },
+    {
+      "file": "announcements.js",
+      "sizeKB": 15.3,
+      "page": "公告",
+      "route": "/samsara/community/announcements",
+      "note": "首批迁移候选",
+      "ids": [],
+      "panels": [],
+      "globals": [
+        "SamsaraAnnouncements",
+        "SamsaraUI"
+      ],
+      "apis": [
+        "/api/announcements",
+        "/api/announcements/preview",
+        "/api/announcements/send"
+      ],
+      "registerPages": [
+        "announcements"
+      ],
+      "events": 11,
+      "innerHtml": 0,
+      "risk": 21
+    },
+    {
+      "file": "banners.js",
+      "sizeKB": 16.9,
+      "page": "共享横幅/粒子",
+      "route": "—",
+      "note": "视觉资源",
+      "ids": [],
+      "panels": [],
+      "globals": [
+        "SamsaraBanners"
+      ],
+      "apis": [],
+      "registerPages": [],
+      "events": 0,
+      "innerHtml": 0,
+      "risk": 20
+    },
+    {
+      "file": "particles.js",
+      "sizeKB": 13.2,
+      "page": "共享粒子背景",
+      "route": "—",
+      "note": "视觉资源",
+      "ids": [],
+      "panels": [],
+      "globals": [
+        "SamsaraParticles"
+      ],
+      "apis": [],
+      "registerPages": [],
+      "events": 2,
+      "innerHtml": 0,
+      "risk": 16
+    },
+    {
+      "file": "chat-text.js",
+      "sizeKB": 9.3,
+      "page": "共享富文本",
+      "route": "—",
+      "note": "共享组件，先抽公用",
+      "ids": [],
+      "panels": [],
+      "globals": [
+        "SamsaraChatText"
+      ],
+      "apis": [],
+      "registerPages": [],
+      "events": 5,
+      "innerHtml": 0,
+      "risk": 12
+    },
+    {
+      "file": "form-kit.js",
+      "sizeKB": 8.6,
+      "page": "共享表单工具",
+      "route": "—",
+      "note": "共享组件",
+      "ids": [],
+      "panels": [],
+      "globals": [
+        "SamsaraUIKit"
+      ],
+      "apis": [],
+      "registerPages": [],
+      "events": 4,
+      "innerHtml": 0,
+      "risk": 12
+    },
+    {
+      "file": "value-table.js",
+      "sizeKB": 5.4,
+      "page": "共享价值表",
+      "route": "—",
+      "note": "可复用",
+      "ids": [],
+      "panels": [],
+      "globals": [
+        "SamsaraItem",
+        "SamsaraValueTable"
+      ],
+      "apis": [],
+      "registerPages": [],
+      "events": 5,
+      "innerHtml": 0,
+      "risk": 11
+    },
+    {
+      "file": "structured.js",
+      "sizeKB": 4.6,
+      "page": "共享结构化表单",
+      "route": "—",
+      "note": "共享组件",
+      "ids": [],
+      "panels": [],
+      "globals": [
+        "SamsaraStructured"
+      ],
+      "apis": [],
+      "registerPages": [],
+      "events": 4,
+      "innerHtml": 0,
+      "risk": 8
+    },
+    {
+      "file": "item-ui.js",
+      "sizeKB": 3.8,
+      "page": "共享物品 UI",
+      "route": "—",
+      "note": "已有 Vue ItemIcon/ItemTooltip",
+      "ids": [],
+      "panels": [],
+      "globals": [
+        "SamsaraItem"
+      ],
+      "apis": [],
+      "registerPages": [],
+      "events": 5,
+      "innerHtml": 0,
+      "risk": 7
+    },
+    {
+      "file": "page-kit.js",
+      "sizeKB": 4.2,
+      "page": "旧页面生命周期",
+      "route": "—",
+      "note": "迁移完成后删除",
+      "ids": [],
+      "panels": [],
+      "globals": [
+        "SamsaraPageKit"
+      ],
+      "apis": [],
+      "registerPages": [],
+      "events": 2,
+      "innerHtml": 0,
+      "risk": 7
+    }
+  ]
+}

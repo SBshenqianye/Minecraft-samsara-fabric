@@ -9,6 +9,7 @@
 ## 文件
 
 ```text
+AGENTS.md                         # 仓库级 Agent 开发约定
 .opencode/skills/samsara-server/
   SKILL.md
   references/endpoints.md
@@ -18,10 +19,34 @@
   scripts/samsara.sh
 
 docs/agent/
+  tasks/_template.md              # 单页面迁移任务模板
+  tasks/migrate-announcements.md  # 公告页样板
+  legacy-inventory.md             # scan-legacy 生成
+  legacy-inventory.json
   prompts/system.md
   prompts/operator.md
   README.md
+
+tools/agent/
+  scan-legacy.mjs                 # 扫描旧脚本 DOM/全局/API 依赖
+  scaffold-page.mjs               # 生成 Vue 页面 + model + 单测 + 任务 spec
+
+tools/e2e/
+  harness.mjs                     # 浏览器/CDP/结果统计
+  run.mjs                         # 按 section 跑页面级 E2E
+  sections/announcements.mjs      # 公告页样板
 ```
+
+## 代码迁移工作流
+
+```powershell
+node tools/agent/scan-legacy.mjs
+node tools/agent/scaffold-page.mjs --name <page> --title <标题> --route <路由> --keep-alive
+cd web-src && npm.cmd run check
+node tools/e2e/run.mjs --base http://127.0.0.1:8722 --token <token> --section <page>
+```
+
+具体见 `AGENTS.md` 与 `docs/agent/tasks/`。
 
 ## 使用
 

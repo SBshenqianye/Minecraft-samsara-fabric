@@ -165,7 +165,12 @@ const routes = [
         { path: 'samsara/world', redirect: '/samsara/world/map' },
 
         // ---- samsara / 社区 ----
-        legacyCommunity('samsara/community/announcements', ['announcements'], AnnouncementsPage, 'announcements', '公告', 'announcements'),
+        // 公告已是原生 Vue 页面，不再走旧 panel 激活。
+        {
+          ...samsara('community', 'announcements', AnnouncementsPage, '公告'),
+          path: 'samsara/community/announcements',
+          alias: ['announcements'],
+        },
         legacyCommunity('samsara/community/identity', ['identity'], IdentityPage, 'identity', '身份组', 'identity'),
         { path: 'samsara/community', redirect: '/samsara/community/announcements' },
 
