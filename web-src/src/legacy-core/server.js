@@ -1,4 +1,6 @@
-﻿'use strict';
+﻿import { formatBytes, formatTime, splitPropertyLines } from '../pages/server/model.js';
+
+'use strict';
 
 // 「本体」页：服务器配置 + 存档备份时间线。
 // 所有配置项走 form-kit 的统一控件；备份走 BackupTimeline 的树模型。
@@ -426,24 +428,6 @@
     }
   }
 
-  function formatBytes(bytes) {
-    const n = Number(bytes || 0);
-    if (n < 1024) return n + ' B';
-    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
-    if (n < 1024 * 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + ' MB';
-    return (n / 1024 / 1024 / 1024).toFixed(2) + ' GB';
-  }
-
-  function formatTime(ms) {
-    const n = Number(ms || 0);
-    if (!n) return '—';
-    try {
-      return new Date(n).toLocaleString();
-    } catch (e) {
-      return String(n);
-    }
-  }
-
   function nowStamp() {
     const date = new Date();
     const pad = (n) => String(n).padStart(2, '0');
@@ -839,20 +823,6 @@
       return PROPERTY_SPECS.eula;
     }
     return { group: '其他', type: 'text', desc: '' };
-  }
-
-  function splitPropertyLines(content) {
-    // 去掉 UTF-8 BOM；properties 的 # 与 ! 都是注释，不能当成可编辑字段。
-    return String(content || '').replace(/^\uFEFF/, '').split(/\r?\n/).map((line) => {
-      if (line === '') return { type: 'blank', raw: '' };
-      if (/^\s*[#!]/.test(line) || /^\s*\\[#!]/.test(line)) {
-        return { type: 'comment', raw: line };
-      }
-      const eq = line.indexOf('=');
-      if (eq <= 0) return { type: 'raw', raw: line };
-      const value = line.slice(eq + 1);
-      return { type: 'prop', key: line.slice(0, eq), value, originalValue: value };
-    });
   }
 
   function parseDraft(file) {

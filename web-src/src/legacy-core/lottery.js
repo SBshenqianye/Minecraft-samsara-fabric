@@ -1,3 +1,5 @@
+import { dateText, dayText, timeText, vp } from '../pages/lottery/model.js';
+
 'use strict';
 
 // 经济业务（死人乐透 / 服务器基金 / 保险）：管理端标签与独立页共用。
@@ -46,29 +48,6 @@
     if (className) node.className = className;
     if (text != null) node.textContent = text;
     return node;
-  }
-
-  function vp(value) {
-    const n = Number(value || 0);
-    if (!Number.isFinite(n)) return '0 VP';
-    const text = Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
-    return text + ' VP';
-  }
-
-  function dayText(id) {
-    if (!id) return '—';
-    if (id.startsWith('game-')) return '第 ' + id.slice(5) + ' 游戏日';
-    return id;
-  }
-
-  function timeText(ms) {
-    if (!ms) return '—';
-    try { return new Date(ms).toLocaleString(); } catch (error) { return String(ms); }
-  }
-
-  function dateText(ms) {
-    if (!ms) return '—';
-    try { return new Date(ms).toLocaleDateString(); } catch (error) { return String(ms); }
   }
 
   function stat(label, value) {
