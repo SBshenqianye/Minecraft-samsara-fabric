@@ -1,14 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import {
+  advancementGroups,
+  advancementLayout,
   candidateView,
   filterPool,
+  formatStat,
   groupOnline,
+  groupSkin,
   groupView,
   isProbeName,
   isUnknownName,
   isUuid,
   normalizeSettings,
+  poolModel,
   shortUuid,
+  statsForTab,
+  suggestGroups,
   typeLabel,
 } from './model.js';
 
@@ -56,24 +63,104 @@ describe('identity model', () => {
   });
 
   it('probe/占位名判定', () => {
-    expect(isProbeName({ name: 'probe-a' })).toBe(true);
-    expect(isProbeName({ name: 'test' })).toBe(false);
+    expect(isProbeName({ name: 'probe-1' })).toBe(true);
+    expect(isProbeName({ name: 'test' })).toBe(true);
     expect(isProbeName({ name: 'Alice' })).toBe(false);
     expect(isUnknownName({ name: '' })).toBe(true);
     expect(isUnknownName({ name: '玩家-1234abcd' })).toBe(true);
     expect(isUnknownName({ name: '玩家小明' })).toBe(false);
+    expect(isProbeName({ name: '玩家-1234abcd' })).toBe(false);
   });
 
   it('组卡片派生共享 data 与在线状态', () => {
     const groups = [
-      { name: 'A', data: 'd1', premium: { online: true } },
+      { name: 'A', data: 'd1', premium: 'p1' },
       { name: 'B', data: 'd1' },
     ];
-    const view = groupView(groups[0], groups, { d1: { inventory: {} } });
+    const view = groupView(groups[0], groups, { d1: { syncBlocked: true } }, { p1: true });
     expect(view.shared).toBe(2);
-    expect(view.badge).toBe('共享 data ×2');
     expect(view.online).toBe(true);
-    expect(view.hasState).toBe(true);
-    expect(groupOnline(groups[1])).toBe(false);
+    expect(view.syncBlocked).toBe(true);
+    expect(groupOnline(groups[1], { p1: true })).toBe(false);
+    expect(groupSkin(groups[0], { p1: 'Alice' })).toEqual({ uuid: 'p1', name: 'Alice' });
+  });
+
+  it('池子分三类并保留磁盘 data 与空白 data', () => {
+    const pool = poolModel({
+      groups: [{ data: 'd-group', premium: 'p1', offline: null }],
+      candidates: [
+        { uuid: 'p1', name: 'Alice', type: 'premium' },
+        { uuid: 'p2', name: 'Bob', type: 'premium' },
+        { uuid: 'o1', name: 'Carol', type: 'offline' },
+        { uuid: 'd-group', name: 'Alice', type: 'premium' },
+      ],
+      dataList: [{ uuid: 'd-disk', label: '磁盘数据', group: 'X', backups: 2 }],
+      generated: ['d-blank'],
+      modelStates: { 'd-old': {} },
+      online: { p2: true },
+      filter: {},
+    });
+    expect(pool.counts.premium).toBe(2);
+    expect(pool.premium.map((row) => row.uuid)).toContain('p2');
+    expect(pool.premium.map((row) => row.uuid)).not.toContain('p1');
+    expect(pool.premium.find((row) => row.uuid === 'p2').online).toBe(true);
+    expect(pool.counts.offline).toBe(1);
+    expect(pool.data.map((row) => row.uuid)).toEqual(expect.arrayContaining(['o1', 'd-disk', 'd-blank', 'd-old']));
+    expect(pool.data.find((row) => row.uuid === 'd-disk').badge).toBe('2 个备份');
+    expect(pool.data.find((row) => row.uuid === 'd-blank').canRemove).toBe(true);
+    expect(pool.poolText).toContain('账号候选');
+  });
+
+  it('相似 ID 推荐合并同名的正版/离线账号', () => {
+    const suggestions = suggestGroups([
+      { uuid: 'p1', name: 'Alice', type: 'premium' },
+      { uuid: 'o1', name: 'alice', type: 'offline' },
+      { uuid: 'p2', name: 'Bob', type: 'premium' },
+    ], [{ name: 'Bob', premium: 'p2' }]);
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].premium.uuid).toBe('p1');
+    expect(suggestions[0].offline.uuid).toBe('o1');
+  });
+
+  it('统计分类与格式化', () => {
+    const stats = {
+      custom: { 'minecraft:deaths': 3, 'minecraft:play_time': 72000, 'minecraft:walk_one_cm': 1234 },
+      items: { mined: { 'minecraft:stone': 12 }, crafted: {} },
+      mobs: { killed: { 'minecraft:zombie': 4 }, killed_by: {} },
+      names: { 'minecraft:zombie': '僵尸' },
+    };
+    const custom = statsForTab(stats, 'custom');
+    expect(custom.rows.map((row) => row.label)).toEqual(['游玩时间', '步行距离', '死亡']);
+    expect(custom.rows[0].value).toBe('1.0 小时');
+    expect(custom.rows[1].value).toBe('12.3 米');
+    expect(custom.rows[2].value).toBe('3');
+    const items = statsForTab(stats, 'items');
+    expect(items.sections).toHaveLength(1);
+    expect(items.sections[0].label).toBe('挖掘 · 1');
+    expect(items.sections[0].items[0].count).toBe('12');
+    const mobs = statsForTab(stats, 'mobs');
+    expect(mobs.sections[0].items[0].name).toBe('僵尸');
+    expect(formatStat('damage_dealt', 100)).toBe('10.0');
+  });
+
+  it('成就按四类分组并排版成树', () => {
+    const nodes = [
+      { id: 'minecraft:story/root', title: 'Minecraft', parent: null, done: true },
+      { id: 'minecraft:story/mine_stone', title: '石器时代', parent: 'minecraft:story/root', done: true },
+      { id: 'minecraft:adventure/root', title: '冒险', parent: null, done: false },
+      { id: 'minecraft:nether/root', title: '下界', parent: null, done: false },
+      { id: 'minecraft:husbandry/root', title: '农牧业', parent: null, done: false },
+    ];
+    const groups = advancementGroups(nodes);
+    expect(groups.story).toHaveLength(2);
+    expect(groups.adventure).toHaveLength(1);
+    expect(groups.nether).toHaveLength(1);
+    expect(groups.husbandry).toHaveLength(1);
+    const layout = advancementLayout(nodes);
+    expect(layout.points).toHaveLength(5);
+    expect(layout.edges).toHaveLength(1);
+    expect(layout.doneCount).toBe(2);
+    expect(layout.width).toBeGreaterThan(300);
+    expect(layout.pathOf(nodes[1])).toEqual(['minecraft:story/mine_stone', 'minecraft:story/root']);
   });
 });

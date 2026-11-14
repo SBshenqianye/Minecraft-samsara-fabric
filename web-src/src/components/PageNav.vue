@@ -32,7 +32,12 @@ function select(item) {
   if (!item?.target) return;
   active.value = item.target;
   const el = document.getElementById(item.target);
-  if (el) el.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  if (!el) return;
+  // 目标顶部对齐吸顶的页内导航顶部，而不是浏览器窗口顶部。
+  const nav = document.getElementById('page-nav');
+  const navTop = nav ? nav.getBoundingClientRect().top : 0;
+  const top = window.scrollY + el.getBoundingClientRect().top - navTop;
+  window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
 }
 
 function watchScroll() {

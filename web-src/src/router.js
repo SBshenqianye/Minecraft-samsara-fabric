@@ -25,11 +25,11 @@ const samsara = (section, page, component, title, panel, extra = {}) => ({
   meta: { workspace: 'samsara', section, page, title, ...(panel ? { panel } : {}), ...extra },
 });
 
-const legacyConfig = (path, alias, component, page, title, panel) => ({
+const legacyConfig = (path, alias, component, page, title, panel, extra = {}) => ({
   path,
   alias,
   component,
-  meta: { workspace: 'samsara', section: 'config', page, title, panel },
+  meta: { workspace: 'samsara', section: 'config', page, title, panel, ...extra },
 });
 
 const legacyWorld = (path, alias, component, page, title, panel) => ({
@@ -39,11 +39,11 @@ const legacyWorld = (path, alias, component, page, title, panel) => ({
   meta: { workspace: 'samsara', section: 'world', page, title, panel },
 });
 
-const legacyCommunity = (path, alias, component, page, title, panel) => ({
+const legacyCommunity = (path, alias, component, page, title, panel, extra = {}) => ({
   path,
   alias,
   component,
-  meta: { workspace: 'samsara', section: 'community', page, title, panel },
+  meta: { workspace: 'samsara', section: 'community', page, title, panel, ...extra },
 });
 
 const vanilla = (path, serverPanel, title) => ({
@@ -165,8 +165,8 @@ const routes = [
 
         // ---- samsara / 配置 ----
         legacyConfig('samsara/config/editor', ['config-editor'], ConfigEditorPage, 'config-editor', '配置编辑', 'config-editor'),
-        legacyConfig('samsara/config/advanced', ['config'], ConfigPage, 'config', '高级配置', 'config'),
-        legacyConfig('samsara/config/claim-range', ['claim-range'], ClaimRangePage, 'claim-range', '圈地范围', 'claim-range'),
+        legacyConfig('samsara/config/advanced', ['config'], ConfigPage, 'config', '高级配置', 'config', { nativePage: true }),
+        legacyConfig('samsara/config/claim-range', ['claim-range'], ClaimRangePage, 'claim-range', '圈地范围', 'claim-range', { nativePage: true }),
         legacyConfig('samsara/config/output', ['output'], OutputPage, 'output', '输出', 'output'),
         // 权限页已是原生 Vue 页面，不再走旧 panel 激活。
         {
@@ -188,7 +188,7 @@ const routes = [
           path: 'samsara/community/announcements',
           alias: ['announcements'],
         },
-        legacyCommunity('samsara/community/identity', ['identity'], IdentityPage, 'identity', '身份组', 'identity'),
+        legacyCommunity('samsara/community/identity', ['identity'], IdentityPage, 'identity', '身份组', 'identity', { nativePage: true }),
         { path: 'samsara/community', redirect: '/samsara/community/announcements' },
 
         // ---- 其他模组 ----

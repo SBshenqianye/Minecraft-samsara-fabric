@@ -3,28 +3,28 @@ const PAGES = [
     route: '/samsara/economy',
     label: '经济业务 / lottery',
     panel: '#panel-lottery',
-    global: 'samsaraLottery',
+    global: '',
     extra: () => document.querySelectorAll('#lottery-stats .stat').length >= 1,
   },
   {
     route: '/samsara/community/identity',
     label: '身份组 / identity',
     panel: '#panel-identity',
-    global: 'SamsaraIdentity',
-    extra: () => document.querySelectorAll('#panel-identity .identity-row, #panel-identity tbody tr').length >= 0,
+    global: '',
+    extra: () => document.querySelectorAll('#panel-identity .identity-card').length >= 1,
   },
   {
     route: '/samsara/config/advanced',
     label: '高级配置 / config',
     panel: '#panel-config',
-    global: 'SamsaraUI',
+    global: '',
     extra: () => document.querySelectorAll('#files .file-block').length >= 1,
   },
   {
     route: '/samsara/config/claim-range',
     label: '圈地范围 / claim-range',
     panel: '#panel-claim-range',
-    global: 'SamsaraUI',
+    global: '',
     extra: () => Boolean(document.getElementById('claim-range-files')?.textContent.trim()),
   },
   {
@@ -52,21 +52,21 @@ const PAGES = [
     route: '/vanilla/config',
     label: '本体配置 / server',
     panel: '#server-config-panel',
-    global: 'SamsaraServer',
+    global: '',
     extra: () => document.querySelectorAll('#server-config-files details.file-block').length >= 1,
   },
   {
     route: '/vanilla/backup',
     label: '本体备份 / server',
     panel: '#server-backup-panel',
-    global: 'SamsaraServer',
+    global: '',
     extra: () => Boolean(document.getElementById('server-backup-timeline')),
   },
   {
     route: '/samsara/system/audit',
     label: 'Web 审计 / server',
     panel: '#server-audit-panel',
-    global: 'SamsaraServer',
+    global: '',
     extra: () => Boolean(document.getElementById('server-audit-list')),
   },
 ];
@@ -84,7 +84,9 @@ export default {
         20000,
         page.label,
       );
-      await until(`Boolean(window.${page.global})`, 20000, page.label + ' 脚本加载');
+      if (page.global) {
+        await until(`Boolean(window.${page.global})`, 20000, page.label + ' 脚本加载');
+      }
       await sleep(800);
       const state = await evaluate(`(() => ({
         path: location.pathname,
@@ -92,7 +94,7 @@ export default {
           const node = document.querySelector(${JSON.stringify(page.panel)});
           return node ? !node.hidden && getComputedStyle(node).display !== 'none' : false;
         })(),
-        global: Boolean(window.${page.global}),
+        global: !page.global || Boolean(window.${page.global}),
         extra: (${page.extra.toString()})(),
         errors: window.__e2eErrors || [],
       }))()`);

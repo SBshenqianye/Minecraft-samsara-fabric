@@ -777,12 +777,12 @@ async function main() {
       window.scrollTo(0, 0);
       await new Promise((resolve) => setTimeout(resolve, 80));
       const out = [];
-      const buttons = [...document.querySelectorAll('#global-nav .nav-item[data-target]')];
+      const buttons = [...document.querySelectorAll('#page-nav .nav-item[data-target]')];
       for (const button of buttons) {
         button.click();
         await new Promise((resolve) => setTimeout(resolve, 1100));
         const target = document.getElementById(button.dataset.target);
-        const nav = document.getElementById('global-nav');
+        const nav = document.getElementById('page-nav');
         const rect = target ? target.getBoundingClientRect() : null;
         out.push({
           label: button.innerText.replace(/\\s+/g, ' ').trim(),

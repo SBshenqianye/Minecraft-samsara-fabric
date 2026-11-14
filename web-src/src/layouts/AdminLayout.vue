@@ -482,6 +482,13 @@ async function applyRoute(force = false) {
   if (pageNavState.title) {
     document.querySelector('main.app-shell')?.classList.remove('no-nav');
   }
+  // 原生页面自己渲染操作栏，隐藏 hero 里的旧保存/重读按钮。
+  if (route.meta.nativePage) {
+    for (const id of ['save', 'reload', 'action-default']) {
+      const node = document.getElementById(id);
+      if (node) node.hidden = true;
+    }
+  }
 }
 
 function applyLegacyPanel(name) {

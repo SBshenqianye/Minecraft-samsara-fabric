@@ -75,14 +75,15 @@
 - 新增 `tools/e2e/sections/lottery.mjs`（9 条）；`lottery` section **9/9**；全量 E2E **281/281**。
 - 提交：`refactor(web): migrate lottery panels to Vue`。
 
-### 阶段 5 完成记录（身份组，控制层）
+### 阶段 5 完成记录（身份组，整页 Vue）
 
-- 新增 `pages/identity/model.js`：UUID 校验/短显示、账号类型、设置归一化、池子过滤（probe/占位名）、组卡片派生数据（单测 7 项）。
-- `IdentityPage.vue` 原生渲染设置卡片（启用、同步、主人上限、配置/运行路径）与页内工具按钮；配置变化经 `window.SamsaraIdentity.setSettings()` 回写内核，保存仍复用内核流程。
-- 内核 `identity.js`：`renderSettings()` 在 `__samsaraIdentityVueSettings` 下跳过，`applyModel()` 派发 `samsara:identity-model`，暴露 `setSettings()` / `getModel()`。
-- **剩余边界（保留内核）**：组卡片拖拽、UUID/data 池子渲染与分配、data 详情弹窗（统计/成就/内嵌背包 iframe）、重绑确认、审计输出仍在 `identity.js`；`IdentityPage` 仍在守卫白名单。
-- 新增 `tools/e2e/sections/identity.mjs`（6 条）；`identity` section **6/6**；全量 E2E **281/281**。
-- 提交：`refactor(web): move identity settings to Vue`。
+- 新增 `pages/identity/model.js`（UUID/账号类型/设置、池子过滤与相似 ID 推荐、统计分类、成就分组与树布局）与 `useIdentity.js`（加载/保存/重载、分配/清空/拖拽、UUID 解析、重绑、备份、审计、预览）。
+- 新增组件：`IdentityGroupCard.vue`（卡片/头像/备注/三个 UUID 区/操作）、`IdentityChip.vue`、`IdentityPool.vue`（搜索/过滤/推荐/三类池子）、`IdentityDialogs.vue`（选择 UUID/放入组/重绑）、`IdentityDetailDialog.vue`（备份、状态、背包 iframe、统计分页、成就树）。
+- `IdentityPage.vue` 不再 `useLegacyPage`、不再 import `legacy-core/identity.js`；detail 弹窗通过 `useFrameworkDialog` 打开，关闭行为与框架一致。
+- 删除 `legacy-core/identity.js`（2449 行）与 `AdminOverlays.vue` 里的 uuid/assign/rebind 旧弹窗；`IdentityPage` 从守卫白名单移除。
+- **保留边界**：背包编辑器仍是独立 iframe 路由（`/identity-inventory-inline`），不参与身份组内核。
+- `identity` section **6/6**；全量 E2E **281/281**。
+- 提交：`refactor(web): migrate identity page to Vue`。
 
 ### 阶段 6 完成记录（输出格式，外围）
 
