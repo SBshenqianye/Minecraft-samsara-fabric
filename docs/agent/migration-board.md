@@ -64,10 +64,18 @@
 | map | `map.js` | `pages/MapPage.vue` | 保留 tile/canvas 内核，Vue 管工具栏/详情/生命周期 |
 | world-stack | `world-stack.js` | `pages/WorldStackPage.vue` | 保留时间线/3D/图标内核，Vue 管外层 |
 
-## 批次 5：旧壳与共享模块（保留为 shell，不阻塞页面迁移）
+## 批次 5：旧壳与共享模块（已完成）
 
-> `app.js`、`page-kit.js` 与共享 CSS/DOM 工具仍作为最后的内核保留；页面已全部由 Vue 路由/组件接管。
+> 全部页面面板已嵌入 Vue 页面；`app.js`、`page-kit.js`、共享脚本与 `style.css` 已迁入 `web-src/src/legacy-core/`、`web-src/src/legacy.css`，随 Vite 打包，不再作为 `/web/*.js`、`/style.css` 静态资源提供。
+>
+> `legacy.html`（旧 `index.html`）、`legacy-user.html`（旧 `user.html`）、`identity.html`、`lottery.html` 已删除；管理员浮窗迁到 `layouts/AdminOverlays.vue`，公开用户端结构迁到 `pages/UserPage.vue`。
 
+| 项目 | 处理 |
+|---|---|
+| app shell | `app.js`、`page-kit.js` 作为 bundle 内核保留，页面生命周期由 Vue 接管 |
+| shared | `chat-text.js`、`structured.js`、`form-kit.js`、`value-table.js`、`item-ui.js`、`banners.js`、`particles.js` 随 bundle 加载 |
+| fallback | 旧 HTML 壳、`/style.css`、旧静态脚本路由全部删除；`WebSecurity` 只保留 SPA 与 `/openapi.json` |
+| E2E | `tools/e2e/sections/batch5.mjs`：旧路径 404、`/user` 五分区、地图内核、无旧脚本请求 |
 
 | 任务 | 旧文件 | 说明 |
 |---|---|---|

@@ -14,6 +14,7 @@ node tools/e2e/run.mjs --base http://127.0.0.1:8722 --token <token> --section ou
 node tools/e2e/run.mjs --base http://127.0.0.1:8722 --token <token> --section permissions
 node tools/e2e/run.mjs --base http://127.0.0.1:8722 --token <token> --section server-console
 node tools/e2e/run.mjs --base http://127.0.0.1:8722 --token <token> --section legacy-shell
+node tools/e2e/run.mjs --base http://127.0.0.1:8722 --token <token> --section batch5
 node tools/e2e/run.mjs --list
 
 # 两个都跑

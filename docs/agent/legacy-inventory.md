@@ -1,38 +1,34 @@
 # Legacy Web 迁移清单
 
 > 由 `node tools/agent/scan-legacy.mjs` 生成，提交前重新生成。
-> 扫描时间：2026-11-14T12:26:13.710Z
+> 扫描时间：2026-11-14T12:55:38.599Z
 
 ## 总览
 
 | 文件 | 状态 | KB | 页面 | 路由 | DOM 读取 | DOM id | 全局 | API | innerHTML | 风险分 | 建议 |
 |---|---|---:|---|---|---:|---:|---:|---:|---:|---:|---|
 | `server.js` | 🧩 shell-migrated | 85.5 | 本体服务器 | /vanilla/* | 78 | 47 | 7 | 14 | 0 | 279 | 建议拆成 4 个页面 |
-| `app.js` | 🧱 shell | 140.7 | config / claim-range / 全局壳 | /samsara/config/* | 32 | 20 | 17 | 4 | 1 | 269 | 核心旧壳，最后处理 |
+| `app.js` | 📦 bundled | 140.7 | config / claim-range / 全局壳 | /samsara/config/* | 32 | 20 | 17 | 4 | 1 | 269 | 核心旧壳，已作为 Vite 内核打包，不再走静态脚本 |
 | `map.js` | 🧩 shell-migrated | 112.7 | 地图 | /samsara/world/map | 35 | 35 | 6 | 5 | 0 | 236 | canvas/瓦片，保留渲染内核 |
 | `world-stack.js` | 🧩 shell-migrated | 68.5 | 世界栈 | /samsara/world/stack | 34 | 34 | 3 | 15 | 0 | 180 | 时间线 + 3D/图标 |
 | `identity.js` | 🧩 shell-migrated | 91.4 | 身份组 | /samsara/community/identity | 4 | 3 | 5 | 13 | 0 | 116 | 列表 + 详情 + 背包 iframe |
 | `lottery.js` | 🧩 shell-migrated | 22 | 经济业务 | /samsara/economy | 23 | 21 | 3 | 4 | 1 | 101 | 金额/轮次/下注 |
 | `config-editor.js` | 🧩 shell-migrated | 19.2 | 配置编辑 | /samsara/config/editor | 19 | 12 | 4 | 4 | 0 | 94 | PageSpec/FormSpec，最高复杂度 |
-| `user.js` | 🔗 shared | 10.9 | 未分类 | — | 7 | 6 | 6 | 5 | 0 | 48 |  |
-| `announcements.js` | ✅ migrated | 15.3 | 公告 | /samsara/community/announcements | 9 | 8 | 2 | 3 | 0 | 46 | 已迁移为原生 Vue，保留给 /legacy.html 回退 |
+| `user.js` | 📦 bundled | 10.9 | 公开用户端内核 | /user | 7 | 6 | 6 | 5 | 0 | 48 | 公开只读 API 适配，已由 UserPage.vue 挂载 |
 | `output.js` | 🧩 shell-migrated | 28.1 | 输出格式 | /samsara/config/output | 0 | 0 | 3 | 4 | 0 | 37 | contenteditable 富文本编辑器，中等复杂度 |
-| `permissions.js` | ✅ migrated | 12.3 | 权限 | /samsara/config/permissions | 0 | 0 | 4 | 2 | 0 | 24 | 已迁移为原生 Vue，保留给 /legacy.html 回退 |
-| `banners.js` | 🔗 shared | 16.9 | 共享横幅/粒子 | — | 0 | 0 | 1 | 0 | 0 | 20 | 视觉资源 |
-| `particles.js` | 🔗 shared | 13.2 | 共享粒子背景 | — | 0 | 0 | 1 | 0 | 0 | 16 | 视觉资源 |
-| `chat-text.js` | 🔗 shared | 9.3 | 共享富文本 | — | 0 | 0 | 1 | 0 | 0 | 12 | 共享组件，先抽公用 |
-| `form-kit.js` | 🔗 shared | 8.6 | 共享表单工具 | — | 0 | 0 | 1 | 0 | 0 | 12 | 共享组件 |
-| `value-table.js` | 🔗 shared | 5.4 | 共享价值表 | — | 0 | 0 | 2 | 0 | 0 | 11 | 可复用 |
-| `structured.js` | 🔗 shared | 4.6 | 共享结构化表单 | — | 0 | 0 | 1 | 0 | 0 | 8 | 共享组件 |
-| `item-ui.js` | 🔗 shared | 3.8 | 共享物品 UI | — | 0 | 0 | 1 | 0 | 0 | 7 | 已有 Vue ItemIcon/ItemTooltip |
-| `page-kit.js` | 🧱 shell | 4.2 | 旧页面生命周期 | — | 0 | 0 | 1 | 0 | 0 | 7 | 迁移完成后删除 |
+| `banners.js` | 📦 bundled | 16.9 | 共享横幅/粒子 | — | 0 | 0 | 1 | 0 | 0 | 20 | 视觉资源 |
+| `particles.js` | 📦 bundled | 13.2 | 共享粒子背景 | — | 0 | 0 | 1 | 0 | 0 | 16 | 视觉资源 |
+| `chat-text.js` | 📦 bundled | 9.3 | 共享富文本 | — | 0 | 0 | 1 | 0 | 0 | 12 | 共享组件，先抽公用 |
+| `form-kit.js` | 📦 bundled | 8.6 | 共享表单工具 | — | 0 | 0 | 1 | 0 | 0 | 12 | 共享组件 |
+| `value-table.js` | 📦 bundled | 5.4 | 共享价值表 | — | 0 | 0 | 2 | 0 | 0 | 11 | 可复用 |
+| `structured.js` | 📦 bundled | 4.6 | 共享结构化表单 | — | 0 | 0 | 1 | 0 | 0 | 8 | 共享组件 |
+| `item-ui.js` | 📦 bundled | 3.8 | 共享物品 UI | — | 0 | 0 | 1 | 0 | 0 | 7 | 已有 Vue ItemIcon/ItemTooltip |
+| `page-kit.js` | 📦 bundled | 4.2 | 旧页面生命周期 | — | 0 | 0 | 1 | 0 | 0 | 7 | 已随 Vite 内核打包，页面走 Vue 生命周期 |
 
 ## 状态汇总
 
-- ✅ migrated：`announcements.js`、`permissions.js`
 - 🧩 shell-migrated：`server.js`、`map.js`、`world-stack.js`、`identity.js`、`lottery.js`、`config-editor.js`、`output.js`
-- 🔗 shared：`user.js`、`banners.js`、`particles.js`、`chat-text.js`、`form-kit.js`、`value-table.js`、`structured.js`、`item-ui.js`
-- 🧱 shell：`app.js`、`page-kit.js`
+- 📦 bundled：`app.js`、`user.js`、`banners.js`、`particles.js`、`chat-text.js`、`form-kit.js`、`value-table.js`、`structured.js`、`item-ui.js`、`page-kit.js`
 
 ## 按迁移批次
 
@@ -71,10 +67,10 @@
 
 ### `app.js`
 
-- 状态：🧱 shell
+- 状态：📦 bundled
 - 页面：config / claim-range / 全局壳（/samsara/config/*）
 - 大小：140.7 KB；DOM 读取：32；事件监听：74；innerHTML：1
-- 建议：核心旧壳，最后处理
+- 建议：核心旧壳，已作为 Vite 内核打包，不再走静态脚本
 - panel：`panel-`
 - 全局：`SamsaraAnnouncements`、`SamsaraBanners`、`SamsaraConfigEditor`、`SamsaraDialog`、`SamsaraIdentity`、`SamsaraMap`、`SamsaraOutput`、`SamsaraPageKit`、`SamsaraParticles`、`SamsaraPermissions`、`SamsaraServer`、`SamsaraStructured`、`SamsaraTabActions`、`SamsaraUI`、`SamsaraUIKit`、`SamsaraUseRouter`、`SamsaraWorldStack`
 - API：`/api/config`、`/api/config/retention-estimate`、`/api/reload`、`/api/status`
@@ -135,23 +131,13 @@
 
 ### `user.js`
 
-- 状态：🔗 shared
-- 页面：未分类（—）
+- 状态：📦 bundled
+- 页面：公开用户端内核（/user）
 - 大小：10.9 KB；DOM 读取：7；事件监听：1；innerHTML：0
+- 建议：公开只读 API 适配，已由 UserPage.vue 挂载
 - 全局：`SamsaraItem`、`SamsaraMapApiBase`、`SamsaraStackIcon`、`SamsaraUI`、`SamsaraUserView`、`SamsaraValueTable`
 - API：`/api/user/lottery`、`/api/user/lottery/values`、`/api/user/map`、`/api/user/status`、`/api/user/worlds`
 - DOM id（6）：`user-fund`、`user-lottery`、`user-message`、`user-status`、`user-values`、`user-worlds`
-
-### `announcements.js`
-
-- 状态：✅ migrated
-- 页面：公告（/samsara/community/announcements）
-- 大小：15.3 KB；DOM 读取：9；事件监听：11；innerHTML：0
-- 建议：已迁移为原生 Vue，保留给 /legacy.html 回退
-- 全局：`SamsaraAnnouncements`、`SamsaraUI`
-- registerPage：`announcements`
-- API：`/api/announcements`、`/api/announcements/preview`、`/api/announcements/send`
-- DOM id（8）：`announcement-preview`、`announcements-add`、`announcements-count`、`announcements-editor`、`announcements-list`、`announcements-message`、`announcements-refresh`、`announcements-summary`
 
 ### `output.js`
 
@@ -162,18 +148,9 @@
 - 全局：`SamsaraOutput`、`SamsaraUI`、`SamsaraUIKit`
 - API：`/api/config`、`/api/output`、`/api/output/preview`、`/api/output/reload`
 
-### `permissions.js`
-
-- 状态：✅ migrated
-- 页面：权限（/samsara/config/permissions）
-- 大小：12.3 KB；DOM 读取：0；事件监听：6；innerHTML：0
-- 建议：已迁移为原生 Vue，保留给 /legacy.html 回退
-- 全局：`SamsaraPermissions`、`SamsaraStructured`、`SamsaraUI`、`SamsaraUIKit`
-- API：`/api/permissions`、`/api/permissions/reload`
-
 ### `banners.js`
 
-- 状态：🔗 shared
+- 状态：📦 bundled
 - 页面：共享横幅/粒子（—）
 - 大小：16.9 KB；DOM 读取：0；事件监听：0；innerHTML：0
 - 建议：视觉资源
@@ -181,7 +158,7 @@
 
 ### `particles.js`
 
-- 状态：🔗 shared
+- 状态：📦 bundled
 - 页面：共享粒子背景（—）
 - 大小：13.2 KB；DOM 读取：0；事件监听：2；innerHTML：0
 - 建议：视觉资源
@@ -189,7 +166,7 @@
 
 ### `chat-text.js`
 
-- 状态：🔗 shared
+- 状态：📦 bundled
 - 页面：共享富文本（—）
 - 大小：9.3 KB；DOM 读取：0；事件监听：5；innerHTML：0
 - 建议：共享组件，先抽公用
@@ -197,7 +174,7 @@
 
 ### `form-kit.js`
 
-- 状态：🔗 shared
+- 状态：📦 bundled
 - 页面：共享表单工具（—）
 - 大小：8.6 KB；DOM 读取：0；事件监听：4；innerHTML：0
 - 建议：共享组件
@@ -205,7 +182,7 @@
 
 ### `value-table.js`
 
-- 状态：🔗 shared
+- 状态：📦 bundled
 - 页面：共享价值表（—）
 - 大小：5.4 KB；DOM 读取：0；事件监听：5；innerHTML：0
 - 建议：可复用
@@ -213,7 +190,7 @@
 
 ### `structured.js`
 
-- 状态：🔗 shared
+- 状态：📦 bundled
 - 页面：共享结构化表单（—）
 - 大小：4.6 KB；DOM 读取：0；事件监听：4；innerHTML：0
 - 建议：共享组件
@@ -221,7 +198,7 @@
 
 ### `item-ui.js`
 
-- 状态：🔗 shared
+- 状态：📦 bundled
 - 页面：共享物品 UI（—）
 - 大小：3.8 KB；DOM 读取：0；事件监听：5；innerHTML：0
 - 建议：已有 Vue ItemIcon/ItemTooltip
@@ -229,9 +206,9 @@
 
 ### `page-kit.js`
 
-- 状态：🧱 shell
+- 状态：📦 bundled
 - 页面：旧页面生命周期（—）
 - 大小：4.2 KB；DOM 读取：0；事件监听：2；innerHTML：0
-- 建议：迁移完成后删除
+- 建议：已随 Vite 内核打包，页面走 Vue 生命周期
 - 全局：`SamsaraPageKit`
 

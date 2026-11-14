@@ -25,7 +25,7 @@
 
 ## 2. 用户端只读 API（无需 token）
 
-用户页：`GET /user`（静态 HTML）。页面只加载 `/style.css`、`/banners.js`、`/user.js`、`/map.js`，不会加载管理端 `app.js`。
+用户页：`GET /user`（与 `/` 共用 Vue 入口）。页面只请求公开 `/api/user/*` 与 Vue bundle 内的用户端内核，不加载管理端 `app.js`。
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
@@ -366,13 +366,10 @@ Diff 回看继续使用现有 `/api/diff/chunk`、`/api/diff/view`、`/api/diff/
 | `/samsara/*` | samsara 工作区路由回 Vue 入口（经济业务/天网/配置/世界/社区） |
 | `/mods/<modId>/...` | 其他模组工作区路由回 Vue 入口；只允许安全字符并拒绝 `..` |
 | `/vue/*` | Vite 构建产物（JS/CSS/图片），只允许固定字符集且拒绝 `..` |
-| `/legacy.html` | 旧管理端页面壳（Vue 兼容层使用） |
-| `/legacy-user.html`、`/user.html` | 旧用户端页面壳（Vue 兼容层使用） |
-| `/style.css` | 两端共用样式 |
-| `/map.js` | 两端共用的地图逻辑 |
-| `/banners.js` | 两端共用旗帜贴图 |
-| `/user.js` | 用户端适配层 |
-| `/app.js`、`/structured.js`、`/form-kit.js`、`/particles.js`、`/output.js`、`/permissions.js`、`/world-stack.js`、`/server.js`、`/identity.js` | 旧管理端脚本；Vue 兼容层按需加载，保留回退路径 |
+| `/openapi.json` | Agent API 文档 |
+| `/items/*.png`、`/ui/*.png`、`/armor/*.png` | 物品与 GUI 静态图 |
+
+> batch 5 起，旧 `/legacy.html`、`/legacy-user.html`、`/user.html`、`/style.css` 与 `/app.js` 等页面壳/脚本路径已删除；旧命令式内核改由 Vite bundle 按页加载。
 
 静态资源只按固定表返回，不拼接路径；不存在目录穿越。Vue 构建产物文件名带 hash，`/vue/*` 只接受 `[A-Za-z0-9_./-]` 且拒绝 `..`。
 
@@ -380,8 +377,8 @@ Diff 回看继续使用现有 `/api/diff/chunk`、`/api/diff/view`、`/api/diff/
 
 - **管理端 token 等同管理员密码**：拿到管理员 token 就能读写全部配置、备份、权限和世界栈；不要把它发给普通玩家，不要放进 URL、日志、截图或公开仓库。token 轮换后需要重启 Web 服务才会生效（运行中的服务持有启动时的 token）。
 - **Agent token 按 scope 限权**：`/api/agent/tokens` 由管理员创建 read/announce/config/ops/rcon/inventory scope；服务端只存 SHA-256，明文只在创建时返回。token 管理接口本身仅管理员可用，Agent token 不能自我提权。写请求支持 `Idempotency-Key`，超限返回 `429` + `Retry-After: 60`。scoped token 限额为 read 300 / announce 60 / config 60 / ops 30 / rcon 20 / inventory 30 每分钟；管理员 token（本地控制台）为 read 1200 / announce 120 / config 120 / ops 60 / rcon 40 / inventory 60 每分钟，避免正常浏览触发 429。
-- **管理端静态页壳可能公开，但不含数据**：`/`、`/app.js` 等静态资源本身不需要 token；没有 token 时所有管理 API（`/api/config`、`/api/status`、`/api/server`、`/api/world-stack`、`/api/permissions`、`/api/map` 等）返回 `401`。如果连页面壳都不希望公开，需要在反向代理层做路径过滤、加独立端口或额外登录页。
-- **默认只公开用户端**：推荐反向代理只转发 `/user`、`/user.js`、`/style.css`、`/map.js`、`/banners.js`、`/api/user/*`。要公开管理端时，至少强制 HTTPS，并在代理层加限流/IP 白名单；当前 Mod 自身没有登录锁定、速率限制或二次验证。
+- **管理端静态页壳可能公开，但不含数据**：`/`、`/vue/*` 等静态资源本身不需要 token；没有 token 时所有管理 API（`/api/config`、`/api/status`、`/api/server`、`/api/world-stack`、`/api/permissions`、`/api/map` 等）返回 `401`。如果连页面壳都不希望公开，需要在反向代理层做路径过滤、加独立端口或额外登录页。
+- **默认只公开用户端**：推荐反向代理只转发 `/user`、`/vue/*`、`/api/user/*`。要公开管理端时，至少强制 HTTPS，并在代理层加限流/IP 白名单；当前 Mod 自身没有登录锁定、速率限制或二次验证。
 - **公网名字混淆**：`WebUserService` 对玩家名、操作者、发言者做混淆显示（保留首字符、分隔符和末 3 位，其余 `*`，如 `xh_unpkire` → `x*_****ire`）；系统提示/聊天/自定义名中的已知玩家名也替换。完整名字只走管理端。不要把完整名字重新加回 `/api/user/*`。
 - **浏览器安全头**：所有响应带 `Content-Security-Policy`（仅同源脚本）、`X-Frame-Options: DENY`、`X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、`Cache-Control: no-store`；前端不使用 `innerHTML`/内联脚本，CSP 不需要放开脚本，也不允许任何页面被 iframe 嵌入。Vue 3 使用 SFC 预编译，CSP 继续禁止 `unsafe-eval`；`/vue/*` 只返回构建产物。
 - **token 不落日志**：启动日志只打印 token 前缀，完整值只在 `config/samsara/web.yml`；不要恢复完整 token 日志。

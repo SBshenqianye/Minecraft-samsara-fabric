@@ -89,7 +89,7 @@ E2E 失败时先判断是否已知旧脚本问题（世界栈/地图/公告缓�
 7. 删除 `LegacyPanel`、旧脚本 import、`meta.panel`
 8. 更新 `CHANGELOG.md` / `docs/实现状态.md`
 
-**不要**一次性重写所有 legacy；按页面绞杀，保留 `legacy.html` 回滚直到覆盖完成。
+**不要**一次性重写所有 legacy 内核；batch 5 已删除 `LegacyPanel` 与旧 HTML/静态脚本壳，内核统一放在 `web-src/src/legacy-core/` 随 Vite 打包。后续只在新页面稳定后逐步抽纯逻辑，不要再新增 `/web/*.js` 静态脚本。
 
 ## 7. 文件所有权（并行 Agent）
 

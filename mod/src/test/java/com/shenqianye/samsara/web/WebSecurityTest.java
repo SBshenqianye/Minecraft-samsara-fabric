@@ -31,23 +31,18 @@ class WebSecurityTest {
         assertEquals("/web/vue/index.html", WebSecurity.staticResource("/server/console"));
         // 旧 Web 背包链接仍需返回 SPA，由前端路由重定向到玩家背包。
         assertEquals("/web/vue/index.html", WebSecurity.staticResource("/samsara/sky/web-inventory"));
-        assertEquals("/web/index.html", WebSecurity.staticResource("/legacy.html"));
-        assertEquals("/web/user.html", WebSecurity.staticResource("/legacy-user.html"));
         assertEquals("/web/vue/assets/index-abc.js", WebSecurity.staticResource("/vue/assets/index-abc.js"));
         assertNull(WebSecurity.staticResource("/vue/../app.js"));
-        assertEquals("/web/app.js", WebSecurity.staticResource("/app.js"));
-        assertEquals("/web/page-kit.js", WebSecurity.staticResource("/page-kit.js"));
-        assertEquals("/web/config-editor.js", WebSecurity.staticResource("/config-editor.js"));
-        assertEquals("/web/chat-text.js", WebSecurity.staticResource("/chat-text.js"));
-        assertEquals("/web/announcements.js", WebSecurity.staticResource("/announcements.js"));
         assertEquals("/web/openapi.json", WebSecurity.staticResource("/openapi.json"));
-        assertEquals("/web/user.js", WebSecurity.staticResource("/user.js"));
         assertEquals("/web/vue/index.html", WebSecurity.staticResource("/lottery"));
-        assertEquals("/web/lottery.html", WebSecurity.staticResource("/lottery.html"));
-        assertEquals("/web/lottery.js", WebSecurity.staticResource("/lottery.js"));
-        assertEquals("/web/banners.js", WebSecurity.staticResource("/banners.js"));
-        assertEquals("/web/map.js", WebSecurity.staticResource("/map.js"));
-        assertEquals("/web/world-stack.js", WebSecurity.staticResource("/world-stack.js"));
+        // 旧静态页面壳与脚本已迁入 Vite 源码，不再从 /web 提供。
+        assertNull(WebSecurity.staticResource("/legacy.html"));
+        assertNull(WebSecurity.staticResource("/legacy-user.html"));
+        assertNull(WebSecurity.staticResource("/user.html"));
+        assertNull(WebSecurity.staticResource("/app.js"));
+        assertNull(WebSecurity.staticResource("/style.css"));
+        assertNull(WebSecurity.staticResource("/page-kit.js"));
+        assertNull(WebSecurity.staticResource("/lottery.html"));
         assertNull(WebSecurity.staticResource("/../config/storage.yml"));
         assertNull(WebSecurity.staticResource("/api/config"));
         assertTrue(WebSecurity.safeApiPath("/api/status"));

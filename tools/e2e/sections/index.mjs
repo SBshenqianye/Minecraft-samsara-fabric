@@ -1,4 +1,5 @@
 import announcements from './announcements.mjs';
+import batch5 from './batch5.mjs';
 import legacyShell from './legacy-shell.mjs';
 import output from './output.mjs';
 import permissions from './permissions.mjs';
@@ -14,4 +15,5 @@ export const sections = {
   permissions,
   'server-console': serverConsole,
   'legacy-shell': legacyShell,
+  batch5,
 };

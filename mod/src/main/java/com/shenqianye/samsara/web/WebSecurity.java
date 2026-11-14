@@ -77,32 +77,7 @@ public final class WebSecurity {
                  "/samsara/system", "/samsara/system/audit",
                  "/track", "/diff", "/inventory", "/identity-inventory-inline" ->
                 "/web/vue/index.html";
-            case "/legacy.html" -> "/web/index.html";
-            case "/legacy-user.html" -> "/web/user.html";
-            case "/user.html" -> "/web/user.html";
-            case "/user.js" -> "/web/user.js";
-            case "/lottery.html" -> "/web/lottery.html";
-            case "/lottery.js" -> "/web/lottery.js";
-            case "/item-ui.js" -> "/web/item-ui.js";
-            case "/value-table.js" -> "/web/value-table.js";
-            case "/app.js" -> "/web/app.js";
-            case "/page-kit.js" -> "/web/page-kit.js";
-            case "/config-editor.js" -> "/web/config-editor.js";
-            case "/chat-text.js" -> "/web/chat-text.js";
-            case "/announcements.js" -> "/web/announcements.js";
             case "/openapi.json" -> "/web/openapi.json";
-            case "/identity.html" -> "/web/identity.html";
-            case "/identity.js" -> "/web/identity.js";
-            case "/structured.js" -> "/web/structured.js";
-            case "/form-kit.js" -> "/web/form-kit.js";
-            case "/particles.js" -> "/web/particles.js";
-            case "/output.js" -> "/web/output.js";
-            case "/permissions.js" -> "/web/permissions.js";
-            case "/banners.js" -> "/web/banners.js";
-            case "/map.js" -> "/web/map.js";
-            case "/world-stack.js" -> "/web/world-stack.js";
-            case "/server.js" -> "/web/server.js";
-            case "/style.css" -> "/web/style.css";
             default -> {
                 if (path.matches("^/mods/[A-Za-z0-9_.-]+(/[A-Za-z0-9_./-]+)?$")
                         && !path.contains("..")) {

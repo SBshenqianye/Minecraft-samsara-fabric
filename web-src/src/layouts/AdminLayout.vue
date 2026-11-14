@@ -47,7 +47,7 @@
 
     <PageScrollbar ref="scrollbarRef" />
 
-    <div ref="overlayHost" class="ia-overlay-host"></div>
+    <div ref="overlayHost" class="ia-overlay-host"><AdminOverlays /></div>
     <IdentityInventoryDialog v-if="workspace === 'samsara'" />
     <GlobalInventoryDrawer v-if="workspace === 'samsara'" />
     <FrameworkDialogHost />
@@ -62,12 +62,13 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { KEEP_ALIVE_PAGES, LEGACY_ALIASES, WORKSPACES } from '../navigation.js';
-import { loadLegacyDocument, waitForElement } from '../legacy/document.js';
+import { waitForElement } from '../legacy/document.js';
 import { loadLegacyAdminScripts } from '../legacy/admin.js';
 import { useApi } from '../composables/useApi.js';
 import { useAdminNavigation } from '../composables/useAdminNavigation.js';
 import { useMods } from '../composables/useMods.js';
 import AppHeader from './AppHeader.vue';
+import AdminOverlays from './AdminOverlays.vue';
 import WorkspaceRail from './WorkspaceRail.vue';
 import SectionNav from './SectionNav.vue';
 import PageScrollbar from './PageScrollbar.vue';
@@ -177,16 +178,6 @@ async function refreshWebVersion() {
 
 onMounted(async () => {
   try {
-    const doc = await loadLegacyDocument();
-    for (const node of Array.from(doc.body.childNodes)) {
-      if (node.nodeType === Node.ELEMENT_NODE
-          && (node.tagName === 'HEADER' || node.tagName === 'MAIN'
-            || node.tagName === 'SCRIPT')) {
-        continue;
-      }
-      if (node.nodeType === Node.ELEMENT_NODE && node.id === 'app-skeleton') continue;
-      overlayHost.value.appendChild(document.importNode(node, true));
-    }
     await waitForInitialPanel();
     // 旧脚本对 #search 等页面元素已做判空；页面懒挂载时不再等 4 秒。
     await loadLegacyAdminScripts();

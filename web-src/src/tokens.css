@@ -1,7 +1,7 @@
 /*
  * Vue 应用的设计变量与基础排版。
  * 旧资源 mod/src/main/resources/web/style.css 仍保留一份同样的变量，
- * 供 /legacy.html 回退使用；改主题时两处一起改。
+ * 旧命令式内核共用同一套设计变量；改主题时与 tokens.css 一起改。
  */
 :root {
   color-scheme: light dark;

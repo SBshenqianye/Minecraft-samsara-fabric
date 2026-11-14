@@ -1,0 +1,1 @@
+function e(e,t=4e3){return new Promise((n,r)=>{let i=Date.now(),a=()=>{let o=document.getElementById(e);o?n(o):Date.now()-i>=t?r(Error(`等待页面元素超时：`+e)):window.setTimeout(a,40)};a()})}export{e as t};

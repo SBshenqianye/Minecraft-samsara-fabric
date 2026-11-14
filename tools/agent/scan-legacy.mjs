@@ -6,17 +6,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const root = process.cwd();
-const webDir = path.join(root, 'mod/src/main/resources/web');
+const webDir = path.join(root, 'web-src/src/legacy-core');
 const args = process.argv.slice(2);
 const outArg = args.indexOf('--out');
 const outDir = path.join(root, outArg >= 0 && args[outArg + 1] ? args[outArg + 1] : 'docs/agent');
 
 const PAGE_MAP = {
-  'app.js': { page: 'config / claim-range / 全局壳', route: '/samsara/config/*', note: '核心旧壳，最后处理' },
+  'app.js': { page: 'config / claim-range / 全局壳', route: '/samsara/config/*', note: '核心旧壳，已作为 Vite 内核打包，不再走静态脚本' },
   'config-editor.js': { page: '配置编辑', route: '/samsara/config/editor', note: 'PageSpec/FormSpec，最高复杂度' },
-  'announcements.js': { page: '公告', route: '/samsara/community/announcements', note: '已迁移为原生 Vue，保留给 /legacy.html 回退' },
   'output.js': { page: '输出格式', route: '/samsara/config/output', note: 'contenteditable 富文本编辑器，中等复杂度' },
-  'permissions.js': { page: '权限', route: '/samsara/config/permissions', note: '已迁移为原生 Vue，保留给 /legacy.html 回退' },
   'identity.js': { page: '身份组', route: '/samsara/community/identity', note: '列表 + 详情 + 背包 iframe' },
   'map.js': { page: '地图', route: '/samsara/world/map', note: 'canvas/瓦片，保留渲染内核' },
   'world-stack.js': { page: '世界栈', route: '/samsara/world/stack', note: '时间线 + 3D/图标' },
@@ -25,16 +23,15 @@ const PAGE_MAP = {
   'chat-text.js': { page: '共享富文本', route: '—', note: '共享组件，先抽公用' },
   'structured.js': { page: '共享结构化表单', route: '—', note: '共享组件' },
   'form-kit.js': { page: '共享表单工具', route: '—', note: '共享组件' },
-  'page-kit.js': { page: '旧页面生命周期', route: '—', note: '迁移完成后删除' },
+  'page-kit.js': { page: '旧页面生命周期', route: '—', note: '已随 Vite 内核打包，页面走 Vue 生命周期' },
   'item-ui.js': { page: '共享物品 UI', route: '—', note: '已有 Vue ItemIcon/ItemTooltip' },
   'value-table.js': { page: '共享价值表', route: '—', note: '可复用' },
   'particles.js': { page: '共享粒子背景', route: '—', note: '视觉资源' },
   'banners.js': { page: '共享横幅/粒子', route: '—', note: '视觉资源' },
+  'user.js': { page: '公开用户端内核', route: '/user', note: '公开只读 API 适配，已由 UserPage.vue 挂载' },
 };
 
 const STATUS_MAP = {
-  'announcements.js': 'migrated',
-  'permissions.js': 'migrated',
   'output.js': 'shell-migrated',
   'server.js': 'shell-migrated',
   'lottery.js': 'shell-migrated',
@@ -42,16 +39,16 @@ const STATUS_MAP = {
   'config-editor.js': 'shell-migrated',
   'map.js': 'shell-migrated',
   'world-stack.js': 'shell-migrated',
-  'app.js': 'shell',
-  'page-kit.js': 'shell',
-  'chat-text.js': 'shared',
-  'structured.js': 'shared',
-  'form-kit.js': 'shared',
-  'item-ui.js': 'shared',
-  'value-table.js': 'shared',
-  'particles.js': 'shared',
-  'banners.js': 'shared',
-  'user.js': 'shared',
+  'app.js': 'bundled',
+  'page-kit.js': 'bundled',
+  'chat-text.js': 'bundled',
+  'structured.js': 'bundled',
+  'form-kit.js': 'bundled',
+  'item-ui.js': 'bundled',
+  'value-table.js': 'bundled',
+  'particles.js': 'bundled',
+  'banners.js': 'bundled',
+  'user.js': 'bundled',
 };
 
 const STATUS_LABEL = {
@@ -61,6 +58,7 @@ const STATUS_LABEL = {
   pending: '⏳ pending',
   shared: '🔗 shared',
   shell: '🧱 shell',
+  bundled: '📦 bundled',
 };
 
 function unique(values) {
@@ -146,7 +144,7 @@ const lines = [
   '',
   '## 状态汇总',
   '',
-  ...['migrated', 'shell-migrated', 'in-progress', 'pending', 'shared', 'shell'].map((status) => {
+  ...['migrated', 'shell-migrated', 'in-progress', 'pending', 'shared', 'shell', 'bundled'].map((status) => {
     const list = files.filter((file) => file.status === status);
     if (!list.length) return null;
     return `- ${STATUS_LABEL[status]}：${list.map((file) => '`' + file.file + '`').join('、')}`;
