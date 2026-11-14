@@ -14,7 +14,7 @@ const outDir = path.join(root, outArg >= 0 && args[outArg + 1] ? args[outArg + 1
 const PAGE_MAP = {
   'app.js': { page: 'config / claim-range / 全局壳', route: '/samsara/config/*', note: '核心旧壳，最后处理' },
   'config-editor.js': { page: '配置编辑', route: '/samsara/config/editor', note: 'PageSpec/FormSpec，最高复杂度' },
-  'announcements.js': { page: '公告', route: '/samsara/community/announcements', note: '首批迁移候选' },
+  'announcements.js': { page: '公告', route: '/samsara/community/announcements', note: '已迁移为原生 Vue，保留给 /legacy.html 回退' },
   'output.js': { page: '输出格式', route: '/samsara/config/output', note: '表单型，低风险' },
   'permissions.js': { page: '权限', route: '/samsara/config/permissions', note: '树形表单' },
   'identity.js': { page: '身份组', route: '/samsara/community/identity', note: '列表 + 详情 + 背包 iframe' },
@@ -32,6 +32,28 @@ const PAGE_MAP = {
   'banners.js': { page: '共享横幅/粒子', route: '—', note: '视觉资源' },
 };
 
+const STATUS_MAP = {
+  'announcements.js': 'migrated',
+  'app.js': 'shell',
+  'page-kit.js': 'shell',
+  'chat-text.js': 'shared',
+  'structured.js': 'shared',
+  'form-kit.js': 'shared',
+  'item-ui.js': 'shared',
+  'value-table.js': 'shared',
+  'particles.js': 'shared',
+  'banners.js': 'shared',
+  'user.js': 'shared',
+};
+
+const STATUS_LABEL = {
+  migrated: '✅ migrated',
+  'in-progress': '🚧 in-progress',
+  pending: '⏳ pending',
+  shared: '🔗 shared',
+  shell: '🧱 shell',
+};
+
 function unique(values) {
   return [...new Set(values)].sort();
 }
@@ -41,16 +63,31 @@ function scanFile(file) {
   if (!fs.existsSync(full)) return null;
   const text = fs.readFileSync(full, 'utf8');
   const size = Buffer.byteLength(text, 'utf8');
-  const ids = unique([...text.matchAll(/getElementById\(\s*['"]([^'"]+)['"]/g)].map((m) => m[1]));
+
+  // DOM 依赖：getElementById、旧脚本的 $('id') 帮助函数、querySelector('#id')。
+  const idMatches = [
+    ...text.matchAll(/getElementById\(\s*['"]([^'"]+)['"]/g),
+    ...text.matchAll(/\$\(\s*['"]([A-Za-z][\w:-]*)['"]\s*\)/g),
+    ...text.matchAll(/querySelector(?:All)?\(\s*['"]#([A-Za-z][\w:-]*)/g),
+  ];
+  const ids = unique(idMatches.map((match) => match[1]));
+  const domReads = idMatches.length;
+  const panelAttrs = unique([
+    ...text.matchAll(/data-(?:server-)?panel=["']([^"']+)["']/g),
+  ].map((match) => match[1]));
+  const panels = unique([...ids, ...panelAttrs].filter((id) => id.startsWith('panel-')
+    || id.startsWith('server-')));
+
   const globals = unique([...text.matchAll(/window\.(Samsara[A-Za-z0-9_]+)/g)].map((m) => m[1]));
   const apis = unique([...text.matchAll(/['"`](\/api\/[^'"`\s?)]+)/g)].map((m) => m[1]));
   const registerPages = unique([...text.matchAll(/registerPage\(\s*['"]([^'"]+)['"]/g)].map((m) => m[1]));
   const events = [...text.matchAll(/addEventListener\(/g)].length;
   const innerHtml = [...text.matchAll(/innerHTML/g)].length;
-  const panels = ids.filter((id) => id.startsWith('panel-'));
   const info = PAGE_MAP[file] || { page: '未分类', route: '—', note: '' };
+  const status = STATUS_MAP[file] || 'pending';
   const risk = Math.round(size / 1024)
     + ids.length * 2
+    + domReads
     + globals.length * 3
     + innerHtml * 5
     + (info.note.includes('最高') ? 20 : 0);
@@ -60,7 +97,10 @@ function scanFile(file) {
     page: info.page,
     route: info.route,
     note: info.note,
+    status,
+    statusLabel: STATUS_LABEL[status] || status,
     ids,
+    domReads,
     panels,
     globals,
     apis,
@@ -91,30 +131,41 @@ const lines = [
   '',
   '## 总览',
   '',
-  '| 文件 | KB | 页面 | 路由 | DOM id | 全局 | API | innerHTML | 风险分 | 建议 |',
-  '|---|---:|---|---|---:|---:|---:|---:|---:|---|',
-  ...files.map((file) => `| \`${file.file}\` | ${file.sizeKB} | ${file.page} | ${file.route} | ${file.ids.length} | ${file.globals.length} | ${file.apis.length} | ${file.innerHtml} | ${file.risk} | ${file.note} |`),
+  '| 文件 | 状态 | KB | 页面 | 路由 | DOM 读取 | DOM id | 全局 | API | innerHTML | 风险分 | 建议 |',
+  '|---|---|---:|---|---|---:|---:|---:|---:|---:|---:|---|',
+  ...files.map((file) => `| \`${file.file}\` | ${file.statusLabel} | ${file.sizeKB} | ${file.page} | ${file.route} | ${file.domReads} | ${file.ids.length} | ${file.globals.length} | ${file.apis.length} | ${file.innerHtml} | ${file.risk} | ${file.note} |`),
+  '',
+  '## 状态汇总',
+  '',
+  ...['migrated', 'in-progress', 'pending', 'shared', 'shell'].map((status) => {
+    const list = files.filter((file) => file.status === status);
+    if (!list.length) return null;
+    return `- ${STATUS_LABEL[status]}：${list.map((file) => '`' + file.file + '`').join('、')}`;
+  }).filter(Boolean),
   '',
   '## 按迁移批次',
   '',
   '### 第一批（低风险表单/只读）',
   '',
-  ...files.filter((file) => ['announcements.js', 'output.js', 'permissions.js', 'identity.js'].includes(file.file))
+  ...files.filter((file) => ['announcements.js', 'output.js', 'permissions.js', 'identity.js'].includes(file.file)
+    && file.status !== 'migrated')
     .map((file) => `- \`${file.file}\` → ${file.route}`),
   '',
   '### 第二批（经济 / RCON）',
   '',
-  ...files.filter((file) => ['lottery.js', 'server.js'].includes(file.file))
+  ...files.filter((file) => ['lottery.js', 'server.js'].includes(file.file)
+    && file.status !== 'migrated')
     .map((file) => `- \`${file.file}\` → ${file.route}`),
   '',
   '### 第三批（配置编辑器）',
   '',
-  ...files.filter((file) => file.file === 'config-editor.js')
+  ...files.filter((file) => file.file === 'config-editor.js' && file.status !== 'migrated')
     .map((file) => `- \`${file.file}\` → ${file.route}`),
   '',
   '### 第四批（canvas / 3D）',
   '',
-  ...files.filter((file) => ['map.js', 'world-stack.js', 'app.js'].includes(file.file))
+  ...files.filter((file) => ['map.js', 'world-stack.js', 'app.js'].includes(file.file)
+    && file.status !== 'migrated')
     .map((file) => `- \`${file.file}\` → ${file.route}`),
   '',
   '## 明细',
@@ -124,8 +175,9 @@ const lines = [
 for (const file of files) {
   lines.push(`### \`${file.file}\``);
   lines.push('');
+  lines.push(`- 状态：${file.statusLabel}`);
   lines.push(`- 页面：${file.page}（${file.route}）`);
-  lines.push(`- 大小：${file.sizeKB} KB；事件监听：${file.events}；innerHTML：${file.innerHtml}`);
+  lines.push(`- 大小：${file.sizeKB} KB；DOM 读取：${file.domReads}；事件监听：${file.events}；innerHTML：${file.innerHtml}`);
   if (file.note) lines.push(`- 建议：${file.note}`);
   if (file.panels.length) lines.push(`- panel：${file.panels.map((id) => '`' + id + '`').join('、')}`);
   if (file.globals.length) lines.push(`- 全局：${file.globals.map((id) => '`' + id + '`').join('、')}`);

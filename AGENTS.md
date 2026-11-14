@@ -61,6 +61,10 @@ cd web-src && npm.cmd run check
 涉及页面行为时追加：
 
 ```powershell
+# 单页面一键验证：npm run check + section E2E
+node tools/agent/verify-page.mjs --page announcements --base http://127.0.0.1:8722 --token <token>
+
+# 只跑 section E2E
 node tools/e2e/run.mjs --base http://127.0.0.1:8722 --token <token> --section announcements
 ```
 
@@ -74,13 +78,14 @@ E2E 失败时先判断是否已知旧脚本问题（世界栈/地图/公告缓�
 
 ## 6. 迁移旧页面的固定顺序
 
-1. 扫描依赖：`node tools/agent/scan-legacy.mjs`
+1. 扫描依赖：`node tools/agent/scan-legacy.mjs`（清单带 `status` 列）
 2. 生成任务与骨架：`node tools/agent/scaffold-page.mjs --name ...`
 3. 抽纯逻辑到 `web-src/src/pages/<page>/model.js` + 单测
 4. 写 Vue 页面，复用 `ItemWorkbench` / `Segmented` / `TabShell`
 5. 加 section E2E
-6. 删除 `LegacyPanel`、旧脚本 import、`meta.panel`
-7. 更新 `CHANGELOG.md` / `docs/实现状态.md`
+6. 一键验证：`node tools/agent/verify-page.mjs --page <page> ...`
+7. 删除 `LegacyPanel`、旧脚本 import、`meta.panel`
+8. 更新 `CHANGELOG.md` / `docs/实现状态.md`
 
 **不要**一次性重写所有 legacy；按页面绞杀，保留 `legacy.html` 回滚直到覆盖完成。
 

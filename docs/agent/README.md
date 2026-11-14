@@ -28,8 +28,9 @@ docs/agent/
   README.md
 
 tools/agent/
-  scan-legacy.mjs                 # 扫描旧脚本 DOM/全局/API 依赖
+  scan-legacy.mjs                 # 扫描旧脚本 DOM/全局/API 依赖（含迁移状态）
   scaffold-page.mjs               # 生成 Vue 页面 + model + 单测 + 任务 spec
+  verify-page.mjs                 # 一键验证：npm run check + section E2E
 
 tools/e2e/
   harness.mjs                     # 浏览器/CDP/结果统计
@@ -42,8 +43,7 @@ tools/e2e/
 ```powershell
 node tools/agent/scan-legacy.mjs
 node tools/agent/scaffold-page.mjs --name <page> --title <标题> --route <路由> --keep-alive
-cd web-src && npm.cmd run check
-node tools/e2e/run.mjs --base http://127.0.0.1:8722 --token <token> --section <page>
+node tools/agent/verify-page.mjs --page <page> --base http://127.0.0.1:8722 --token <token>
 ```
 
 具体见 `AGENTS.md` 与 `docs/agent/tasks/`。
