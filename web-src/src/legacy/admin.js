@@ -13,15 +13,9 @@ export function loadLegacyAdminScripts() {
       await import('../../../mod/src/main/resources/web/banners.js');
       await import('../../../mod/src/main/resources/web/item-ui.js');
       await import('../../../mod/src/main/resources/web/value-table.js');
-      await import('../../../mod/src/main/resources/web/lottery.js');
       await import('../../../mod/src/main/resources/web/page-kit.js');
       await import('../../../mod/src/main/resources/web/app.js');
       await import('../../../mod/src/main/resources/web/chat-text.js');
-      await import('../../../mod/src/main/resources/web/config-editor.js');
-      await import('../../../mod/src/main/resources/web/map.js');
-      await import('../../../mod/src/main/resources/web/world-stack.js');
-      await import('../../../mod/src/main/resources/web/identity.js');
-      await import('../../../mod/src/main/resources/web/server.js');
     })().catch((error) => {
       scriptsPromise = null;
       throw error;

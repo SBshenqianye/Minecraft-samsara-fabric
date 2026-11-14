@@ -48,6 +48,7 @@ import { getToken, useApi } from '../composables/useApi.js';
 import TabShell from '../components/TabShell.vue';
 import LegacyPanel from '../components/LegacyPanel.vue';
 import FolderTree from '../components/FolderTree.vue';
+import { useLegacyPage } from '../composables/useLegacyPage.js';
 
 const route = useRoute();
 const router = useRouter();
@@ -56,6 +57,13 @@ const error = ref('');
 const message = ref('');
 const pages = ref([]);
 const loaded = ref(false);
+
+useLegacyPage({
+  panelId: 'panel-config-editor',
+  load: () => import('../../../mod/src/main/resources/web/config-editor.js'),
+  afterLoad: () => window.SamsaraConfigEditor?.setSourceFilter?.('third-party'),
+  activate: () => window.SamsaraConfigEditor?.activate?.(),
+});
 
 const modId = computed(() => String(route.params.modId || ''));
 const routeFile = computed(() => {

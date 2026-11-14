@@ -1,4 +1,5 @@
 import announcements from './announcements.mjs';
+import legacyShell from './legacy-shell.mjs';
 import output from './output.mjs';
 import permissions from './permissions.mjs';
 import serverConsole from './server-console.mjs';
@@ -12,4 +13,5 @@ export const sections = {
   output,
   permissions,
   'server-console': serverConsole,
+  'legacy-shell': legacyShell,
 };

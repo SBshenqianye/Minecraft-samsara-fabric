@@ -11,6 +11,7 @@
 - **权限页原生迁移**：`PermissionsPage.vue` 改为 Vue 原生页面，拆出 `PermissionNode.vue` / `PermLevelControl.vue` / `pages/permissions/model.js`；保留树形展示、搜索、展开/折叠、等级分段、停用节点、recovery 提示与 owner 名单；删除该页的 `LegacyPanel` 包装，`legacy/admin.js` 不再加载 `permissions.js`。
 - **RCON 控制台原生迁移**：`ServerConsolePage.vue` + `pages/server-console/model.js`；保留命令执行、历史、Tab 补全、快捷命令、危险命令确认、清空/复制；`/vanilla/console` 不再走 `ServerPage`/`LegacyPanel`；旧 `server.js` 的控制台监听在 Vue 应用内由 `SamsaraNativeConsole` 短路，仅供 `/legacy.html` 回退。
 - **输出格式页壳迁移**：`OutputPage.vue` 接管面板 DOM 与生命周期，`output.js` 改为按页动态加载（不再进全局 `legacy/admin.js`）；保留 contenteditable 内核、chips、撤销/重做与服务端预览，后续再抽纯逻辑。
+- **全部旧页面按页加载**：新增 `useLegacyPage`；`lottery`、`identity`、`config-editor`、`map`、`world-stack`、`server` 不再由 `legacy/admin.js` 全局加载，改为 Vue 页面挂载后按需加载并激活；`app.js` 与共享模块保留为最后 shell。
 - **页面级 E2E**：新增 `tools/e2e/run.mjs` 与 `tools/e2e/sections/`，可只跑公告页或权限页；全量 `web-e2e.mjs` 的公告/权限断言同步改为原生页面。
 - **回归基线**：公告页 section E2E 8/8；全量 E2E 公告段通过，既有世界栈/地图失败仍为旧脚本缓存 DOM 的历史问题。
 

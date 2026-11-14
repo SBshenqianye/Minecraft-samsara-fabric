@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-14T08:58:09.207Z",
+  "generatedAt": "2026-11-14T12:26:13.706Z",
   "files": [
     {
       "file": "server.js",
@@ -7,8 +7,8 @@
       "page": "本体服务器",
       "route": "/vanilla/*",
       "note": "建议拆成 4 个页面",
-      "status": "in-progress",
-      "statusLabel": "🚧 in-progress",
+      "status": "shell-migrated",
+      "statusLabel": "🧩 shell-migrated",
       "ids": [
         "audit-diff-",
         "panel-server",
@@ -202,8 +202,8 @@
       "page": "地图",
       "route": "/samsara/world/map",
       "note": "canvas/瓦片，保留渲染内核",
-      "status": "pending",
-      "statusLabel": "⏳ pending",
+      "status": "shell-migrated",
+      "statusLabel": "🧩 shell-migrated",
       "ids": [
         "map-activity",
         "map-canvas",
@@ -271,8 +271,8 @@
       "page": "世界栈",
       "route": "/samsara/world/stack",
       "note": "时间线 + 3D/图标",
-      "status": "pending",
-      "statusLabel": "⏳ pending",
+      "status": "shell-migrated",
+      "statusLabel": "🧩 shell-migrated",
       "ids": [
         "world-stack-after-wrap",
         "world-stack-archive-dialog",
@@ -346,8 +346,8 @@
       "page": "身份组",
       "route": "/samsara/community/identity",
       "note": "列表 + 详情 + 背包 iframe",
-      "status": "pending",
-      "statusLabel": "⏳ pending",
+      "status": "shell-migrated",
+      "statusLabel": "🧩 shell-migrated",
       "ids": [
         "identity-data-content",
         "identity-data-dialog",
@@ -388,8 +388,8 @@
       "page": "经济业务",
       "route": "/samsara/economy",
       "note": "金额/轮次/下注",
-      "status": "pending",
-      "statusLabel": "⏳ pending",
+      "status": "shell-migrated",
+      "statusLabel": "🧩 shell-migrated",
       "ids": [
         "lottery-bets",
         "lottery-cancel",
@@ -439,8 +439,8 @@
       "page": "配置编辑",
       "route": "/samsara/config/editor",
       "note": "PageSpec/FormSpec，最高复杂度",
-      "status": "pending",
-      "statusLabel": "⏳ pending",
+      "status": "shell-migrated",
+      "statusLabel": "🧩 shell-migrated",
       "ids": [
         "config-editor-body",
         "config-editor-count",

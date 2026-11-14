@@ -22,6 +22,16 @@
 | 权限 | `permissions.js` | `pages/PermissionsPage.vue` | `sections/permissions.mjs` |
 | RCON 控制台 | `server.js` console 段 | `pages/ServerConsolePage.vue` | `sections/server-console.mjs` |
 | 输出格式（壳） | `output.js` | `pages/OutputPage.vue` | `sections/output.mjs`（内核按页加载，待抽纯逻辑） |
+| 经济业务（壳） | `lottery.js` | `pages/LotteryPage.vue` | `sections/legacy-shell.mjs` |
+| 身份组（壳） | `identity.js` | `pages/IdentityPage.vue` | `sections/legacy-shell.mjs` |
+| 配置编辑器（壳） | `config-editor.js` | `pages/ConfigEditorPage.vue` | `sections/legacy-shell.mjs` |
+| 地图（壳） | `map.js` | `pages/MapPage.vue` | `sections/legacy-shell.mjs` |
+| 世界栈（壳） | `world-stack.js` | `pages/WorldStackPage.vue` | `sections/legacy-shell.mjs` |
+| 本体配置/备份/审计（壳） | `server.js` | `pages/ServerPage.vue` | `sections/legacy-shell.mjs` |
+
+## 批次 1–4：已完成（页面壳 + 按页加载内核）
+
+> 批次 2–4 的复杂页面采用 Vue 壳 + `useLegacyPage`：脚本不再进全局 `legacy/admin.js`，由页面挂载后按需加载。旧内核保留，后续可继续抽纯逻辑。
 
 ## 批次 1：中等复杂度、可独立迁移
 
@@ -54,7 +64,10 @@
 | map | `map.js` | `pages/MapPage.vue` | 保留 tile/canvas 内核，Vue 管工具栏/详情/生命周期 |
 | world-stack | `world-stack.js` | `pages/WorldStackPage.vue` | 保留时间线/3D/图标内核，Vue 管外层 |
 
-## 批次 5：旧壳与共享模块
+## 批次 5：旧壳与共享模块（保留为 shell，不阻塞页面迁移）
+
+> `app.js`、`page-kit.js` 与共享 CSS/DOM 工具仍作为最后的内核保留；页面已全部由 Vue 路由/组件接管。
+
 
 | 任务 | 旧文件 | 说明 |
 |---|---|---|
