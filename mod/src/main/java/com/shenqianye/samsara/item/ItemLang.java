@@ -11,7 +11,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * 物品中文名查询表，数据源是随 Web 资源打包的 {@code /web/item-lang.json}。
+ * 物品中文名查询表，数据源是随模组资源打包的 {@code /assets/samsara/lang/item-lang.json}。
  *
  * <p>只保留 {@code zh} 一列，避免为了 tooltip 引入经济模块的依赖；解析一次后常驻内存。
  * 资源缺失时返回空串，调用方回退到服务端名称或物品 ID。
@@ -33,7 +33,7 @@ public final class ItemLang {
 
     private static Map<String, String> load() {
         Map<String, String> out = new HashMap<>();
-        try (InputStream in = ItemLang.class.getResourceAsStream("/web/item-lang.json")) {
+        try (InputStream in = ItemLang.class.getResourceAsStream("/assets/samsara/lang/item-lang.json")) {
             if (in == null) return out;
             JsonObject root = JsonParser.parseReader(new InputStreamReader(in, StandardCharsets.UTF_8))
                     .getAsJsonObject();

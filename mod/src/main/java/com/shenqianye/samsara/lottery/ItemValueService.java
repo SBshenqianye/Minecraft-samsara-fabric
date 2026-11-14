@@ -173,7 +173,7 @@ public final class ItemValueService {
 
     private static Map<String, Map<String, Object>> loadLang() {
         Map<String, Map<String, Object>> out = new HashMap<>();
-        try (InputStream in = ItemValueService.class.getResourceAsStream("/web/item-lang.json")) {
+        try (InputStream in = ItemValueService.class.getResourceAsStream("/assets/samsara/lang/item-lang.json")) {
             if (in == null) {
                 return out;
             }
