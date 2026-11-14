@@ -1,4 +1,5 @@
 import announcements from './announcements.mjs';
+import permissions from './permissions.mjs';
 
 /**
  * 页面级 E2E 注册表。
@@ -6,4 +7,5 @@ import announcements from './announcements.mjs';
  */
 export const sections = {
   announcements,
+  permissions,
 };

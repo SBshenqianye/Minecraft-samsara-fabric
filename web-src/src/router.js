@@ -156,7 +156,12 @@ const routes = [
         legacyConfig('samsara/config/advanced', ['config'], ConfigPage, 'config', '高级配置', 'config'),
         legacyConfig('samsara/config/claim-range', ['claim-range'], ClaimRangePage, 'claim-range', '圈地范围', 'claim-range'),
         legacyConfig('samsara/config/output', ['output'], OutputPage, 'output', '输出', 'output'),
-        legacyConfig('samsara/config/permissions', ['permissions'], PermissionsPage, 'permissions', '权限', 'permissions'),
+        // 权限页已是原生 Vue 页面，不再走旧 panel 激活。
+        {
+          ...samsara('config', 'permissions', PermissionsPage, '权限'),
+          path: 'samsara/config/permissions',
+          alias: ['permissions'],
+        },
         { path: 'samsara/config', redirect: '/samsara/config/editor' },
 
         // ---- samsara / 世界 ----

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-14T07:42:01.195Z",
+  "generatedAt": "2026-11-14T08:18:16.209Z",
   "files": [
     {
       "file": "server.js",
@@ -552,7 +552,7 @@
       "sizeKB": 28.1,
       "page": "输出格式",
       "route": "/samsara/config/output",
-      "note": "表单型，低风险",
+      "note": "contenteditable 富文本编辑器，中等复杂度",
       "status": "pending",
       "statusLabel": "⏳ pending",
       "ids": [],
@@ -579,9 +579,9 @@
       "sizeKB": 12.3,
       "page": "权限",
       "route": "/samsara/config/permissions",
-      "note": "树形表单",
-      "status": "pending",
-      "statusLabel": "⏳ pending",
+      "note": "已迁移为原生 Vue，保留给 /legacy.html 回退",
+      "status": "migrated",
+      "statusLabel": "✅ migrated",
       "ids": [],
       "domReads": 0,
       "panels": [],

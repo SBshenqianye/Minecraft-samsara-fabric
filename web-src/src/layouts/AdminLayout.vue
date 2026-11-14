@@ -323,6 +323,7 @@ function guarded(fn) {
 
 const HERO_HINTS = {
   announcements: '编辑、预览并发送全服公告；支持聊天 / ActionBar / Title / BossBar 与定时、周期触发。',
+  permissions: '按命令路径调整权限等级；关闭会级联到后代，owner 名单单独保存并热重载。',
   track: '查看最近可回看的玩家与时段；真正的回放仍在游戏内执行。',
   diff: '只读回看区块差异；复用现有 Diff API，不重写回放算法。',
   containers: '维度/坐标/半径/类型搜索，读取与编辑容器槽位；写入前保存审计快照并校验 revision。',

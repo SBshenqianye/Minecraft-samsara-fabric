@@ -15,8 +15,8 @@ const PAGE_MAP = {
   'app.js': { page: 'config / claim-range / 全局壳', route: '/samsara/config/*', note: '核心旧壳，最后处理' },
   'config-editor.js': { page: '配置编辑', route: '/samsara/config/editor', note: 'PageSpec/FormSpec，最高复杂度' },
   'announcements.js': { page: '公告', route: '/samsara/community/announcements', note: '已迁移为原生 Vue，保留给 /legacy.html 回退' },
-  'output.js': { page: '输出格式', route: '/samsara/config/output', note: '表单型，低风险' },
-  'permissions.js': { page: '权限', route: '/samsara/config/permissions', note: '树形表单' },
+  'output.js': { page: '输出格式', route: '/samsara/config/output', note: 'contenteditable 富文本编辑器，中等复杂度' },
+  'permissions.js': { page: '权限', route: '/samsara/config/permissions', note: '已迁移为原生 Vue，保留给 /legacy.html 回退' },
   'identity.js': { page: '身份组', route: '/samsara/community/identity', note: '列表 + 详情 + 背包 iframe' },
   'map.js': { page: '地图', route: '/samsara/world/map', note: 'canvas/瓦片，保留渲染内核' },
   'world-stack.js': { page: '世界栈', route: '/samsara/world/stack', note: '时间线 + 3D/图标' },
@@ -34,6 +34,7 @@ const PAGE_MAP = {
 
 const STATUS_MAP = {
   'announcements.js': 'migrated',
+  'permissions.js': 'migrated',
   'app.js': 'shell',
   'page-kit.js': 'shell',
   'chat-text.js': 'shared',

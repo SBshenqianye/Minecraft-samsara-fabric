@@ -1061,10 +1061,8 @@ async function main() {
           method: 'PUT',
           body: JSON.stringify({ nodes: [{ path: node.path, level: before }] }),
         });
-        if (window.SamsaraPermissions && window.SamsaraPermissions.load) {
-          await window.SamsaraPermissions.load();
-        }
-        await wait(700);
+        document.getElementById('perm-refresh')?.click();
+        await wait(1000);
       }
       return {
         path: node.path,

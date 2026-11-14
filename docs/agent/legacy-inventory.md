@@ -1,7 +1,7 @@
 # Legacy Web 迁移清单
 
 > 由 `node tools/agent/scan-legacy.mjs` 生成，提交前重新生成。
-> 扫描时间：2026-11-14T07:42:01.196Z
+> 扫描时间：2026-11-14T08:18:16.210Z
 
 ## 总览
 
@@ -16,8 +16,8 @@
 | `config-editor.js` | ⏳ pending | 19.2 | 配置编辑 | /samsara/config/editor | 19 | 12 | 4 | 4 | 0 | 94 | PageSpec/FormSpec，最高复杂度 |
 | `user.js` | 🔗 shared | 10.9 | 未分类 | — | 7 | 6 | 6 | 5 | 0 | 48 |  |
 | `announcements.js` | ✅ migrated | 15.3 | 公告 | /samsara/community/announcements | 9 | 8 | 2 | 3 | 0 | 46 | 已迁移为原生 Vue，保留给 /legacy.html 回退 |
-| `output.js` | ⏳ pending | 28.1 | 输出格式 | /samsara/config/output | 0 | 0 | 3 | 4 | 0 | 37 | 表单型，低风险 |
-| `permissions.js` | ⏳ pending | 12.3 | 权限 | /samsara/config/permissions | 0 | 0 | 4 | 2 | 0 | 24 | 树形表单 |
+| `output.js` | ⏳ pending | 28.1 | 输出格式 | /samsara/config/output | 0 | 0 | 3 | 4 | 0 | 37 | contenteditable 富文本编辑器，中等复杂度 |
+| `permissions.js` | ✅ migrated | 12.3 | 权限 | /samsara/config/permissions | 0 | 0 | 4 | 2 | 0 | 24 | 已迁移为原生 Vue，保留给 /legacy.html 回退 |
 | `banners.js` | 🔗 shared | 16.9 | 共享横幅/粒子 | — | 0 | 0 | 1 | 0 | 0 | 20 | 视觉资源 |
 | `particles.js` | 🔗 shared | 13.2 | 共享粒子背景 | — | 0 | 0 | 1 | 0 | 0 | 16 | 视觉资源 |
 | `chat-text.js` | 🔗 shared | 9.3 | 共享富文本 | — | 0 | 0 | 1 | 0 | 0 | 12 | 共享组件，先抽公用 |
@@ -29,8 +29,8 @@
 
 ## 状态汇总
 
-- ✅ migrated：`announcements.js`
-- ⏳ pending：`server.js`、`map.js`、`world-stack.js`、`identity.js`、`lottery.js`、`config-editor.js`、`output.js`、`permissions.js`
+- ✅ migrated：`announcements.js`、`permissions.js`
+- ⏳ pending：`server.js`、`map.js`、`world-stack.js`、`identity.js`、`lottery.js`、`config-editor.js`、`output.js`
 - 🔗 shared：`user.js`、`banners.js`、`particles.js`、`chat-text.js`、`form-kit.js`、`value-table.js`、`structured.js`、`item-ui.js`
 - 🧱 shell：`app.js`、`page-kit.js`
 
@@ -40,7 +40,6 @@
 
 - `identity.js` → /samsara/community/identity
 - `output.js` → /samsara/config/output
-- `permissions.js` → /samsara/config/permissions
 
 ### 第二批（经济 / RCON）
 
@@ -159,16 +158,16 @@
 - 状态：⏳ pending
 - 页面：输出格式（/samsara/config/output）
 - 大小：28.1 KB；DOM 读取：0；事件监听：16；innerHTML：0
-- 建议：表单型，低风险
+- 建议：contenteditable 富文本编辑器，中等复杂度
 - 全局：`SamsaraOutput`、`SamsaraUI`、`SamsaraUIKit`
 - API：`/api/config`、`/api/output`、`/api/output/preview`、`/api/output/reload`
 
 ### `permissions.js`
 
-- 状态：⏳ pending
+- 状态：✅ migrated
 - 页面：权限（/samsara/config/permissions）
 - 大小：12.3 KB；DOM 读取：0；事件监听：6；innerHTML：0
-- 建议：树形表单
+- 建议：已迁移为原生 Vue，保留给 /legacy.html 回退
 - 全局：`SamsaraPermissions`、`SamsaraStructured`、`SamsaraUI`、`SamsaraUIKit`
 - API：`/api/permissions`、`/api/permissions/reload`
 
