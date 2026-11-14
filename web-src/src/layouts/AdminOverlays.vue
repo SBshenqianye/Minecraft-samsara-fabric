@@ -179,19 +179,7 @@
   </div>
 </dialog>
 
-<dialog id="world-stack-archive-dialog" class="app-dialog world-stack-dialog">
-  <div class="dialog-body">
-    <div class="dialog-head">
-      <div>
-        <h3>归档 / 删除栈层</h3>
-        <p class="dialog-sub">危险操作：先预览，确认后排队；重启时把维度和元数据移到 stack-archive 备份，不直接删除。栈顶 world 不能归档。</p>
-      </div>
-      <button class="ghost dialog-close" type="button" data-dialog-close="world-stack-archive-dialog" title="关闭" aria-label="关闭">×</button>
-    </div>
-    <div id="world-stack-archive-error" class="world-stack-error" role="alert" hidden></div>
-    <div id="world-stack-archive-preview" class="world-stack-preview" hidden></div>
-  </div>
-</dialog>
+
 
 <dialog id="config-editor-preview-dialog" class="app-dialog">
   <form method="dialog" class="dialog-body">

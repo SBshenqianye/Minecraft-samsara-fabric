@@ -84,6 +84,11 @@
       </div>
     </div>
     <div id="world-stack-jobs" class="world-stack-jobs"></div>
+    <WorldStackArchiveDialog
+      v-model="archiveOpen"
+      :stack-id="archiveStackId"
+      @archived="onArchived"
+    />
   </section>
 </div>
 </TabShell>
@@ -93,18 +98,28 @@
 import { onUnmounted, ref } from 'vue';
 import TabShell from '../components/TabShell.vue';
 import { useLegacyPage } from '../composables/useLegacyPage.js';
+import WorldStackArchiveDialog from './world-stack/WorldStackArchiveDialog.vue';
 import WorldStackCards from './world-stack/WorldStackCards.vue';
 
 defineOptions({ name: 'WorldStackPage' });
 
 const stacks = ref([]);
+const archiveOpen = ref(false);
+const archiveStackId = ref('');
 
 function onStackUpdate(event) {
   stacks.value = Array.isArray(event.detail?.stacks) ? event.detail.stacks : [];
 }
 
 function archiveStack(stack) {
-  window.SamsaraWorldStack?.previewArchive?.(stack.id);
+  archiveStackId.value = stack.id;
+  archiveOpen.value = true;
+}
+
+async function onArchived(data) {
+  window.SamsaraUI?.setMessage?.(
+    '已排队：' + data.jobId + '。重启服务器后归档；备份会保留。', 'ok');
+  await window.SamsaraWorldStack?.load?.();
 }
 
 function uploadIcon(stack) {

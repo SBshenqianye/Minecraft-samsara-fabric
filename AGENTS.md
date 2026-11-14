@@ -44,6 +44,7 @@ $env:JAVA_HOME='C:\Program Files\Java\jdk-26.0.2.1'
 
 ## 4. 单任务工作流
 
+0. **多步任务自主执行**：任务需要分多步时，不要逐步找用户确认。自己拆步骤，每步实现→测试→提交，然后发一条简短进度消息继续下一步；全部步骤提交后再部署。只有缺产品决策、凭据或环境阻塞时才停。
 1. 读 `docs/agent/tasks/<task>.md`，只加载该任务列出的文件。
 2. 若任务是迁移旧页：先补/确认 characterization test，再抽纯逻辑，再重生成 UI。
 3. 每个任务一个 `git worktree` / 分支；只改 spec 的 `allowed files`。
