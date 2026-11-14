@@ -1,3 +1,13 @@
+import {
+  configTotalEntries,
+  currentValue as modelCurrentValue,
+  effectiveValue,
+  isMissingValue,
+  isVisibleByCondition,
+  matchesQuery,
+  valueKey,
+} from '../pages/config/model.js';
+
 'use strict';
 
 // 单页控制台：所有文本都用 textContent 写入，绝不使用 innerHTML。
@@ -206,18 +216,8 @@ function renderStatus() {
 
 // ---- 配置值 ----
 
-function valueKey(fileId, path) {
-  return fileId + ':' + path;
-}
-
-function effectiveValue(entry) {
-  if (entry.value === undefined || entry.value === null) return entry.default;
-  return entry.value;
-}
-
 function currentValue(fileId, entry) {
-  const key = valueKey(fileId, entry.path);
-  return state.edits.has(key) ? state.edits.get(key) : effectiveValue(entry);
+  return modelCurrentValue(state.edits, fileId, entry);
 }
 
 function markEdited(fileId, entry, value) {
@@ -238,14 +238,6 @@ document.addEventListener('samsara:config-changed', (event) => {
     if (!fileId || key.startsWith(fileId + ':')) refresh();
   }
 });
-
-function isMissingValue(entry) {
-  return entry.value === undefined || entry.value === null;
-}
-
-function sameJson(a, b) {
-  return JSON.stringify(a) === JSON.stringify(b);
-}
 
 // ---- 配置渲染 ----
 
@@ -324,13 +316,8 @@ function buildFileBlock(file, matching, navTargets, plain) {
 function applyVisibility(scope, file) {
   for (const row of scope.querySelectorAll('.entry[data-visible-when]')) {
     const condition = row.dataset.visibleWhen || '';
-    const split = condition.indexOf('=');
-    if (split <= 0) continue;
-    const depPath = condition.slice(0, split);
-    const expected = condition.slice(split + 1);
-    const dep = file.entries.find((item) => item.path === depPath);
-    if (!dep) continue;
-    const visible = String(currentValue(file.id, dep)) === expected;
+    const visible = isVisibleByCondition(file, condition, state.edits);
+    if (visible == null) continue;
     const wasHidden = row.hidden;
     row.hidden = !visible;
     const navButton = document.querySelector(
@@ -384,11 +371,7 @@ function render() {
 
   for (const file of state.model.files) {
     if (file.id === 'claim-range') continue;
-    const matching = file.entries.filter((entry) => {
-      const haystack = (file.id + ' ' + entry.path + ' ' + entry.description + ' '
-          + entry.group).toLowerCase();
-      return !query || haystack.includes(query);
-    });
+    const matching = file.entries.filter((entry) => matchesQuery(file, entry, query));
     if (matching.length === 0) continue;
     shown += matching.length;
 
@@ -453,10 +436,7 @@ function renderClaimRange() {
 }
 
 function totalEntries() {
-  if (!state.model) return 0;
-  return state.model.files
-      .filter((file) => file.id !== 'claim-range')
-      .reduce((sum, file) => sum + file.entries.length, 0);
+  return configTotalEntries(state.model);
 }
 
 function renderEntry(file, entry) {
