@@ -22,6 +22,11 @@ export function useConfig({ includeClaim = false } = {}) {
   const saving = ref(false);
   const invalidCurves = reactive(new Set());
   const listeners = new Set();
+  const previewOpen = ref(false);
+  const previewBusy = ref(false);
+  const previewSub = ref('');
+  const previewDiff = ref('');
+  const pendingPreview = ref([]);
 
   function notify(path) {
     for (const listener of listeners) {
@@ -147,6 +152,61 @@ export function useConfig({ includeClaim = false } = {}) {
     }
   }
 
+  function originalValue(entry) {
+    if (!entry) return undefined;
+    return entry.value === undefined || entry.value === null ? entry.default : entry.value;
+  }
+
+  async function preview() {
+    if (!model.value) {
+      setMessage('还没有读取配置', 'error');
+      return false;
+    }
+    if (invalidCurves.size) {
+      setMessage('轨迹保留曲线有非法值，已阻止预览', 'error');
+      return false;
+    }
+    const changedIds = new Set([...edits.keys()].map((key) => key.split(':')[0]));
+    const targets = files.value.filter((file) => changedIds.has(file.id));
+    if (!targets.length) {
+      setMessage('没有需要保存的修改', 'ok');
+      return false;
+    }
+    const lines = [];
+    let changed = 0;
+    for (const file of targets) {
+      const diffs = [];
+      for (const entry of file.entries || []) {
+        const key = valueKey(file.id, entry.path);
+        if (!edits.has(key)) continue;
+        const before = originalValue(entry);
+        const after = edits.get(key);
+        if (JSON.stringify(before) === JSON.stringify(after)) continue;
+        diffs.push('- ' + entry.path + ': ' + JSON.stringify(before) + ' → ' + JSON.stringify(after));
+        changed += 1;
+      }
+      if (diffs.length) lines.push('## ' + file.name + '\n' + diffs.join('\n'));
+    }
+    pendingPreview.value = targets.map((file) => file.id);
+    previewSub.value = targets.length + ' 个文件 · 修改 ' + changed + ' 项 · 确认后写入并自动保留 .yml.bak';
+    previewDiff.value = lines.join('\n\n') || '没有字段变化。';
+    previewOpen.value = true;
+    return true;
+  }
+
+  async function confirmPreview() {
+    if (!pendingPreview.value.length) return false;
+    previewOpen.value = false;
+    await save();
+    pendingPreview.value = [];
+    return true;
+  }
+
+  function closePreview() {
+    previewOpen.value = false;
+    pendingPreview.value = [];
+  }
+
   async function reload() {
     loading.value = true;
     try {
@@ -198,6 +258,10 @@ export function useConfig({ includeClaim = false } = {}) {
     messageKind,
     loading,
     saving,
+    previewOpen,
+    previewBusy,
+    previewSub,
+    previewDiff,
     warnings,
     files,
     configFiles,
@@ -210,6 +274,9 @@ export function useConfig({ includeClaim = false } = {}) {
     loadStatus,
     reload,
     save,
+    preview,
+    confirmPreview,
+    closePreview,
     currentValue,
     setValue,
     resetEntry,

@@ -24,12 +24,6 @@ const PAGES = [
     extra: () => Boolean(document.getElementById('claim-range-files')?.textContent.trim()),
   },
   {
-    route: '/samsara/config/editor',
-    label: '配置编辑器 / config-editor',
-    panel: '#panel-config-editor',
-    extra: () => document.querySelectorAll('#panel-config-editor .entry, #panel-config-editor input, #panel-config-editor select').length >= 1,
-  },
-  {
     route: '/samsara/world/map',
     label: '地图 / map',
     panel: '#panel-map',

@@ -26,10 +26,13 @@ function itemKey(item) {
 
 function targetIds(items) {
   const out = [];
-  for (const item of items || []) {
-    if (item.target) out.push(item.target);
-    for (const child of item.children || []) if (child.target) out.push(child.target);
-  }
+  const collect = (list) => {
+    for (const item of list || []) {
+      if (item.target) out.push(item.target);
+      if (item.children?.length) collect(item.children);
+    }
+  };
+  collect(items);
   return out;
 }
 
@@ -123,6 +126,7 @@ function watchScroll() {
   const section = document.querySelector('.section-tabs');
   const threshold = (shell?.getBoundingClientRect().height || 0)
     + (section?.getBoundingClientRect().height || 0) + 24;
+  const previous = active.value;
   scrollHandler = () => {
     if (Date.now() < suppressScrollUntil) return;
     let current = ids[0];
@@ -132,7 +136,7 @@ function watchScroll() {
     }
     active.value = current;
   };
-  active.value = ids[0];
+  if (!previous || !ids.includes(previous)) active.value = ids[0];
   window.addEventListener('scroll', scrollHandler, { passive: true });
 }
 

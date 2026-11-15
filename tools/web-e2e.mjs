@@ -93,7 +93,7 @@ async function main() {
     const pageHelpers = `
       window.__e2eAliases = {
         config: '/samsara/config/advanced',
-        'config-editor': '/samsara/config/editor',
+        'config-editor': '/samsara/config/advanced',
         'claim-range': '/samsara/config/claim-range',
         output: '/samsara/config/output',
         permissions: '/samsara/config/permissions',
@@ -894,43 +894,6 @@ async function main() {
     check('输出格式布尔改为按钮', mods.output === 2, 'buttons=' + mods.output);
     check('权限树布尔改为按钮', mods.permissions > 0, 'segmented=' + mods.permissions);
     check('配置页布尔改为按钮', mods.configBool > 0, 'segmented=' + mods.configBool);
-
-    // ---- PageSpec/FormSpec 配置编辑器（F-168，只读检查 + 预览不写盘） ----
-    const editor = await evaluate(`(async () => {
-      const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-      __e2eGo('config-editor');
-      await wait(1400);
-      const nav = [...document.querySelectorAll('#page-nav .nav-item')];
-      const groups = nav.map((node) => node.textContent.trim());
-      const target = [...document.querySelectorAll('#page-nav .nav-item[data-target]')][0];
-      if (target) target.click();
-      await wait(700);
-      const fields = document.querySelectorAll('#config-editor-body .entry').length;
-      const title = document.querySelector('#config-editor-body h3')?.textContent || '';
-      let previewOpen = false;
-      let previewText = '';
-      const preview = [...document.querySelectorAll('#config-editor-body button')]
-        .find((node) => node.textContent.includes('预览'));
-      if (preview) {
-        preview.click();
-        await wait(1200);
-        const dialog = document.getElementById('config-editor-preview-dialog');
-        previewOpen = Boolean(dialog && dialog.open);
-        previewText = document.getElementById('config-editor-preview-sub')?.textContent || '';
-        if (dialog && dialog.open) dialog.close();
-      }
-      return { nav: nav.length, groups, fields, title, previewOpen, previewText };
-    })()`);
-    check('配置编辑器只加载 samsara 自有 PageSpec 页面', editor.nav >= 2
-        && editor.groups.some((text) => text.includes('samsara'))
-        && !editor.groups.some((text) => text.includes('服务器本体'))
-        && !editor.groups.some((text) => text.includes('第三方模组')),
-        JSON.stringify({ nav: editor.nav, groups: editor.groups }));
-    check('配置编辑器 FormSpec 字段可渲染', editor.fields > 0
-        && editor.title.length > 0, JSON.stringify({ fields: editor.fields, title: editor.title }));
-    check('配置编辑器预览弹窗可用且不写盘', editor.previewOpen
-        && editor.previewText.includes('将修改'), JSON.stringify({ open: editor.previewOpen,
-          text: editor.previewText }));
 
     // ---- Web 公告：原生 Vue 页面 ----
     await navigate(base + '/samsara/community/announcements');
@@ -2336,7 +2299,7 @@ async function main() {
 
     // ---- 简单页逐路由验证（Vue page/view 直接打开） ----
     const simpleRoutes = [
-      ['/config-editor', '#panel-config-editor', '/config-editor'],
+      ['/config-editor', '#panel-config', '/samsara/config/advanced'],
       ['/announcements', '[data-page="announcements"]', '/announcements'],
       ['/output', '#panel-output', '/output'],
       ['/permissions', '[data-page="permissions"]', '/permissions'],
@@ -2543,26 +2506,6 @@ async function main() {
     check('地图页可一键进入世界栈且面包屑对齐', worldStackPath.path === '/samsara/world/stack'
         && worldStackPath.crumb.join('|') === 'samsara|世界|世界栈',
         JSON.stringify(worldStackPath));
-
-    // 配置编辑器只显示 samsara 自有配置
-    await navigate(base + '/samsara/config/editor');
-    await until("document.querySelector('#config-editor-body .config-editor-page-head h3')",
-        25000, '配置编辑器页面');
-    const configFilter = await evaluate(`(() => {
-      const navText = document.querySelector('#global-nav')?.textContent || '';
-      const body = document.querySelector('#config-editor-body');
-      const meta = body?.querySelector('p.muted.small')?.textContent || '';
-      return {
-        navText,
-        meta,
-        serverPropsVisible: /server\\.properties|whitelist\\.json|ops\\.json/.test(meta),
-        serverGroupVisible: navText.includes('服务器本体'),
-        thirdGroupVisible: navText.includes('第三方模组'),
-      };
-    })()`);
-    check('samsara 配置编辑器不显示服务器本体/第三方配置',
-        !configFilter.serverPropsVisible && !configFilter.serverGroupVisible
-        && !configFilter.thirdGroupVisible, JSON.stringify(configFilter));
 
     // 工作区导航默认收起并记住手动固定
     const railState = await evaluate(`(() => {

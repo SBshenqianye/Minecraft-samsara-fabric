@@ -39,7 +39,7 @@
             </label>
             <span id="summary" class="muted small">{{ config.summary.value }}</span>
             <button id="config-reload" class="ghost" type="button" :disabled="config.loading.value" @click="config.reload">重新读取</button>
-            <button id="config-save" class="primary" type="button" :disabled="config.saving.value" @click="config.save()">保存并重载</button>
+            <button id="config-preview" class="primary" type="button" :disabled="config.previewBusy.value" @click="config.preview()">预览并保存</button>
           </div>
         </div>
         <div id="message" class="message" :class="config.messageKind.value" role="status">{{ config.message.value }}</div>
@@ -55,11 +55,27 @@
         </div>
       </section>
     </div>
+    <dialog id="config-preview-dialog" ref="previewDialog" class="app-dialog" @close="config.closePreview()">
+      <div class="dialog-body">
+        <div class="dialog-head">
+          <div>
+            <h3>预览变更</h3>
+            <p class="dialog-sub">{{ config.previewSub.value }}</p>
+          </div>
+        </div>
+        <pre id="config-preview-diff" class="config-editor-diff">{{ config.previewDiff.value }}</pre>
+        <div class="dialog-actions">
+          <span class="spacer"></span>
+          <button id="config-preview-cancel" class="ghost" type="button" @click="config.closePreview()">取消</button>
+          <button id="config-preview-confirm" class="primary" type="button" :disabled="config.previewBusy.value" @click="config.confirmPreview()">确认写入</button>
+        </div>
+      </div>
+    </dialog>
   </TabShell>
 </template>
 
 <script setup>
-import { computed, onActivated, onDeactivated, onBeforeUnmount, onMounted, watch } from 'vue';
+import { computed, nextTick, onActivated, onDeactivated, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import TabShell from '../components/TabShell.vue';
 import ConfigFileBlock from './config/ConfigFileBlock.vue';
 import { useConfig } from './config/useConfig.js';
@@ -75,11 +91,20 @@ import {
 
 defineOptions({ name: 'ConfigPage' });
 
-// 配置渲染由 Vue 接管；app.js 只保留页面壳与连接流程。
-window.__samsaraConfigVuePage = true;
-
 const config = useConfig();
 const configStore = config;
+const previewDialog = ref(null);
+
+watch(() => config.previewOpen.value, async (open) => {
+  await nextTick();
+  const dialog = previewDialog.value;
+  if (!dialog) return;
+  if (open && !dialog.open) {
+    try { dialog.showModal(); } catch { dialog.setAttribute('open', ''); }
+  } else if (!open && dialog.open) {
+    dialog.close();
+  }
+});
 
 const visibleFiles = computed(() => config.configFiles.value
   .filter((file) => fileView(file, config.edits, config.search.value).count > 0));

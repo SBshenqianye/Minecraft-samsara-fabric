@@ -2,7 +2,6 @@ import { createRouter, createWebHistory } from 'vue-router';
 
 const AdminLayout = () => import('./layouts/AdminLayout.vue');
 const ConfigPage = () => import('./pages/ConfigPage.vue');
-const ConfigEditorPage = () => import('./pages/ConfigEditorPage.vue');
 const ClaimRangePage = () => import('./pages/ClaimRangePage.vue');
 const OutputPage = () => import('./pages/OutputPage.vue');
 const PermissionsPage = () => import('./pages/PermissionsPage.vue');
@@ -164,7 +163,7 @@ const routes = [
         { path: 'samsara/sky/web-inventory', redirect: '/samsara/sky/containers' },
 
         // ---- samsara / 配置 ----
-        legacyConfig('samsara/config/editor', ['config-editor'], ConfigEditorPage, 'config-editor', '配置编辑', 'config-editor'),
+        { path: 'samsara/config/editor', alias: ['config-editor'], redirect: '/samsara/config/advanced' },
         legacyConfig('samsara/config/advanced', ['config'], ConfigPage, 'config', '高级配置', 'config', { nativePage: true }),
         legacyConfig('samsara/config/claim-range', ['claim-range'], ClaimRangePage, 'claim-range', '圈地范围', 'claim-range', { nativePage: true }),
         legacyConfig('samsara/config/output', ['output'], OutputPage, 'output', '输出', 'output'),

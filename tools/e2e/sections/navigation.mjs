@@ -13,6 +13,8 @@ export default {
       const button = items.find((node) => node.textContent.trim().startsWith('where.showChunk'));
       button?.click();
       await sleep(1700);
+      window.scrollBy(0, 1);
+      await sleep(250);
       const active = items.filter((node) => node.classList.contains('active'))
         .map((node) => node.textContent.trim());
       const target = button ? document.getElementById(button.dataset.target) : null;
@@ -29,6 +31,25 @@ export default {
     check('子导航滚动到吸顶导航下方',
         child.targetTop != null && Math.abs(child.targetTop - child.navTop) <= 2,
         JSON.stringify(child));
+
+    const resync = await evaluate(`(async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const input = document.querySelector('#files .entry-control input[type="text"]');
+      if (input) {
+        input.value = input.value + 'x';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      await sleep(500);
+      const items = [...document.querySelectorAll('#page-nav .nav-item')];
+      return {
+        changed: Boolean(input),
+        active: items.filter((node) => node.classList.contains('active'))
+          .map((node) => node.textContent.trim()),
+      };
+    })()`);
+    check('编辑字段导致导航重建后仍保持子项高亮',
+        resync.active.length === 1 && resync.active[0].startsWith('where.showChunk'),
+        JSON.stringify(resync));
 
     const scrolled = await evaluate(`(async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -114,21 +135,13 @@ export default {
         JSON.stringify(cleared));
 
     await navigate('/samsara/config/editor');
-    await until("document.querySelectorAll('#page-nav .nav-item').length > 0", 30000, '配置编辑器导航');
-    const editor = await evaluate(`(async () => {
-      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      const items = [...document.querySelectorAll('#page-nav .nav-item')];
-      const page = items.find((node) => node.textContent.includes('命令开关'));
-      page?.click();
-      await sleep(900);
-      return {
-        clicked: page?.textContent.trim() || '',
-        active: items.filter((node) => node.classList.contains('active'))
-          .map((node) => node.textContent.trim()),
-      };
-    })()`);
-    check('配置编辑器页导航只高亮当前页面',
-        editor.active.length === 1 && editor.active[0].includes('命令开关'),
-        JSON.stringify(editor));
+    await until("location.pathname === '/samsara/config/advanced'", 15000, '配置编辑器重定向');
+    const redirect = await evaluate(`(() => ({
+      path: location.pathname,
+      navTitle: document.querySelector('#page-nav .nav-title')?.textContent?.trim() || '',
+    }))()`);
+    check('旧配置编辑器入口重定向到高级配置',
+        redirect.path === '/samsara/config/advanced'
+        && redirect.navTitle.startsWith('配置导航'), JSON.stringify(redirect));
   },
 };

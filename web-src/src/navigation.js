@@ -46,7 +46,6 @@ export const SECTION_NAV = {
     { id: 'world-stack', label: '世界栈', target: '/samsara/world/stack' },
   ],
   config: [
-    { id: 'config-editor', label: '配置编辑', target: '/samsara/config/editor' },
     { id: 'config', label: '高级配置', target: '/samsara/config/advanced' },
     { id: 'claim-range', label: '圈地范围', target: '/samsara/config/claim-range' },
     { id: 'output', label: '输出', target: '/samsara/config/output' },
@@ -67,7 +66,7 @@ export const SECTION_NAV = {
  */
 export const ROUTE_ALIASES = {
   config: '/samsara/config/advanced',
-  'config-editor': '/samsara/config/editor',
+  'config-editor': '/samsara/config/advanced',
   'claim-range': '/samsara/config/claim-range',
   output: '/samsara/config/output',
   permissions: '/samsara/config/permissions',
