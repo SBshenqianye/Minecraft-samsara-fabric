@@ -10,7 +10,7 @@ export default {
       20000,
       '输出格式页',
     );
-    await until("window.SamsaraOutput && document.querySelector('#output-meta')?.textContent.trim().length > 0",
+    await until("document.querySelector('#output-meta')?.textContent.trim().length > 0",
       20000, '输出消息激活');
     await until("document.getElementById('output-preview')?.textContent.trim().length > 0",
       15000, '输出预览');

@@ -14,12 +14,10 @@ const LEGACY_CORE_IMPORT_ALLOW = new Set([
   'web-src/src/legacy/admin.js',
   'web-src/src/legacy/user.js',
   'web-src/src/pages/MapPage.vue',
-  'web-src/src/pages/OutputPage.vue',
 ]);
 
 const LEGACY_PAGE_ALLOW = new Set([
   'web-src/src/pages/MapPage.vue',
-  'web-src/src/pages/OutputPage.vue',
 ]);
 
 const LEGACY_IMPORT_ALLOW = new Set([

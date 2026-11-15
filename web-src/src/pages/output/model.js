@@ -37,3 +37,55 @@ export function previewFragments(result) {
       : '',
   }));
 }
+
+/** 客户端校验：未知/缺失的变量与按钮。 */
+export function clientErrors(parts, message) {
+  const errors = [];
+  if (!message) return errors;
+  if (!parts.length) errors.push('模板不能为空');
+  const varKeys = [];
+  const buttonKeys = [];
+  for (const part of parts) {
+    if (part.var !== undefined) varKeys.push(part.var);
+    if (part.button !== undefined) buttonKeys.push(part.button);
+  }
+  const knownVars = new Set((message.variables || []).map((item) => item.key));
+  const knownButtons = new Set((message.buttons || []).map((item) => item.key));
+  const seenVars = new Set();
+  const seenButtons = new Set();
+  for (const key of varKeys) {
+    if (!knownVars.has(key)) errors.push('未知变量：' + key);
+    seenVars.add(key);
+  }
+  for (const key of buttonKeys) {
+    if (!knownButtons.has(key)) errors.push('未知按钮：' + key);
+    seenButtons.add(key);
+  }
+  const missing = (message.variables || []).filter((variable) => variable.required
+    && !seenVars.has(variable.key));
+  const missingButtons = (message.buttons || []).filter((button) => button.required
+    && !seenButtons.has(button.key));
+  if (missing.length) errors.push('缺少必需变量：' + missing.map((item) => item.key).join(', '));
+  if (missingButtons.length) {
+    errors.push('缺少必需按钮：' + missingButtons.map((item) => item.label).join(', '));
+  }
+  return errors;
+}
+
+export function varTitle(variable) {
+  return variable
+    ? variable.label + ' · 样例：' + variable.sample + (variable.required ? ' · 必需' : '')
+    : '';
+}
+
+export function buttonLabel(part, message) {
+  if (part.label) return part.label;
+  const definition = (message?.buttons || []).find((item) => item.key === part.button);
+  return definition ? definition.label : part.button;
+}
+
+export function buttonTitle(part, message) {
+  const definition = (message?.buttons || []).find((item) => item.key === part.button);
+  return definition ? definition.command + (definition.required ? ' · 必需' : '') : '未知按钮：' + part.button;
+}
+

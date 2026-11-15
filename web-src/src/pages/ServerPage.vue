@@ -107,6 +107,7 @@ function syncPageNav() {
 }
 
 watch([activePanel, model], syncPageNav, { immediate: true });
+onActivated(syncPageNav);
 
 function onConnected() {
   loadModel();
