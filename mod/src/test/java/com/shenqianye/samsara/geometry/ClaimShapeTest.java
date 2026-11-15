@@ -133,13 +133,14 @@ class ClaimShapeTest {
     void stripeTop_singleBanner_includesIntermediateCells() {
         int d = 3;
         Set<ChunkCoord> r = cells("stripe_top", d, "north");
-        assertEquals(4, r.size(), "stripe_top = 中心 + 北向 3 格");
+        assertEquals(4, r.size(), "stripe_top = 中心 + 4 格射线");
         assertTrue(has(r, 0, 0));
+        // 图案按观看者正面命名；实际延伸与玩家看到的方向相反（2026-11-16 校正 180°）。
         assertTrue(has(r, 0, -1));
         assertTrue(has(r, 0, -2));
         assertTrue(has(r, 0, -3));
         assertFalse(has(r, 1, 0), "端点以外不应出现横向格");
-        assertFalse(has(r, 0, -4), "不应超出距离");
+        assertFalse(has(r, 0, 4), "不应超出距离");
     }
 
     @Test

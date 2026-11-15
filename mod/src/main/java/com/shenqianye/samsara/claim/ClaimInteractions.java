@@ -67,6 +67,8 @@ public class ClaimInteractions {
                 return InteractionResult.PASS;
             }
 
+            // 刚放下的旗帜可能还在 500ms 节流队列里；右键这一刻先结算，避免误报“未保护”。
+            AreaService.getInstance().flushDirty();
             // 显示详情：保护范围以白名单为准（与倒流/重置使用同一份数据）
             Set<ChunkCoord> area = previewArea(level.dimension(), chunkPos, node);
             boolean protected_ = AreaService.getInstance().isProtected(level.dimension(), chunkPos.x, chunkPos.z);
@@ -80,7 +82,8 @@ public class ClaimInteractions {
             if (ownerName != null) sb.append(" · ").append(ownerName);
             sb.append(" · ").append(area.size()).append(" 区块");
             // 动作栏（ActionBar）：sendSystemMessage(..., true) 显示在快捷栏上方，不刷聊天记录。
-            sp.sendSystemMessage(Component.literal(sb.toString()), true);
+            // 动作栏是单行控件，换行会被吞成空格；这里显式压成一行，聊天栏则保留换行。
+            sp.sendSystemMessage(Component.literal(sb.toString().replace('\n', ' ')), true);
 
             // 立即发送粒子预览（右键时即时反馈）：按保护区域外边界画，和实际保护一致
             if (level instanceof ServerLevel sl) {
