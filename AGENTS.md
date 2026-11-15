@@ -11,6 +11,7 @@
 | 页面内核 | `web-src/src/pages/<page>/` | canvas / contenteditable / PageSpec 等算法与 composable，随 Vite 打包 |
 | 后端 Web | `mod/src/main/java/com/shenqianye/samsara/web/` | HTTP/API |
 | Web 约定 | `docs/Web 页面开发约定.md` | 页面/路由/样式规范 |
+| 工作队列 | `docs/待办.md` | 唯一待办登记：每条带证据与验收，开工前先读 |
 | Agent 任务 | `docs/agent/tasks/` | 每个功能任务一个 spec |
 | E2E | `tools/web-e2e.mjs` / `tools/e2e/` | 全量回归 + 分区 harness |
 | 发布 | `.opencode/skills/samsara-release/SKILL.md` | 生产部署流程 |
@@ -45,12 +46,13 @@ $env:JAVA_HOME='C:\Program Files\Java\jdk-26.0.2.1'
 ## 4. 单任务工作流
 
 0. **多步任务自主执行**：任务需要分多步时，不要逐步找用户确认。自己拆步骤，每步实现→测试→提交，然后发一条简短进度消息继续下一步；全部步骤提交后再部署。只有缺产品决策、凭据或环境阻塞时才停。
-1. 读 `docs/agent/tasks/<task>.md`，只加载该任务列出的文件。
-2. 若任务涉及现有页面：先补/确认 characterization test，再抽纯逻辑，再改 Vue 组件。
-3. 每个任务一个 `git worktree` / 分支；只改 spec 的 `allowed files`。
-4. 先跑最窄验证（页面级 E2E / 单测），再跑 `npm run check`。
-5. 绿了才合并；合并后清理旧 E2E 断言与临时桥接。
-6. 每个任务提交信息写清：`feat(web): add announcements preview`。
+1. 先看 `docs/待办.md` 里对应条目的证据与验收；没有条目就先登记（带证据 + 验收）再开工，不接受口头需求直接写代码。
+2. 读 `docs/agent/tasks/<task>.md`，只加载该任务列出的文件。
+3. 若任务涉及现有页面：先补/确认 characterization test，再抽纯逻辑，再改 Vue 组件。
+4. 每个任务一个 `git worktree` / 分支；只改 spec 的 `allowed files`。
+5. 先跑最窄验证（页面级 E2E / 单测），再跑 `npm run check`。
+6. 绿了才合并；合并后清理旧 E2E 断言与临时桥接。
+7. 每个任务提交信息写清：`feat(web): add announcements preview`。
 
 ## 5. 验证门禁
 
