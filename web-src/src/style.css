@@ -321,3 +321,43 @@ html { scroll-padding-top: calc(var(--header-h, 128px) + var(--ia-section-h, 56p
   font-size: 17px;
   line-height: 1.05;
 }
+
+/* Vue 路由与页内导航动效；降低动态偏好时自动关闭。 */
+.page-fade-enter-active,
+.page-fade-leave-active {
+  transition: opacity .18s ease, transform .18s ease;
+}
+.page-fade-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+.page-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+.nav-item {
+  transition: background-color .16s ease, color .16s ease, padding-left .16s ease, transform .16s ease;
+}
+.nav-item.active {
+  padding-left: 2px;
+  transform: translateX(2px);
+}
+
+.app-dialog[open] {
+  animation: dialog-pop .18s ease-out;
+}
+@keyframes dialog-pop {
+  from { opacity: 0; transform: translateY(8px) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-fade-enter-active,
+  .page-fade-leave-active,
+  .nav-item,
+  .app-dialog[open] {
+    transition: none !important;
+    animation: none !important;
+  }
+}

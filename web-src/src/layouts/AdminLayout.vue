@@ -39,9 +39,11 @@
           </div>
           <div class="content">
             <router-view v-slot="{ Component }">
-              <keep-alive :include="KEEP_ALIVE_PAGES">
-                <component :is="Component" />
-              </keep-alive>
+              <Transition name="page-fade" mode="out-in">
+                <keep-alive :include="KEEP_ALIVE_PAGES">
+                  <component :is="Component" />
+                </keep-alive>
+              </Transition>
             </router-view>
           </div>
         </main>

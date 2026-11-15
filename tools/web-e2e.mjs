@@ -2692,7 +2692,7 @@ async function main() {
     await sleep(200);
 
     await evaluate("document.querySelector('.section-tab[data-section=\"sky\"]').click(); true;");
-    await until("location.pathname === '/samsara/sky/track'", 15000, '天网二级切换');
+    await until("location.pathname === '/samsara/sky/track' && !!document.querySelector('[data-page=\"track\"]')", 15000, '天网二级切换');
     const skyRoute = await evaluate(`({
       path: location.pathname,
       active: document.querySelector('.section-tab.active')?.textContent.trim() || '',

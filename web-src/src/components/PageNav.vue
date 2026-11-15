@@ -105,9 +105,23 @@ async function select(item) {
     await new Promise((resolve) => requestAnimationFrame(resolve));
   }
   if (key) active.value = key;
-  const top = window.scrollY + el.getBoundingClientRect().top - navOffset();
-  // 用 instant 保证落点精确；CSS 的 scroll-behavior:smooth 在部分 Chromium 会吞掉 scrollTo。
-  window.scrollTo({ top: Math.max(0, top), behavior: 'instant' });
+  const top = Math.max(0, window.scrollY + el.getBoundingClientRect().top - navOffset());
+  const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+  if (reduce) {
+    window.scrollTo({ top, behavior: 'instant' });
+  } else {
+    const from = window.scrollY;
+    const started = performance.now();
+    const duration = 320;
+    const step = (now) => {
+      const progress = Math.min(1, (now - started) / duration);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      window.scrollTo({ top: from + (top - from) * eased, behavior: 'instant' });
+      if (progress < 1) requestAnimationFrame(step);
+      else alignTo(el);
+    };
+    requestAnimationFrame(step);
+  }
   for (const delay of [0, 120, 360, 800]) {
     window.setTimeout(() => {
       if (key) active.value = key;
