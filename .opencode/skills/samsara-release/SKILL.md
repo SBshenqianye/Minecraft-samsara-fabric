@@ -121,6 +121,7 @@ Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
 - 测试服/生产服的 `stop` 有时不会真正退出；不要只信 API，查端口和 PID，**先等优雅停服**，超时再 `taskkill`。
 - **禁止在玩家在线时直接 `taskkill /F`**：未保存的区块与玩家数据会回档到上一次自动保存。我们 2026-11-15 的连续部署中曾这样做，导致 kalinote 的进度回档；之后必须走 `stop` + 等待退出。
 - `Start-Process -RedirectStandardOutput` 指向旧进程占用的日志会失败且无输出。
+- **通过 Web API 发中文必须传 UTF-8 字节**：PowerShell 5.1 用字符串 `-Body` 时按默认代码页编码，游戏里会显示成 `????`（2026-11-15 0.62.8 公告踩过）。用 `[System.Text.Encoding]::UTF8.GetBytes($json)` + `-ContentType 'application/json; charset=utf-8'`，脚本里已验证。
 - `Copy-Item` 在旧 Java 仍持锁时可能静默失败；复制后必须立刻校验目标哈希。
 - **绝不要在旧 Java 还在运行时覆盖 jar**：Windows 不报错，但旧 JVM 仍用启动时读到的 zip 索引，结果 `index.html` 是新的、`/vue/assets/*.js` 全 404，前端白屏。必须先停服并确认 java 进程退出，再复制。
 - 生产 `Launch Server.bat` 是循环启动：java 退出后会 `timeout /t 5` 再重启。要换 jar 就必须在 java 退出后 5 秒内结束循环 cmd，否则会带着旧 jar 自动重启（本次部署就遇到过一次自重启）。

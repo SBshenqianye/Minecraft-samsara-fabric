@@ -15,12 +15,16 @@ if (-not $Token) { throw 'Missing token: pass -Token or set SAMSARA_TOKEN' }
 
 function Invoke-Console([string]$Command, [int]$Retries = 3) {
   $body = @{ command = $Command } | ConvertTo-Json -Compress
+  # PowerShell 5.1 用字符串 -Body 时按默认代码页编码，中文会变成 '?'。
+  # 必须显式转 UTF-8 字节，服务端才按 JSON 的 UTF-8 解析。
+  $payload = [System.Text.Encoding]::UTF8.GetBytes($body)
   $lastError = $null
   for ($attempt = 0; $attempt -lt $Retries; $attempt++) {
     try {
       return Invoke-RestMethod -Uri "$BaseUrl/api/server/console" -Method Post `
-        -Headers @{ Authorization = "Bearer $Token"; 'Content-Type' = 'application/json' } `
-        -Body $body -TimeoutSec 15
+        -Headers @{ Authorization = "Bearer $Token" } `
+        -ContentType 'application/json; charset=utf-8' `
+        -Body $payload -TimeoutSec 15
     } catch {
       # 服务端正在保存（或刚启动）时会短暂拒绝；重试而不是直接失败。
       $lastError = $_
