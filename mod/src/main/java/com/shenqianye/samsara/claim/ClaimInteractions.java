@@ -61,7 +61,11 @@ public class ClaimInteractions {
             String facing = getFacing(level, pos);
             ClaimNode node = new ClaimNode(chunkPos, facing, patterns, pos.getY());
             Extension ext = node.getExtension();
-            if (!ext.hasAnyDirection()) return InteractionResult.PASS;
+            // border（center 方向）没有八向射线，但 getBorderSegments() 有正方形边框，
+            // 不能再拿 hasAnyDirection() 把这类旗帜判成“无反应”。
+            if (!ext.hasAnyDirection() && node.getBorderSegments().isEmpty()) {
+                return InteractionResult.PASS;
+            }
 
             // 显示详情：保护范围以白名单为准（与倒流/重置使用同一份数据）
             Set<ChunkCoord> area = previewArea(level.dimension(), chunkPos, node);
@@ -71,12 +75,12 @@ public class ClaimInteractions {
             String ownerName = registered != null ? registered.getOwnerName() : null;
             StringBuilder sb = new StringBuilder();
             sb.append("[圈地旗] ").append(chunkPos);
-            sb.append(" 朝向 ").append(facingToDisplay(facing));
-            sb.append(protected_ ? " ✓ 受保护" : " ✗ 未保护");
-            if (ownerName != null) sb.append(" · 主人: ").append(ownerName);
-            sb.append("\n  延伸: ").append(directionSummary(ext));
-            sb.append(" · 保护区块 ").append(area.size()).append(" 个");
-            sp.sendSystemMessage(Component.literal("[周目管理] " + sb.toString().trim()));
+            sb.append(" · ").append(facingToDisplay(facing));
+            sb.append(protected_ ? " · ✓ 受保护" : " · ✗ 未保护");
+            if (ownerName != null) sb.append(" · ").append(ownerName);
+            sb.append(" · ").append(area.size()).append(" 区块");
+            // 动作栏（ActionBar）：sendSystemMessage(..., true) 显示在快捷栏上方，不刷聊天记录。
+            sp.sendSystemMessage(Component.literal(sb.toString()), true);
 
             // 立即发送粒子预览（右键时即时反馈）：按保护区域外边界画，和实际保护一致
             if (level instanceof ServerLevel sl) {

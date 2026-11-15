@@ -342,19 +342,12 @@ public class DebugCommand {
                                         .requires(PermissionRequirements.ownerAnd("debug track replay"))
                                         .then(Commands.argument("player", StringArgumentType.word())
                                                 .suggests(SuggestionProviders.knownPlayersProvider("监控目标"))
-                                                .then(Commands.argument("start", com.shenqianye.samsara.command.arg.TimeArgumentType.time())
+                                                // 时间参数用 greedyString：`23:28` / ISO 里的 `:` 不能走 word()，
+                                                // 而自定义 ArgumentType 需要客户端也装模组（本服是服务端模组）→ 登录时会
+                                                // “Unrecognized argument type”。这里一次收下 start [speed] [cycle] 自行拆分。
+                                                .then(Commands.argument("args", StringArgumentType.greedyString())
                                                         .executes(ctx -> reply(ctx.getSource(),
-                                                                debugTrackReplay(ctx, 1.0)))
-                                                        .then(Commands.argument("speed", StringArgumentType.word())
-                                                                .suggests(SuggestionProviders.speedProvider())
-                                                                .executes(ctx -> reply(ctx.getSource(),
-                                                                        debugTrackReplay(ctx,
-                                                                                parseDoubleArg(ctx, "speed"))))
-                                                                .then(Commands.argument("cycle", StringArgumentType.word())
-                                                                        .suggests(SuggestionProviders.cyclesProvider())
-                                                                        .executes(ctx -> reply(ctx.getSource(),
-                                                                                debugTrackReplay(ctx,
-                                                                                        parseDoubleArg(ctx, "speed")))))))))
+                                                                debugTrackReplay(ctx))))))
                                 .then(Commands.literal("stop")
                                         .requires(PermissionRequirements.ownerAnd("debug track stop"))
                                         .executes(ctx -> reply(ctx.getSource(),
@@ -1140,14 +1133,25 @@ public class DebugCommand {
     }
 
     /** debug track replay <player> <start> [speed] [cycle] */
-    private static String debugTrackReplay(CommandContext<CommandSourceStack> ctx, double speed) {
+    private static String debugTrackReplay(CommandContext<CommandSourceStack> ctx) {
         String name = StringArgumentType.getString(ctx, "player");
-        String start = com.shenqianye.samsara.command.arg.TimeArgumentType.getTime(ctx, "start");
-        String cycle = null;
-        try {
-            cycle = StringArgumentType.getString(ctx, "cycle");
-        } catch (IllegalArgumentException ignored) {
-            // 未指定周目：按开始时刻反查
+        String raw = StringArgumentType.getString(ctx, "args").trim();
+        String[] parts = raw.isEmpty() ? new String[0] : raw.split("\\s+");
+        if (parts.length == 0) {
+            return "用法：/samsara debug track replay <玩家> <开始时间> [倍速] [周目]";
+        }
+        String start = parts[0];
+        double speed = 1.0;
+        if (parts.length > 1) {
+            try {
+                speed = Double.parseDouble(parts[1]);
+            } catch (NumberFormatException e) {
+                return "倍速必须是数字：" + parts[1];
+            }
+        }
+        String cycle = parts.length > 2 ? parts[2] : null;
+        if (parts.length > 3) {
+            return "参数过多：开始时间之后只接受 [倍速] [周目]";
         }
         var server = ctx.getSource().getServer();
         UUID uuid = com.shenqianye.samsara.track.TrackRecorder.resolveUuid(server, name);
@@ -1155,14 +1159,6 @@ public class DebugCommand {
             return "找不到玩家 " + name + "（需在线或出现在 usercache.json）";
         }
         return com.shenqianye.samsara.track.TrackReplay.start(server, uuid, name, start, speed, cycle);
-    }
-
-    private static double parseDoubleArg(CommandContext<CommandSourceStack> ctx, String name) {
-        try {
-            return Double.parseDouble(StringArgumentType.getString(ctx, name));
-        } catch (Exception e) {
-            return 1.0;
-        }
     }
 
     /** debug track status [player] */
