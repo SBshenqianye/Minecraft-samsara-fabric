@@ -59,7 +59,7 @@
 </template>
 
 <script setup>
-import { computed, onActivated, onBeforeUnmount, onMounted, watch } from 'vue';
+import { computed, onActivated, onDeactivated, onBeforeUnmount, onMounted, watch } from 'vue';
 import TabShell from '../components/TabShell.vue';
 import ConfigFileBlock from './config/ConfigFileBlock.vue';
 import { useConfig } from './config/useConfig.js';
@@ -120,6 +120,7 @@ function onConnected() {
 }
 
 onActivated(syncNav);
+onDeactivated(clearPageNav);
 
 onMounted(() => {
   window.addEventListener('samsara:connected', onConnected);

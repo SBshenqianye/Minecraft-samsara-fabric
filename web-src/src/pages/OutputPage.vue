@@ -60,7 +60,7 @@
 </template>
 
 <script setup>
-import { computed, onActivated, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onActivated, onDeactivated, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import TabShell from '../components/TabShell.vue';
 import SegmentedButtons from '../components/SegmentedButtons.vue';
 import OutputEditor from './output/OutputEditor.vue';
@@ -118,6 +118,7 @@ function onConnected() {
 
 watch([() => store.model.value, filter, () => store.key.value], syncNav);
 onActivated(activate);
+onDeactivated(clearPageNav);
 
 onMounted(() => {
   window.addEventListener('samsara:connected', onConnected);

@@ -55,7 +55,7 @@
 </template>
 
 <script setup>
-import { onActivated, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { onActivated, onDeactivated, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import TabShell from '../components/TabShell.vue';
 import WorldStackArchiveDialog from './world-stack/WorldStackArchiveDialog.vue';
 import WorldStackCards from './world-stack/WorldStackCards.vue';
@@ -101,6 +101,7 @@ function onConnected() {
 
 watch(() => store.model.value, syncNav);
 onActivated(syncNav);
+onDeactivated(clearPageNav);
 
 onMounted(() => {
   window.addEventListener('samsara:connected', onConnected);

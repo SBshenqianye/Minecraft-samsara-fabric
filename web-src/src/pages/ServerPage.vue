@@ -22,7 +22,7 @@
 </template>
 
 <script setup>
-import { computed, onActivated, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onActivated, onDeactivated, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useApi } from '../composables/useApi.js';
 import { clearPageNav, setPageNav } from '../composables/usePageNav.js';
@@ -108,6 +108,7 @@ function syncPageNav() {
 
 watch([activePanel, model], syncPageNav, { immediate: true });
 onActivated(syncPageNav);
+onDeactivated(clearPageNav);
 
 function onConnected() {
   loadModel();

@@ -12,12 +12,17 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { pageNavState as state } from '../composables/usePageNav.js';
 import NavItems from './NavItems.vue';
 
 const active = ref('');
 let scrollHandler = null;
+let suppressScrollUntil = 0;
+
+function itemKey(item) {
+  return item?.id || item?.target || item?.label || '';
+}
 
 function targetIds(items) {
   const out = [];
@@ -28,26 +33,78 @@ function targetIds(items) {
   return out;
 }
 
-function select(item) {
+function waitForTarget(id, timeoutMs = 2500) {
+  return new Promise((resolve) => {
+    const started = Date.now();
+    const tick = () => {
+      const el = document.getElementById(id);
+      if (el || Date.now() - started >= timeoutMs) {
+        resolve(el);
+        return;
+      }
+      window.setTimeout(tick, 50);
+    };
+    tick();
+  });
+}
+
+function openAncestors(el) {
+  let changed = false;
+  for (let node = el.parentElement; node; node = node.parentElement) {
+    if (node.tagName === 'DETAILS' && !node.open) {
+      node.open = true;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+function alignTo(el) {
+  const nav = document.getElementById('page-nav');
+  const navTop = nav ? nav.getBoundingClientRect().top : 0;
+  const delta = el.getBoundingClientRect().top - navTop;
+  if (Math.abs(delta) > 1) window.scrollBy(0, delta);
+}
+
+async function select(item) {
   if (!item) return;
-  if (typeof item.onClick === 'function') item.onClick();
-  if (!item.target) return;
-  active.value = item.target;
-  const el = document.getElementById(item.target);
-  if (!el) return;
-  const align = () => {
-    const nav = document.getElementById('page-nav');
-    const navTop = nav ? nav.getBoundingClientRect().top : 0;
-    const delta = el.getBoundingClientRect().top - navTop;
-    if (Math.abs(delta) > 1) window.scrollBy(0, delta);
-  };
-  // 目标顶部对齐吸顶的页内导航顶部；布局稳定后再校正一次。
+  const key = itemKey(item);
+  if (key) active.value = key;
+  // 程序化滚动期间不让 scroll 监听把高亮改回父级。
+  suppressScrollUntil = Date.now() + 1400;
+  try {
+    if (typeof item.onClick === 'function') await item.onClick();
+  } catch {
+    // 页面自己的错误提示负责展示。
+  }
+  if (!item.target) {
+    suppressScrollUntil = 0;
+    return;
+  }
+  await nextTick();
+  let el = await waitForTarget(item.target);
+  if (!el) {
+    suppressScrollUntil = 0;
+    return;
+  }
+  if (openAncestors(el)) {
+    await nextTick();
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+  }
+  if (key) active.value = key;
   const nav = document.getElementById('page-nav');
   const navTop = nav ? nav.getBoundingClientRect().top : 0;
   const top = window.scrollY + el.getBoundingClientRect().top - navTop;
   window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
-  window.setTimeout(align, 420);
-  window.setTimeout(align, 900);
+  window.setTimeout(() => {
+    if (key) active.value = key;
+    alignTo(el);
+  }, 420);
+  window.setTimeout(() => {
+    if (key) active.value = key;
+    alignTo(el);
+    suppressScrollUntil = 0;
+  }, 900);
 }
 
 function watchScroll() {
@@ -60,6 +117,7 @@ function watchScroll() {
   const threshold = (shell?.getBoundingClientRect().height || 0)
     + (section?.getBoundingClientRect().height || 0) + 24;
   scrollHandler = () => {
+    if (Date.now() < suppressScrollUntil) return;
     let current = ids[0];
     for (const id of ids) {
       const el = document.getElementById(id);
@@ -72,7 +130,12 @@ function watchScroll() {
 }
 
 watch(() => state.title, (title) => {
-  if (!title) return;
+  if (!title) {
+    active.value = '';
+    if (scrollHandler) window.removeEventListener('scroll', scrollHandler);
+    scrollHandler = null;
+    return;
+  }
   // 旧脚本 clearNav 会给 app-shell 加 no-nav；Vue 页内导航出现时要恢复侧栏。
   document.querySelector('main.app-shell')?.classList.remove('no-nav');
 }, { flush: 'post' });

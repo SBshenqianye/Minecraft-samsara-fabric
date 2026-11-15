@@ -27,7 +27,7 @@
 </template>
 
 <script setup>
-import { onActivated, onBeforeUnmount, onMounted, watch } from 'vue';
+import { onActivated, onDeactivated, onBeforeUnmount, onMounted, watch } from 'vue';
 import TabShell from '../components/TabShell.vue';
 import ConfigEditorPanel from './config-editor/ConfigEditorPanel.vue';
 import { clearPageNav, setPageNav } from '../composables/usePageNav.js';
@@ -43,12 +43,16 @@ function syncNav() {
     title: '配置编辑器',
     items: store.navItems.value.map((group) => ({
       ...group,
+      id: 'group:' + group.label,
+      target: '',
       onClick: () => {
         const first = group.children?.[0];
         if (first) store.openPage(first.target);
       },
       children: (group.children || []).map((page) => ({
         ...page,
+        id: page.target,
+        target: '',
         onClick: () => store.openPage(page.target),
       })),
     })),
@@ -66,6 +70,7 @@ function onConnected() {
 
 watch(() => store.navItems.value, syncNav, { deep: true });
 onActivated(activate);
+onDeactivated(clearPageNav);
 
 onMounted(() => {
   window.addEventListener('samsara:connected', onConnected);

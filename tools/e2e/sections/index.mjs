@@ -5,6 +5,7 @@ import configEditor from './config-editor.mjs';
 import identity from './identity.mjs';
 import lottery from './lottery.mjs';
 import map from './map.mjs';
+import navigation from './navigation.mjs';
 import output from './output.mjs';
 import pages from './pages.mjs';
 import permissions from './permissions.mjs';
@@ -24,6 +25,7 @@ export const sections = {
   identity,
   lottery,
   map,
+  navigation,
   output,
   permissions,
   server,

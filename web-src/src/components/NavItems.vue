@@ -1,9 +1,9 @@
 <template>
-  <template v-for="item in items" :key="item.target + ':' + item.label">
+  <template v-for="item in items" :key="(item.id || item.target || item.label)">
     <button
       type="button"
       class="nav-item"
-      :class="{ active: active === item.target }"
+      :class="{ active: active === (item.id || item.target) }"
       :data-target="item.target || ''"
       :hidden="item.hidden === true"
       @click="emit('select', item)"

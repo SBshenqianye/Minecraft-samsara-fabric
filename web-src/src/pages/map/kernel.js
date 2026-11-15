@@ -2955,6 +2955,7 @@ export function createMapKernel(ctx) {
 
   const api = {
     activate,
+    renderNav,
     refreshCount,
     reload: loadModel,
     loadModel,

@@ -30,7 +30,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onActivated, onDeactivated, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import TabShell from '../components/TabShell.vue';
 import ConfigFileBlock from './config/ConfigFileBlock.vue';
 import { createClaimKernel } from './config/claim-kernel.js';
@@ -133,6 +133,7 @@ function onConnected() {
 }
 
 onActivated(syncNav);
+onDeactivated(clearPageNav);
 
 onMounted(() => {
   window.addEventListener('samsara:connected', onConnected);

@@ -118,10 +118,10 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue';
 import { useApi } from '../../composables/useApi.js';
 import { getToken } from '../../composables/useApi.js';
-import { setPageNav } from '../../composables/usePageNav.js';
+import { clearPageNav, setPageNav } from '../../composables/usePageNav.js';
 import { createMapKernel } from './kernel.js';
 
 const props = defineProps({
@@ -234,6 +234,10 @@ watch(() => props.apiBase, () => {
 });
 
 onMounted(createKernel);
+onActivated(() => {
+  mapApi.value?.renderNav?.();
+});
+onDeactivated(clearPageNav);
 onBeforeUnmount(() => {
   mapApi.value = null;
 });
