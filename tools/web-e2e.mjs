@@ -338,19 +338,19 @@ async function main() {
 
     // ---- 世界栈操作时间线（模态浮窗） ----
     await navigate(base + '/samsara/world/stack');
-    await until("document.getElementById('panel-world-stack') && window.SamsaraWorldStack",
+    await until("document.getElementById('panel-world-stack')",
         20000, '世界栈页');
     const stackTimeline = await evaluate(`(async () => {
       const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
       await sleep(300);
-      await window.SamsaraWorldStack.load();
+      document.getElementById('world-stack-refresh')?.click();
       await sleep(500);
       const openButton = document.getElementById('world-stack-timeline-open');
       openButton?.click();
       await new Promise((resolve) => setTimeout(resolve, 900));
       const dialog = document.getElementById('world-stack-timeline-dialog');
       const nodes = [...document.querySelectorAll('#world-stack-timeline .timeline-node')];
-      const nav = document.querySelector('#global-nav .nav-title')?.textContent.trim() || '';
+      const nav = document.querySelector('#page-nav .nav-title')?.textContent.trim() || '';
       const buttons = [...document.querySelectorAll('#world-stack-timeline button')];
       const undo = buttons.filter((node) => node.textContent.trim() === '撤销这次操作');
       const enabled = undo.find((node) => !node.disabled) || null;
@@ -448,7 +448,7 @@ async function main() {
     // ---- 栈层图片：卡片 16:9 视觉区、上传鉴权/类型校验、删除后回退 ----
     const iconLayout = await evaluate(`(async () => {
       const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-      await window.SamsaraWorldStack.load();
+      document.getElementById('world-stack-refresh')?.click();
       await sleep(700);
       const cards = [...document.querySelectorAll('#world-stack-list .world-stack-card')];
       const visuals = [...document.querySelectorAll('#world-stack-list .world-stack-card-visual')];
@@ -536,7 +536,7 @@ async function main() {
         check('图标 URL 可公开只读且带版本号', false, '上传响应缺少 icon.url');
       }
       const uploadedView = await evaluate(`(async () => {
-        await window.SamsaraWorldStack.load();
+        document.getElementById('world-stack-refresh')?.click();
         await new Promise((resolve) => setTimeout(resolve, 500));
         const badge = document.querySelector('#world-stack-list .world-stack-icon-badge');
         const image = document.querySelector('#world-stack-list .world-stack-icon-image');
@@ -559,7 +559,7 @@ async function main() {
           && deletedBody.ok === true && deletedBody.icon?.source !== 'upload',
           JSON.stringify(deletedBody));
       const deletedView = await evaluate(`(async () => {
-        await window.SamsaraWorldStack.load();
+        document.getElementById('world-stack-refresh')?.click();
         await new Promise((resolve) => setTimeout(resolve, 500));
         const badge = document.querySelector('#world-stack-list .world-stack-icon-badge');
         const image = document.querySelector('#world-stack-list .world-stack-icon-image');
@@ -578,7 +578,7 @@ async function main() {
 
     // ---- 归档入口：只保留卡片按钮 + 模态预览，不排队 ----
     const archiveEntry = await evaluate(`(async () => {
-      await window.SamsaraWorldStack.load();
+      document.getElementById('world-stack-refresh')?.click();
       await new Promise((resolve) => setTimeout(resolve, 500));
       const card = [...document.querySelectorAll('#world-stack-list .world-stack-card')]
         .find((node) => !node.classList.contains('top'));

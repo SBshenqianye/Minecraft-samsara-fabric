@@ -9,11 +9,11 @@
       </div>
       <div class="panel-tools">
         <button id="world-stack-timeline-open" class="ghost" type="button" @click="timelineOpen = true">操作时间线</button>
-        <button id="world-stack-refresh" class="ghost" type="button">重新读取</button>
+        <button id="world-stack-refresh" class="ghost" type="button" :disabled="store.loading.value" @click="store.load()">重新读取</button>
       </div>
     </div>
-    <div id="world-stack-message" class="message" role="status"></div>
-    <div id="world-stack-stats" class="stat-row"></div>
+    <div id="world-stack-message" class="message" :class="store.messageKind.value" role="status">{{ store.message.value }}</div>
+    <WorldStackStats :store="store" />
   </section>
 
   <section class="panel" id="world-stack-layers">
@@ -24,96 +24,60 @@
       </div>
     </div>
     <WorldStackCards
-      :stacks="stacks"
+      :stacks="store.stacks.value"
       @archive="archiveStack"
-      @upload="uploadIcon"
-      @delete="deleteIcon"
+      @upload="store.chooseIcon"
+      @delete="store.deleteIcon"
     />
   </section>
 
-  <section class="panel" id="world-stack-order-panel">
-    <div class="panel-head">
-      <div>
-        <h2>栈位排序</h2>
-        <p class="panel-sub">列表从上到下 = 栈顶 → 栈底（world 在最上面）。拖动或上下移动，保存前先看预览。只调整栈顶以下时立即生效；把旧栈层拖到栈顶会交换 world 与该层数据，需重启并在失败时回滚。</p>
-      </div>
-      <div class="panel-tools world-stack-order-actions">
-        <span id="world-stack-order-preview" class="muted small"></span>
-        <button id="world-stack-order-save" class="primary" type="button" disabled>保存排序</button>
-      </div>
-    </div>
-    <div id="world-stack-order" class="world-stack-order"></div>
-  </section>
+  <WorldStackOrder :store="store" />
+  <WorldStackImport :store="store" />
+  <WorldStackJobs :store="store" />
+  <WorldStackFiles :store="store" />
 
-  <section class="panel" id="world-stack-import-panel">
-    <div class="panel-head">
-      <div>
-        <h2>导入本地世界</h2>
-        <p class="panel-sub">只接受服务器本地路径；允许范围 = 服务器根目录 + <code>web.yml</code> 的 <code>importRoots</code>。只复制，不移动/删除源目录。可连续确认多个世界，按队列顺序在下次重启时依次执行，不需要多次重启。</p>
-      </div>
-    </div>
-    <div class="world-stack-form">
-      <label class="inline-field world-stack-path">
-        <span>源目录</span>
-        <input id="world-stack-import-path" type="text" placeholder="例如 C:\Games\...\saves\world 或服务器根下的目录">
-      </label>
-      <label class="inline-field">
-        <span>位置</span>
-        <select id="world-stack-import-position">
-          <option value="bottom">栈底</option>
-          <option value="between">某两层之间</option>
-          <option value="top">栈顶（替换当前 world）</option>
-        </select>
-      </label>
-      <label class="inline-field" id="world-stack-after-wrap" hidden>
-        <span>插入位置</span>
-        <select id="world-stack-import-after"></select>
-      </label>
-      <button id="world-stack-import-preview-button" class="ghost" type="button">预览导入</button>
-    </div>
-    <div id="world-stack-import-error" class="world-stack-error" role="alert" hidden></div>
-    <div id="world-stack-import-queue" class="world-stack-queue" hidden></div>
-    <div id="world-stack-import-preview" class="world-stack-preview" hidden></div>
-  </section>
-
-  <section class="panel" id="world-stack-jobs-panel">
-    <div class="panel-head">
-      <div>
-        <h2>任务与结果</h2>
-        <p class="panel-sub">导入/归档是重启时执行的任务；这里显示排队、完成、失败与回滚说明。</p>
-      </div>
-    </div>
-    <div id="world-stack-jobs" class="world-stack-jobs"></div>
-    <WorldStackArchiveDialog
-      v-model="archiveOpen"
-      :stack-id="archiveStackId"
-      @archived="onArchived"
-    />
-    <WorldStackTimelineDialog v-model="timelineOpen" />
-  </section>
+  <WorldStackArchiveDialog
+    v-model="archiveOpen"
+    :stack-id="archiveStackId"
+    @archived="onArchived"
+  />
+  <WorldStackTimelineDialog v-model="timelineOpen" />
+  <input
+    ref="iconInput"
+    id="world-stack-icon-input"
+    type="file"
+    accept="image/png,image/jpeg,image/webp"
+    hidden
+    @change="onIconFile"
+  />
 </div>
 </TabShell>
 </template>
 
 <script setup>
-import { onUnmounted, ref } from 'vue';
+import { onActivated, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import TabShell from '../components/TabShell.vue';
-import { useLegacyPage } from '../composables/useLegacyPage.js';
 import WorldStackArchiveDialog from './world-stack/WorldStackArchiveDialog.vue';
 import WorldStackCards from './world-stack/WorldStackCards.vue';
+import WorldStackFiles from './world-stack/WorldStackFiles.vue';
+import WorldStackImport from './world-stack/WorldStackImport.vue';
+import WorldStackJobs from './world-stack/WorldStackJobs.vue';
+import WorldStackOrder from './world-stack/WorldStackOrder.vue';
+import WorldStackStats from './world-stack/WorldStackStats.vue';
 import WorldStackTimelineDialog from './world-stack/WorldStackTimelineDialog.vue';
+import { clearPageNav, setPageNav } from '../composables/usePageNav.js';
+import { useWorldStack } from './world-stack/useWorldStack.js';
 
 defineOptions({ name: 'WorldStackPage' });
 
-const stacks = ref([]);
+const store = useWorldStack();
 const archiveOpen = ref(false);
 const archiveStackId = ref('');
 const timelineOpen = ref(false);
-// 在 kernel bind() 前告诉它：时间线按钮由 Vue 接管。
-window.__samsaraWorldStackVueTimeline = true;
+const iconInput = ref(null);
 
-function onStackUpdate(event) {
-  stacks.value = Array.isArray(event.detail?.stacks) ? event.detail.stacks : [];
+function syncNav() {
+  setPageNav({ title: '世界栈导航', items: store.navItems.value });
 }
 
 function archiveStack(stack) {
@@ -122,34 +86,31 @@ function archiveStack(stack) {
 }
 
 async function onArchived(data) {
-  window.SamsaraUI?.setMessage?.(
-    '已排队：' + data.jobId + '。重启服务器后归档；备份会保留。', 'ok');
-  await window.SamsaraWorldStack?.load?.();
+  store.setMessage('已排队：' + data.jobId + '。重启服务器后归档；备份会保留。', 'ok');
+  await store.load();
 }
 
-function uploadIcon(stack) {
-  window.SamsaraWorldStack?.chooseIcon?.(stack);
+function onIconFile(event) {
+  const file = event.target.files?.[0] || null;
+  if (file) store.handleIconFile(file);
 }
 
-function deleteIcon(stack) {
-  window.SamsaraWorldStack?.deleteIcon?.(stack);
+function onConnected() {
+  store.load();
 }
 
-useLegacyPage({
-  panelId: 'panel-world-stack',
-  load: () => import('../legacy-core/world-stack.js'),
-  afterLoad: async () => {
-    window.__samsaraWorldStackVueList = true;
-    window.addEventListener('samsara:world-stack-updated', onStackUpdate);
-    await window.SamsaraWorldStack.load();
-    stacks.value = window.SamsaraWorldStack.getStacks?.() || [];
-  },
-  activate: () => window.SamsaraWorldStack?.activate?.(),
+watch(() => store.model.value, syncNav);
+onActivated(syncNav);
+
+onMounted(() => {
+  window.addEventListener('samsara:connected', onConnected);
+  store.setIconInput(iconInput.value);
+  syncNav();
+  store.load();
 });
 
-onUnmounted(() => {
-  window.__samsaraWorldStackVueList = false;
-  window.__samsaraWorldStackVueTimeline = false;
-  window.removeEventListener('samsara:world-stack-updated', onStackUpdate);
+onBeforeUnmount(() => {
+  window.removeEventListener('samsara:connected', onConnected);
+  clearPageNav();
 });
 </script>

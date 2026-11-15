@@ -17,7 +17,6 @@ const LEGACY_CORE_IMPORT_ALLOW = new Set([
   'web-src/src/pages/MapPage.vue',
   'web-src/src/pages/ModConfigPage.vue',
   'web-src/src/pages/OutputPage.vue',
-  'web-src/src/pages/WorldStackPage.vue',
 ]);
 
 const LEGACY_PAGE_ALLOW = new Set([
@@ -25,7 +24,6 @@ const LEGACY_PAGE_ALLOW = new Set([
   'web-src/src/pages/MapPage.vue',
   'web-src/src/pages/ModConfigPage.vue',
   'web-src/src/pages/OutputPage.vue',
-  'web-src/src/pages/WorldStackPage.vue',
 ]);
 
 const LEGACY_IMPORT_ALLOW = new Set([

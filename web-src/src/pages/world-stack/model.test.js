@@ -1,16 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import {
+  filesView,
   fmtBytes,
   fmtTime,
+  importPreviewView,
+  importQueueView,
+  jobsView,
+  orderView,
   sortStacksByIndex,
   sourceName,
   stackIconLabel,
   stackMapRegion,
   stackMapTileUrl,
+  stackStats,
 } from './model.js';
 
-describe('world-stack icon model', () => {
-  it('出生点所在 region 已生成时直接使用', () => {
+describe('world-stack icon model', () => {  it('出生点所在 region 已生成时直接使用', () => {
     const stack = {
       id: 'world',
       spawn: { x: 160, y: 65, z: -96 },
@@ -90,5 +95,81 @@ describe('world-stack icon model', () => {
     expect(sorted.map((item) => item.id)).toEqual(['a', 'b']);
     expect(input.map((item) => item.id)).toEqual(['b', 'a']);
     expect(sortStacksByIndex(null)).toEqual([]);
+  });
+});
+
+describe('world-stack page model', () => {
+  const stacks = [
+    { id: 'stack_0', index: 0, top: false, seed: 1, dataBytes: 1024 },
+    { id: 'world', index: 1, top: true, seed: 2, dataBytes: 2048 },
+  ];
+
+  it('统计 chip 汇总栈层/栈顶/待执行', () => {
+    const chips = stackStats({
+      totalBytes: 3072, restartRequired: true, importRoots: ['D:/saves'],
+      lastReport: { status: 'ok', message: '完成' },
+    }, stacks);
+    expect(chips).toHaveLength(6);
+    expect(chips[1]).toEqual(['栈顶', 'world']);
+    expect(chips[3]).toEqual(['待执行', '需要重启']);
+    expect(chips[5]).toEqual(['上次任务', 'ok · 完成']);
+  });
+
+  it('排序视图反向显示并给出预览', () => {
+    const view = orderView(['stack_0', 'world'], ['stack_0', 'world'], (id) => stacks.find((s) => s.id === id));
+    expect(view.changed).toBe(false);
+    expect(view.canSave).toBe(false);
+    expect(view.rows[0].id).toBe('world');
+    expect(view.rows[0].label).toContain('world（栈顶）');
+    expect(view.rows[1].label).toContain('第 1 层');
+    expect(view.rows[1].downDisabled).toBe(true);
+    const changed = orderView(['world', 'stack_0'], ['stack_0', 'world'],
+      (id) => stacks.find((s) => s.id === id));
+    expect(changed.changed).toBe(true);
+    expect(changed.topMoved).toBe(true);
+    expect(changed.preview).toContain('保存后提升栈顶');
+  });
+
+  it('导入队列、预览与任务卡片', () => {
+    const model = {
+      pendingImports: [
+        { jobId: 'j1', source: 'D:/a', sourceBytes: 1024, position: 'top' },
+        { jobId: 'j2', source: 'D:/b', sourceBytes: 2048, position: 'between', afterId: 'stack_0', targetId: 'stack_1' },
+      ],
+      pendingArchive: { jobId: 'j3', id: 'stack_1' },
+      jobs: [{ id: 'old', type: 'import', status: 'completed', message: 'done', log: ['a'] }],
+    };
+    const queue = importQueueView(model);
+    expect(queue).toHaveLength(2);
+    expect(queue[0].label).toContain('栈顶（替换 world）');
+    expect(queue[1].label).toContain('插到 stack_0 之上');
+    const jobs = jobsView(model);
+    expect(jobs.map((job) => job.status)).toEqual(['queued', 'queued', 'queued', 'completed']);
+    expect(jobs[3].log).toEqual(['a']);
+    const preview = importPreviewView({
+      ok: true, position: 'top', targetId: 'world', targetIndex: 1,
+      neededBytes: 1024, freeBytes: 2048, playerConflicts: 2,
+      source: {
+        canonicalPath: 'D:/a', path: 'D:/a', layout: 'world', worldName: 'a',
+        seed: 42, spawnX: 0, spawnY: 64, spawnZ: 0, sizeBytes: 1024,
+        fileCount: 3, playerFiles: 1, sessionLocked: false,
+      },
+      warnings: ['w'], steps: ['s'], errors: [],
+    });
+    expect(preview.title).toBe('导入预览：可以执行');
+    expect(preview.rows[0]).toEqual(['源目录', 'D:/a']);
+    expect(preview.rows.some(([key]) => key === '位置')).toBe(true);
+    expect(preview.confirmText).toContain('压入旧栈');
+    expect(importPreviewView(null)).toBeNull();
+  });
+
+  it('文件位置行格式化', () => {
+    const rows = filesView({
+      files: [{ path: 'D:/x', label: 'x', note: 'n', exists: true, kind: 'dir', depth: 1, bytes: 1024 }],
+    });
+    expect(rows[0]).toMatchObject({
+      path: 'D:/x', label: 'x', note: 'n', exists: true, kind: 'dir', depth: 1, bytes: 1024,
+    });
+    expect(rows[0].size).toBe(fmtBytes(1024));
   });
 });

@@ -24,10 +24,10 @@ export default {
 
     try {
       await navigate('/samsara/world/stack');
-      await until("document.getElementById('panel-world-stack') && window.SamsaraWorldStack",
+      await until("document.getElementById('panel-world-stack')",
           20000, '世界栈页');
       await sleep(300);
-      await evaluate('window.SamsaraWorldStack.load()');
+      await evaluate("document.getElementById('world-stack-refresh')?.click(); true;");
       await until("document.querySelectorAll('#world-stack-list .world-stack-card').length >= 1",
           20000, '世界栈卡片');
 
@@ -70,7 +70,7 @@ export default {
           dialog: Boolean(dialog),
           open: dialog?.open === true,
           nodes: document.querySelectorAll('#world-stack-timeline .timeline-node').length,
-          nav: document.querySelector('#global-nav .nav-title')?.textContent.trim() || '',
+          nav: document.querySelector('#page-nav .nav-title')?.textContent.trim() || '',
         };
         dialog?.close();
         return result;
@@ -127,7 +127,7 @@ export default {
             && uploaded.body?.icon?.source === 'upload',
             JSON.stringify(uploaded.body));
         const uploadedView = await evaluate(`(async () => {
-          await window.SamsaraWorldStack.load();
+          document.getElementById('world-stack-refresh')?.click();
           await new Promise((resolve) => setTimeout(resolve, 700));
           const badge = document.querySelector('#world-stack-list .world-stack-icon-badge');
           return { source: badge?.dataset.source || '', text: badge?.textContent || '' };
@@ -143,7 +143,7 @@ export default {
             && deleted.body?.ok === true && deleted.body?.icon?.source !== 'upload',
             JSON.stringify(deleted.body));
         const deletedView = await evaluate(`(async () => {
-          await window.SamsaraWorldStack.load();
+          document.getElementById('world-stack-refresh')?.click();
           await new Promise((resolve) => setTimeout(resolve, 700));
           const badge = document.querySelector('#world-stack-list .world-stack-icon-badge');
           return { source: badge?.dataset.source || '', text: badge?.textContent || '' };

@@ -54,7 +54,6 @@
   </form>
 </dialog>
 
-<input id="world-stack-icon-input" type="file" accept="image/png,image/jpeg,image/webp" hidden>
 
 <datalist id="identity-candidates"></datalist>
 <datalist id="identity-data-uuids"></datalist>
