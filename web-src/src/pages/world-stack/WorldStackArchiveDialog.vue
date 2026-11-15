@@ -1,9 +1,12 @@
 <template>
-  <dialog
-    ref="dialogEl"
+  <el-dialog
+    v-model="visible"
     id="world-stack-archive-dialog"
     class="app-dialog world-stack-dialog"
-    @close="close"
+    width="min(620px, calc(100vw - 32px))"
+    :show-close="false"
+    append-to-body
+    align-center
   >
     <div class="dialog-body">
       <div class="dialog-head">
@@ -53,11 +56,11 @@
       </div>
       <p v-else-if="loading" class="muted small">正在读取归档预览…</p>
     </div>
-  </dialog>
+  </el-dialog>
 </template>
 
 <script setup>
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useApi } from '../../composables/useApi.js';
 import { fmtBytes } from './model.js';
 
@@ -67,7 +70,10 @@ const props = defineProps({
 });
 const emit = defineEmits(['update:modelValue', 'archived']);
 
-const dialogEl = ref(null);
+const visible = computed({
+  get: () => props.modelValue,
+  set: (value) => emit('update:modelValue', value),
+});
 const preview = ref(null);
 const error = ref('');
 const loading = ref(false);
@@ -91,24 +97,12 @@ const previewRows = computed(() => {
 });
 
 watch(() => props.modelValue, (open) => {
-  if (open) {
-    openDialog();
-    loadPreview();
-  } else {
-    dialogEl.value?.close?.();
-  }
+  if (open) loadPreview();
 });
 
 watch(() => props.stackId, () => {
   if (props.modelValue) loadPreview();
 });
-
-async function openDialog() {
-  await nextTick();
-  const dialog = dialogEl.value;
-  if (!dialog || dialog.open) return;
-  try { dialog.showModal(); } catch { dialog.setAttribute('open', ''); }
-}
 
 function close() {
   emit('update:modelValue', false);

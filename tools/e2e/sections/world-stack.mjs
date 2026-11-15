@@ -68,11 +68,11 @@ export default {
         const result = {
           button: Boolean(open),
           dialog: Boolean(dialog),
-          open: dialog?.open === true,
+          open: __e2eDialogOpen('world-stack-timeline-dialog'),
           nodes: document.querySelectorAll('#world-stack-timeline .timeline-node').length,
           nav: document.querySelector('#page-nav .nav-title')?.textContent.trim() || '',
         };
-        dialog?.close();
+        dialog?.querySelector('.dialog-close')?.click();
         return result;
       })()`);
       check('世界栈时间线按钮打开模态浮窗',
@@ -93,12 +93,12 @@ export default {
           hasCard: Boolean(card),
           button: Boolean(button),
           dialog: Boolean(dialog),
-          open: dialog?.open === true,
+          open: __e2eDialogOpen('world-stack-archive-dialog'),
           previewTitle: preview?.querySelector('.world-stack-preview-title')?.textContent || '',
           legacyPanel: Boolean(document.getElementById('world-stack-archive-panel')),
           legacyList: Boolean(document.getElementById('world-stack-archive-list')),
         };
-        dialog?.close();
+        dialog?.querySelector('.dialog-close')?.click();
         return result;
       })()`);
       if (archive.hasCard) {

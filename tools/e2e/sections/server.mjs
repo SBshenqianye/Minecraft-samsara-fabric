@@ -108,18 +108,17 @@ export default {
         .find((node) => node.textContent.trim() === '从玩家选择');
       button?.click();
       await new Promise((resolve) => setTimeout(resolve, 600));
-      const dialog = document.getElementById('player-dialog');
       const result = {
         button: Boolean(button),
-        open: dialog?.open === true,
+        open: __e2eDialogOpen('player-dialog'),
         rows: document.querySelectorAll('#player-list .player-row').length,
       };
       document.getElementById('player-cancel')?.click();
-      await new Promise((resolve) => setTimeout(resolve, 150));
-      result.closed = dialog?.open === false;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      result.closed = !__e2eDialogOpen('player-dialog');
       return result;
     })()`);
-    check('玩家选择弹窗原生可开关', picker.button && picker.open && picker.closed,
+    check('玩家选择弹窗可开关', picker.button && picker.open && picker.closed,
       JSON.stringify(picker));
 
     // ---- 存档备份 ----
@@ -211,10 +210,10 @@ export default {
       result.title = document.getElementById('server-audit-diff-title')?.textContent || '';
       result.diff = document.getElementById('server-audit-diff')?.textContent
         || document.getElementById('server-audit-diffs')?.textContent || '';
-      result.visible = document.getElementById('server-audit-diff-wrap')?.open === true;
+      result.visible = __e2eDialogOpen('server-audit-diff-wrap');
       result.changes = document.querySelectorAll('#server-audit-changes .server-audit-change').length;
       document.getElementById('server-audit-diff-close')?.click();
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await new Promise((resolve) => setTimeout(resolve, 500));
       result.closed = !document.getElementById('server-audit-diff-wrap');
       return result;
     })()`);

@@ -83,12 +83,14 @@ async function main() {
       document.getElementById('token-connect').click();
       true;
     `);
+    const tokenClosed = "(() => { const el = document.getElementById('token-dialog');"
+      + " return !el || el.getBoundingClientRect().width === 0; })()";
     try {
-      await until("document.getElementById('token-dialog').open === false", 10000, '连接 token');
+      await until(tokenClosed, 10000, '连接 token');
     } catch (e) {
       // 首次加载时按钮可能还没绑定；再点一次。
       await evaluate("document.getElementById('token-connect').click(); true;");
-      await until("document.getElementById('token-dialog').open === false", 20000, '连接 token（重试）');
+      await until(tokenClosed, 20000, '连接 token（重试）');
     }
     const pageHelpers = `
       window.__e2eAliases = {
@@ -111,8 +113,14 @@ async function main() {
         const target = window.__e2eAliases[name] || name;
         window.dispatchEvent(new CustomEvent('samsara:navigate', { detail: { path: target } }));
       };
-      window.__e2eApi = async (url, options = {}) => {
-        const token = sessionStorage.getItem('samsara-token') || '';
+      window.__e2eDialogOpen = (id) => {
+        const el = document.getElementById(id);
+        if (!el) return false;
+        const overlay = el.closest('.el-overlay');
+        return Boolean(overlay) && getComputedStyle(overlay).display !== 'none'
+          && el.getBoundingClientRect().width > 0;
+      };
+      window.__e2eApi = async (url, options = {}) => {        const token = sessionStorage.getItem('samsara-token') || '';
         const headers = Object.assign({ 'Content-Type': 'application/json' },
           options.headers || {}, token ? { Authorization: 'Bearer ' + token } : {});
         const response = await fetch(url, Object.assign({}, options, { headers }));
@@ -315,7 +323,7 @@ async function main() {
       button.click();
       await new Promise((resolve) => setTimeout(resolve, 500));
       return {
-        opened: document.getElementById('player-dialog').open === true,
+        opened: __e2eDialogOpen('player-dialog'),
         rows: document.querySelectorAll('#player-list .player-row').length,
       };
     })()`);
@@ -391,7 +399,6 @@ async function main() {
       const openButton = document.getElementById('world-stack-timeline-open');
       openButton?.click();
       await new Promise((resolve) => setTimeout(resolve, 900));
-      const dialog = document.getElementById('world-stack-timeline-dialog');
       const nodes = [...document.querySelectorAll('#world-stack-timeline .timeline-node')];
       const nav = document.querySelector('#page-nav .nav-title')?.textContent.trim() || '';
       const buttons = [...document.querySelectorAll('#world-stack-timeline button')];
@@ -416,7 +423,7 @@ async function main() {
       const model = await __e2eApi('/api/world-stack');
       const result = {
         nav,
-        dialogOpen: Boolean(dialog?.open),
+        dialogOpen: __e2eDialogOpen('world-stack-timeline-dialog'),
         nodes: nodes.map((node) => ({
           id: node.dataset.id,
           branchId: node.dataset.branchId,
@@ -435,7 +442,7 @@ async function main() {
         snapshotText: document.getElementById('world-stack-snapshots')?.textContent || '',
         pendingRestore: model.pendingRestore || null,
       };
-      dialog?.close();
+      document.querySelector('#world-stack-timeline-dialog .dialog-close')?.click();
       return result;
     })()`);
     check('世界栈时间线导航', stackTimeline.nav.startsWith('世界栈'), stackTimeline.nav);
@@ -634,13 +641,13 @@ async function main() {
       const model = await __e2eApi('/api/world-stack');
       const result = {
         cardButton: Boolean(button),
-        dialogOpen: Boolean(dialog?.open),
+        dialogOpen: __e2eDialogOpen('world-stack-archive-dialog'),
         previewTitle: preview?.querySelector('.world-stack-preview-title')?.textContent || '',
         legacyPanel: Boolean(document.getElementById('world-stack-archive-panel')),
         legacyList: Boolean(document.getElementById('world-stack-archive-list')),
         pendingArchive: model.pendingArchive || null,
       };
-      dialog?.close();
+      dialog?.querySelector('.dialog-close')?.click();
       return result;
     })()`);
     check('归档只保留卡片按钮并打开模态预览', archiveEntry.cardButton === true
@@ -663,15 +670,23 @@ async function main() {
         .map((el) => el.textContent.trim());
       const poolSummaries = [...document.querySelectorAll('#panel-identity .pool-section > summary')]
         .map((el) => el.textContent.replace(/\\s+/g, ' ').trim());
+      const assignTrigger = [...document.querySelectorAll('#panel-identity .chip-action')]
+        .find((btn) => btn.textContent.trim() === '→组');
+      assignTrigger?.click();
+      await new Promise((resolve) => setTimeout(resolve, 600));
       const assignRoles = [...document.querySelectorAll('#assign-role option')]
         .map((el) => el.textContent.trim());
+      const assignOpened = __e2eDialogOpen('assign-dialog');
+      document.getElementById('assign-cancel')?.click();
+      await new Promise((resolve) => setTimeout(resolve, 400));
       const identityTerms = {
         hasTypes: panelText.includes('正版账号') && panelText.includes('离线账号'),
         hasOnline: panelText.includes('当前在线'),
         zonesOk: zoneLabels.includes('正版账号 UUID') && zoneLabels.includes('离线账号 UUID'),
         poolsOk: poolSummaries.some((text) => text.startsWith('正版账号 UUID'))
           && poolSummaries.some((text) => text.startsWith('离线账号 UUID')),
-        assignOk: assignRoles.some((text) => text.startsWith('正版账号 UUID'))
+        assignOk: assignOpened
+          && assignRoles.some((text) => text.startsWith('正版账号 UUID'))
           && assignRoles.some((text) => text.startsWith('离线账号 UUID')),
         bareOld: panelText.includes('正版 UUID') || panelText.includes('离线 UUID'),
         zones: zoneLabels,
@@ -2096,8 +2111,9 @@ async function main() {
         await new Promise((resolve) => setTimeout(resolve, 700));
         previewMessage = document.getElementById('server-audit-message')?.textContent || '';
         previewDiff = document.getElementById('server-audit-diff')?.textContent || '';
-        diffVisible = !document.getElementById('server-audit-diff-wrap')?.hidden;
+        diffVisible = __e2eDialogOpen('server-audit-diff-wrap');
         changes = document.querySelectorAll('#server-audit-changes .server-audit-change').length;
+        document.getElementById('server-audit-diff-close')?.click();
       }
       return {
         panelVisible: !document.getElementById('server-audit-panel')?.hidden,
@@ -2323,7 +2339,7 @@ async function main() {
           panelVisible: panel ? !panel.hidden
             && getComputedStyle(panel).display !== 'none' : false,
           header: !!document.querySelector('.app-header'),
-          tokenDialog: document.getElementById('token-dialog')?.open === true,
+          tokenDialog: __e2eDialogOpen('token-dialog'),
         };
       })()`);
       check('简单页路由 ' + path + ' 可打开', routeState.path === expectedPath

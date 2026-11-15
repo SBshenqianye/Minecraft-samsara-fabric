@@ -41,8 +41,16 @@
     </template>
     <p v-else class="muted">请选择左侧配置页面。</p>
 
-    <dialog id="config-editor-preview-dialog" ref="dialogRef" class="app-dialog">
-      <form method="dialog" class="dialog-body">
+    <el-dialog
+      id="config-editor-preview-dialog"
+      v-model="stores.previewOpen.value"
+      class="app-dialog"
+      width="min(620px, calc(100vw - 32px))"
+      :show-close="false"
+      append-to-body
+      align-center
+    >
+      <form class="dialog-body" @submit.prevent>
         <h3>预览变更</h3>
         <p id="config-editor-preview-sub" class="dialog-sub">{{ stores.previewInfo.sub }}</p>
         <div id="config-editor-preview-errors" class="message error" :hidden="!stores.previewInfo.error">
@@ -55,12 +63,12 @@
           <button type="button" id="config-editor-preview-confirm" class="primary" @click="store.confirmSave()">确认保存</button>
         </div>
       </form>
-    </dialog>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { ROUTE_ALIASES } from '../../navigation.js';
 import ConfigEditorField from './ConfigEditorField.vue';
@@ -71,19 +79,8 @@ const props = defineProps({
 
 const stores = props.store;
 const router = useRouter();
-const dialogRef = ref(null);
 const page = computed(() => props.store.current.value);
 const groups = computed(() => props.store.groups.value);
-
-watch(() => props.store.previewOpen.value, async (open) => {
-  const dialog = dialogRef.value;
-  if (!dialog) return;
-  if (open && !dialog.open) {
-    if (typeof dialog.showModal === 'function') dialog.showModal();
-  } else if (!open && dialog.open) {
-    dialog.close();
-  }
-});
 
 function openCustom() {
   const alias = ROUTE_ALIASES[page.value?.customWidget];

@@ -35,8 +35,18 @@
       </div>
     </section>
 
-    <dialog v-if="diff" ref="diffRef" id="server-audit-diff-wrap" class="framework-dialog server-audit-diff-wrap"
-        @close="diff = null">
+    <el-dialog
+      v-if="diff"
+      id="server-audit-diff-wrap"
+      :model-value="diffVisible"
+      class="app-dialog server-audit-diff-wrap"
+      width="min(860px, calc(100vw - 32px))"
+      :show-close="false"
+      append-to-body
+      align-center
+      @update:model-value="(open) => { if (!open) closeDiff(); }"
+      @closed="diff = null"
+    >
       <div class="dialog-head">
         <h3 id="server-audit-diff-title">差异 · {{ diff.id }} · {{ diff.changedCount }} 个文件</h3>
         <button id="server-audit-diff-close" class="ghost" type="button" @click="closeDiff">关闭</button>
@@ -75,12 +85,12 @@
           <div v-else class="server-audit-file-empty">没有可显示的文本差异。</div>
         </details>
       </div>
-    </dialog>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { ElMessageBox } from 'element-plus';
 import { useApi } from '../../composables/useApi.js';
 import {
@@ -104,7 +114,7 @@ const loading = ref(false);
 const message = ref('');
 const messageKind = ref('');
 const diff = ref(null);
-const diffRef = ref(null);
+const diffVisible = ref(false);
 
 const changedChanges = computed(() => (diff.value?.changes || [])
   .filter((item) => item.status !== 'unchanged'));
@@ -164,9 +174,7 @@ async function preview(entry) {
       diffs: Array.isArray(data.diffs) ? data.diffs : [],
       text: data.diff || '',
     };
-    await nextTick();
-    const dialog = diffRef.value;
-    if (dialog && !dialog.open && typeof dialog.showModal === 'function') dialog.showModal();
+    diffVisible.value = true;
   } catch (error) {
     setMessage(error.message || '预览失败', 'error');
   }
@@ -184,9 +192,7 @@ function jumpTo(index) {
 }
 
 function closeDiff() {
-  const dialog = diffRef.value;
-  if (dialog?.open) dialog.close();
-  diff.value = null;
+  diffVisible.value = false;
 }
 
 async function rollback(entry) {
@@ -230,8 +236,7 @@ defineExpose({ load });
 </script>
 
 <style scoped>
-.server-audit-diff-wrap { width: min(920px, 94vw); max-height: 86vh; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); color: var(--fg); padding: 14px; }
-.server-audit-diff-wrap::backdrop { background: rgba(3, 6, 10, .62); }
+.server-audit-diff-wrap { padding: 14px; }
 .server-audit-changes { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
 .server-audit-changes .server-audit-change { font-family: var(--mono); font-size: 11px; }
 .server-audit-diff { max-height: 52vh; overflow: auto; margin: 8px 0; padding: 8px 10px; border-radius: 8px; background: var(--panel-soft); }

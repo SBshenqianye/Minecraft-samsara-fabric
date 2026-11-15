@@ -23,8 +23,18 @@
   </div>
 </div>
 
-<dialog ref="dialogRef" id="token-dialog" class="app-dialog token-dialog">
-  <form method="dialog" class="dialog-body" id="token-form" @submit.prevent="submit">
+<el-dialog
+  id="token-dialog"
+  v-model="tokenOpen"
+  class="app-dialog token-dialog"
+  width="min(460px, calc(100vw - 32px))"
+  :show-close="false"
+  :close-on-click-modal="false"
+  append-to-body
+  align-center
+  modal-class="token-dialog-overlay"
+>
+  <form id="token-form" class="dialog-body" @submit.prevent="submit">
     <h3>输入访问 token</h3>
     <p class="dialog-sub">token 在服务器启动日志或 <code>config/samsara/web.yml</code> 里，只需填写一次；之后保存在当前浏览器会话中，不再显示。</p>
     <label class="field-card">
@@ -38,7 +48,7 @@
       <button type="button" id="token-connect" class="primary" :disabled="connecting" @click="submit">{{ connecting ? '连接中…' : '连接' }}</button>
     </div>
   </form>
-</dialog>
+</el-dialog>
 
 <datalist id="identity-candidates"></datalist>
 <datalist id="identity-data-uuids"></datalist>
@@ -53,22 +63,19 @@ import { getToken } from '../composables/useApi.js';
 
 defineOptions({ name: 'AdminOverlays' });
 
-const dialogRef = ref(null);
+const tokenOpen = ref(false);
 const tokenInput = ref(getToken());
 const error = ref('');
 const connecting = ref(false);
 
 function openTokenDialog() {
-  const dialog = dialogRef.value;
-  if (!dialog || dialog.open) return;
   tokenInput.value = getToken() || tokenInput.value;
   error.value = '';
-  if (typeof dialog.showModal === 'function') dialog.showModal();
+  tokenOpen.value = true;
 }
 
 function closeTokenDialog() {
-  const dialog = dialogRef.value;
-  if (dialog?.open) dialog.close();
+  tokenOpen.value = false;
 }
 
 async function submit() {

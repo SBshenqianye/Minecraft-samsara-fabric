@@ -1,6 +1,15 @@
 <template>
-  <dialog ref="uuidRef" id="uuid-dialog" class="app-dialog">
-    <form method="dialog" class="dialog-body" @submit.prevent="identity.applyUuid()">
+  <el-dialog
+    id="uuid-dialog"
+    :model-value="identity.uuidDialog.open"
+    @update:model-value="(open) => { if (!open) close('uuid'); }"
+    class="app-dialog"
+    width="min(620px, calc(100vw - 32px))"
+    :show-close="false"
+    append-to-body
+    align-center
+  >
+    <form class="dialog-body" @submit.prevent="identity.applyUuid()">
       <h3 id="uuid-title">{{ identity.uuidDialog.title }}</h3>
       <p id="uuid-desc" class="dialog-sub">
         {{ identity.uuidDialog.role === 'data'
@@ -48,10 +57,19 @@
         <button type="button" id="uuid-apply" class="primary" @click="identity.applyUuid()">确认</button>
       </div>
     </form>
-  </dialog>
+  </el-dialog>
 
-  <dialog ref="assignRef" id="assign-dialog" class="app-dialog">
-    <form method="dialog" class="dialog-body" @submit.prevent="identity.applyAssign()">
+  <el-dialog
+    id="assign-dialog"
+    :model-value="identity.assign.open"
+    @update:model-value="(open) => { if (!open) close('assign'); }"
+    class="app-dialog"
+    width="min(620px, calc(100vw - 32px))"
+    :show-close="false"
+    append-to-body
+    align-center
+  >
+    <form class="dialog-body" @submit.prevent="identity.applyAssign()">
       <h3>放入身份组</h3>
       <p id="assign-target" class="dialog-sub">
         {{ (identity.assign.name || shortUuid(identity.assign.uuid)) + ' · ' + identity.assign.uuid }}
@@ -81,10 +99,19 @@
         <button type="button" id="assign-apply" class="primary" @click="identity.applyAssign()">确认</button>
       </div>
     </form>
-  </dialog>
+  </el-dialog>
 
-  <dialog ref="rebindRef" id="rebind-dialog" class="app-dialog">
-    <form method="dialog" class="dialog-body" @submit.prevent="identity.applyRebind()">
+  <el-dialog
+    id="rebind-dialog"
+    :model-value="identity.rebind.open"
+    @update:model-value="(open) => { if (!open) close('rebind'); }"
+    class="app-dialog"
+    width="min(620px, calc(100vw - 32px))"
+    :show-close="false"
+    append-to-body
+    align-center
+  >
+    <form class="dialog-body" @submit.prevent="identity.applyRebind()">
       <h3>重绑 data UUID</h3>
       <p class="dialog-sub">组：<strong id="rebind-group">{{ identity.rebind.groupName }}</strong></p>
       <p class="dialog-note">data UUID 是玩家数据的存储钥匙。重绑不会删除旧数据；程序会先备份旧数据与目标数据，再按你选择的策略写入。</p>
@@ -125,20 +152,16 @@
         <button type="button" id="rebind-apply" class="primary" @click="identity.applyRebind()">确认重绑</button>
       </div>
     </form>
-  </dialog>
+  </el-dialog>
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed } from 'vue';
 import { shortUuid } from './model.js';
 
 const props = defineProps({
   identity: { type: Object, required: true },
 });
-
-const uuidRef = ref(null);
-const assignRef = ref(null);
-const rebindRef = ref(null);
 
 const resolvedRows = computed(() => {
   const result = props.identity.uuidDialog.result;
@@ -191,20 +214,7 @@ async function generate() {
   if (uuid) props.identity.setRebindField('newData', uuid);
 }
 
-function open(dialog, openState) {
-  if (openState && dialog && !dialog.open) {
-    if (typeof dialog.showModal === 'function') dialog.showModal();
-  } else if (!openState && dialog?.open) {
-    dialog.close();
-  }
-}
-
-watch(() => props.identity.uuidDialog.open, () => open(uuidRef.value, props.identity.uuidDialog.open));
-watch(() => props.identity.assign.open, () => open(assignRef.value, props.identity.assign.open));
-watch(() => props.identity.rebind.open, () => open(rebindRef.value, props.identity.rebind.open));
-
 function close(which) {
   props.identity.closeDialog(which);
-  open(which === 'uuid' ? uuidRef.value : which === 'assign' ? assignRef.value : rebindRef.value, false);
 }
 </script>

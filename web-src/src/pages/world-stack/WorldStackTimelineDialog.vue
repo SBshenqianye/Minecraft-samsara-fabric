@@ -1,9 +1,12 @@
 <template>
-  <dialog
-    ref="dialogEl"
+  <el-dialog
+    v-model="visible"
     id="world-stack-timeline-dialog"
     class="app-dialog world-stack-dialog"
-    @close="close"
+    width="min(860px, calc(100vw - 32px))"
+    :show-close="false"
+    append-to-body
+    align-center
   >
     <div class="dialog-body">
       <div class="dialog-head">
@@ -143,11 +146,11 @@
         </div>
       </div>
     </div>
-  </dialog>
+  </el-dialog>
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { useApi } from '../../composables/useApi.js';
 import { fmtBytes, fmtTime } from './model.js';
@@ -155,7 +158,10 @@ import { fmtBytes, fmtTime } from './model.js';
 const props = defineProps({ modelValue: { type: Boolean, default: false } });
 const emit = defineEmits(['update:modelValue']);
 
-const dialogEl = ref(null);
+const visible = computed({
+  get: () => props.modelValue,
+  set: (value) => emit('update:modelValue', value),
+});
 const nodes = ref([]);
 const snapshots = ref([]);
 const totalBytes = ref(0);
@@ -197,27 +203,12 @@ const previewRows = computed(() => {
 });
 
 watch(() => props.modelValue, (open) => {
-  if (open) {
-    openDialog();
-    loadAll();
-  } else {
-    dialogEl.value?.close?.();
-  }
+  if (open) loadAll();
 });
 
 onMounted(() => {
-  if (props.modelValue) {
-    openDialog();
-    loadAll();
-  }
+  if (props.modelValue) loadAll();
 });
-
-async function openDialog() {
-  await nextTick();
-  const dialog = dialogEl.value;
-  if (!dialog || dialog.open) return;
-  try { dialog.showModal(); } catch { dialog.setAttribute('open', ''); }
-}
 
 function close() {
   emit('update:modelValue', false);
@@ -334,10 +325,8 @@ async function exportNode(node) {
 async function cleanupSnapshot(item) {
   if (!item?.name) return;
   try {
-    // 外层是原生 <dialog>（top layer），ElMessageBox 必须挂进对话框内部才不会被压在下面。
     await ElMessageBox.confirm('删除安全快照 ' + item.name + '？此操作只删除撤销前保留的当前状态副本，'
-      + '不会删除源世界、归档或操作备份。', '删除快照',
-    { type: 'warning', appendTo: dialogEl.value || undefined });
+      + '不会删除源世界、归档或操作备份。', '删除快照', { type: 'warning' });
   } catch {
     return;
   }

@@ -823,7 +823,11 @@ details.output-group > summary { padding: 3px 2px; }
 
 /* ---- dialogs ---- */
 .app-dialog { border: 1px solid var(--line); border-radius: 16px; padding: 0; width: min(620px, calc(100vw - 32px)); max-height: calc(100vh - 32px); background: var(--panel); color: var(--fg); box-shadow: 0 30px 90px rgba(0,0,0,.35); }
-.app-dialog::backdrop { background: rgba(8, 12, 17, .55); backdrop-filter: blur(3px); }
+/* Element Plus 对话框复用同一套视觉：自带头部让位给页面内的 .dialog-head。 */
+.el-dialog.app-dialog { padding: 0; background: var(--panel); color: var(--fg); box-shadow: 0 30px 90px rgba(0,0,0,.35); }
+.el-dialog.app-dialog .el-dialog__header { display: none; }
+.el-dialog.app-dialog .el-dialog__body { padding: 0; color: var(--fg); }
+.el-dialog.app-dialog .el-dialog__headerbtn { display: none; }
 .dialog-body { display: flex; flex-direction: column; gap: 10px; padding: 20px; max-height: calc(100vh - 32px); overflow: auto; }
 .dialog-body h3 { margin: 0; font-size: 18px; }
 .dialog-sub, .dialog-note { margin: 0; color: var(--muted); font-size: 12px; }
@@ -841,7 +845,7 @@ details.output-group > summary { padding: 3px 2px; }
 
 /* ---- token gate / skeleton ---- */
 .token-dialog { width: min(460px, calc(100vw - 32px)); }
-.token-dialog::backdrop { background: rgba(8, 12, 17, .48); backdrop-filter: blur(10px); }
+.token-dialog-overlay { backdrop-filter: blur(10px); }
 body.locked .tabs, body.locked .tab-actions { opacity: .45; pointer-events: none; }
 .app-skeleton { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 22px; width: min(1580px, 100%); margin: 0 auto; padding: 22px 24px 80px; }
 .skeleton-side { display: flex; flex-direction: column; gap: 12px; padding: 16px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }

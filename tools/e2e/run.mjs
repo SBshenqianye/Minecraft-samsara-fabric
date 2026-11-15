@@ -97,6 +97,13 @@ try {
   await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
     source: `
       sessionStorage.setItem('samsara-token', ${JSON.stringify(token)});
+      window.__e2eDialogOpen = (id) => {
+        const el = document.getElementById(id);
+        if (!el) return false;
+        const overlay = el.closest('.el-overlay');
+        return Boolean(overlay) && getComputedStyle(overlay).display !== 'none'
+          && el.getBoundingClientRect().width > 0;
+      };
       window.__e2eErrors = [];
       addEventListener('error', (event) => window.__e2eErrors.push(
         String(event.message) + (event.error && event.error.stack ? '\\n' + event.error.stack : '')));

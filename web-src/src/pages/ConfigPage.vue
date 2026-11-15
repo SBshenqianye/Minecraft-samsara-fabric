@@ -55,7 +55,15 @@
         </div>
       </section>
     </div>
-    <dialog id="config-preview-dialog" ref="previewDialog" class="app-dialog" @close="config.closePreview()">
+    <el-dialog
+      id="config-preview-dialog"
+      v-model="config.previewOpen.value"
+      class="app-dialog"
+      width="min(620px, calc(100vw - 32px))"
+      :show-close="false"
+      append-to-body
+      align-center
+    >
       <div class="dialog-body">
         <div class="dialog-head">
           <div>
@@ -70,12 +78,12 @@
           <button id="config-preview-confirm" class="primary" type="button" :disabled="config.previewBusy.value" @click="config.confirmPreview()">确认写入</button>
         </div>
       </div>
-    </dialog>
+    </el-dialog>
   </TabShell>
 </template>
 
 <script setup>
-import { computed, nextTick, onActivated, onDeactivated, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onActivated, onDeactivated, onBeforeUnmount, onMounted, watch } from 'vue';
 import TabShell from '../components/TabShell.vue';
 import ConfigFileBlock from './config/ConfigFileBlock.vue';
 import { useConfig } from './config/useConfig.js';
@@ -93,18 +101,6 @@ defineOptions({ name: 'ConfigPage' });
 
 const config = useConfig();
 const configStore = config;
-const previewDialog = ref(null);
-
-watch(() => config.previewOpen.value, async (open) => {
-  await nextTick();
-  const dialog = previewDialog.value;
-  if (!dialog) return;
-  if (open && !dialog.open) {
-    try { dialog.showModal(); } catch { dialog.setAttribute('open', ''); }
-  } else if (!open && dialog.open) {
-    dialog.close();
-  }
-});
 
 const visibleFiles = computed(() => config.configFiles.value
   .filter((file) => fileView(file, config.edits, config.search.value).count > 0));
