@@ -29,7 +29,7 @@
 | `web-src/src/legacy-core/` | 全部删除；算法迁入 `pages/<page>/` |
 | `web-src/src/legacy/` | 全部删除 |
 | `LegacyPanel` / `useLegacyPage` | 删除 |
-| `window.Samsara*` | 删除；仅保留 `window.FrameworkDialog` |
+| `window.Samsara*` | 删除；框架弹窗改用 `useFrameworkDialog.js` 模块状态 |
 | 旧 HTML / `/style.css` / `/web/*.js` | 删除；HTTP 404 |
 | `blackframe`/静态脚本路由 | `WebSecurity` 只保留 SPA 与 `/openapi.json` |
 

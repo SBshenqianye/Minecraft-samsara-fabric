@@ -7,7 +7,7 @@
 | 项目 | 结果 |
 |---|---|
 | 旧内核目录 | 已删除；`tools/agent/check-framework.mjs` 禁止重新出现 |
-| 全局桥 | 已删除；唯一保留的框架弹窗入口是 `window.FrameworkDialog` |
+| 全局桥 | 已删除；框架弹窗由 `composables/useFrameworkDialog.js` 模块状态驱动，不再有 `window.*` 入口 |
 | 静态脚本 | `mod/src/main/resources/web/*.js` 已全部下线，只保留 SPA 资源 |
 | 页面壳 | `AdminLayout.vue` 由路由驱动；连接/导航/页内导航均为 Vue composable/组件 |
 | 公开用户端 | `UserPage.vue` + `pages/map/MapPanel.vue` + `pages/user/UserValueTable.vue` |

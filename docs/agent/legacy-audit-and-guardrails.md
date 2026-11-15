@@ -14,7 +14,7 @@
 | `web-src/src/legacy-core/` | ✅ 已删除 |
 | `web-src/src/legacy/` | ✅ 已删除 |
 | `useLegacyPage` / `LegacyPanel` | ✅ 已删除 |
-| `window.Samsara*` | ✅ 已删除；仅保留框架弹窗 `window.FrameworkDialog` |
+| `window.Samsara*` | ✅ 已删除；框架弹窗改用 `useFrameworkDialog.js` 模块状态，无全局桥 |
 | 页面内核 | ✅ 全部在 `web-src/src/pages/<page>/`，随 Vite 打包 |
 | `old-project/` | ⚠️ 15 个历史 Java 文件，属于旧 chunkmanager 参考，不参与构建 |
 
