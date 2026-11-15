@@ -7,7 +7,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-if (-not $Token) { throw '缺少 token：传 -Token 或设置 SAMSARA_TOKEN' }
+if (-not $Token) { throw 'Missing token: pass -Token or set SAMSARA_TOKEN' }
 
 function Invoke-Console([string]$Command) {
   $body = @{ command = $Command } | ConvertTo-Json -Compress
@@ -18,13 +18,14 @@ function Invoke-Console([string]$Command) {
 
 $list = Invoke-Console 'list'
 $online = 0
-if ($list.output -match 'There are (\d+) of') { $online = [int]$Matches[1] }
+$listText = ($list.output | Out-String)
+if ($listText -match 'There are (\d+) of') { $online = [int]$Matches[1] }
 if ($online -gt 0 -and -not $AllowOnline) {
-  Write-Error "服务器仍有 $online 人在线，拒绝停服。确认安全后加 -AllowOnline，并先发倒计时公告。"
+  Write-Error "Refusing to stop: $online player(s) online. Announce a countdown and pass -AllowOnline when safe."
   exit 2
 }
 
-Write-Host "发送 stop（在线 $online 人）..."
+Write-Host "Sending stop (online: $online)..."
 Invoke-Console 'stop' | Out-Null
 
 $deadline = (Get-Date).AddSeconds($MaxWaitSeconds)
@@ -42,13 +43,13 @@ while ((Get-Date) -lt $deadline) {
 
 if ($down) {
   Start-Sleep -Seconds 3
-  Write-Host '服务器已优雅停止。'
+  Write-Host 'Server stopped gracefully.'
   exit 0
 }
 
-Write-Error "等待 ${MaxWaitSeconds}s 后服务器仍未退出。默认不强杀。请检查日志/进程后人工决定。"
+Write-Error "Server still up after ${MaxWaitSeconds}s. Not forcing by default; inspect logs/PIDs first."
 if ($ForcePid -gt 0) {
-  Write-Warning "按显式 -ForcePid $ForcePid 强制结束。未保存数据可能回档。"
+  Write-Warning "Explicit -ForcePid $ForcePid requested. Unsaved data may roll back."
   taskkill /PID $ForcePid /T /F
   exit 0
 }
