@@ -110,7 +110,9 @@ Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
 - `Copy-Item` 在旧 Java 仍持锁时可能静默失败；复制后必须立刻校验目标哈希。
 - **绝不要在旧 Java 还在运行时覆盖 jar**：Windows 不报错，但旧 JVM 仍用启动时读到的 zip 索引，结果 `index.html` 是新的、`/vue/assets/*.js` 全 404，前端白屏。必须先停服并确认 java 进程退出，再复制。
 - 生产 `Launch Server.bat` 是循环启动：java 退出后会 `timeout /t 5` 再重启。要换 jar 就必须在 java 退出后 5 秒内结束循环 cmd，否则会带着旧 jar 自动重启（本次部署就遇到过一次自重启）。
+- 更稳的换 jar 顺序（2026-11-15 第二次部署实践）：先 `Stop-Process -Id <循环 cmd>`（只结束 cmd，不碰 java，java 会继续跑），确认 java 仍在运行且 8720 仍可用，再 `stop-server.ps1` 优雅停服；这样不存在 5 秒抢跑窗口。
 - 停服后要同时检查 `java.exe`（fabric-server-launch.jar）与 `cmd.exe`（Launch Server.bat）；循环 cmd 还在时，任何“已停服”都是临时的。
+- 重装 jar 后记得同步测试服那一份，否则“三处哈希一致”会被版本号差异打破。
 - 不要在生产验证时执行写配置、回滚、删备份等有副作用操作。
 - 测试服 `server.properties` 与代码内置默认值不一致时，“恢复默认使用真实默认值”这类 E2E 断言会假失败（例：`pause-when-empty-seconds` 测试服为 0、默认 60）。先核对测试服配置，不要改代码去迎合环境。
 - Web 前端改动同样要 `cd web-src && npm run build`，产物才会进入 jar；只构建后端会发布旧前端。
