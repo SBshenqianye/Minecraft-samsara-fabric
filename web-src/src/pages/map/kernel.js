@@ -1151,7 +1151,7 @@ export function createMapKernel(ctx) {
 
   function applyOverviewUi() {
     const {
-      stage, overview, overviewToggle, stack, dimension, fit, zoomIn, zoomOut, spawns,
+      stage, overview, overviewToggle, stack, dimension, fit, spawns,
     } = ensureEls();
     if (stage) stage.hidden = state.overview;
     if (overview) overview.hidden = !state.overview;
@@ -2724,8 +2724,8 @@ export function createMapKernel(ctx) {
     document.documentElement.style.setProperty('--map-player-interp',
       (PLAYER_INTERP_MS / 1000) + 's');
     const {
-      canvas, stage, stack, dimension, reload, fit, zoomIn, zoomOut, claims, chunks,
-      chunkMode, spawns, shading, showPlayers, overviewToggle,
+      canvas, stage, stack, dimension, reload, fit, zoomIn, zoomOut, chunks,
+      shading, showPlayers, overviewToggle,
     } = ensureEls();
     if (!canvas || !stage) return;
     new ResizeObserver(resize).observe(stage);

@@ -66,6 +66,7 @@ public final class WebSecurity {
                  "/samsara/economy/history", "/samsara/economy/lottery",
                  "/samsara/sky", "/samsara/sky/track", "/samsara/sky/diff",
                  "/samsara/sky/containers", "/samsara/sky/inventory",
+                 "/sky/containers",
                  // 旧 Web 背包链接：仍返回 SPA，由前端路由重定向到玩家背包。
                  "/samsara/sky/web-inventory",
                  "/samsara/config", "/samsara/config/editor", "/samsara/config/advanced",
@@ -75,7 +76,8 @@ public final class WebSecurity {
                  "/samsara/community", "/samsara/community/announcements",
                  "/samsara/community/identity",
                  "/samsara/system", "/samsara/system/audit",
-                 "/track", "/diff", "/inventory", "/identity-inventory-inline" ->
+                 "/track", "/diff", "/inventory", "/identity-inventory",
+                 "/identity-inventory-inline" ->
                 "/web/vue/index.html";
             case "/openapi.json" -> "/web/openapi.json";
             default -> {

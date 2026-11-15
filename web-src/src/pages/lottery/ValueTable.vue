@@ -78,7 +78,7 @@ import ItemIcon from '../../components/ItemIcon.vue';
 import { useApi } from '../../composables/useApi.js';
 import { valueRows } from './model.js';
 
-const props = defineProps({
+defineProps({
   hidden: { type: Boolean, default: false },
 });
 const emit = defineEmits(['error']);

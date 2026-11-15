@@ -207,10 +207,6 @@ const HERO_HINTS = {
   'mod-config': '第三方模组配置；写入前预览并自动备份，保存后可热重载。',
 };
 
-function syncServerHero() {
-  heroTextOnly.value = false;
-}
-
 function syncHeroFromRoute() {
   if (serverMode.value) {
     showHero('server');

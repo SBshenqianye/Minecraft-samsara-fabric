@@ -3,7 +3,7 @@
  * 算法保持旧实现不变，数据读写与请求由页面注入。
  */
 export function createCurveEditor({
-  key, file, entry, value, getValue, setValue, requestEstimate, onValidation,
+  file, entry, value, getValue, setValue, requestEstimate, onValidation,
 }) {
   const wrap = document.createElement('div');
   wrap.className = 'curve-editor';
@@ -115,11 +115,6 @@ export function createCurveEditor({
     for (const step of candidates) if (step >= target) return step;
     return 10000;
   };
-
-  const readRows = () => points.map((point) => ({
-    ageDays: point.ageDays,
-    keepRatio: point.keepRatio,
-  }));
 
   const validate = (rows) => {
     const errors = [];

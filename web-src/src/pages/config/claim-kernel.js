@@ -274,7 +274,7 @@ function openPatternGrid(anchor, options) {
   const grid = document.createElement('div');
   grid.className = 'claim-pattern-grid';
   const buttons = [];
-  Object.entries(CLAIM_PATTERNS).forEach(([id, pattern], index) => {
+  Object.entries(CLAIM_PATTERNS).forEach(([id, pattern]) => {
     const cell = document.createElement('button');
     cell.type = 'button';
     cell.className = 'claim-pattern-cell' + (id === selected ? ' selected' : '');
@@ -763,79 +763,6 @@ function patternDirectionsEditor(file, entries, onTrial) {
 }
 
 
-function buildIntList(file, entry, values) {
-  const wrap = document.createElement('div');
-  wrap.className = 'int-list-wrap';
-
-  const tools = document.createElement('div');
-  tools.className = 'int-list-tools';
-  const hint = document.createElement('span');
-  hint.className = 'int-list-hint';
-  hint.textContent = '图案颜色 0（白）→ 15（黑）；数字为单方向延伸区块数（旗面颜色只影响外观）';
-  const bulk = document.createElement('input');
-  bulk.type = 'number';
-  bulk.min = String(entry.min == null ? 1 : entry.min);
-  bulk.max = String(entry.max == null ? 32 : entry.max);
-  bulk.step = '1';
-  bulk.value = String(values[0] == null ? (entry.default || [])[0] || 1 : values[0]);
-  bulk.title = '把这个值应用到全部 16 种颜色';
-  const bulkWrap = document.createElement('label');
-  bulkWrap.className = 'int-list-bulk';
-  const bulkText = document.createElement('span');
-  bulkText.textContent = '统一设为';
-  bulkWrap.append(bulkText, bulk);
-  const apply = document.createElement('button');
-  apply.type = 'button';
-  apply.className = 'ghost';
-  apply.textContent = '应用到全部';
-  tools.append(hint, bulkWrap, apply);
-
-  const grid = document.createElement('div');
-  grid.className = 'int-list-grid';
-  const defaults = Array.isArray(entry.default) ? entry.default : [];
-  const count = defaults.length || values.length || DYE_PALETTE.length;
-  const min = entry.min == null ? 1 : entry.min;
-  const max = entry.max == null ? 32 : entry.max;
-  const inputs = [];
-  for (let i = 0; i < count; i += 1) {
-    const dye = DYE_PALETTE[i] || { name: '颜色 ' + i, hex: '#94a3b8' };
-    const tile = document.createElement('label');
-    tile.className = 'int-list-tile';
-    tile.title = dye.name + '（颜色 ' + i + '）';
-    const swatch = document.createElement('span');
-    swatch.className = 'int-list-swatch';
-    swatch.style.background = dye.hex;
-    const input = document.createElement('input');
-    input.type = 'number';
-    input.min = String(min);
-    input.max = String(max);
-    input.step = '1';
-    input.value = String(values[i] == null ? (defaults[i] == null ? min : defaults[i]) : values[i]);
-    input.setAttribute('aria-label', dye.name + ' 保护距离（区块）');
-    input.addEventListener('input', () => {
-      const next = inputs.map((el, idx) => {
-        const parsed = Math.round(Number(el.value));
-        if (!Number.isFinite(parsed)) return Number(defaults[idx] == null ? min : defaults[idx]);
-        return Math.max(min, Math.min(max, parsed));
-      });
-      setValue(entry, next);
-    });
-    tile.append(swatch, input);
-    grid.append(tile);
-    inputs.push(input);
-  }
-
-  apply.addEventListener('click', () => {
-    const parsed = Math.round(Number(bulk.value));
-    if (!Number.isFinite(parsed)) return;
-    const clamped = Math.max(min, Math.min(max, parsed));
-    for (const input of inputs) input.value = String(clamped);
-    setValue(entry, inputs.map(() => clamped));
-  });
-
-  wrap.append(tools, grid);
-  return wrap;
-}
 
 function claimRangePreview(file) {
   const section = document.createElement('div');
@@ -905,10 +832,6 @@ function claimRangePreview(file) {
   const activeLayer = () => {
     const banner = selectedBanner();
     return banner ? firstLayer(banner) : state.draft;
-  };
-  const activeBase = () => {
-    const banner = selectedBanner();
-    return banner ? Number(banner.baseColor ?? 0) : state.draft.baseColor;
   };
 
   const controls = document.createElement('div');

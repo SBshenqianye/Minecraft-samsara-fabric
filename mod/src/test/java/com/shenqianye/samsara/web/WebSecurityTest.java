@@ -31,6 +31,9 @@ class WebSecurityTest {
         assertEquals("/web/vue/index.html", WebSecurity.staticResource("/server/console"));
         // 旧 Web 背包链接仍需返回 SPA，由前端路由重定向到玩家背包。
         assertEquals("/web/vue/index.html", WebSecurity.staticResource("/samsara/sky/web-inventory"));
+        // 旧链接/短别名：前端有路由，服务端白名单必须同步，否则直达 404。
+        assertEquals("/web/vue/index.html", WebSecurity.staticResource("/sky/containers"));
+        assertEquals("/web/vue/index.html", WebSecurity.staticResource("/identity-inventory"));
         assertEquals("/web/vue/assets/index-abc.js", WebSecurity.staticResource("/vue/assets/index-abc.js"));
         assertNull(WebSecurity.staticResource("/vue/../app.js"));
         assertEquals("/web/openapi.json", WebSecurity.staticResource("/openapi.json"));
