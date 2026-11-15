@@ -3,6 +3,18 @@
 > 面向玩家与服主的功能变化；实现细节、未达标项与证据见[《实现状态》](docs/实现状态.md)。
 > 每个版本按「新增 / 修复 / 优化 / 变更 / 重构 / 文档」分组，只写功能口径。
 
+## 重构 2026-11-15 · 旧命令式内核全部删除（Web 0.62.0）
+
+### 重构
+- **旧内核清零**：删除 `web-src/src/legacy-core/`、`web-src/src/legacy/`、`useLegacyPage`、`LegacyPanel`、`app.js` 全局壳，以及所有 `window.Samsara*` 桥；canvas / contenteditable / PageSpec 算法保留并迁入 `web-src/src/pages/<page>/`。
+- **世界栈**：统计、栈位排序/拖拽、导入预览与队列、任务结果、文件位置、页内导航改为 Vue；删除 `world-stack.js` 与 `stack-icon.js`，图标由 `WorldStackIcon.vue` 渲染。
+- **配置编辑器 / 其他模组**：PageSpec/FormSpec 动态表单、搜索、分组、预览弹窗全部 Vue；`ConfigEditorPage` / `ModConfigPage` 共用 `pages/config-editor/*`；删除 `config-editor.js`、`chat-text.js`。
+- **输出格式**：contenteditable 画布、原子变量/按钮、拖放、撤销重做、变量/按钮面板重写为 `OutputEditor.vue` + `useOutput.js`；删除 `output.js`。
+- **地图 / 公开用户端**：tile/canvas、图层、世界栈总览、区块操作与活动列表迁入 `pages/map/kernel.js` + `MapPanel.vue`；`UserPage.vue` 与 `UserValueTable.vue` 完全 Vue；删除 `map.js`、`banners.js`、`particles.js`、`item-ui.js`、`value-table.js`、`user.js`。
+- **应用壳**：token 会话、连接状态、页内导航、框架弹窗改为 `useSession.js` / `samsara:connected` / `samsara:navigate` / `window.FrameworkDialog`；`AdminLayout.vue` 由路由驱动；删除 `app.js`、`page-kit.js`、`form-kit.js`、`structured.js`、`legacy/admin.js`、`legacy/document.js`。
+- **守卫无白名单**：`tools/agent/check-framework.mjs` 禁止旧目录、旧 import、`useLegacyPage`、`window.Samsara*`、旧静态路径、直接 `fetch` 与 `innerHTML`；`scan-legacy.mjs` 只做回归审计，`scaffold-page.mjs` 删除。
+- **验证**：`gradle clean build` 542 单测全绿；section E2E **105/105**；全量 Web E2E **281/281**；测试服与生产 jar 哈希 `CB69AF421E6B6BFF0D3D6718C75D66935279D3F3BBA86F987FF82CF61603E4C6`。
+
 ## 重构 2026-11-15 · 身份组/配置/圈地整页 Vue（Web 0.61.1，已发布）
 
 ### 重构
