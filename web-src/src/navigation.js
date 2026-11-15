@@ -62,10 +62,10 @@ export const SECTION_NAV = {
 };
 
 /**
- * 旧 tab 名 / URL hash → 规范路径。
+ * 旧链接 / URL hash → 规范路径。
  * AdminLayout 的旧 setActiveTab 桥接与 main.js 的 hash 兼容共用这一份。
  */
-export const LEGACY_ALIASES = {
+export const ROUTE_ALIASES = {
   config: '/samsara/config/advanced',
   'config-editor': '/samsara/config/editor',
   'claim-range': '/samsara/config/claim-range',

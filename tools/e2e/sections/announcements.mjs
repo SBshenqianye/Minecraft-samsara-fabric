@@ -6,7 +6,7 @@ export default {
 
     await navigate('/samsara/community/announcements');
     await until(
-      "window.SamsaraUI && document.querySelector('[data-page=\"announcements\"]')",
+      "document.querySelector('[data-page=\"announcements\"]')",
       20000,
       '原生公告页',
     );

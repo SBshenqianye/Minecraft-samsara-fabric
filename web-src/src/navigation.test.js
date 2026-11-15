@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   KEEP_ALIVE_PAGES,
-  LEGACY_ALIASES,
+  ROUTE_ALIASES,
   SECTIONS,
   SECTION_NAV,
   WORKSPACES,
@@ -34,7 +34,7 @@ describe('navigation', () => {
   });
 
   it('旧链接别名都是绝对路径', () => {
-    for (const target of Object.values(LEGACY_ALIASES)) {
+    for (const target of Object.values(ROUTE_ALIASES)) {
       expect(target.startsWith('/')).toBe(true);
     }
   });

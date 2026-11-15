@@ -78,11 +78,11 @@ function closeAll() {
 }
 
 onMounted(() => {
-  window.SamsaraDialog = { open, close, isOpen, closeAll };
+  window.FrameworkDialog = { open, close, isOpen, closeAll };
 });
 
 onBeforeUnmount(() => {
-  if (window.SamsaraDialog) window.SamsaraDialog = null;
+  if (window.FrameworkDialog) window.FrameworkDialog = null;
   hosts.clear();
 });
 </script>

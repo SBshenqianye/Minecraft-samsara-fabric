@@ -29,7 +29,7 @@ export default {
 
     // 1. 旧静态路径必须全部下线，只保留 SPA 与公开 API 文档。
     await navigate('/');
-    await until("window.SamsaraUI && document.querySelector('main.app-shell')", 20000, '管理端外壳');
+    await until("document.querySelector('main.app-shell')", 20000, '管理端外壳');
     const staticStatus = await evaluate(`(async () => {
       const paths = ${JSON.stringify(LEGACY_PATHS)};
       const out = {};
@@ -60,9 +60,14 @@ export default {
       .map((node) => node.getAttribute('src'))`);
     const legacyScripts = scriptSources.filter((src) => LEGACY_PATHS.some((path) => src === path));
     check('管理端不再加载旧 script 标签', legacyScripts.length === 0, JSON.stringify(legacyScripts));
-    check('旧内核仍通过 bundle 暴露全局入口',
-      await evaluate('Boolean(window.SamsaraUI)'),
-      'SamsaraUI');
+    const globals = await evaluate(`(() => {
+      const names = ['SamsaraUI', 'SamsaraPageKit', 'SamsaraUIKit', 'SamsaraStructured',
+        'SamsaraParticles', 'SamsaraBanners', 'SamsaraItem', 'SamsaraValueTable',
+        'SamsaraStackIcon', 'SamsaraMap', 'SamsaraWorldStack', 'SamsaraConfigEditor',
+        'SamsaraOutput', 'SamsaraRouter', 'SamsaraDialog'];
+      return names.filter((name) => Boolean(window[name]));
+    })()`);
+    check('旧内核全局入口已全部移除', globals.length === 0, JSON.stringify(globals));
     await sleep(100);
 
     // 3. 公开用户端结构由 Vue 渲染，公开只读接口与地图内核可用。

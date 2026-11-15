@@ -62,7 +62,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { LEGACY_ALIASES } from '../../navigation.js';
+import { ROUTE_ALIASES } from '../../navigation.js';
 import ConfigEditorField from './ConfigEditorField.vue';
 
 const props = defineProps({
@@ -86,7 +86,7 @@ watch(() => props.store.previewOpen.value, async (open) => {
 });
 
 function openCustom() {
-  const alias = LEGACY_ALIASES[page.value?.customWidget];
+  const alias = ROUTE_ALIASES[page.value?.customWidget];
   if (alias) router.push(alias);
 }
 </script>

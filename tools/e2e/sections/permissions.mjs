@@ -6,7 +6,7 @@ export default {
 
     await navigate('/samsara/config/permissions');
     await until(
-      "window.SamsaraUI && document.querySelector('[data-page=\"permissions\"]')",
+      "document.querySelector('[data-page=\"permissions\"]')",
       20000,
       '原生权限页',
     );

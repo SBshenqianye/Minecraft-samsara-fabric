@@ -19,21 +19,19 @@ AGENTS.md                         # 仓库级 Agent 开发约定
   scripts/samsara.sh
 
 docs/agent/
-  migration-board.md              # 全量迁移批次、依赖与状态
-  tasks/_template.md              # 单页面迁移任务模板
-  tasks/migrate-announcements.md  # 公告页样板
-  tasks/migrate-permissions.md    # 权限页样板
-  tasks/migrate-output.md         # 下一批：富文本编辑器
-  tasks/migrate-server-console.md # 下一批：RCON 控制台
-  legacy-inventory.md             # scan-legacy 生成
-  legacy-inventory.json
+  migration-board.md              # 页面内核迁移结果与 E2E 对照
+  framework-contract.md           # 常驻框架规则
+  legacy-audit-and-guardrails.md  # 守卫规则与回归审计
+  tasks/_template.md              # 单页面任务模板
+  tasks/migrate-announcements.md  # 历史样板
+  tasks/migrate-permissions.md    # 历史样板
   prompts/system.md
   prompts/operator.md
   README.md
 
 tools/agent/
-  scan-legacy.mjs                 # 扫描旧脚本 DOM/全局/API 依赖（含迁移状态）
-  scaffold-page.mjs               # 生成 Vue 页面 + model + 单测 + 任务 spec
+  check-framework.mjs             # 框架守卫（旧内核/全局/fetch/innerHTML）
+  scan-legacy.mjs                 # 回归审计：确认旧目录与全局已清零
   verify-page.mjs                 # 一键验证：npm run check + section E2E
 
 tools/e2e/
@@ -42,15 +40,15 @@ tools/e2e/
   sections/announcements.mjs      # 公告页样板
 ```
 
-## 代码迁移工作流
+## 页面开发工作流
 
 ```powershell
-node tools/agent/scan-legacy.mjs
-node tools/agent/scaffold-page.mjs --name <page> --title <标题> --route <路由> --keep-alive
+npm.cmd run check
 node tools/agent/verify-page.mjs --page <page> --base http://127.0.0.1:8722 --token <token>
+node tools/agent/scan-legacy.mjs
 ```
 
-具体见 `AGENTS.md` 与 `docs/agent/tasks/`。
+旧内核已全部删除；新增算法放 `web-src/src/pages/<page>/`，具体见 `AGENTS.md`。
 
 ## 使用
 

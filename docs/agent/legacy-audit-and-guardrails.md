@@ -1,40 +1,40 @@
 # 旧代码与框架守卫
 
-> 日期：2026-11-14  
-> 目的：说明“现在还剩什么旧代码”，以及以后如何阻止新代码绕开 Vue 框架。
+> 日期：2026-11-15  
+> 目的：记录旧内核清零后的状态，以及阻止新代码绕开 Vue 框架的规则。
 
 ## 结论
 
-**不是“零旧代码”。** 旧静态页面壳和旧静态脚本已经清零，但复杂页面的命令式内核仍保留在 `web-src/src/legacy-core/`，这是 batch 5 明确的“Vue 壳 + 保留内核”方案。
+**旧命令式内核已全部删除。** 没有 `web-src/src/legacy-core/`、`web-src/src/legacy/`、`useLegacyPage`、`LegacyPanel`、全局 `app.js` 壳，也没有 `window.Samsara*`。
 
 | 区域 | 状态 |
 |---|---|
 | `/legacy.html`、`/legacy-user.html`、`/style.css`、旧 `/web/*.js` | ✅ 已删除，HTTP 404 |
-| `LegacyPanel` | ✅ 已删除 |
 | `mod/src/main/resources/web/*.js` | ✅ 已清零 |
-| `web-src/src/legacy-core/` | ⚠️ 保留 15 个内核模块（约 1.20 万行）；`server.js`、`lottery.js`、`identity.js` 已删除；配置/圈地的算法内核已迁到 `web-src/src/pages/config/` |
-| `web-src/src/legacy/` | ⚠️ 保留 3 个桥接文件：`admin.js`、`document.js`、`user.js` |
-| 使用 `useLegacyPage` 的页面 | ⚠️ 5 个：config-editor、map、mod-config、output、world-stack |
+| `web-src/src/legacy-core/` | ✅ 已删除 |
+| `web-src/src/legacy/` | ✅ 已删除 |
+| `useLegacyPage` / `LegacyPanel` | ✅ 已删除 |
+| `window.Samsara*` | ✅ 已删除；仅保留框架弹窗 `window.FrameworkDialog` |
+| 页面内核 | ✅ 全部在 `web-src/src/pages/<page>/`，随 Vite 打包 |
 | `old-project/` | ⚠️ 15 个历史 Java 文件，属于旧 chunkmanager 参考，不参与构建 |
 
-## 为什么保留内核
+## 内核落点
 
-以下页面不是简单 CRUD，重写成本高且容易回归：
+算法没有重写，只是迁入页面目录并由 Vue 调用：
 
-- 地图：tile/canvas 渲染、玩家图层、区块操作
-- 世界栈：时间线、3D 纸盒人、图标上传
-- 配置编辑器：PageSpec/FormSpec、预览/diff、写入前备份
-- 输出格式：contenteditable 富文本、chips、撤销/重做
-- 身份组：权限树、背包 iframe、UUID 重绑
-- 本体服务器：配置/备份/RCON/审计四个面板（阶段 3 已拆成 Vue，只保留 `properties` 解析等纯逻辑在 `pages/server/model.js`）
-- 经济业务：基金、乐透、保险（阶段 4 已迁 Vue；基金仓库继续复用 `ItemWorkbench`）
-- 高级配置/圈地：`app.js` 的配置渲染与圈地预览
-
-当前策略是“页面由 Vue 路由/组件挂载，内核按页动态加载”，不再有全局静态脚本和 HTML 回退。
+- 地图：`pages/map/kernel.js`（tile/canvas、玩家图层、区块操作）+ `pages/map/MapPanel.vue`
+- 世界栈：`pages/world-stack/*`（图标、时间线、归档、导入队列、排序）
+- 配置编辑器：`pages/config-editor/*`（PageSpec/FormSpec、预览/diff、写入前备份）
+- 输出格式：`pages/output/OutputEditor.vue`（contenteditable、原子标签、撤销/重做）
+- 高级配置/圈地：`pages/config/*`（曲线 canvas、圈地预览、旗帜几何）
+- 身份组：`pages/identity/*`（设置、卡片、池子、详情、重绑、审计）
+- 本体服务器：`pages/server/*`（配置/备份/RCON/审计）
+- 经济业务：`pages/lottery/*`（基金、乐透、保险、价值表）
+- 公开用户端：`pages/UserPage.vue` + `pages/user/UserValueTable.vue` + `MapPanel`
 
 ## 自动守卫
 
-新增 `tools/agent/check-framework.mjs`，并接入 `npm run check`：
+`tools/agent/check-framework.mjs` 接入 `npm run check`：
 
 ```text
 npm run check
@@ -47,21 +47,28 @@ npm run check
 
 守卫规则：
 
-1. 禁止重新引入 `LegacyPanel`。
-2. 除白名单页面外，禁止 `import ... from 'legacy-core/'`。
-3. `useLegacyPage` 只允许现有 8 个复杂页面使用。
-4. 除框架桥接文件外，禁止从 `src/legacy/` 引入旧壳。
-5. 新页面禁止依赖 `window.Samsara*` 全局内核。
-6. 页面/组件禁止直接 `fetch()`，必须用 `useApi`。
-7. 禁止 `innerHTML` / `insertAdjacentHTML` / `document.write`。
-8. 禁止引用 `/legacy.html`、`/style.css`、`/app.js` 等旧静态路径。
-9. 禁止在 `mod/src/main/resources/web/` 新增 `.js` 文件。
+1. `web-src/src/legacy-core/`、`web-src/src/legacy/` 必须不存在。
+2. 禁止 `LegacyPanel`、`useLegacyPage`。
+3. 禁止 `import ... from 'legacy-core/'` 或 `src/legacy/`。
+4. 禁止依赖 `window.Samsara*` 全局。
+5. 页面/组件禁止直接 `fetch()`，必须用 `useApi`。
+6. 禁止 `innerHTML` / `insertAdjacentHTML` / `document.write`。
+7. 禁止引用 `/legacy.html`、`/style.css`、`/app.js` 等旧静态路径。
+8. 禁止在 `mod/src/main/resources/web/` 新增 `.js` 文件。
 
-当前白名单只包含已经存在的 8 个复杂页面和 3 个桥接文件；新增页面默认不允许走旧内核。
+没有页面白名单：任何重新引入旧内核的改动都会直接失败。
+
+## 回归审计
+
+`tools/agent/scan-legacy.mjs` 只做回归审计：
+
+- 确认两个旧目录不存在。
+- 扫描 `.vue` / `.js`，确认没有 `window.Samsara*`、`useLegacyPage` 和旧内核 import。
+- 失败时列出文件与原因，可直接接入 CI。
 
 ## 远程门禁
 
-新增 `.github/workflows/web.yml`：
+`.github/workflows/web.yml`：
 
 - push / pull_request 修改 `web-src/`、`tools/agent/`、`tools/e2e/` 或 Vue 构建产物时触发。
 - 执行 `npm install` + `npm run check`。
@@ -69,23 +76,10 @@ npm run check
 
 ## 人工约束
 
-`AGENTS.md` 已同步：
+`AGENTS.md` 与 `docs/agent/framework-contract.md` 已同步：
 
 - 新功能必须写 `web-src/src/`。
-- 不要再新增 `/web/*.js` 静态脚本。
-- 需要复用旧内核时，先抽 `pages/<page>/model.js` 并加单测。
+- 复杂算法放 `pages/<page>/`，先抽纯逻辑并加单测。
+- 连接/token 用 `useSession` / `useApi`；跨页导航用 `samsara:navigate`。
 - 共享组件改动必须单独任务并跑全量 `npm run check`。
-
-## 后续真正“去旧”的路线
-
-按收益排序：
-
-1. `config-editor.js` PageSpec/FormSpec 编辑内核（仍由 `useLegacyPage` 挂载）
-2. `output.js` contenteditable 画布/原子标签（工具栏与预览已 Vue）
-3. `map.js` canvas/tile、图层与区块操作（控制层已 Vue）
-4. `world-stack.js` 时间线/排序/导入（卡片与对话框已 Vue）
-5. `app.js` 仍保留旧配置/圈地渲染器的死代码，可在后续单独清理
-
-已完成：阶段 1、2a、2b（世界栈）、阶段 3（本体四面板，`server.js` 已删除）、阶段 4（经济业务，`lottery.js` 已删除）、阶段 5（身份组整页 Vue，`identity.js` 已删除）、阶段 6（输出格式工具栏/预览）、阶段 7（地图控制层）、阶段 8（配置/圈地整页 Vue，算法内核在 `pages/config/`）。
-
-每拆一个，就从 `check-framework.mjs` 白名单移除对应页面，守卫会自动阻止回退。
+- 不恢复旧目录、全局桥或旧静态脚本。

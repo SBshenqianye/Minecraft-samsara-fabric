@@ -6,7 +6,7 @@ export default {
 
     await navigate('/vanilla/console');
     await until(
-      "window.SamsaraUI && document.querySelector('[data-page=\"server-console\"]')",
+      "document.querySelector('[data-page=\"server-console\"]')",
       20000,
       '原生 RCON 控制台',
     );

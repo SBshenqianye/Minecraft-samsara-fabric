@@ -71,7 +71,7 @@ async function main() {
 
     // ---- 连接与本体页 ----
     await navigate(base + '/vanilla/config');
-    await until("window.SamsaraUI && document.getElementById('token-connect')", 10000, '前端脚本');
+    await until("document.getElementById('token-connect')", 10000, '前端脚本');
     await sleep(300);
     await evaluate(`
       window.__e2eErrors = [];
@@ -90,29 +90,72 @@ async function main() {
       await evaluate("document.getElementById('token-connect').click(); true;");
       await until("document.getElementById('token-dialog').open === false", 20000, '连接 token（重试）');
     }
+    const pageHelpers = `
+      window.__e2eAliases = {
+        config: '/samsara/config/advanced',
+        'config-editor': '/samsara/config/editor',
+        'claim-range': '/samsara/config/claim-range',
+        output: '/samsara/config/output',
+        permissions: '/samsara/config/permissions',
+        map: '/samsara/world/map',
+        announcements: '/samsara/community/announcements',
+        identity: '/samsara/community/identity',
+        lottery: '/samsara/economy',
+        'world-stack': '/samsara/world/stack',
+        server: '/vanilla/config',
+        'server-backup': '/vanilla/backup',
+        'server-console': '/vanilla/console',
+        'server-audit': '/samsara/system/audit',
+      };
+      window.__e2eGo = (name) => {
+        const target = window.__e2eAliases[name] || name;
+        window.dispatchEvent(new CustomEvent('samsara:navigate', { detail: { path: target } }));
+      };
+      window.__e2eApi = async (url, options = {}) => {
+        const token = sessionStorage.getItem('samsara-token') || '';
+        const headers = Object.assign({ 'Content-Type': 'application/json' },
+          options.headers || {}, token ? { Authorization: 'Bearer ' + token } : {});
+        const response = await fetch(url, Object.assign({}, options, { headers }));
+        const raw = await response.text();
+        let data = {};
+        try { data = raw ? JSON.parse(raw) : {}; } catch { data = { error: raw }; }
+        if (!response.ok) {
+          const error = new Error(data.error || ('HTTP ' + response.status));
+          error.status = response.status;
+          error.body = data;
+          throw error;
+        }
+        return data;
+      };
+      true;
+    `;
+    await evaluate(pageHelpers);
     // 后续整页导航时自动补 token，避免极少数渲染进程重载丢失 sessionStorage。
     await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
-      source: `sessionStorage.setItem('samsara-token', ${JSON.stringify(token)});`,
+      source: `sessionStorage.setItem('samsara-token', ${JSON.stringify(token)});`
+        + pageHelpers.slice(0, -5),
     });
     await until("document.querySelectorAll('#server-config-files > details.file-block').length >= 6", 25000, '本体配置文件');
 
     const webVersion = await evaluate(`(async () => {
-      const status = await window.SamsaraUI.api('/api/status');
+      const status = await __e2eApi('/api/status');
       return { header: document.getElementById('app-version')?.textContent || '',
         web: status.webVersion, mod: status.version };
     })()`);
     check('Web 版本号独立于模组版本', Boolean(webVersion.web)
         && webVersion.header === 'v' + webVersion.web, JSON.stringify(webVersion));
 
-    const pageKit = await evaluate(`(() => {
-      const result = window.SamsaraPageKit.selfTest();
-      result.cleaned = !window.SamsaraPageKit.has('__pagekit_self_test__');
-      return result;
-    })()`);
-    check('页面生命周期基础设施可用', pageKit.mounted === 1 && pageKit.unmounted === 1
-        && pageKit.disposed === true && pageKit.pending === 0
-        && pageKit.listenerRemoved === 1 && pageKit.cleaned === true,
-        JSON.stringify(pageKit));
+    const frameworkState = await evaluate(`(() => ({
+      layout: Boolean(document.querySelector('.ia-layout')),
+      content: Boolean(document.querySelector('.content > *')),
+      pageNav: Boolean(document.getElementById('page-nav')),
+      connection: document.getElementById('connection-state')?.textContent || '',
+      overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 2,
+    }))()`);
+    check('页面生命周期基础设施可用', frameworkState.layout && frameworkState.content
+        && frameworkState.pageNav && frameworkState.connection !== ''
+        && !frameworkState.overflow,
+        JSON.stringify(frameworkState));
 
     const server = await evaluate(`(() => ({
       nav: document.querySelector('#page-nav .nav-title')?.textContent.trim() || '',
@@ -370,7 +413,7 @@ async function main() {
         previewText = preview?.textContent || '';
         if (preview) preview.hidden = true;
       }
-      const model = await window.SamsaraUI.api('/api/world-stack');
+      const model = await __e2eApi('/api/world-stack');
       const result = {
         nav,
         dialogOpen: Boolean(dialog?.open),
@@ -588,7 +631,7 @@ async function main() {
       await new Promise((resolve) => setTimeout(resolve, 900));
       const dialog = document.getElementById('world-stack-archive-dialog');
       const preview = document.getElementById('world-stack-archive-preview');
-      const model = await window.SamsaraUI.api('/api/world-stack');
+      const model = await __e2eApi('/api/world-stack');
       const result = {
         cardButton: Boolean(button),
         dialogOpen: Boolean(dialog?.open),
@@ -611,7 +654,7 @@ async function main() {
     const mods = await evaluate(`(async () => {
       [...document.querySelectorAll('.top-tab')].find((tab) => tab.dataset.section === 'mods').click();
       await new Promise((resolve) => setTimeout(resolve, 500));
-      window.SamsaraUI.setActiveTab('identity');
+      __e2eGo('identity');
       await new Promise((resolve) => setTimeout(resolve, 600));
       const identity = document.querySelectorAll('#identity-enabled .segmented-btn').length;
       const panel = document.querySelector('#panel-identity');
@@ -633,13 +676,13 @@ async function main() {
         bareOld: panelText.includes('正版 UUID') || panelText.includes('离线 UUID'),
         zones: zoneLabels,
       };
-      window.SamsaraUI.setActiveTab('output');
+      __e2eGo('output');
       await new Promise((resolve) => setTimeout(resolve, 600));
       const output = document.querySelectorAll('#output-auto-continue .segmented-btn').length;
-      window.SamsaraUI.setActiveTab('permissions');
+      __e2eGo('permissions');
       await new Promise((resolve) => setTimeout(resolve, 900));
       const permissions = document.querySelectorAll('.perm-row .segmented').length;
-      window.SamsaraUI.setActiveTab('lottery');
+      __e2eGo('lottery');
       await new Promise((resolve) => setTimeout(resolve, 900));
       const lotteryPanel = document.querySelector('#panel-lottery');
       const lotteryTab = [...document.querySelectorAll('.tab[data-panel]')]
@@ -656,7 +699,7 @@ async function main() {
         claimsPanel: Boolean(document.getElementById('lottery-claims-panel')),
         tab: lotteryTab ? lotteryTab.textContent.replace(/\\s+/g, ' ').trim() : '',
       };
-      window.SamsaraUI.setActiveTab('config');
+      __e2eGo('config');
       await new Promise((resolve) => setTimeout(resolve, 600));
       const configBool = document.querySelectorAll('#files .entry-control .segmented').length;
       return { identity, identityTerms, output, permissions, configBool, lottery };
@@ -669,7 +712,7 @@ async function main() {
         JSON.stringify(mods.identityTerms));
 
     const identityData = await evaluate(`(async () => {
-      window.SamsaraUI.setActiveTab('identity');
+      __e2eGo('identity');
       for (let i = 0; i < 50; i++) {
         if (document.querySelector('#panel-identity .uuid-chip.data')) break;
         await new Promise((resolve) => setTimeout(resolve, 200));
@@ -693,7 +736,7 @@ async function main() {
         .find((node) => node.textContent.includes('备份数据'));
       const editButton = [...document.querySelectorAll('#identity-data-content button')]
         .find((node) => node.textContent.trim() === '编辑身份组背包');
-      const wasOpen = Boolean(window.SamsaraDialog?.isOpen('identity-data-dialog')
+      const wasOpen = Boolean(window.FrameworkDialog?.isOpen('identity-data-dialog')
         || document.querySelector('.samsara-framework-dialog'));
       const inlineFrame = document.querySelector('#identity-data-content iframe');
       const inlineDoc = inlineFrame?.contentDocument;
@@ -723,7 +766,7 @@ async function main() {
       const legacySlotGrids = content?.querySelectorAll(
         '.identity-data-slot-title, .identity-data-slot-grid').length || 0;
       const frameworkDialog = Boolean(document.querySelector('.samsara-framework-dialog'));
-      window.SamsaraDialog?.close('identity-data-dialog');
+      window.FrameworkDialog?.close('identity-data-dialog');
       await new Promise((resolve) => setTimeout(resolve, 300));
       return { open: wasOpen, text,
         hasCopy: Boolean(copyButton), hasRename: Boolean(renameButton),
@@ -766,7 +809,7 @@ async function main() {
 
     // 逐个点击导航，按“目标顶部 = 吸顶导航顶部”检查视觉位置。
     const identityNav = await evaluate(`(async () => {
-      window.SamsaraUI.setActiveTab('identity');
+      __e2eGo('identity');
       for (let i = 0; i < 50; i++) {
         if (document.querySelector('#panel-identity .identity-card')) break;
         await new Promise((resolve) => setTimeout(resolve, 200));
@@ -810,7 +853,7 @@ async function main() {
       root.style.scrollBehavior = 'auto';
       const out = {};
       for (const page of ['config', 'permissions']) {
-        window.SamsaraUI.setActiveTab(page);
+        __e2eGo(page);
         await new Promise((resolve) => setTimeout(resolve, 900));
         window.scrollTo(0, 0);
         await new Promise((resolve) => setTimeout(resolve, 80));
@@ -855,7 +898,7 @@ async function main() {
     // ---- PageSpec/FormSpec 配置编辑器（F-168，只读检查 + 预览不写盘） ----
     const editor = await evaluate(`(async () => {
       const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-      window.SamsaraUI.setActiveTab('config-editor');
+      __e2eGo('config-editor');
       await wait(1400);
       const nav = [...document.querySelectorAll('#page-nav .nav-item')];
       const groups = nav.map((node) => node.textContent.trim());
@@ -891,7 +934,7 @@ async function main() {
 
     // ---- Web 公告：原生 Vue 页面 ----
     await navigate(base + '/samsara/community/announcements');
-    await until("window.SamsaraUI && document.querySelector('[data-page=\"announcements\"]')",
+    await until("document.querySelector('[data-page=\"announcements\"]')",
         20000, '原生公告页');
     await until("document.querySelectorAll('#announcements-list .announcement-item').length >= 1",
         20000, '公告列表');
@@ -928,7 +971,7 @@ async function main() {
         && announcements.previewText.includes('聊天'), JSON.stringify({
           preview: announcements.previewText.slice(0, 160) }));
 
-    const agentWhoami = await evaluate(`window.SamsaraUI.api('/api/agent/whoami')`);
+    const agentWhoami = await evaluate(`__e2eApi('/api/agent/whoami')`);
     check('Agent whoami 返回 actor/scope/限流', agentWhoami.ok === true
         && agentWhoami.actor === 'admin' && agentWhoami.admin === true
         && Array.isArray(agentWhoami.scopes) && agentWhoami.scopes.includes('announce')
@@ -936,7 +979,7 @@ async function main() {
         JSON.stringify(agentWhoami));
 
     const idempotency = await evaluate(`(async () => {
-      const token = window.SamsaraUI.getToken();
+      const token = sessionStorage.getItem('samsara-token');
       const key = 'e2e-idem-' + Date.now();
       const headers = { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json',
         'Idempotency-Key': key };
@@ -958,7 +1001,7 @@ async function main() {
         && mods.lottery.tab.includes('经济业务'), JSON.stringify(mods.lottery || {}));
 
     const lotteryPools = await evaluate(`(async () => {
-      const data = await window.SamsaraUI.api('/api/lottery');
+      const data = await __e2eApi('/api/lottery');
       const user = await fetch('/api/user/lottery').then((response) => response.json());
       return {
         adminFields: ['activePot', 'bettingPot', 'activePotItems', 'bettingPotItems']
@@ -992,7 +1035,8 @@ async function main() {
       return {
         title: document.querySelector('#page-nav .nav-title')?.textContent.trim() || '',
         items,
-        saveHidden: document.getElementById('save')?.hidden,
+        saveHidden: !document.getElementById('save')
+          || document.getElementById('save').hidden === true,
       };
     })()`);
     check('经济业务死人乐透页使用通用左侧导航', lotteryNav.title.includes('经济业务')
@@ -1014,9 +1058,9 @@ async function main() {
     // ---- 权限分段控件：保存 deny → 回显 → 恢复原等级 ----
     const permLevels = await evaluate(`(async () => {
       const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-      window.SamsaraUI.setActiveTab('permissions');
+      __e2eGo('permissions');
       await wait(900);
-      const api = window.SamsaraUI.api;
+      const api = window.__e2eApi;
       const model = await api('/api/permissions');
       const leaves = [];
       const walk = (nodes) => {
@@ -1077,7 +1121,7 @@ async function main() {
     // ---- 圈地范围：条件显示 / 色板 / 图案网格 / 朝向 / 缩放平移 ----
     const claim = await evaluate(`(async () => {
       const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-      window.SamsaraUI.setActiveTab('claim-range');
+      __e2eGo('claim-range');
       await wait(800);
       const preview = document.getElementById('claim-range-preview');
       const canvas = document.getElementById('claim-sim-canvas');
@@ -1413,7 +1457,7 @@ async function main() {
     });
     await sleep(500);
     const narrow = await evaluate(`(async () => {
-      window.SamsaraUI.setActiveTab('claim-range');
+      __e2eGo('claim-range');
       await new Promise((resolve) => setTimeout(resolve, 500));
       return {
         overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
@@ -1426,7 +1470,7 @@ async function main() {
         JSON.stringify(narrow));
 
     // ---- 地图页冒烟 + 世界栈总览 / 在线玩家 ----
-    await evaluate("window.SamsaraUI.setActiveTab('map'); true;");
+    await evaluate("__e2eGo('map'); true;");
     await until("document.getElementById('map-message') && (document.getElementById('map-message').textContent.includes('失败') || document.getElementById('map-stats').textContent.trim().length > 0)", 20000, '地图数据');
     const mapState = await evaluate(`(async () => {
       const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -1571,9 +1615,9 @@ async function main() {
     check('为实时层创建临时实体', e2eEntitySpawn.status === 200,
         'status=' + e2eEntitySpawn.status);
     const liveMap = await evaluate(`(async () => {
-      window.SamsaraUI.setActiveTab('map');
+      __e2eGo('map');
       await new Promise((resolve) => setTimeout(resolve, 1800));
-      const data = await window.SamsaraUI.api('/api/map/live');
+      const data = await __e2eApi('/api/map/live');
       const player = (data.players || [])[0] || null;
       const entity = (data.entities || [])[0] || null;
       const liveCanvas = document.getElementById('map-live');
@@ -1705,7 +1749,7 @@ async function main() {
     // ---- 保留曲线编辑器 / 容量预估 ----
     const curve = await evaluate(`(async () => {
       const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-      window.SamsaraUI.setActiveTab('config');
+      __e2eGo('config');
       await wait(1800);
       const editor = document.querySelector('.curve-editor');
       if (!editor) return { found: false };
@@ -1742,9 +1786,9 @@ async function main() {
         curve.estimateAfter.slice(0, 120));
 
     const diffApi = await evaluate(`(async () => {
-      const summary = await window.SamsaraUI.api(
+      const summary = await __e2eApi(
         '/api/diff/chunk?stack=world&dim=overworld&cx=0&cz=0');
-      const view = await window.SamsaraUI.api('/api/diff/view');
+      const view = await __e2eApi('/api/diff/view');
       return {
         summaryOk: summary.ok === true,
         edits: summary.editCount,
@@ -1772,7 +1816,7 @@ async function main() {
     check('RCON 控制台需要管理端 token', noAuthConsole.status === 401,
         'status=' + noAuthConsole.status);
     await navigate(base + '/vanilla/console');
-    await until("window.SamsaraUI && document.getElementById('server-console-panel')"
+    await until("document.getElementById('server-console-panel')"
         + " && !document.getElementById('server-console-panel').hidden", 20000, 'RCON 控制台路由');
     const consoleState = await evaluate(`(async () => {
       // 原生控制台页面在 0.59.0 后接管；仍保留旧 RCON 断言以覆盖接口与 UI。
@@ -1815,7 +1859,7 @@ async function main() {
         && consoleComplete.first.length > 0, JSON.stringify(consoleComplete));
 
     const betComplete = await evaluate(`(async () => {
-      const data = await window.SamsaraUI.api('/api/server/console/complete', {
+      const data = await __e2eApi('/api/server/console/complete', {
         method: 'POST',
         body: JSON.stringify({ command: 'samsara lottery bet ', cursor: 20 }),
       });
@@ -2072,7 +2116,7 @@ async function main() {
     check('Web 审计需要管理端 token', noAuthAudit.status === 401,
         'status=' + noAuthAudit.status);
     await navigate(base + '/samsara/system/audit');
-    await until("window.SamsaraUI && document.getElementById('server-audit-panel')"
+    await until("document.getElementById('server-audit-panel')"
         + " && !document.getElementById('server-audit-panel').hidden", 20000, 'Web 审计路由');
     const auditState = await evaluate(`(async () => {
       await new Promise((resolve) => setTimeout(resolve, 3000));
@@ -2126,9 +2170,9 @@ async function main() {
 
     // ---- 刷新页面验证区块网格本地持久化 ----
     await navigate(base + '/#map');
-    await until("window.SamsaraUI && document.getElementById('map-show-chunks')", 20000,
+    await until("document.getElementById('map-show-chunks')", 20000,
         '刷新后的地图页');
-    await evaluate("window.SamsaraUI.setActiveTab('map'); true;");
+    await evaluate("__e2eGo('map'); true;");
     await until("document.getElementById('map-stats') && "
         + "document.getElementById('map-stats').textContent.trim().length > 0", 20000,
         '刷新后的地图数据');
@@ -2307,7 +2351,7 @@ async function main() {
     ];
     for (const [path, selector, expectedPath] of simpleRoutes) {
       await navigate(base + path);
-      await until("window.SamsaraUI && (() => { const p = document.querySelector('"
+      await until("(() => { const p = document.querySelector('"
           + selector + "'); return p && !p.hidden && getComputedStyle(p).display !== 'none'; })()",
           20000, '路由 ' + path);
       const routeState = await evaluate(`(() => {
@@ -2342,7 +2386,7 @@ async function main() {
     ];
     for (const [path, panelId, probe] of complexRoutes) {
       await navigate(base + path);
-      await until("window.SamsaraUI && (() => { const p = document.getElementById('"
+      await until("(() => { const p = document.getElementById('"
           + panelId + "'); return p && !p.hidden && getComputedStyle(p).display !== 'none'; })()",
           20000, '复杂页 ' + path);
       if (path === '/map') {
@@ -2374,7 +2418,7 @@ async function main() {
 
     // ---- 新信息架构：左侧顶级工作区 + 二级 Tab ----
     await navigate(base + '/vanilla/config');
-    await until("window.SamsaraUI && document.querySelector('.workspace-rail')",
+    await until("document.querySelector('.workspace-rail')",
         20000, '新信息架构导航');
     const iaVanilla = await evaluate(`(() => ({
       workspaces: [...document.querySelectorAll('.workspace-rail .rail-item[data-workspace]')]
@@ -3561,7 +3605,7 @@ async function main() {
 
     // ---- 路由切回管理端：Vue 外壳与旧页面逻辑仍可用 ----
     await navigate(base + '/samsara/config/advanced');
-    await until("window.SamsaraUI && document.getElementById('panel-config')",
+    await until("document.getElementById('panel-config')",
         20000, '返回管理端');
     const adminReturn = await evaluate(`(() => ({
       header: !!document.querySelector('.app-header'),

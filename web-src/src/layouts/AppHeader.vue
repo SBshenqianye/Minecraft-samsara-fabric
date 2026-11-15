@@ -12,7 +12,7 @@
       </div>
 
       <div class="connection">
-        <span id="connection-state" class="conn-state">未连接</span>
+        <span id="connection-state" class="conn-state">{{ connectionText }}</span>
         <a class="user-view-link" href="/user" target="_blank" rel="noopener"
             title="公开只读信息，不需要 token">用户视图</a>
       </div>
@@ -38,11 +38,6 @@
           <h1 id="action-title" class="page-hero-title">配置</h1>
           <p id="action-hint" class="page-hero-hint muted small"></p>
         </div>
-        <div class="tab-actions-buttons page-hero-buttons">
-          <button id="action-default" class="ghost" type="button" hidden>恢复默认</button>
-          <button id="reload" class="ghost" type="button">重新读取</button>
-          <button id="save" class="primary" type="button">保存并重载</button>
-        </div>
       </div>
 
       <!-- 本体页的按钮属于页面自己（ServerPage / ServerConsolePage），hero 只负责标题与说明。 -->
@@ -55,14 +50,14 @@
     </section>
 
     <!-- 旧脚本仍按 id / data-panel 查找这些 Tab；视觉上由 ia.css 隐藏。点击直接走路由。 -->
-    <nav class="ia-legacy-tabs" aria-hidden="true">
+    <nav class="ia-hidden-tabs" aria-hidden="true">
       <button class="top-tab" :class="{ active: !serverMode }" type="button"
           data-section="mods" @click="goWorkspace('mods')">samsara</button>
       <button class="top-tab" :class="{ active: serverMode }" type="button"
           data-section="server" @click="goWorkspace('server')">本体</button>
     </nav>
 
-    <nav id="mods-tabs" class="ia-legacy-tabs" aria-hidden="true">
+    <nav id="mods-tabs" class="ia-hidden-tabs" aria-hidden="true">
       <button class="tab" type="button" data-panel="panel-config-editor">配置编辑器</button>
       <button class="tab active" type="button" data-panel="panel-config">高级配置</button>
       <button class="tab" type="button" data-panel="panel-claim-range">圈地范围</button>
@@ -75,7 +70,7 @@
       <button class="tab" type="button" data-panel="panel-lottery">经济业务</button>
     </nav>
 
-    <nav id="server-tabs" class="ia-legacy-tabs" aria-hidden="true">
+    <nav id="server-tabs" class="ia-hidden-tabs" aria-hidden="true">
       <button v-for="tab in SERVER_TABS" :key="tab.panel" class="tab" type="button"
           :class="{ active: activeServerPanel === tab.panel }"
           :data-server-panel="tab.panel" @click="goServerPanel(tab.panel)">{{ tab.label }}</button>
@@ -85,6 +80,7 @@
 
 <script setup>
 import { useRouter } from 'vue-router';
+import { connectionText } from '../composables/useSession.js';
 
 defineProps({
   crumbs: { type: Array, default: () => [] },

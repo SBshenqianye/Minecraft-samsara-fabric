@@ -84,7 +84,7 @@ export default {
           .map((node) => node.textContent.trim()),
         hasBackupList: (content?.textContent || '').includes('备份记录'),
       };
-      window.SamsaraDialog?.close('identity-data-dialog');
+      window.FrameworkDialog?.close('identity-data-dialog');
       await new Promise((resolve) => setTimeout(resolve, 200));
       return result;
     })()`);

@@ -3,10 +3,10 @@ import appConfig from './app-config.mjs';
 import batch5 from './batch5.mjs';
 import configEditor from './config-editor.mjs';
 import identity from './identity.mjs';
-import legacyShell from './legacy-shell.mjs';
 import lottery from './lottery.mjs';
 import map from './map.mjs';
 import output from './output.mjs';
+import pages from './pages.mjs';
 import permissions from './permissions.mjs';
 import server from './server.mjs';
 import serverConsole from './server-console.mjs';
@@ -28,7 +28,7 @@ export const sections = {
   permissions,
   server,
   'server-console': serverConsole,
-  'legacy-shell': legacyShell,
+  pages,
   'world-stack': worldStack,
   'sky-inventory': skyInventory,
   batch5,

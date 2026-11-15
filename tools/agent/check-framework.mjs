@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 框架守卫：阻止新页面重新引入旧命令式内核或绕过 useApi/useLegacyPage 约定。
+// 框架守卫：禁止重新引入旧命令式内核、旧静态脚本与全局 window.Samsara*。
 // 用法：node tools/agent/check-framework.mjs（已接入 web-src 的 npm run check）
 
 import fs from 'node:fs';
@@ -9,31 +9,6 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const srcDir = path.join(root, 'web-src/src');
 const webDir = path.join(root, 'mod/src/main/resources/web');
-
-const LEGACY_CORE_IMPORT_ALLOW = new Set([
-  'web-src/src/legacy/admin.js',
-]);
-
-const LEGACY_PAGE_ALLOW = new Set([
-]);
-
-const LEGACY_IMPORT_ALLOW = new Set([
-  'web-src/src/layouts/AdminLayout.vue',
-  'web-src/src/pages/OutputPage.vue',
-  'web-src/src/pages/UserPage.vue',
-  'web-src/src/legacy/admin.js',
-  'web-src/src/legacy/user.js',
-  'web-src/src/composables/useLegacyPage.js',
-]);
-
-// 框架自身需要桥接旧全局，不属于“新页面依赖旧内核”。
-const FRAMEWORK_META_ALLOW = new Set([
-  'web-src/src/main.js',
-  'web-src/src/layouts/AdminLayout.vue',
-  'web-src/src/components/FrameworkDialogHost.vue',
-  'web-src/src/composables/useFrameworkDialog.js',
-  'web-src/src/composables/useLegacyPage.js',
-]);
 
 const violations = [];
 
@@ -49,53 +24,56 @@ function relative(file) {
   return path.relative(root, file).replaceAll('\\', '/');
 }
 
-for (const file of walk(srcDir)) {
-  const rel = relative(file);
-  const text = fs.readFileSync(file, 'utf8');
-  const isLegacyCore = rel.startsWith('web-src/src/legacy-core/');
-  const isPage = rel.startsWith('web-src/src/pages/');
-  const isComponent = rel.startsWith('web-src/src/components/');
-
-  if (/<\/?LegacyPanel\b|import\s+LegacyPanel/.test(text) && !rel.endsWith('.css')) {
-    violations.push(`${rel}: 禁止重新引入 LegacyPanel`);
-  }
-
-  if (/\.innerHTML\s*=|insertAdjacentHTML|document\.write\s*\(/.test(text)) {
-    violations.push(`${rel}: 禁止 innerHTML / insertAdjacentHTML / document.write`);
-  }
-
-  if (!isLegacyCore
-      && /(?:from\s+|import\s*\(\s*|import\s+)['"][^'"]*legacy-core\//.test(text)
-      && !LEGACY_CORE_IMPORT_ALLOW.has(rel)) {
-    violations.push(`${rel}: 新代码禁止直接 import legacy-core（先抽 model 或走 useLegacyPage）`);
-  }
-
-  if (rel !== 'web-src/src/composables/useLegacyPage.js'
-      && text.includes('useLegacyPage') && !LEGACY_PAGE_ALLOW.has(rel)) {
-    violations.push(`${rel}: useLegacyPage 仅允许现有复杂页面使用；新页面请写原生 Vue`);
-  }
-
-  if (!isLegacyCore
-      && /(?:from\s+|import\s*\(\s*|import\s+)['"][^'"]*\/legacy\//.test(text)
-      && !LEGACY_IMPORT_ALLOW.has(rel)) {
-    violations.push(`${rel}: 禁止从 src/legacy/ 引入旧壳逻辑`);
-  }
-
-  if (!LEGACY_PAGE_ALLOW.has(rel) && !FRAMEWORK_META_ALLOW.has(rel)
-      && !isLegacyCore && /\bwindow\.Samsara[A-Za-z]/.test(text)) {
-    violations.push(`${rel}: 新页面禁止依赖 window.Samsara* 全局内核`);
-  }
-
-  if ((isPage || isComponent) && /\bfetch\s*\(/.test(text)) {
-    violations.push(`${rel}: 页面/组件禁止直接 fetch；请使用 useApi`);
-  }
-
-  if (/['"]\/(legacy\.html|legacy-user\.html|user\.html|style\.css|app\.js|page-kit\.js)['"]/.test(text)
-      && !isLegacyCore && !rel.endsWith('.css')) {
-    violations.push(`${rel}: 引用了已删除的旧静态资源路径`);
+// 1. 旧内核目录必须不存在。
+for (const legacyDir of [path.join(srcDir, 'legacy-core'), path.join(srcDir, 'legacy')]) {
+  if (fs.existsSync(legacyDir)) {
+    violations.push(`${relative(legacyDir)}: 旧内核目录必须删除，算法迁到 pages/<page>/`);
   }
 }
 
+if (fs.existsSync(srcDir)) {
+  for (const file of walk(srcDir)) {
+    const rel = relative(file);
+    const text = fs.readFileSync(file, 'utf8');
+    const isPage = rel.startsWith('web-src/src/pages/');
+    const isComponent = rel.startsWith('web-src/src/components/');
+
+    if (/<\/?LegacyPanel\b|import\s+LegacyPanel/.test(text) && !rel.endsWith('.css')) {
+      violations.push(`${rel}: 禁止重新引入 LegacyPanel`);
+    }
+
+    if (/useLegacyPage/.test(text)) {
+      violations.push(`${rel}: 禁止使用 useLegacyPage；页面必须写原生 Vue`);
+    }
+
+    if (/(?:from\s+|import\s*\(\s*|import\s+)['"][^'"]*legacy-core\//.test(text)) {
+      violations.push(`${rel}: 禁止 import legacy-core`);
+    }
+
+    if (/(?:from\s+|import\s*\(\s*|import\s+)['"][^'"]*\/legacy\//.test(text)) {
+      violations.push(`${rel}: 禁止 import src/legacy/`);
+    }
+
+    if (/\bwindow\.Samsara[A-Za-z]/.test(text)) {
+      violations.push(`${rel}: 禁止依赖 window.Samsara* 全局`);
+    }
+
+    if (/\.innerHTML\s*=|insertAdjacentHTML|document\.write\s*\(/.test(text)) {
+      violations.push(`${rel}: 禁止 innerHTML / insertAdjacentHTML / document.write`);
+    }
+
+    if ((isPage || isComponent) && /\bfetch\s*\(/.test(text)) {
+      violations.push(`${rel}: 页面/组件禁止直接 fetch；请使用 useApi`);
+    }
+
+    if (/['"]\/(legacy\.html|legacy-user\.html|user\.html|style\.css|app\.js|page-kit\.js)['"]/.test(text)
+        && !rel.endsWith('.css')) {
+      violations.push(`${rel}: 引用了已删除的旧静态资源路径`);
+    }
+  }
+}
+
+// 2. 禁止重新新增旧静态脚本。
 if (fs.existsSync(webDir)) {
   for (const entry of fs.readdirSync(webDir, { withFileTypes: true })) {
     if (entry.isFile() && entry.name.endsWith('.js')) {
@@ -110,4 +88,4 @@ if (violations.length) {
   process.exit(1);
 }
 
-console.log('框架守卫通过：没有新增 LegacyPanel / 旧静态脚本 / 直接 legacy-core 依赖');
+console.log('框架守卫通过：没有旧内核目录 / window.Samsara* / 旧静态脚本');

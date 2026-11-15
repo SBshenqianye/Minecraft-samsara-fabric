@@ -5,7 +5,7 @@ export default {
     const { check, evaluate, until, navigate, sleep } = ctx;
 
     await navigate('/samsara/economy');
-    await until("window.SamsaraUI && document.getElementById('panel-lottery')"
+    await until("document.getElementById('panel-lottery')"
       + " && document.querySelectorAll('#lottery-stats .stat').length >= 10", 25000, '经济业务概览');
     await until("document.querySelectorAll('#lottery-values .lottery-value-row').length >= 1",
       25000, '物品价值表');

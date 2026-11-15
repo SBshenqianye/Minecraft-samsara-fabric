@@ -6,7 +6,7 @@ export default {
 
     await navigate('/samsara/config/output');
     await until(
-      "window.SamsaraUI && document.querySelector('[data-page=\"output\"] #output-editor')",
+      "document.querySelector('[data-page=\"output\"] #output-editor')",
       20000,
       '输出格式页',
     );
