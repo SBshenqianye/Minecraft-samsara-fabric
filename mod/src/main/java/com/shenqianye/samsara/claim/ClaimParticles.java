@@ -342,30 +342,10 @@ public class ClaimParticles {
     // ========================================================================
 
     private static Set<String> calcBoundaryEdges(Set<ChunkCoord> area) {
-        Set<String> edges = new HashSet<>();
-        int[] dx = {0, 0, 1, -1};
-        int[] dz = {1, -1, 0, 0};
-        for (ChunkCoord c : area) {
-            for (int i = 0; i < 4; i++) {
-                ChunkCoord nb = new ChunkCoord(c.x + dx[i], c.z + dz[i]);
-                if (!area.contains(nb)) {
-                    long x1, z1, x2, z2;
-                    switch (i) {
-                        case 0 -> { x1 = c.x * 16L; z1 = (c.z + 1) * 16L; x2 = (c.x + 1) * 16L; z2 = (c.z + 1) * 16L; }
-                        case 1 -> { x1 = c.x * 16L; z1 = c.z * 16L; x2 = (c.x + 1) * 16L; z2 = c.z * 16L; }
-                        case 2 -> { x1 = (c.x + 1) * 16L; z1 = c.z * 16L; x2 = (c.x + 1) * 16L; z2 = (c.z + 1) * 16L; }
-                        default -> { x1 = c.x * 16L; z1 = c.z * 16L; x2 = c.x * 16L; z2 = (c.z + 1) * 16L; }
-                    }
-                    String key = Math.min(x1, x2) + "," + Math.min(z1, z2) + ","
-                            + Math.max(x1, x2) + "," + Math.max(z1, z2);
-                    edges.add(key);
-                }
-            }
-        }
-        return edges;
+        return ClaimPreview.boundaryEdges(area);
     }
 
-    private static void sendBoundaryParticlesFromEdges(ServerLevel level, ServerPlayer player,
+    static void sendBoundaryParticlesFromEdges(ServerLevel level, ServerPlayer player,
                                                         Set<String> edges, double y,
                                                         ParticleOptions particleType) {
         for (String ek : edges) {

@@ -211,6 +211,8 @@ public class AreaService {
         for (ResourceKey<Level> dim : new ArrayList<>(nodes.keySet())) {
             recompute(dim);
         }
+        // 与启动时一致：彻底没有节点的维度不允许残留白名单。
+        GeometryStore.getInstance().clearExcept(nodes.keySet());
     }
 
     /** 判定指定维度的区块是否受保护 */
@@ -335,6 +337,9 @@ public class AreaService {
         for (ResourceKey<Level> dim : nodes.keySet()) {
             rebuildGeometry(dim);
         }
+        // claims.json 已无节点的历史维度：geometry.json 里残留的白名单要清掉，
+        // 否则会出现“没有旗帜却仍在保护”，且倒流/重置会误跳过这些区块。
+        GeometryStore.getInstance().clearExcept(nodes.keySet());
         int totalNodes = nodes.values().stream().mapToInt(Map::size).sum();
         Samsara.LOGGER.info("[周目管理 samsara] 加载 {} 个圈地旗（{} 个维度）",
                 totalNodes, nodes.size());

@@ -144,6 +144,20 @@ public class GeometryStore {
         dimensions.remove(key);
     }
 
+    /**
+     * 清空不在 {@code keep} 里的维度。
+     * <p>
+     * 用于 {@code claims.json} 已无节点的历史维度：这些维度在 {@code geometry.json} 里
+     * 可能仍留有白名单，不清掉会变成“没有旗帜却仍在保护”。
+     */
+    public synchronized void clearExcept(Set<ResourceKey<Level>> keep) {
+        Set<String> keys = new HashSet<>();
+        for (ResourceKey<Level> dim : keep) {
+            keys.add(dim.toString());
+        }
+        dimensions.keySet().removeIf(k -> !keys.contains(k));
+    }
+
     /** 清空所有维度的图形 */
     public synchronized void clearAll() {
         dimensions.clear();

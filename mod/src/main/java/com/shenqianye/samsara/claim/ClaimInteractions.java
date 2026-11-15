@@ -1,10 +1,13 @@
 package com.shenqianye.samsara.claim;
 
 import com.shenqianye.samsara.geometry.ChunkCoord;
+import com.shenqianye.samsara.geometry.Geometry;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.particles.ParticleOptions;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionResult;
@@ -63,8 +66,8 @@ public class ClaimInteractions {
             Extension ext = node.getExtension();
             if (!ext.hasAnyDirection()) return InteractionResult.PASS;
 
-            // 显示详情
-            List<ChunkCoord> influenced = node.getInfluencedCoords();
+            // 显示详情：保护范围以白名单为准（与倒流/重置使用同一份数据）
+            Set<ChunkCoord> area = previewArea(level.dimension(), chunkPos, node);
             boolean protected_ = AreaService.getInstance().isProtected(level.dimension(), chunkPos.x, chunkPos.z);
             // 查找已注册节点获取主人信息
             ClaimNode registered = AreaService.getInstance().getNode(level.dimension(), chunkPos);
@@ -75,21 +78,21 @@ public class ClaimInteractions {
             sb.append(protected_ ? " ✓ 受保护" : " ✗ 未保护");
             if (ownerName != null) sb.append(" · 主人: ").append(ownerName);
             sb.append("\n  延伸: ").append(directionSummary(ext));
-            sb.append(" · 影响区块 ").append(influenced.size()).append(" 个");
+            sb.append(" · 保护区块 ").append(area.size()).append(" 个");
             sp.sendSystemMessage(Component.literal("[周目管理] " + sb.toString().trim()));
 
-            // 立即发送粒子预览（右键时即时反馈）
+            // 立即发送粒子预览（右键时即时反馈）：按保护区域外边界画，和实际保护一致
             if (level instanceof ServerLevel sl) {
                 double particleY = sp.getY() + 0.5;
                 double bannerY = pos.getY() + 1.0; // 旗帜方块上方
-                net.minecraft.core.particles.ParticleType<?> boundaryParticle =
-                        ClaimParticleConfig.getInstance().getParticleForTime(sl.getOverworldClockTime() % 24000);
+                ParticleOptions boundaryParticle =
+                        (ParticleOptions) ClaimParticleConfig.getInstance()
+                                .getParticleForTime(sl.getOverworldClockTime() % 24000);
+                Set<String> edges = ClaimPreview.boundaryEdges(area);
                 // 高度1：玩家附近
-                sendBoundaryParticles(sl, sp, chunkPos, influenced, particleY,
-                        (net.minecraft.core.particles.ParticleOptions) boundaryParticle);
+                ClaimParticles.sendBoundaryParticlesFromEdges(sl, sp, edges, particleY, boundaryParticle);
                 // 高度2：旗帜高度
-                sendBoundaryParticles(sl, sp, chunkPos, influenced, bannerY,
-                        (net.minecraft.core.particles.ParticleOptions) boundaryParticle);
+                ClaimParticles.sendBoundaryParticlesFromEdges(sl, sp, edges, bannerY, boundaryParticle);
                 // 记录右键时间，使边界持续显示 10 秒
                 ClaimParticles.notifyRightClick(sp.getUUID());
             }
@@ -97,60 +100,20 @@ public class ClaimInteractions {
         });
     }
 
-    /** 发送边界粒子（§6.7：沿保护区域边界线均匀放置，粒子类型可配置） */
-    static void sendBoundaryParticles(ServerLevel level, ServerPlayer player,
-                                       ChunkCoord center, List<ChunkCoord> influenced, double y,
-                                       net.minecraft.core.particles.ParticleOptions particleType) {
-        Set<ChunkCoord> area = new HashSet<>(influenced);
-        area.add(center);
-        // 收集所有朝外的边（每条边 = 两个端点）
-        Set<String> edges = new HashSet<>();
-        int[] dx = {0, 0, 1, -1};
-        int[] dz = {1, -1, 0, 0};
-        for (ChunkCoord c : area) {
-            for (int i = 0; i < 4; i++) {
-                ChunkCoord nb = new ChunkCoord(c.x + dx[i], c.z + dz[i]);
-                if (!area.contains(nb)) {
-                    long x1, z1, x2, z2;
-                    switch (i) {
-                        case 0 -> { // south edge: z=(c.z+1)*16
-                            x1 = c.x * 16L; z1 = (c.z + 1) * 16L;
-                            x2 = (c.x + 1) * 16L; z2 = (c.z + 1) * 16L;
-                        }
-                        case 1 -> { // north edge: z=c.z*16
-                            x1 = c.x * 16L; z1 = c.z * 16L;
-                            x2 = (c.x + 1) * 16L; z2 = c.z * 16L;
-                        }
-                        case 2 -> { // east edge: x=(c.x+1)*16
-                            x1 = (c.x + 1) * 16L; z1 = c.z * 16L;
-                            x2 = (c.x + 1) * 16L; z2 = (c.z + 1) * 16L;
-                        }
-                        default -> { // west edge: x=c.x*16
-                            x1 = c.x * 16L; z1 = c.z * 16L;
-                            x2 = c.x * 16L; z2 = (c.z + 1) * 16L;
-                        }
-                    }
-                    String key = Math.min(x1, x2) + "," + Math.min(z1, z2) + ","
-                            + Math.max(x1, x2) + "," + Math.max(z1, z2);
-                    edges.add(key);
-                }
-            }
+    /**
+     * 预览用的保护区块集合：优先取白名单里与这面旗帜连通的区域（多面旗帜接续成面时也一致）；
+     * 旗帜尚未注册时按自身形状兜底，口径与 {@code AreaService.rebuildGeometry} 相同。
+     */
+    private static Set<ChunkCoord> previewArea(ResourceKey<Level> dim, ChunkCoord chunkPos, ClaimNode node) {
+        Set<ChunkCoord> area = ClaimPreview.componentAt(AreaService.getInstance().getWhitelist(dim), chunkPos);
+        if (!area.isEmpty()) {
+            return area;
         }
-        // 沿每条边均匀放置粒子（每 0.5 格一个，更密集）
-        for (String ek : edges) {
-            String[] p = ek.split(",");
-            double x1 = Long.parseLong(p[0]), z1 = Long.parseLong(p[1]);
-            double x2 = Long.parseLong(p[2]), z2 = Long.parseLong(p[3]);
-            double len = Math.max(Math.abs(x2 - x1), Math.abs(z2 - z1));
-            if (len == 0) continue;
-            double sx = Math.signum(x2 - x1);
-            double sz = Math.signum(z2 - z1);
-            for (double d = 0; d <= len; d += 2.0) {
-                level.sendParticles(player, particleType,
-                        true, false, x1 + sx * d, y, z1 + sz * d,
-                        1, 0.0, 0.0, 0.0, 0.0);
-            }
-        }
+        List<int[]> segments = new ArrayList<>(node.getShapeSegments());
+        segments.addAll(node.getBorderSegments());
+        Set<ChunkCoord> fallback = new HashSet<>(Geometry.compute(Set.of(chunkPos), segments));
+        fallback.add(chunkPos);
+        return fallback;
     }
 
     /**
