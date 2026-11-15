@@ -342,7 +342,7 @@ public class DebugCommand {
                                         .requires(PermissionRequirements.ownerAnd("debug track replay"))
                                         .then(Commands.argument("player", StringArgumentType.word())
                                                 .suggests(SuggestionProviders.knownPlayersProvider("监控目标"))
-                                                .then(Commands.argument("start", StringArgumentType.word())
+                                                .then(Commands.argument("start", com.shenqianye.samsara.command.arg.TimeArgumentType.time())
                                                         .executes(ctx -> reply(ctx.getSource(),
                                                                 debugTrackReplay(ctx, 1.0)))
                                                         .then(Commands.argument("speed", StringArgumentType.word())
@@ -1142,7 +1142,7 @@ public class DebugCommand {
     /** debug track replay <player> <start> [speed] [cycle] */
     private static String debugTrackReplay(CommandContext<CommandSourceStack> ctx, double speed) {
         String name = StringArgumentType.getString(ctx, "player");
-        String start = StringArgumentType.getString(ctx, "start");
+        String start = com.shenqianye.samsara.command.arg.TimeArgumentType.getTime(ctx, "start");
         String cycle = null;
         try {
             cycle = StringArgumentType.getString(ctx, "cycle");

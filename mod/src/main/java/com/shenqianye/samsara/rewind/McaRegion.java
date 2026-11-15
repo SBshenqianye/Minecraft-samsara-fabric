@@ -397,7 +397,9 @@ public class McaRegion {
                     freed += size - packed.length;
                     rewritten++;
                 } catch (IOException e) {
-                    Samsara.LOGGER.warn("[周目管理 samsara] 压缩 {} 失败（可能被占用）: {}", f, e.getMessage());
+                    Samsara.LOGGER.warn("[周目管理 samsara] 压缩 {} 失败（可能被占用）: {}",
+                            f, e.getClass().getSimpleName() + ": " + e.getMessage());
+                    Samsara.LOGGER.debug("[周目管理 samsara] 压缩失败堆栈", e);
                 }
             }
         }
