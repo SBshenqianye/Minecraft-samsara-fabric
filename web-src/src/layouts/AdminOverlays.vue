@@ -40,21 +40,6 @@
   </form>
 </dialog>
 
-<dialog id="config-editor-preview-dialog" class="app-dialog">
-  <form method="dialog" class="dialog-body">
-    <h3>预览变更</h3>
-    <p id="config-editor-preview-sub" class="dialog-sub"></p>
-    <div id="config-editor-preview-errors" class="message error" hidden></div>
-    <pre id="config-editor-preview-diff" class="config-editor-diff"></pre>
-    <div class="dialog-actions">
-      <span class="spacer"></span>
-      <button type="button" id="config-editor-preview-cancel" class="ghost">取消</button>
-      <button type="button" id="config-editor-preview-confirm" class="primary">确认保存</button>
-    </div>
-  </form>
-</dialog>
-
-
 <datalist id="identity-candidates"></datalist>
 <datalist id="identity-data-uuids"></datalist>
 

@@ -10,14 +10,16 @@
       <div class="panel-tools">
         <label class="search-box">
           <span aria-hidden="true">⌕</span>
-          <input id="config-editor-search" type="search" placeholder="搜索页面 / 字段 / 分组">
+          <input id="config-editor-search" v-model="store.filter.value" type="search" placeholder="搜索页面 / 字段 / 分组" />
         </label>
-        <span id="config-editor-summary" class="muted small"></span>
+        <span id="config-editor-summary" class="muted small">{{ store.summary.value }}</span>
       </div>
     </div>
-    <div id="config-editor-message" class="message" role="status"></div>
+    <div id="config-editor-message" class="message" :class="store.messageKind.value" role="status">{{ store.message.value }}</div>
     <div class="config-editor-layout">
-      <div id="config-editor-body" class="config-editor-body"></div>
+      <div id="config-editor-body" class="config-editor-body">
+        <ConfigEditorPanel :store="store" />
+      </div>
     </div>
   </section>
 </div>
@@ -25,15 +27,53 @@
 </template>
 
 <script setup>
+import { onActivated, onBeforeUnmount, onMounted, watch } from 'vue';
 import TabShell from '../components/TabShell.vue';
-import { useLegacyPage } from '../composables/useLegacyPage.js';
+import ConfigEditorPanel from './config-editor/ConfigEditorPanel.vue';
+import { clearPageNav, setPageNav } from '../composables/usePageNav.js';
+import { useConfigEditor } from './config-editor/useConfigEditor.js';
 
 defineOptions({ name: 'ConfigEditorPage' });
 
-useLegacyPage({
-  panelId: 'panel-config-editor',
-  load: () => import('../legacy-core/config-editor.js'),
-  afterLoad: () => window.SamsaraConfigEditor?.setSourceFilter?.('samsara'),
-  activate: () => window.SamsaraConfigEditor?.activate?.(),
+const store = useConfigEditor();
+store.setSourceFilter('samsara');
+
+function syncNav() {
+  setPageNav({
+    title: '配置编辑器',
+    items: store.navItems.value.map((group) => ({
+      ...group,
+      onClick: () => {
+        const first = group.children?.[0];
+        if (first) store.openPage(first.target);
+      },
+      children: (group.children || []).map((page) => ({
+        ...page,
+        onClick: () => store.openPage(page.target),
+      })),
+    })),
+  });
+}
+
+function activate() {
+  if (!store.loaded.value) store.load();
+  syncNav();
+}
+
+function onConnected() {
+  store.load();
+}
+
+watch(() => store.navItems.value, syncNav, { deep: true });
+onActivated(activate);
+
+onMounted(() => {
+  window.addEventListener('samsara:connected', onConnected);
+  activate();
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('samsara:connected', onConnected);
+  clearPageNav();
 });
 </script>

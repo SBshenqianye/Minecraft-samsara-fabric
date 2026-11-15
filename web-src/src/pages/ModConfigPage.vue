@@ -44,14 +44,16 @@
                 <div class="panel-tools">
                   <label class="search-box">
                     <span aria-hidden="true">⌕</span>
-                    <input id="config-editor-search" type="search" placeholder="搜索页面 / 字段 / 分组">
+                    <input id="config-editor-search" v-model="editor.filter.value" type="search" placeholder="搜索页面 / 字段 / 分组">
                   </label>
-                  <span id="config-editor-summary" class="muted small"></span>
+                  <span id="config-editor-summary" class="muted small">{{ editor.summary.value }}</span>
                 </div>
               </div>
-              <div id="config-editor-message" class="message" role="status"></div>
+              <div id="config-editor-message" class="message" :class="editor.messageKind.value" role="status">{{ editor.message.value }}</div>
               <div class="config-editor-layout">
-                <div id="config-editor-body" class="config-editor-body"></div>
+                <div id="config-editor-body" class="config-editor-body">
+                  <ConfigEditorPanel :store="editor" />
+                </div>
               </div>
             </section>
           </div>
@@ -62,27 +64,22 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { getToken, useApi } from '../composables/useApi.js';
 import TabShell from '../components/TabShell.vue';
 import FolderTree from '../components/FolderTree.vue';
-import { useLegacyPage } from '../composables/useLegacyPage.js';
+import ConfigEditorPanel from './config-editor/ConfigEditorPanel.vue';
+import { useConfigEditor } from './config-editor/useConfigEditor.js';
+import { clearPageNav } from '../composables/usePageNav.js';
 
 const route = useRoute();
 const router = useRouter();
-const { json } = useApi();
 const error = ref('');
 const message = ref('');
 const pages = ref([]);
 const loaded = ref(false);
-
-useLegacyPage({
-  panelId: 'panel-config-editor',
-  load: () => import('../legacy-core/config-editor.js'),
-  afterLoad: () => window.SamsaraConfigEditor?.setSourceFilter?.('third-party'),
-  activate: () => window.SamsaraConfigEditor?.activate?.(),
-});
+const editor = useConfigEditor();
+editor.setSourceFilter('third-party');
 
 const modId = computed(() => String(route.params.modId || ''));
 const routeFile = computed(() => {
@@ -129,18 +126,14 @@ const currentFiles = computed(() => {
     .sort((a, b) => a.name.localeCompare(b.name));
 });
 
-onMounted(async () => {
-  const ui = await waitFor(() => window.SamsaraUI, 20000);
-  if (!ui) {
-    error.value = '管理端脚本尚未加载完成，请刷新页面。';
-    return;
-  }
-  ui.onConnected?.(() => reload());
-  const token = getToken();
-  if (token) {
-    await waitFor(() => window.SamsaraUI.getToken && window.SamsaraUI.getToken(), 20000);
-    await reload();
-  }
+onMounted(() => {
+  window.addEventListener('samsara:connected', reload);
+  clearPageNav();
+  reload();
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('samsara:connected', reload);
 });
 
 watch(() => route.params.file, () => {
@@ -154,23 +147,18 @@ watch(() => route.params.modId, () => {
 async function reload() {
   error.value = '';
   message.value = '';
-  const token = getToken();
-  if (!token) {
-    error.value = '需要先在管理端输入 token。';
-    return;
-  }
   try {
-    const body = await json('/api/config/pages', {}, '读取配置页面失败');
-    const all = body.pages || [];
-    pages.value = all.filter((page) => page.source === 'third-party'
+    await editor.load();
+    const all = editor.pages.value.filter((page) => page.source === 'third-party'
       && groupId(page) === modId.value);
-    if (!pages.value.length) {
+    if (!all.length) {
       error.value = '这个模组没有可编辑的配置文件。';
+      pages.value = [];
       loaded.value = true;
       return;
     }
+    pages.value = all;
     loaded.value = true;
-    hideLegacyChrome();
     ensureRoute();
     await openCurrent();
   } catch (e) {
@@ -196,15 +184,8 @@ function ensureRoute() {
 async function openCurrent() {
   const page = currentPage.value;
   if (!page) return;
-  try {
-    const editor = await waitFor(() => window.SamsaraConfigEditor, 20000);
-    if (!editor) throw new Error('配置编辑器尚未加载完成。');
-    editor.setSourceFilter?.('third-party');
-    editor.setNavEnabled?.(false);
-    hideLegacyChrome();
-    await editor.load(page.id);
-  } catch (e) {
-    error.value = e.message || String(e);
+  if (!editor.openPage(page.id)) {
+    error.value = '配置编辑器尚未加载完成。';
   }
 }
 
@@ -296,36 +277,6 @@ function sortTree(node) {
   for (const child of node.children) {
     if (child.type === 'folder') sortTree(child);
   }
-}
-
-function hideLegacyChrome() {
-  const nav = document.getElementById('global-nav');
-  if (nav) {
-    nav.replaceChildren();
-    nav.hidden = true;
-  }
-  const shell = document.querySelector('main.app-shell');
-  if (shell) shell.classList.add('no-nav');
-  // 顶部 hero 由 AdminLayout 统一维护，这里只清理旧页内导航。
-}
-
-function waitFor(check, timeoutMs) {
-  return new Promise((resolve) => {
-    const started = Date.now();
-    const tick = () => {
-      const value = check();
-      if (value) {
-        resolve(value);
-        return;
-      }
-      if (Date.now() - started > timeoutMs) {
-        resolve(null);
-        return;
-      }
-      window.setTimeout(tick, 60);
-    };
-    tick();
-  });
 }
 </script>
 

@@ -15,7 +15,6 @@ export function loadLegacyAdminScripts() {
       await import('../legacy-core/value-table.js');
       await import('../legacy-core/page-kit.js');
       await import('../legacy-core/app.js');
-      await import('../legacy-core/chat-text.js');
     })().catch((error) => {
       scriptsPromise = null;
       throw error;

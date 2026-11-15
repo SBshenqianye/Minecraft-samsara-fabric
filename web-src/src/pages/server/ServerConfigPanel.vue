@@ -247,7 +247,7 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue';
 import { useApi } from '../../composables/useApi.js';
-import ChatTextEditor from './ChatTextEditor.vue';
+import ChatTextEditor from '../../components/ChatTextEditor.vue';
 import PlayerPickerDialog from './PlayerPickerDialog.vue';
 import SegmentedButtons from '../../components/SegmentedButtons.vue';
 import {

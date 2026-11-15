@@ -112,7 +112,7 @@ import {
   CHAT_FORMATS,
   parseChatSegments,
   splitMotdLines,
-} from './model.js';
+} from '../pages/server/model.js';
 
 const props = defineProps({
   modelValue: { type: String, default: '' },

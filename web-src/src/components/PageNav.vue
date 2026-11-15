@@ -29,7 +29,9 @@ function targetIds(items) {
 }
 
 function select(item) {
-  if (!item?.target) return;
+  if (!item) return;
+  if (typeof item.onClick === 'function') item.onClick();
+  if (!item.target) return;
   active.value = item.target;
   const el = document.getElementById(item.target);
   if (!el) return;

@@ -1,6 +1,7 @@
 import announcements from './announcements.mjs';
 import appConfig from './app-config.mjs';
 import batch5 from './batch5.mjs';
+import configEditor from './config-editor.mjs';
 import identity from './identity.mjs';
 import legacyShell from './legacy-shell.mjs';
 import lottery from './lottery.mjs';
@@ -19,6 +20,7 @@ import worldStack from './world-stack.mjs';
 export const sections = {
   announcements,
   'app-config': appConfig,
+  'config-editor': configEditor,
   identity,
   lottery,
   map,

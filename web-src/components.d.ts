@@ -12,6 +12,7 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     BlockModelIcon: typeof import('./src/components/BlockModelIcon.vue')['default']
+    ChatTextEditor: typeof import('./src/components/ChatTextEditor.vue')['default']
     CraftingBench: typeof import('./src/components/CraftingBench.vue')['default']
     CreativeLibrary: typeof import('./src/components/CreativeLibrary.vue')['default']
     DimensionPicker: typeof import('./src/components/DimensionPicker.vue')['default']

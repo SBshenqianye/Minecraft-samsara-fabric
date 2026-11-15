@@ -856,43 +856,34 @@ async function main() {
     const editor = await evaluate(`(async () => {
       const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
       window.SamsaraUI.setActiveTab('config-editor');
-      await wait(1200);
-      const nav = [...document.querySelectorAll('#global-nav .nav-item')];
+      await wait(1400);
+      const nav = [...document.querySelectorAll('#page-nav .nav-item')];
       const groups = nav.map((node) => node.textContent.trim());
-      window.SamsaraConfigEditor?.setSourceFilter?.('third-party');
-      await wait(600);
-      const thirdNav = [...document.querySelectorAll('#global-nav .nav-item')];
-      const third = thirdNav.find((node) => (node.dataset.target || '').startsWith('third-party:'));
-      let fields = 0;
-      let title = '';
+      const target = [...document.querySelectorAll('#page-nav .nav-item[data-target]')][0];
+      if (target) target.click();
+      await wait(700);
+      const fields = document.querySelectorAll('#config-editor-body .entry').length;
+      const title = document.querySelector('#config-editor-body h3')?.textContent || '';
       let previewOpen = false;
       let previewText = '';
-      if (third) {
-        third.click();
-        await wait(900);
-        fields = document.querySelectorAll('#config-editor-body .entry').length;
-        title = document.querySelector('#config-editor-body h3')?.textContent || '';
-        const preview = [...document.querySelectorAll('#config-editor-body button')]
-          .find((node) => node.textContent.includes('预览'));
-        if (preview) {
-          preview.click();
-          await wait(1400);
-          const dialog = document.getElementById('config-editor-preview-dialog');
-          previewOpen = Boolean(dialog && dialog.open);
-          previewText = document.getElementById('config-editor-preview-sub')?.textContent || '';
-          if (dialog && dialog.open) dialog.close();
-        }
+      const preview = [...document.querySelectorAll('#config-editor-body button')]
+        .find((node) => node.textContent.includes('预览'));
+      if (preview) {
+        preview.click();
+        await wait(1200);
+        const dialog = document.getElementById('config-editor-preview-dialog');
+        previewOpen = Boolean(dialog && dialog.open);
+        previewText = document.getElementById('config-editor-preview-sub')?.textContent || '';
+        if (dialog && dialog.open) dialog.close();
       }
-      window.SamsaraConfigEditor?.setSourceFilter?.('samsara');
-      return { nav: nav.length, groups, fields, title, previewOpen, previewText,
-        summary: document.getElementById('config-editor-summary')?.textContent || '' };
+      return { nav: nav.length, groups, fields, title, previewOpen, previewText };
     })()`);
-    check('配置编辑器只加载 samsara 自有 PageSpec 页面', editor.nav >= 3
+    check('配置编辑器只加载 samsara 自有 PageSpec 页面', editor.nav >= 2
         && editor.groups.some((text) => text.includes('samsara'))
         && !editor.groups.some((text) => text.includes('服务器本体'))
         && !editor.groups.some((text) => text.includes('第三方模组')),
         JSON.stringify({ nav: editor.nav, groups: editor.groups }));
-    check('配置编辑器 source 过滤后可渲染第三方 FormSpec 字段', editor.fields > 0
+    check('配置编辑器 FormSpec 字段可渲染', editor.fields > 0
         && editor.title.length > 0, JSON.stringify({ fields: editor.fields, title: editor.title }));
     check('配置编辑器预览弹窗可用且不写盘', editor.previewOpen
         && editor.previewText.includes('将修改'), JSON.stringify({ open: editor.previewOpen,
