@@ -1,1 +1,0 @@
-import{X as e}from"./element-plus-B6_sdxHz.js";var t=e({title:``,count:null,items:[]});function n({title:e=``,count:n=null,items:r=[]}={}){t.title=e,t.count=n,t.items=Array.isArray(r)?r:[]}function r(){n({})}export{t as n,n as r,r as t};
