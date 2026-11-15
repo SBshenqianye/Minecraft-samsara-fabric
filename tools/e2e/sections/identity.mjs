@@ -84,7 +84,7 @@ export default {
           .map((node) => node.textContent.trim()),
         hasBackupList: (content?.textContent || '').includes('备份记录'),
       };
-      window.FrameworkDialog?.close('identity-data-dialog');
+      document.querySelector('.samsara-framework-dialog .el-dialog__headerbtn')?.click();
       await new Promise((resolve) => setTimeout(resolve, 200));
       return result;
     })()`);

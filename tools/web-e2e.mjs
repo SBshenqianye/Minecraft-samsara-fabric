@@ -736,8 +736,7 @@ async function main() {
         .find((node) => node.textContent.includes('备份数据'));
       const editButton = [...document.querySelectorAll('#identity-data-content button')]
         .find((node) => node.textContent.trim() === '编辑身份组背包');
-      const wasOpen = Boolean(window.FrameworkDialog?.isOpen('identity-data-dialog')
-        || document.querySelector('.samsara-framework-dialog'));
+      const wasOpen = Boolean(document.querySelector('.samsara-framework-dialog'));
       const inlineFrame = document.querySelector('#identity-data-content iframe');
       const inlineDoc = inlineFrame?.contentDocument;
       const inlineSections = inlineDoc
@@ -766,7 +765,7 @@ async function main() {
       const legacySlotGrids = content?.querySelectorAll(
         '.identity-data-slot-title, .identity-data-slot-grid').length || 0;
       const frameworkDialog = Boolean(document.querySelector('.samsara-framework-dialog'));
-      window.FrameworkDialog?.close('identity-data-dialog');
+      document.querySelector('.samsara-framework-dialog .el-dialog__headerbtn')?.click();
       await new Promise((resolve) => setTimeout(resolve, 300));
       return { open: wasOpen, text,
         hasCopy: Boolean(copyButton), hasRename: Boolean(renameButton),
