@@ -334,8 +334,10 @@ async function exportNode(node) {
 async function cleanupSnapshot(item) {
   if (!item?.name) return;
   try {
+    // 外层是原生 <dialog>（top layer），ElMessageBox 必须挂进对话框内部才不会被压在下面。
     await ElMessageBox.confirm('删除安全快照 ' + item.name + '？此操作只删除撤销前保留的当前状态副本，'
-      + '不会删除源世界、归档或操作备份。', '删除快照', { type: 'warning' });
+      + '不会删除源世界、归档或操作备份。', '删除快照',
+    { type: 'warning', appendTo: dialogEl.value || undefined });
   } catch {
     return;
   }
