@@ -2,7 +2,7 @@
  * 世界栈卡片图标的纯逻辑：根据存档出生点与 region 列表选择缩略图 region，
  * 生成公开 tile URL，并给出图标来源标签。
  *
- * 不访问 DOM，供 legacy-core/stack-icon.js 与单测共用。
+ * 不访问 DOM，供页面组件与单测共用。
  */
 
 const REGION_SIZE = 512;

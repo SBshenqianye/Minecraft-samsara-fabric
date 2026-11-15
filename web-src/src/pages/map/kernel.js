@@ -1,6 +1,6 @@
 /**
  * 地图内核：tile/canvas 渲染、图层、世界栈总览、区块操作预览与地图活动列表。
- * 由 Vue 页面提供 DOM 与 API/导航回调，不再依赖 window.Samsara*。
+ * 由 Vue 页面提供 DOM 与 API/导航回调，不依赖旧全局壳。
  */
 /* eslint-disable no-useless-assignment */
 import {

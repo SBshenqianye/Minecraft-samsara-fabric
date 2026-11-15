@@ -369,7 +369,7 @@ Diff 回看继续使用现有 `/api/diff/chunk`、`/api/diff/view`、`/api/diff/
 | `/openapi.json` | Agent API 文档 |
 | `/items/*.png`、`/ui/*.png`、`/armor/*.png` | 物品与 GUI 静态图 |
 
-> batch 5 起，旧 `/legacy.html`、`/legacy-user.html`、`/user.html`、`/style.css` 与 `/app.js` 等页面壳/脚本路径已删除；旧命令式内核改由 Vite bundle 按页加载。
+> 0.62.0 起，旧 `/legacy.html`、`/legacy-user.html`、`/user.html`、`/style.css`、`/app.js` 与所有 `/web/*.js` 页面脚本已删除；算法内核迁入 `web-src/src/pages/<page>/`，随 Vite 打包。
 
 静态资源只按固定表返回，不拼接路径；不存在目录穿越。Vue 构建产物文件名带 hash，`/vue/*` 只接受 `[A-Za-z0-9_./-]` 且拒绝 `..`。
 
