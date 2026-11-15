@@ -58,7 +58,6 @@
     </nav>
 
     <nav id="mods-tabs" class="ia-hidden-tabs" aria-hidden="true">
-      <button class="tab" type="button" data-panel="panel-config-editor">配置编辑器</button>
       <button class="tab active" type="button" data-panel="panel-config">高级配置</button>
       <button class="tab" type="button" data-panel="panel-claim-range">圈地范围</button>
       <button class="tab" type="button" data-panel="panel-output">输出格式</button>
