@@ -53,7 +53,19 @@ Start-Process -FilePath 'C:\Program Files\Java\jdk-26.0.2.1\bin\java.exe' `
 
 ## 3. 实测与回归
 
-- Web 改动：`node tools/web-e2e.mjs --base http://127.0.0.1:8722 --token <token>`
+- Web 改动先跑全部 section：
+
+  ```powershell
+  node tools/e2e/run.mjs --base http://127.0.0.1:8722 --token <token>
+  ```
+
+- 再跑全量：
+
+  ```powershell
+  node tools/web-e2e.mjs --base http://127.0.0.1:8722 --token <token>
+  ```
+
+- 两者都必须 0 失败、exit 0 才能进入生产部署；section 失败时先修当前页面，不要直接跑全量掩盖。
 - 游戏改动：用 Web RCON（`POST /api/server/console`）或 RCON 客户端执行命令。
 - 需要假玩家：`player <name> spawn`，测完 `player <name> kill`。
 - 记录证据：命令输出、状态、文件增长、日志中的失败/回滚。
