@@ -79,14 +79,28 @@ Start-Process -FilePath 'C:\Program Files\Java\jdk-26.0.2.1\bin\java.exe' `
 
 ## 5. 生产部署
 
-1. 公告：`say [维护] ...`，先 `list` 检查在线人数。
-2. 有人在线：60 秒倒计时；0 人可直接停服。
+> 2026-11-15 起优先用一键脚本，下面 1~9 条是它内部做的事（便于排障）：
+>
+> ```powershell
+> powershell -NoProfile -ExecutionPolicy Bypass -File tools/release/deploy-jar.ps1 `
+>   -Jar mod/build/libs/samsara-0.41.2.jar `
+>   -ServerDir 'C:\Games\0-minecraft\server\servers\Vanilia 26.3' `
+>   -BaseUrl http://127.0.0.1:8720 -Token <token> `
+>   -AllowOnline -UpdateNote '0.62.7 弹窗统一为框架弹窗，修复圈地预览边界'
+> ```
+>
+> 脚本会：写 `maintenance.flag` → 公示更新摘要 → 倒计时 → 优雅停服 → 等 java 退出 →
+> 备份旧 jar → 换 jar 并校验 SHA-256 → 删标记 → WMI 启动 → 等 `/api/status` 并打印版本。
+
+1. **必须先公示更新内容**：`-UpdateNote` 一句话摘要（或手动 `say [维护] 稍后更新：...`）。
+   只喊“停服”不给内容不算完成发布提醒。
+2. 公告后 `list` 检查在线人数；有人在线用 `-AllowOnline`（脚本默认 60 秒倒计时）。
 3. **必须优雅停服**：
-   - 执行 `powershell -File tools/release/stop-server.ps1 -BaseUrl http://127.0.0.1:8720 -Token <token>`。
-   - 脚本会在玩家在线时拒绝停服；确认安全后加 `-AllowOnline`，并先发 60 秒倒计时。
+   - `tools/release/stop-server.ps1` 会拒绝在有人在线且未加 `-AllowOnline` 时停服。
    - 脚本只发 RCON `stop` 并等待退出；超时默认不强杀，必须人工检查后再决定是否 `-ForcePid`。
    - 不要在玩家在线时强杀进程：未保存的区块/玩家数据会回档到上一次自动保存。
-4. 找到 `Launch Server.bat` 的 cmd PID，等 Java 退出后结束循环。
+4. `maintenance.flag` 由部署脚本在停服前写入，`Launch Server.bat` 检测到就不再自动重启；
+   换完 jar 后脚本会删掉它。若手工部署，记得自己写/删，否则会出现“停了又自己起来”。
 5. 备份旧 jar 到 `backups/samsara/mod-jars/`，移除 `mods/` 下旧 samsara jar。
 6. 复制新 jar，**先校验目标文件 SHA-256** 再启动。
 7. 启动：优先用 WMI 脱离当前 shell：

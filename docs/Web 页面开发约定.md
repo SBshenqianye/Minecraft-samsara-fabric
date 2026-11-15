@@ -35,7 +35,7 @@
 
 1. 先写 `pages/XxxPage.vue`，复杂逻辑抽到 `pages/<page>/model.js` 并补单测。
 2. 在 `router.js` 加路由与 `meta`（`workspace`、`section`、`page`、`subpage`），需要三级导航时加入 `navigation.js` 的 `SECTION_NAV`。
-3. 把 SPA 路径加到 `WebSecurity.staticResource`。
+3. 把 SPA 路径加到 `WebSecurity.staticResource`（`npm run check` 的 `check-routes.mjs` 会校验，漏了会直接失败）。
 4. 加或更新 `tools/e2e/sections/<page>.mjs`。
 5. 跑 `tools/agent/verify-page.mjs --page <page>` 与全量 `web-e2e.mjs`。
 6. 更新 `CHANGELOG.md` / `docs/实现状态.md`。

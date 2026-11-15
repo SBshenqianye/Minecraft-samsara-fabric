@@ -41,7 +41,7 @@ $env:JAVA_HOME='C:\Program Files\Java\jdk-26.0.2.1'
 - **旧内核已全部删除**：`legacy-core/`、`legacy/`、`useLegacyPage`、`LegacyPanel`、`app.js` 全局壳都不存在；算法已迁入 `pages/<page>/`，不要以任何形式重新引入。
 - **不要引入 Pinia / TypeScript 大迁移 / 第二套 UI 框架**。
 - **禁止 `innerHTML`**；文本用插值或 `textContent`。
-- **框架守卫**：`npm run check` 会先跑 `tools/agent/check-framework.mjs`；它会阻止旧内核目录/import、`useLegacyPage`、`window.Samsara*`、旧静态脚本、直接 `fetch` 与 `innerHTML`。规则见 `docs/agent/legacy-audit-and-guardrails.md`。
+- **框架守卫**：`npm run check` 会先跑 `tools/agent/check-framework.mjs` 与 `tools/agent/check-routes.mjs`；前者阻止旧内核目录/import、`useLegacyPage`、`window.Samsara*`、旧静态脚本、直接 `fetch` 与 `innerHTML`，后者校验 `router.js` 的路径/别名都进了 `WebSecurity.staticResource`。规则见 `docs/agent/legacy-audit-and-guardrails.md`。
 
 ## 4. 单任务工作流
 
