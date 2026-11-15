@@ -26,13 +26,9 @@ public class ClaimPlacementListener {
             if (level.isClientSide() || !(player instanceof ServerPlayer sp)) {
                 return InteractionResult.PASS;
             }
-            // 只处理点击方块顶面（= 放置站立旗帜）
-            // 点击侧面 = 放置墙挂旗帜，跳过
-            if (hitResult.getDirection() != net.minecraft.core.Direction.UP) {
-                return InteractionResult.PASS;
-            }
-            // 放置位置在点击面上方（banner 放在被点击方块的顶面）
-            BlockPos pos = hitResult.getBlockPos().above();
+            // 旗帜可能放在被点击方块的上方（立式），也可能放在被点击面的外侧（墙挂）。
+            // 两者都可以由 clickedPos.relative(face) 得到：UP 就是 .above()。
+            BlockPos pos = hitResult.getBlockPos().relative(hitResult.getDirection());
             final BlockPos regPos = pos;
 
             // 延迟 1 tick 注册：UseBlockCallback 在放置前触发，BannerBlockEntity 需要 1 tick 创建
@@ -55,10 +51,6 @@ public class ClaimPlacementListener {
     }
 
     private static void registerBanner(ServerPlayer sp, Level level, BlockPos pos, BannerBlockEntity be) {
-        // 跳过墙挂旗帜
-        if (level.getBlockState(pos).hasProperty(BlockStateProperties.FACING)) {
-            return;
-        }
         List<ClaimNode.PatternEntry> patterns = ClaimInteractions.readPatterns(be);
         if (patterns.isEmpty()) return;
         if (!ClaimInteractions.isClaimBanner(patterns)) return;

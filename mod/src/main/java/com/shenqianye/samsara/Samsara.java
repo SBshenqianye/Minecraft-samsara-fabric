@@ -72,6 +72,12 @@ public class Samsara implements DedicatedServerModInitializer {
         com.shenqianye.samsara.claim.ClaimParticles.init();
         com.shenqianye.samsara.claim.ClaimPlacementListener.init();
         com.shenqianye.samsara.claim.ClaimBreakListener.init();
+        // 白名单几何重建节流：连续放置/拆除多面旗只在空闲 500ms 后重算一次；
+        // 停服前把未落地的变更 flush 掉。
+        net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.END_SERVER_TICK.register(server ->
+                com.shenqianye.samsara.claim.AreaService.getInstance().tick());
+        net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STOPPING.register(server ->
+                com.shenqianye.samsara.claim.AreaService.getInstance().flushDirty());
 
         // 活动记录：静默写 JSONL（登录/退出 + 原版统计增量），无命令、无 tick 开销
         ActivityRecorder.init();

@@ -33,6 +33,14 @@ public class AreaService {
     /** 按维度存储的旗帜节点：维度 → (区块坐标 → 节点) */
     private final Map<ResourceKey<Level>, Map<ChunkCoord, ClaimNode>> nodes = new ConcurrentHashMap<>();
 
+    /**
+     * 几何重建节流：连续放/拆多面旗时只在最后一次变更 500ms 后重算一次。
+     * 必须在服务端线程（ServerTickEvents）里 flush，白名单读写同线程，避免保护状态出现空窗。
+     */
+    private static final long GEOMETRY_DEBOUNCE_MS = 500;
+    private final java.util.Set<ResourceKey<Level>> dirtyDims = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private volatile long lastDirtyAt = 0L;
+
     private AreaService() {
         Path dir = com.shenqianye.samsara.storage.StoragePaths.get().worldDataRoot();
         try {
@@ -61,6 +69,44 @@ public class AreaService {
         return nodes.computeIfAbsent(dim, k -> new ConcurrentHashMap<>());
     }
 
+    /**
+     * 标记某维度的几何需要重算。真正的重建由 {@link #tick()} 在 500ms 空闲后执行，
+     * 连续放置/拆除多面旗帜只付一次全量几何的代价。
+     */
+    private void markDirty(ResourceKey<Level> dim) {
+        dirtyDims.add(dim);
+        lastDirtyAt = System.currentTimeMillis();
+    }
+
+    /** 服务端 tick 调用：空闲 500ms 后把脏维度的白名单重算并写盘。 */
+    public void tick() {
+        if (dirtyDims.isEmpty()) {
+            return;
+        }
+        if (System.currentTimeMillis() - lastDirtyAt < GEOMETRY_DEBOUNCE_MS) {
+            return;
+        }
+        java.util.Set<ResourceKey<Level>> batch = new java.util.HashSet<>(dirtyDims);
+        dirtyDims.removeAll(batch);
+        for (ResourceKey<Level> dim : batch) {
+            rebuildGeometry(dim);
+        }
+        save();
+    }
+
+    /** 停服/重载前把未落地的几何变更立刻执行。 */
+    public synchronized void flushDirty() {
+        if (dirtyDims.isEmpty()) {
+            return;
+        }
+        java.util.Set<ResourceKey<Level>> batch = new java.util.HashSet<>(dirtyDims);
+        dirtyDims.removeAll(batch);
+        for (ResourceKey<Level> dim : batch) {
+            rebuildGeometry(dim);
+        }
+        save();
+    }
+
     // ---- 节点管理 ----
 
     /**
@@ -75,8 +121,8 @@ public class AreaService {
         if (existing != null) {
             existing.addBanner(newNode.getBlockX(), newNode.getBannerY(), newNode.getBlockZ(),
                     newNode.getFacing(), newNode.getPatterns());
-            // 同一区块新增旗帜会改变该节点的射线集合，必须重新做全局化线为面。
-            rebuildGeometry(dim);
+            // 同一区块新增旗帜会改变该节点的射线集合；合并到 500ms 后统一重算。
+            markDirty(dim);
             save();
             if (com.shenqianye.samsara.DebugToggle.isDebugEnabled()) {
                 return "该区块已有圈地旗帜，添加坐标记录（" + dim.toString()
@@ -89,7 +135,7 @@ public class AreaService {
 
         // 保护范围必须由「所有旗帜的射线汇总后全局化线为面」得出，
         // 不能把单面旗帜的射线直接塞进白名单（那会把线当成面）。
-        rebuildGeometry(dim);
+        markDirty(dim);
 
         save();
         return "已注册圈地旗 " + dim.toString() + " " + loc + "（朝向 " + newNode.getFacing()
@@ -106,7 +152,7 @@ public class AreaService {
 
         boolean hasRemaining = node.removeBanner(blockX, blockY, blockZ);
         if (hasRemaining) {
-            rebuildGeometry(dim);
+            markDirty(dim);
             save();
             if (com.shenqianye.samsara.DebugToggle.isDebugEnabled()) {
                 return "移除旗帜坐标，区块 " + chunkLoc + " 还有 "
@@ -116,7 +162,7 @@ public class AreaService {
         }
 
         dimNodes(dim).remove(chunkLoc);
-        rebuildGeometry(dim);
+        markDirty(dim);
         save();
         return "已移除圈地旗 " + dim.toString() + " " + chunkLoc
                 + "（剩余 " + dimNodes(dim).size() + " 面）";
@@ -145,7 +191,7 @@ public class AreaService {
     /** 移除整个区块的注册（debug 用） */
     public synchronized String removeNode(ResourceKey<Level> dim, ChunkCoord loc) {
         if (dimNodes(dim).remove(loc) != null) {
-            rebuildGeometry(dim);
+            markDirty(dim);
             save();
             return "已移除圈地旗 " + dim.toString() + " " + loc
                     + "（剩余 " + dimNodes(dim).size() + " 面）";
@@ -192,6 +238,7 @@ public class AreaService {
 
     /** 强制重算指定维度的白名单 */
     public synchronized void recompute(ResourceKey<Level> dim) {
+        dirtyDims.remove(dim);
         rebuildGeometry(dim);
         Samsara.LOGGER.info("[周目管理 samsara] {} 白名单重算完成：{} 个节点 → {} 个保护区块",
                 dim.toString(), dimNodes(dim).size(),

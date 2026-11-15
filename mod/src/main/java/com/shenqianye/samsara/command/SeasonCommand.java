@@ -78,7 +78,13 @@ public class SeasonCommand {
                                                         LongArgumentType.getLong(ctx, "seed"))))))))
                 .then(Commands.literal("start")
                         .requires(PermissionRequirements.adminAnd("season start"))
-                        .executes(ctx -> reply(ctx.getSource(), confirmStart(ctx.getSource()))))
+                        .executes(ctx -> reply(ctx.getSource(), confirmStart(ctx.getSource())))
+                        .then(Commands.literal("same")
+                                .executes(ctx -> reply(ctx.getSource(),
+                                        confirmStartMode(ctx.getSource(), "same"))))
+                        .then(Commands.literal("new")
+                                .executes(ctx -> reply(ctx.getSource(),
+                                        confirmStartMode(ctx.getSource(), "new")))))
                 .then(Commands.literal("end")
                         .requires(PermissionRequirements.adminAnd("season end"))
                         .executes(ctx -> reply(ctx.getSource(), manager().end())))
@@ -226,6 +232,43 @@ public class SeasonCommand {
      * <p>
      * 无待开始周目时直接返回错误且<b>不进入待确认状态</b>，避免留下半武装状态。
      */
+    /**
+     * {@code /samsara season start same|new}：与设计文档的命令形态对齐。
+     * <p>
+     * 语义等同 {@code /samsara reset same|new}（创建新周目 + 倒流/新世界），
+     * 但保留 {@code season start} 的二次确认，且与无参 {@code start} 分开确认键，
+     * 避免 {@code same} 与 {@code new} 互相吞掉确认。
+     */
+    private static String confirmStartMode(CommandSourceStack src, String mode) {
+        boolean same = "same".equals(mode);
+        String key = "season.start." + mode;
+        if (!ConfirmGuard.confirm(key)) {
+            if (same) {
+                long rewindMs = manager().settings().rewindDurationMs;
+                String rewind = rewindMs > 0
+                        ? "时间倒流 " + com.shenqianye.samsara.season.DurationUtil.formatMs(rewindMs)
+                        : "不倒流（配置为 0，直接传送）";
+                return "⚠ 危险操作确认：开启新周目（same-world）\n"
+                        + "· " + rewind + "：未圈地区块会被逐格恢复到变化前状态，并在倒流完成后物理删除\n"
+                        + "· 倒流完成后全员传送到新出生区；圈地（旗帜白名单）区域受保护\n"
+                        + "· 箱子/潜影盒内容随区块文件一同删除；背包/末影箱/进度安全\n"
+                        + "再次输入 /samsara season start same（" + ConfirmGuard.ttlSeconds() + " 秒内）才会真正执行。";
+            }
+            return "⚠ 危险操作确认：开启新周目（new-world）\n"
+                    + "· 将创建独立新世界；旧世界完整保留在世界栈中，不做倒流/删块\n"
+                    + "· 服务器会在 5 秒后停服；请用启动脚本重新开服\n"
+                    + "· 重启后自动计算新世界出生点、分组并全员强制迁移\n"
+                    + "· 背包/末影箱/进度天然保留；旧世界可用 /samsara world enter 回去\n"
+                    + "再次输入 /samsara season start new（" + ConfirmGuard.ttlSeconds() + " 秒内）才会真正执行。";
+        }
+        return same
+                ? manager().resetSame(src.getServer(),
+                        src.getPlayer() == null ? null
+                                : com.shenqianye.samsara.season.StackTeleport.layerOf(
+                                        src.getServer(), src.getPlayer()))
+                : manager().resetNew(src.getServer(), null);
+    }
+
     private static String confirmStart(CommandSourceStack src) {
         Season pending = manager().currentPending();
         if (pending == null) {

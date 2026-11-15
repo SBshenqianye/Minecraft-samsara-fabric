@@ -30,11 +30,7 @@ public class ClaimBreakListener {
                 return true;
             }
 
-            // 跳过墙挂旗帜
-            if (level.getBlockState(pos).hasProperty(
-                    net.minecraft.world.level.block.state.properties.BlockStateProperties.FACING)) {
-                return true;
-            }
+            // 墙挂旗帜同样算圈地：朝向由 WallBannerBlock.FACING 得出（见 getFacing）。
 
             List<ClaimNode.PatternEntry> patterns = ClaimInteractions.readPatterns(be);
             if (patterns.isEmpty()) return true;

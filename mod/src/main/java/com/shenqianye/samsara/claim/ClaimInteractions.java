@@ -49,10 +49,7 @@ public class ClaimInteractions {
             if (!(level.getBlockEntity(pos) instanceof BannerBlockEntity be)) {
                 return InteractionResult.PASS;
             }
-            // 跳过墙挂旗帜（FACING 属性无法可靠识别朝向，只处理站立旗帜）
-            if (level.getBlockState(pos).hasProperty(BlockStateProperties.FACING)) {
-                return InteractionResult.PASS;
-            }
+            // 墙挂旗帜与立式旗帜都算圈地：墙挂用 FACING，立式用 ROTATION_16（见 getFacing）。
             // 手持旗帜时跳过交互（避免放置墙挂旗帜时误触发已注册旗帜的交互）
             if (player.getMainHandItem().is(net.minecraft.tags.ItemTags.BANNERS)) {
                 return InteractionResult.PASS;
@@ -311,6 +308,16 @@ public class ClaimInteractions {
      */
     public static String getFacing(Level level, BlockPos pos) {
         var state = level.getBlockState(pos);
+        // 墙挂旗帜：FACING 就是旗帜正面朝向（贴着哪面墙就朝哪），只有 4 个正方向。
+        if (state.getBlock() instanceof net.minecraft.world.level.block.WallBannerBlock
+                && state.hasProperty(net.minecraft.world.level.block.WallBannerBlock.FACING)) {
+            return switch (state.getValue(net.minecraft.world.level.block.WallBannerBlock.FACING)) {
+                case EAST -> "east";
+                case WEST -> "west";
+                case SOUTH -> "south";
+                default -> "north";
+            };
+        }
         if (state.hasProperty(BlockStateProperties.ROTATION_16)) {
             int rot = state.getValue(BlockStateProperties.ROTATION_16);
             // 奇数 rotation → 映射到最近的偶数方向（round to nearest even）
