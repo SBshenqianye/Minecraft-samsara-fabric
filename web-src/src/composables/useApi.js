@@ -116,5 +116,19 @@ export function useApi({
     URL.revokeObjectURL(url);
   }
 
-  return { request, json, download };
+  /** 原始请求头（Authorization），供 canvas/tile 这类非 JSON 请求复用。 */
+  function authHeaders() {
+    const value = token();
+    return value ? { Authorization: 'Bearer ' + value } : {};
+  }
+
+  /** 二进制请求（地图瓦片等），保留 Response 供 blob 使用。 */
+  function loadBinary(path, options = {}) {
+    const headers = Object.assign({}, options.headers || {});
+    const value = token();
+    if (value) headers.Authorization = 'Bearer ' + value;
+    return fetch(path, Object.assign({}, options, { headers }));
+  }
+
+  return { request, json, download, authHeaders, loadBinary };
 }

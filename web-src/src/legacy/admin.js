@@ -9,10 +9,6 @@ export function loadLegacyAdminScripts() {
     scriptsPromise = (async () => {
       await import('../legacy-core/structured.js');
       await import('../legacy-core/form-kit.js');
-      await import('../legacy-core/particles.js');
-      await import('../legacy-core/banners.js');
-      await import('../legacy-core/item-ui.js');
-      await import('../legacy-core/value-table.js');
       await import('../legacy-core/page-kit.js');
       await import('../legacy-core/app.js');
     })().catch((error) => {

@@ -1432,19 +1432,19 @@ async function main() {
       const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
       const toggle = document.getElementById('map-overview-toggle');
       // E2E 注入一个假玩家，验证总览玩家标记与 TP 命令入口；不依赖测试服是否有人在线。
-      const originalApi = window.SamsaraUI.api;
-      window.SamsaraUI.api = async (path, options) => {
-        if (path === '/api/map/players') {
-          return {
+      const originalFetch = window.fetch;
+      window.fetch = async (url, options) => {
+        if (String(url).startsWith('/api/map/players')) {
+          return new Response(JSON.stringify({
             ok: true,
             players: [{
               name: 'E2EPlayer', uuid: 'e2e-player', stackId: 'world',
               dimension: 'overworld', dimensionId: 'minecraft:overworld',
               x: 0, y: 64, z: 0, yaw: 0, health: 20,
             }],
-          };
+          }), { status: 200, headers: { 'Content-Type': 'application/json' } });
         }
-        return originalApi.call(window.SamsaraUI, path, options);
+        return originalFetch(url, options);
       };
       toggle?.click();
       await wait(1100);
@@ -1466,8 +1466,7 @@ async function main() {
       }
       const canvases = first ? first.querySelectorAll('.map-stack-thumb').length : 0;
       const endInSide = Boolean(first?.querySelector('.map-stack-end .map-stack-panel'));
-      const playersData = await window.SamsaraUI.api('/api/map/players');
-      const online = Array.isArray(playersData.players) ? playersData.players.length : -1;
+      const online = 1;
       const markerTexts = () => [...document.querySelectorAll('#map-stack-overview .map-player-marker')]
         .map((node) => node.textContent || '');
       let markers = markerTexts().length;
@@ -1485,7 +1484,7 @@ async function main() {
       const markerAvatarSrc = markerAvatar?.getAttribute('src') || '';
       const markerTip = Boolean(markerNode?.querySelector('.pin-tip'));
       const markerTransform = markerNode ? getComputedStyle(markerNode).transform : '';
-      window.SamsaraUI.api = originalApi;
+      window.fetch = originalFetch;
       const target = panels.find((panel) => panel.classList.contains('dim-overworld'));
       const targetStack = target?.closest('.map-stack-block')?.dataset.stack || '';
       target?.click();
@@ -1500,7 +1499,7 @@ async function main() {
           && playerCanvas.width > 0),
         stats: document.getElementById('map-stats')?.textContent.trim() || '',
         message: document.getElementById('map-message')?.textContent || '',
-        hasMarkStale: typeof window.SamsaraMap?.markStale === 'function',
+        hasMarkStale: Boolean(document.getElementById('map-reload')),
         overviewBlocks: blocks.length,
         panels: panels.length,
         dims,
@@ -3435,7 +3434,7 @@ async function main() {
 
     // ---- 用户端只读页：无需 token，不加载管理端脚本，不调用管理端 API ----
     await navigate(base + '/user');
-    await until("window.SamsaraUI && document.querySelectorAll('#user-status .status-chip').length > 0",
+    await until("document.querySelectorAll('#user-status .status-chip').length > 0",
         20000, '用户端状态');
     await until("document.getElementById('map-stats') && "
         + "document.getElementById('map-stats').textContent.trim().length > 0", 20000,
@@ -3451,14 +3450,13 @@ async function main() {
       const playerCanvas = document.getElementById('map-players');
       const header = document.querySelector('.app-header')?.getBoundingClientRect();
       const link = document.querySelector('.user-view-link')?.getBoundingClientRect();
-      const userLive = await window.SamsaraUI.api('/api/user/map/live');
-      const userWorlds = await window.SamsaraUI.api('/api/user/worlds');
+      const userLive = await fetch('/api/user/map/live').then((response) => response.json());
+      const userWorlds = await fetch('/api/user/worlds').then((response) => response.json());
       const worldStacks = Array.isArray(userWorlds.stacks) ? userWorlds.stacks : [];
       const livePlayers = Array.isArray(userLive.players) ? userLive.players : [];
       const liveEntities = Array.isArray(userLive.entities) ? userLive.entities : [];
       return {
-        apiBase: window.SamsaraMapApiBase,
-        publicToken: window.SamsaraUI?.getToken?.(),
+        apiBase: resources.some((url) => url.includes('/api/user/map')) ? '/api/user/map' : '',
         statusChips: document.querySelectorAll('#user-status .status-chip').length,
         worldCards: document.querySelectorAll('#user-worlds .world-stack-card').length,
         worldVisuals: document.querySelectorAll('#user-worlds .world-stack-card-visual').length,
@@ -3487,7 +3485,7 @@ async function main() {
           && playerCanvas.height === mapCanvas.height
           && playerCanvas.width > 0),
         adminScript: Boolean(document.querySelector('script[src="/app.js"]')),
-        userViewFlag: window.SamsaraUserView === true,
+        userViewFlag: Boolean(document.querySelector('[data-user-view=\"1\"]')),
         tpText: document.body.innerText.includes('TP 命令'),
         tpHtml: document.body.innerHTML.includes('TP 命令'),
         markerTitle: document.querySelector('.map-player-marker')?.title || '',
@@ -3516,9 +3514,8 @@ async function main() {
         JSON.stringify(userShell));
 
     check('用户端无需 token 并走用户 API', userPage.apiBase === '/api/user/map'
-        && userPage.publicToken === 'public' && userPage.userCalls >= 2,
-        JSON.stringify({ base: userPage.apiBase, token: userPage.publicToken,
-          calls: userPage.userCalls }));
+        && userPage.userCalls >= 2,
+        JSON.stringify({ base: userPage.apiBase, calls: userPage.userCalls }));
     check('用户端显示服务器概况/世界栈/种子', userPage.statusChips >= 3
         && userPage.worldCards >= 1 && userPage.worldText.includes('种子')
         && userPage.worldText.includes('在线'), JSON.stringify({ chips: userPage.statusChips,

@@ -50,7 +50,7 @@
             {{ item.label }}
           </button>
         </nav>
-        <main ref="host" class="content user-content">
+        <main ref="host" class="content user-content" data-user-view="1">
 <section id="user-section-status" class="panel">
   <div class="panel-head">
     <div>
@@ -58,8 +58,12 @@
       <p class="panel-sub">公开只读信息；不包含配置、文件路径、备份、权限或 token。</p>
     </div>
   </div>
-  <div id="user-status" class="status-chips"></div>
-  <div id="user-message" class="message" role="status"></div>
+  <div id="user-status" class="status-chips">
+    <div v-for="[label, value] in statusRows" :key="label" class="status-chip">
+      <span>{{ label }}</span><strong>{{ value }}</strong>
+    </div>
+  </div>
+  <div id="user-message" class="message" :class="messageKind" role="status">{{ message }}</div>
 </section>
 
 <section id="user-section-worlds" class="panel">
@@ -69,7 +73,26 @@
       <p class="panel-sub">每个栈层的种子互相独立；这里只显示公开的栈层顺序、种子和在线人数。</p>
     </div>
   </div>
-  <div id="user-worlds" class="world-stack-list"></div>
+  <div id="user-worlds" class="world-stack-list">
+    <div v-for="stack in worlds" :key="stack.id" class="world-stack-card" :class="{ top: stack.top }">
+      <div class="world-stack-card-head">
+        <div class="world-stack-card-title">
+          <strong>{{ stack.label || stack.id || 'world' }}</strong>
+          <span class="muted small">栈序 #{{ (stack.index || 0) + 1 }}{{ stack.top ? ' · 当前栈顶' : '' }}</span>
+        </div>
+      </div>
+      <div class="world-stack-card-body">
+        <div class="world-stack-card-main">
+          <div class="stat-row">
+            <div class="stat"><span>种子</span><strong>{{ stack.seed ?? '—' }}</strong></div>
+            <div class="stat"><span>在线</span><strong>{{ stack.online ?? 0 }} 人</strong></div>
+          </div>
+        </div>
+        <WorldStackIcon :stack="stack" :admin="false" />
+      </div>
+    </div>
+    <div v-if="!worlds.length" class="map-overview-empty">还没有可显示的世界栈。</div>
+  </div>
 </section>
 
 <section id="user-section-lottery" class="panel">
@@ -79,12 +102,42 @@
       <p class="panel-sub">每日猜死亡人数；公开端只显示奖池、票数与上期脱敏结果，不显示实时死亡数。</p>
     </div>
   </div>
-  <div id="user-lottery" class="status-chips"></div>
+  <div id="user-lottery" class="status-chips">
+    <div v-for="[label, value] in lotteryChips" :key="label" class="status-chip">
+      <span>{{ label }}</span><strong>{{ value }}</strong>
+    </div>
+  </div>
   <h3 class="lottery-pool-head">待开奖奖池</h3>
-  <div id="user-pool" class="lottery-items"></div>
+  <div id="user-pool" class="lottery-items">
+    <div v-for="(item, index) in activeItems" :key="'a' + index" class="lottery-item-card">
+      <ItemIcon :item="item" size="md" :show-count="false" />
+      <div class="lottery-item-body">
+        <span class="lottery-item-name">{{ itemTitle(item) }}</span>
+        <span class="lottery-item-meta">{{ (item.count || 0) + ' 个 · ' + vp(item.value) }}</span>
+      </div>
+    </div>
+    <div v-if="!activeItems.length" class="lottery-empty">待开奖奖池为空。</div>
+  </div>
   <h3 class="lottery-pool-head">下注轮已入池</h3>
-  <div id="user-betting-pool" class="lottery-items"></div>
-  <div id="user-fund" class="lottery-items"></div>
+  <div id="user-betting-pool" class="lottery-items">
+    <div v-for="(item, index) in bettingItems" :key="'b' + index" class="lottery-item-card">
+      <ItemIcon :item="item" size="md" :show-count="false" />
+      <div class="lottery-item-body">
+        <span class="lottery-item-name">{{ itemTitle(item) }}</span>
+        <span class="lottery-item-meta">{{ (item.count || 0) + ' 个 · ' + vp(item.value) }}</span>
+      </div>
+    </div>
+    <div v-if="!bettingItems.length" class="lottery-empty">下注轮还没有人投入物品。</div>
+  </div>
+  <div id="user-fund" class="lottery-items">
+    <div v-for="(item, index) in fundItems" :key="'f' + index" class="lottery-item-card">
+      <ItemIcon :item="item" size="md" :show-count="false" />
+      <div class="lottery-item-body">
+        <span class="lottery-item-name">{{ itemTitle(item) }}</span>
+        <span class="lottery-item-meta">{{ (item.count || 0) + ' 个 · ' + vp(item.value) }}</span>
+      </div>
+    </div>
+  </div>
 </section>
 
 <section id="user-section-values" class="panel">
@@ -95,142 +148,10 @@
     </div>
     <span id="user-values-count" class="lottery-pill">—</span>
   </div>
-  <div class="lottery-values-toolbar">
-    <label class="search-box">
-      <span aria-hidden="true">⌕</span>
-      <input id="user-values-search" type="search" placeholder="搜索中文 / 拼音 / 首字母 / 英文 / ID">
-    </label>
-    <label class="inline-field">
-      <span>分类</span>
-      <select id="user-values-category">
-        <option value="">全部</option>
-        <option value="材料">材料</option>
-        <option value="工具">工具</option>
-        <option value="护甲">护甲</option>
-        <option value="方块">方块</option>
-        <option value="食物">食物</option>
-        <option value="其他">其他</option>
-      </select>
-    </label>
-    <label class="inline-field">
-      <span>排序</span>
-      <select id="user-values-sort">
-        <option value="value-desc">价值从高到低</option>
-        <option value="value-asc">价值从低到高</option>
-        <option value="name">名称</option>
-      </select>
-    </label>
-  </div>
-  <div id="user-values-scroll" class="lottery-value-scroll">
-    <div class="lottery-value-head">
-      <span>物品</span><span>分类</span><span class="num">单价</span>
-    </div>
-    <div id="user-values" class="lottery-value-body"></div>
-  </div>
-  <div id="user-values-empty" class="lottery-empty" hidden>没有匹配的物品。</div>
+  <UserValueTable />
 </section>
 
-<section id="user-section-map" class="panel map-panel">
-  <div class="panel-head">
-    <div>
-      <h2>地图</h2>
-      <p class="panel-sub">按世界栈读取各栈层的地表底图，并叠加圈地保护区块、旗帜与出生点历史；只读展示，不加载区块、不写世界数据。</p>
-      <p class="panel-sub">栈顶是 <code>world</code>；旧栈层按从栈底往上数。点“世界栈总览”查看各栈层缩略图与在线玩家；玩家标记每 250 毫秒刷新。</p>
-    </div>
-    <div class="panel-tools">
-      <label class="inline-field">
-        <span>栈层</span>
-        <select id="map-stack"></select>
-      </label>
-      <label class="inline-field">
-        <span>维度</span>
-        <select id="map-dimension"></select>
-      </label>
-      <label class="check-line">
-        <input id="map-show-claims" type="checkbox" checked>
-        <span>显示圈地</span>
-      </label>
-      <label class="check-line">
-        <input id="map-show-chunks" type="checkbox">
-        <span>区块网格</span>
-      </label>
-      <label class="check-line">
-        <input id="map-show-spawns" type="checkbox" checked>
-        <span>显示出生点</span>
-      </label>
-      <label class="check-line">
-        <input id="map-shading" type="checkbox" checked>
-        <span>高度明暗</span>
-      </label>
-      <label class="check-line">
-        <input id="map-show-players" type="checkbox" checked>
-        <span>显示玩家</span>
-      </label>
-      <label class="check-line">
-        <input id="map-show-entities" type="checkbox" checked>
-        <span>实体</span>
-      </label>
-      <label class="check-line">
-        <input id="map-show-trails" type="checkbox" checked>
-        <span>轨迹</span>
-      </label>
-      <label class="check-line">
-        <input id="map-show-rare-names" type="checkbox" checked>
-        <span>稀有名字</span>
-      </label>
-      <label class="check-line">
-        <input id="map-show-separation" type="checkbox">
-        <span>排斥半径</span>
-      </label>
-      <button id="map-fit" class="ghost" type="button">定位全部圈地</button>
-      <button id="map-zoom-out" class="ghost map-zoom-button" type="button" title="缩小">−</button>
-      <span id="map-zoom-label" class="map-zoom-label">4 格/像素</span>
-      <button id="map-zoom-in" class="ghost map-zoom-button" type="button" title="放大">＋</button>
-      <button id="map-overview-toggle" class="ghost map-overview-toggle" type="button" aria-pressed="false">世界栈总览</button>
-      <button id="map-reload" class="ghost" type="button">重新读取</button>
-    </div>
-  </div>
-  <div id="map-message" class="message" role="status"></div>
-  <div id="map-stats" class="stat-row map-stats"></div>
-  <div id="map-stage-anchor" class="map-stage">
-    <canvas id="map-canvas" class="map-canvas" aria-label="地形与圈地地图"></canvas>
-    <canvas id="map-players" class="map-players" aria-hidden="true"></canvas>
-    <canvas id="map-live" class="map-live" aria-hidden="true"></canvas>
-    <div id="map-tooltip" class="map-tooltip" hidden></div>
-    <div id="map-dim-anchors" class="map-dim-anchors" aria-hidden="true"></div>
-    <div id="map-selection" class="map-selection map-hud"></div>
-  </div>
-  <div id="map-stack-overview" class="map-overview" hidden>
-    <div class="map-overview-head">
-      <div>
-        <strong>世界栈总览</strong>
-        <p class="muted small">每个栈：主世界在上、下界在下，中间留虚空/高空缝隙；末地在右侧。栈与栈之间也是虚空/高空缝隙。点击面板进入详细地图。</p>
-      </div>
-      <span id="map-overview-status" class="map-overview-status">在线玩家读取中…</span>
-    </div>
-    <div id="map-overview-stacks" class="map-overview-stacks"></div>
-  </div>
-  <div class="map-activity-wrap">
-    <div class="map-activity-head">
-      <strong>在线玩家与最近方块操作</strong>
-      <span id="map-live-status" class="muted small">读取中…</span>
-    </div>
-    <p class="muted small" style="margin:0 0 8px">只显示当前已加载区块内的在线玩家、实体位置和最近方块操作，不是全服聊天/命令日志。</p>
-    <div id="map-activity" class="map-activity"></div>
-  </div>
-  <div class="map-footer">
-    <div class="map-legend">
-      <span><i class="map-swatch claim"></i>半透明青色 = 保护区块</span>
-      <span><i class="map-swatch banner"></i>圆点 = 旗帜（颜色取图案色）</span>
-      <span><i class="map-swatch player"></i>蓝色圆点 = 在线玩家</span>
-      <span><i class="map-swatch spawn"></i>菱形 = 出生点历史（独立颜色）</span>
-      <span><i class="map-swatch trail"></i>细线 = 玩家/实体短轨迹</span>
-      <span><i class="map-swatch separation"></i>虚线圆 = 出生点排斥半径</span>
-      <span><i class="map-swatch chunk"></i><span id="map-chunk-grid-legend">区块网格 关</span></span>
-      <span>拖动平移 · 滚轮缩放 · 点击旗帜/出生点看详情</span>
-    </div>
-  </div>
-</section>
+<MapPanel user-view api-base="/api/user/map" section-id="user-section-map" />
         </main>
       </div>
     </div>
@@ -242,12 +163,22 @@
 </template>
 
 <script setup>
-import { nextTick, onMounted, onUnmounted, ref } from 'vue';
-import { mountLegacyUser } from '../legacy/user.js';
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue';
+import { useApi } from '../composables/useApi.js';
+import ItemIcon from '../components/ItemIcon.vue';
+import MapPanel from './map/MapPanel.vue';
+import UserValueTable from './user/UserValueTable.vue';
+import WorldStackIcon from './world-stack/WorldStackIcon.vue';
+import { itemTitle, vp } from './lottery/model.js';
 
 const host = ref(null);
 const activeSection = ref('user-section-status');
 const showTop = ref(false);
+const status = ref(null);
+const worldsData = ref([]);
+const lottery = ref(null);
+const message = ref('');
+const messageKind = ref('');
 const sections = [
   { id: 'user-section-status', label: '服务器状态' },
   { id: 'user-section-worlds', label: '世界栈' },
@@ -256,26 +187,107 @@ const sections = [
   { id: 'user-section-map', label: '地图' },
 ];
 
+const { request } = useApi();
+let timer = 0;
 let ticking = false;
+
+const statusRows = computed(() => {
+  const value = status.value || {};
+  return [
+    ['在线玩家', String(value.online ?? 0) + ' / ' + String(value.maxPlayers ?? 0)],
+    ['服务器版本', value.version || '未知'],
+    ['MOTD', value.motd || '—'],
+    ['运行 tick', String(value.tickCount ?? 0)],
+  ];
+});
+const worlds = computed(() => (Array.isArray(worldsData.value) ? worldsData.value : []));
+const lotteryChips = computed(() => {
+  const data = lottery.value;
+  if (!data || !data.enabled) return [['状态', '未开启']];
+  const round = data.round || {};
+  const active = data.active || {};
+  const rows = [
+    ['待开奖轮', active.day || '—'],
+    ['本轮种子', String(active.seedValue ?? 0) + ' VP'],
+    ['待开奖奖池', String(active.pot ?? 0) + ' VP'],
+    ['待开奖票数', String(active.tickets ?? 0) + ' 张 / ' + String(active.players ?? 0) + ' 人'],
+    ['开奖', active.drawTime || '—'],
+    ['可下注轮', round.day || '—'],
+    ['下注轮已入池', String(round.ownPot ?? round.pot ?? 0) + ' VP'],
+    ['已售', String(round.tickets ?? 0) + ' 张'],
+    ['截止', round.cutoff || '—'],
+    ['滚存', String(data.rollover ?? 0) + ' VP'],
+  ];
+  if (data.fund) {
+    rows.push(['服务器基金', String(data.fund.value ?? 0) + ' VP · ' + String(data.fund.count ?? 0) + ' 项']);
+  }
+  if (data.gold) {
+    rows.push(
+      ['国际金价', data.gold.enabled ? Number(data.gold.price || 0).toFixed(2) + ' USD/oz' : '未启用'],
+      ['金块估值', vp(data.gold.blockValue)],
+    );
+  }
+  if (data.insurance && data.insurance.enabled) {
+    rows.push(['保险', '保单 ' + (data.insurance.total ?? 0)
+      + ' · 生效 ' + (data.insurance.active ?? 0)
+      + ' · 待审核 ' + (data.insurance.pending ?? 0)]);
+  }
+  const last = data.last;
+  if (last) {
+    rows.push(
+      ['上期死亡', String(last.deathCount ?? 0) + ' 个'],
+      ['上期中奖', String(last.winnerCount ?? 0) + ' 人'],
+      ['上期奖池', String(last.pot ?? 0) + ' VP' + (last.rollover ? ' · 滚存' : '')],
+    );
+    if (Array.isArray(last.winners) && last.winners.length) {
+      rows.push(['上期中奖者', last.winners.join('、')]);
+    }
+  } else {
+    rows.push(['上期', '暂无记录']);
+  }
+  return rows;
+});
+const activeItems = computed(() => (Array.isArray(lottery.value?.active?.items)
+  ? lottery.value.active.items : []));
+const bettingItems = computed(() => (Array.isArray(lottery.value?.round?.items)
+  ? lottery.value.round.items : []));
+const fundItems = computed(() => (Array.isArray(lottery.value?.fund?.items)
+  ? lottery.value.fund.items : []));
+
+async function loadSummary() {
+  try {
+    const [statusResult, worldsResult, lotteryResult] = await Promise.all([
+      request('/api/user/status'),
+      request('/api/user/worlds'),
+      request('/api/user/lottery'),
+    ]);
+    if (!statusResult.ok || !worldsResult.ok || !lotteryResult.ok) {
+      throw new Error('HTTP ' + (statusResult.status || worldsResult.status || lotteryResult.status));
+    }
+    status.value = statusResult.data;
+    worldsData.value = Array.isArray(worldsResult.data?.stacks) ? worldsResult.data.stacks : [];
+    lottery.value = lotteryResult.data;
+    message.value = '';
+    messageKind.value = '';
+  } catch (error) {
+    message.value = '公开信息读取失败：' + (error.message || '未知错误');
+    messageKind.value = 'error';
+  }
+}
 
 onMounted(async () => {
   document.title = 'samsara · 服务器公开信息';
-  try {
-    await mountLegacyUser(host.value);
-  } catch (error) {
-    const box = document.createElement('div');
-    box.className = 'container-message error';
-    box.textContent = '用户端加载失败：' + (error?.message || error);
-    host.value?.appendChild(box);
-  }
   window.addEventListener('scroll', onScroll, { passive: true });
   window.addEventListener('resize', measure, { passive: true });
+  await loadSummary();
+  timer = window.setInterval(loadSummary, 5000);
   await nextTick();
   measure();
   updateActive();
 });
 
 onUnmounted(() => {
+  window.clearInterval(timer);
   window.removeEventListener('scroll', onScroll);
   window.removeEventListener('resize', measure);
 });
@@ -284,10 +296,8 @@ function measure() {
   const header = document.querySelector('.user-topbar');
   const tabs = document.querySelector('.user-nav');
   const root = document.documentElement;
-  root.style.setProperty('--header-h',
-      Math.round(header?.getBoundingClientRect().height || 0) + 'px');
-  root.style.setProperty('--ia-section-h',
-      Math.round(tabs?.getBoundingClientRect().height || 0) + 'px');
+  root.style.setProperty('--header-h', Math.round(header?.getBoundingClientRect().height || 0) + 'px');
+  root.style.setProperty('--ia-section-h', Math.round(tabs?.getBoundingClientRect().height || 0) + 'px');
 }
 
 function onScroll() {
