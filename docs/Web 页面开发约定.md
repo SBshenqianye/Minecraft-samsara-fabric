@@ -44,7 +44,7 @@
 
 - 源目录 `web-src/`；构建 `cd web-src && npm.cmd run build`。Vite `base=/vue/`，输出 `mod/src/main/resources/web/vue/`；构建产物必须提交。
 - 路由：`/vanilla/*`、`/samsara/economy|sky|config|world|community|system/*`、`/mods/<modId>/<file...>`；旧 `/config`、`/config-editor`、`/claim-range`、`/identity`、`/output`、`/permissions`、`/map`、`/announcements`、`/world-stack`、`/lottery`、`/containers` 保留 alias；`/server/*` 只做前端 redirect 到 `/vanilla/*`。
-- 配置来源过滤：`/samsara/config/editor` 用 `setSourceFilter('samsara')`；其他模组页用 `setSourceFilter('third-party')`；`/vanilla/config` 由 `ServerConfigPanel` 管服务器本体配置。
+- samsara 常规配置唯一入口是 `/samsara/config/advanced`；旧 `/samsara/config/editor` 重定向到高级配置。PageSpec/FormSpec 只用于其他模组文件页（`/mods/<modId>/...`），`/vanilla/config` 由 `ServerConfigPanel` 管服务器本体配置。
 - 横幅：全站唯一横幅是 `AdminLayout` 顶部 hero，统一显示面包屑、标题、说明；页面自己的刷新/查询/保存按钮留在内容区。
 - HTTP 与 token：统一 `composables/useApi.js`（`request` 返回 `{ status, ok, data }`）与 `useSession.js`；不要再复制 token 输入框与 401 处理。
 - Element Plus：`unplugin-vue-components` + `ElementPlusResolver` 按需引入；`ElMessage` / `ElMessageBox` 样式在 `main.js` 显式引入。
