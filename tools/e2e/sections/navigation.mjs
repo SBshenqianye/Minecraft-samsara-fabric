@@ -30,6 +30,30 @@ export default {
         child.targetTop != null && Math.abs(child.targetTop - child.navTop) <= 2,
         JSON.stringify(child));
 
+    const scrolled = await evaluate(`(async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      window.scrollTo({ top: 2500, behavior: 'instant' });
+      await sleep(300);
+      const items = [...document.querySelectorAll('#page-nav .nav-item')];
+      const button = items.find((node) => node.textContent.trim().startsWith('view.protectViewer'));
+      button?.click();
+      await sleep(1400);
+      const target = button ? document.getElementById(button.dataset.target) : null;
+      const nav = document.getElementById('page-nav');
+      return {
+        clicked: button?.textContent.trim() || '',
+        active: items.filter((node) => node.classList.contains('active'))
+          .map((node) => node.textContent.trim()),
+        targetTop: target ? Math.round(target.getBoundingClientRect().top) : null,
+        navTop: Math.round(nav?.getBoundingClientRect().top || 0),
+        scrollY: Math.round(window.scrollY),
+      };
+    })()`);
+    check('页面已滚动时点击导航仍落在点击项',
+        scrolled.active.length === 1 && scrolled.active[0].startsWith('view.protectViewer')
+        && scrolled.targetTop != null && Math.abs(scrolled.targetTop - scrolled.navTop) <= 2,
+        JSON.stringify(scrolled));
+
     const collapsed = await evaluate(`(async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       const items = [...document.querySelectorAll('#page-nav .nav-item')];

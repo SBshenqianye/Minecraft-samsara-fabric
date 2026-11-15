@@ -59,11 +59,21 @@ function openAncestors(el) {
   return changed;
 }
 
-function alignTo(el) {
+function navOffset() {
   const nav = document.getElementById('page-nav');
-  const navTop = nav ? nav.getBoundingClientRect().top : 0;
-  const delta = el.getBoundingClientRect().top - navTop;
-  if (Math.abs(delta) > 1) window.scrollBy(0, delta);
+  const rectTop = nav ? nav.getBoundingClientRect().top : 0;
+  if (rectTop >= 0) return rectTop;
+  const root = getComputedStyle(document.documentElement);
+  const header = parseFloat(root.getPropertyValue('--header-h')) || 0;
+  const section = parseFloat(root.getPropertyValue('--ia-section-h')) || 0;
+  return header + section + 12;
+}
+
+function alignTo(el) {
+  const delta = el.getBoundingClientRect().top - navOffset();
+  if (Math.abs(delta) > 1) {
+    window.scrollTo({ top: window.scrollY + delta, behavior: 'instant' });
+  }
 }
 
 async function select(item) {
@@ -92,19 +102,16 @@ async function select(item) {
     await new Promise((resolve) => requestAnimationFrame(resolve));
   }
   if (key) active.value = key;
-  const nav = document.getElementById('page-nav');
-  const navTop = nav ? nav.getBoundingClientRect().top : 0;
-  const top = window.scrollY + el.getBoundingClientRect().top - navTop;
-  window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
-  window.setTimeout(() => {
-    if (key) active.value = key;
-    alignTo(el);
-  }, 420);
-  window.setTimeout(() => {
-    if (key) active.value = key;
-    alignTo(el);
-    suppressScrollUntil = 0;
-  }, 900);
+  const top = window.scrollY + el.getBoundingClientRect().top - navOffset();
+  // 用 instant 保证落点精确；CSS 的 scroll-behavior:smooth 在部分 Chromium 会吞掉 scrollTo。
+  window.scrollTo({ top: Math.max(0, top), behavior: 'instant' });
+  for (const delay of [0, 120, 360, 800]) {
+    window.setTimeout(() => {
+      if (key) active.value = key;
+      alignTo(el);
+      if (delay === 800) suppressScrollUntil = 0;
+    }, delay);
+  }
 }
 
 function watchScroll() {
