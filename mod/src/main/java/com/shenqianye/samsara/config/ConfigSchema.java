@@ -357,6 +357,8 @@ public final class ConfigSchema {
         ));
 
         List<ConfigEntry> outputEntries = new ArrayList<>();
+        outputEntries.add(ConfigEntry.bool("claim.actionbar", true, "圈地",
+                "圈地旗右键提示用动作栏（ActionBar）；关闭则发送到聊天栏"));
         for (OutputTemplate template : OutputCatalog.all()) {
             outputEntries.add(ConfigEntry.template(template.key(),
                     TemplateCodec.toConfig(template.defaultParts()),

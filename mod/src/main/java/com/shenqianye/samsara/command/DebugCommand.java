@@ -414,6 +414,10 @@ public class DebugCommand {
                                                                 ctx.getSource(),
                                                                 StringArgumentType.getString(ctx, "dir"),
                                                                 IntegerArgumentType.getInteger(ctx, "dist")))))))
+                                // debug claim flags：一次性给全套测试旗（白底橙图案，含图标图案）
+                                .then(Commands.literal("flags")
+                                        .requires(PermissionRequirements.ownerAnd("debug claim flags"))
+                                        .executes(ctx -> reply(ctx.getSource(), debugGiveFlags(ctx.getSource()))))
                                 // debug claim list
                                 .then(Commands.literal("list")
                                         .requires(PermissionRequirements.ownerAnd("debug claim list"))
@@ -989,6 +993,47 @@ public class DebugCommand {
         player.getInventory().add(banner);
 
         return "已给予圈地旗：" + dir + " " + dist + " 区块";
+    }
+
+    /**
+     * {@code /samsara debug claim flags}：给执行者一套测试旗。
+     * 白底 + 橙色方向图案 + 橙色图标图案（skull），全部满足注册条件，方便一次测完所有方向。
+     */
+    private static String debugGiveFlags(CommandSourceStack src) {
+        net.minecraft.server.level.ServerPlayer player;
+        try {
+            player = src.getPlayerOrException();
+        } catch (Exception e) {
+            return "需要以玩家身份执行";
+        }
+        java.util.List<String> patterns = java.util.List.of(
+                "stripe_top", "stripe_bottom", "stripe_left", "stripe_right",
+                "square_top_left", "square_top_right", "square_bottom_left", "square_bottom_right",
+                "stripe_downleft", "stripe_downright", "stripe_center", "stripe_middle",
+                "cross", "straight_cross", "border");
+        int given = 0;
+        for (String patternId : patterns) {
+            var dir = new net.minecraft.world.level.block.entity.BannerPattern(
+                    net.minecraft.resources.Identifier.fromNamespaceAndPath("minecraft", patternId),
+                    "block.minecraft.banner." + patternId);
+            var icon = new net.minecraft.world.level.block.entity.BannerPattern(
+                    net.minecraft.resources.Identifier.fromNamespaceAndPath("minecraft", "skull"),
+                    "block.minecraft.banner.skull");
+            var layers = new net.minecraft.world.level.block.entity.BannerPatternLayers(java.util.List.of(
+                    new net.minecraft.world.level.block.entity.BannerPatternLayers.Layer(
+                            net.minecraft.core.Holder.direct(icon), net.minecraft.world.item.DyeColor.WHITE),
+                    new net.minecraft.world.level.block.entity.BannerPatternLayers.Layer(
+                            net.minecraft.core.Holder.direct(dir), net.minecraft.world.item.DyeColor.ORANGE)));
+            net.minecraft.world.item.ItemStack banner = new net.minecraft.world.item.ItemStack(
+                    net.minecraft.world.item.Items.BANNER.white());
+            banner.set(net.minecraft.core.component.DataComponents.BANNER_PATTERNS, layers);
+            banner.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME,
+                    net.minecraft.network.chat.Component.literal("测试旗 " + patternId)
+                            .withStyle(net.minecraft.ChatFormatting.GOLD));
+            player.getInventory().add(banner);
+            given++;
+        }
+        return "已给予 " + given + " 面测试旗（白底 + 橙色方向图案 + 图标图案），可直接放置测试。";
     }
 
     /**

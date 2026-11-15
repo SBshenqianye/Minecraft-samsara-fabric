@@ -81,9 +81,16 @@ public class ClaimInteractions {
             sb.append(protected_ ? " · ✓ 受保护" : " · ✗ 未保护");
             if (ownerName != null) sb.append(" · ").append(ownerName);
             sb.append(" · ").append(area.size()).append(" 区块");
-            // 动作栏（ActionBar）：sendSystemMessage(..., true) 显示在快捷栏上方，不刷聊天记录。
-            // 动作栏是单行控件，换行会被吞成空格；这里显式压成一行，聊天栏则保留换行。
-            sp.sendSystemMessage(Component.literal(sb.toString().replace('\n', ' ')), true);
+            // 动作栏（ActionBar）或聊天栏：由 output.yml 的 claim.actionbar 决定。
+            String line = sb.toString().replace('\n', ' ');
+            boolean actionbar = true;
+            try {
+                actionbar = com.shenqianye.samsara.config.ConfigManager.getInstance()
+                        .bool(com.shenqianye.samsara.config.ConfigSchema.OUTPUT, "claim.actionbar");
+            } catch (RuntimeException ignored) {
+                // 配置未就绪时默认动作栏
+            }
+            sp.sendSystemMessage(Component.literal(line), actionbar);
 
             // 立即发送粒子预览（右键时即时反馈）：按保护区域外边界画，和实际保护一致
             if (level instanceof ServerLevel sl) {
