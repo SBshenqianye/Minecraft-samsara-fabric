@@ -108,7 +108,9 @@ Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
 - **禁止在玩家在线时直接 `taskkill /F`**：未保存的区块与玩家数据会回档到上一次自动保存。我们 2026-11-15 的连续部署中曾这样做，导致 kalinote 的进度回档；之后必须走 `stop` + 等待退出。
 - `Start-Process -RedirectStandardOutput` 指向旧进程占用的日志会失败且无输出。
 - `Copy-Item` 在旧 Java 仍持锁时可能静默失败；复制后必须立刻校验目标哈希。
-- 生产 `Launch Server.bat` 是循环启动；直接替换 jar 前必须停循环或极快完成，否则会被旧进程锁住。
+- **绝不要在旧 Java 还在运行时覆盖 jar**：Windows 不报错，但旧 JVM 仍用启动时读到的 zip 索引，结果 `index.html` 是新的、`/vue/assets/*.js` 全 404，前端白屏。必须先停服并确认 java 进程退出，再复制。
+- 生产 `Launch Server.bat` 是循环启动：java 退出后会 `timeout /t 5` 再重启。要换 jar 就必须在 java 退出后 5 秒内结束循环 cmd，否则会带着旧 jar 自动重启（本次部署就遇到过一次自重启）。
+- 停服后要同时检查 `java.exe`（fabric-server-launch.jar）与 `cmd.exe`（Launch Server.bat）；循环 cmd 还在时，任何“已停服”都是临时的。
 - 不要在生产验证时执行写配置、回滚、删备份等有副作用操作。
 - 测试服 `server.properties` 与代码内置默认值不一致时，“恢复默认使用真实默认值”这类 E2E 断言会假失败（例：`pause-when-empty-seconds` 测试服为 0、默认 60）。先核对测试服配置，不要改代码去迎合环境。
 - Web 前端改动同样要 `cd web-src && npm run build`，产物才会进入 jar；只构建后端会发布旧前端。
