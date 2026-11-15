@@ -99,7 +99,8 @@
 </template>
 
 <script setup>
-import { onActivated, onBeforeUnmount, onMounted, watch } from 'vue';
+import { onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import TabShell from '../components/TabShell.vue';
 import SegmentedButtons from '../components/SegmentedButtons.vue';
 import IdentityDialogs from './identity/IdentityDialogs.vue';
@@ -124,13 +125,25 @@ function onConnected() {
   identity.load();
 }
 
+const active = ref(true);
+const route = useRoute();
+
 watch(
   () => [identity.groups.value, identity.names, identity.labels, identity.dataList.value],
-  () => identity.syncNav(),
+  () => {
+    if (active.value && route.path === '/samsara/community/identity') identity.syncNav();
+  },
   { deep: true, immediate: true },
 );
 
-onActivated(() => identity.syncNav());
+onActivated(() => {
+  active.value = true;
+  if (route.path === '/samsara/community/identity') identity.syncNav();
+});
+onDeactivated(() => {
+  active.value = false;
+  clearPageNav();
+});
 
 onMounted(() => {
   window.addEventListener('samsara:connected', onConnected);

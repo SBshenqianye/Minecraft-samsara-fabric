@@ -68,7 +68,7 @@ import { KEEP_ALIVE_PAGES, WORKSPACES } from '../navigation.js';
 import { useApi } from '../composables/useApi.js';
 import { useAdminNavigation } from '../composables/useAdminNavigation.js';
 import { useMods } from '../composables/useMods.js';
-import { pageNavState } from '../composables/usePageNav.js';
+import { clearPageNav, pageNavState } from '../composables/usePageNav.js';
 import { autoConnect, session } from '../composables/useSession.js';
 import AppHeader from './AppHeader.vue';
 import AdminOverlays from './AdminOverlays.vue';
@@ -323,6 +323,10 @@ watch(() => session.connected, (connected) => {
   loadMods();
   refreshWebVersion();
 });
+
+watch(() => route.path, () => {
+  clearPageNav();
+}, { flush: 'pre' });
 
 watch(() => route.path, async () => {
   if (!started) return;

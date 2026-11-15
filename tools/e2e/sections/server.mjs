@@ -190,6 +190,8 @@ export default {
     await until("document.getElementById('server-audit-panel')"
       + " && !document.getElementById('server-audit-panel').hidden", 20000, 'Web 审计面板');
     await sleep(1500);
+    await until("document.querySelectorAll('#server-audit-list .server-audit-item').length >= 1",
+      20000, 'Web 审计列表');
 
     const audit = await evaluate(`(async () => {
       const rows = [...document.querySelectorAll('#server-audit-list .server-audit-item')];

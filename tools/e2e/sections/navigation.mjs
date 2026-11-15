@@ -57,11 +57,25 @@ export default {
 
     const cleared = await evaluate(`(async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      const buttons = () => [...document.querySelectorAll('button')];
-      buttons().find((node) => node.textContent.trim() === '社区')?.click();
-      await sleep(900);
-      buttons().find((node) => node.textContent.trim() === '公告')?.click();
-      await sleep(1200);
+      const waitText = async (selector, text, ms = 8000) => {
+        const deadline = Date.now() + ms;
+        while (Date.now() < deadline) {
+          const node = [...document.querySelectorAll(selector)]
+            .find((item) => item.textContent.trim() === text);
+          if (node) return node;
+          await sleep(100);
+        }
+        return null;
+      };
+      const community = await waitText('.section-tabs .section-tab, .subnav-item', '社区');
+      community?.click();
+      const announcements = await waitText('.section-subnav .subnav-item, .subnav-item', '公告');
+      announcements?.click();
+      const deadline = Date.now() + 8000;
+      while (Date.now() < deadline && location.pathname !== '/samsara/community/announcements') {
+        await sleep(100);
+      }
+      await sleep(600);
       const nav = document.getElementById('page-nav');
       return {
         path: location.pathname,
