@@ -82,9 +82,9 @@ Start-Process -FilePath 'C:\Program Files\Java\jdk-26.0.2.1\bin\java.exe' `
 1. 公告：`say [维护] ...`，先 `list` 检查在线人数。
 2. 有人在线：60 秒倒计时；0 人可直接停服。
 3. **必须优雅停服**：
-   - 先 `POST /api/server/console` 发送 `{"command":"stop"}`。
-   - 等待日志出现 `Stopping server`，并等待 Java PID 退出、8720/25585/25565 端口释放（最多 120 秒）。
-   - **禁止直接 `taskkill /F`**；只有优雅 stop 超时、进程确认卡死时才允许强制结束，并记录原因。
+   - 执行 `powershell -File tools/release/stop-server.ps1 -BaseUrl http://127.0.0.1:8720 -Token <token>`。
+   - 脚本会在玩家在线时拒绝停服；确认安全后加 `-AllowOnline`，并先发 60 秒倒计时。
+   - 脚本只发 RCON `stop` 并等待退出；超时默认不强杀，必须人工检查后再决定是否 `-ForcePid`。
    - 不要在玩家在线时强杀进程：未保存的区块/玩家数据会回档到上一次自动保存。
 4. 找到 `Launch Server.bat` 的 cmd PID，等 Java 退出后结束循环。
 5. 备份旧 jar 到 `backups/samsara/mod-jars/`，移除 `mods/` 下旧 samsara jar。

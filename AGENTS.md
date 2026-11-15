@@ -101,4 +101,4 @@ E2E 失败一律视为当前改动或测试环境的真实问题，定位到根�
 
 ## 8. 发布
 
-生产部署只按 `.opencode/skills/samsara-release/SKILL.md` 执行；不要在普通任务里重启生产服。
+生产部署只按 `.opencode/skills/samsara-release/SKILL.md` 执行；不要在普通任务里重启生产服。停服必须用 `tools/release/stop-server.ps1`（RCON `stop` + 等待退出）；禁止直接 `taskkill /F`。
