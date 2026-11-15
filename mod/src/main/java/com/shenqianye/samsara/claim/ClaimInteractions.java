@@ -297,9 +297,9 @@ public class ClaimInteractions {
         return ClaimPatternRules.hasIconPattern(ids);
     }
 
-    /** F-01：方向图案 + 图标图案同时存在，才识别为圈地旗。 */
+    /** F-01：方向图案即视为圈地旗（图标图案不再是必需条件）。 */
     public static boolean isClaimBanner(List<ClaimNode.PatternEntry> patterns) {
-        return hasDirectionPatterns(patterns) && hasIconPattern(patterns);
+        return hasDirectionPatterns(patterns);
     }
 
     /**

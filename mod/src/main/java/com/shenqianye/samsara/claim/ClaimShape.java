@@ -116,7 +116,9 @@ public final class ClaimShape {
     public static String rotateDirection(String direction, String facing) {
         int index = DIRECTION_ORDER.indexOf(direction);
         if (index < 0) return direction;
-        int rotated = (index + facingSteps(facing) * 2) % 8;
+        // +4（半圈）：图案按旗面命名；延伸方向应与玩家放下时的朝向前方一致，
+        // 而 ROTATION 推出的是旗面朝向（与放置者朝向相反），需要校正 180°。
+        int rotated = (index + 4 + facingSteps(facing) * 2) % 8;
         return DIRECTION_ORDER.get(rotated);
     }
 

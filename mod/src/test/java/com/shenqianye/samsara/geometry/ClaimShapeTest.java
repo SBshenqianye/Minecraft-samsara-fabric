@@ -135,10 +135,10 @@ class ClaimShapeTest {
         Set<ChunkCoord> r = cells("stripe_top", d, "north");
         assertEquals(4, r.size(), "stripe_top = 中心 + 4 格射线");
         assertTrue(has(r, 0, 0));
-        // 图案按观看者正面命名；实际延伸与玩家看到的方向相反（2026-11-16 校正 180°）。
-        assertTrue(has(r, 0, -1));
-        assertTrue(has(r, 0, -2));
-        assertTrue(has(r, 0, -3));
+        // 图案按旗面命名；延伸方向应与玩家放下时的朝向前方一致（校正 180°）。
+        assertTrue(has(r, 0, 1));
+        assertTrue(has(r, 0, 2));
+        assertTrue(has(r, 0, 3));
         assertFalse(has(r, 1, 0), "端点以外不应出现横向格");
         assertFalse(has(r, 0, 4), "不应超出距离");
     }
@@ -158,13 +158,13 @@ class ClaimShapeTest {
     void squareTopLeft_singleBanner_isDiagonalRayNotQuadrant() {
         int d = 3;
         Set<ChunkCoord> r = cells("square_top_left", d, "north");
-        assertEquals(4, r.size(), "square_top_left 单旗只应有西北向 4 格，不是 16 格象限面");
+        assertEquals(4, r.size(), "square_top_left 单旗只应有射线 4 格，不是 16 格象限面");
         assertTrue(has(r, 0, 0));
-        assertTrue(has(r, -1, -1));
-        assertTrue(has(r, -2, -2));
-        assertTrue(has(r, -3, -3));
-        assertFalse(has(r, -1, 0), "不应填充整个左上象限");
-        assertFalse(has(r, 0, -1), "不应填充整个左上象限");
+        assertTrue(has(r, 1, 1));
+        assertTrue(has(r, 2, 2));
+        assertTrue(has(r, 3, 3));
+        assertFalse(has(r, 1, 0), "不应填充整个象限");
+        assertFalse(has(r, 0, 1), "不应填充整个象限");
     }
 
     @Test
@@ -192,11 +192,11 @@ class ClaimShapeTest {
         Set<ChunkCoord> south = cells("stripe_top", d, "south");
         Set<ChunkCoord> west = cells("stripe_top", d, "west");
 
-        assertTrue(has(north, 0, -3));
-        assertTrue(has(east, 3, 0), "朝东时北向射线应旋转到东");
-        assertTrue(has(south, 0, 3), "朝南时应旋转到南");
-        assertTrue(has(west, -3, 0), "朝西时应旋转到西");
-        assertFalse(has(east, 0, -3), "旋转后不应保留原方向");
+        assertTrue(has(north, 0, 3));
+        assertTrue(has(east, -3, 0), "朝东时朝北的射线应转到西（180° 校正后）");
+        assertTrue(has(south, 0, -3), "朝南时应转到北");
+        assertTrue(has(west, 3, 0), "朝西时应转到东");
+        assertFalse(has(east, 0, 3), "旋转后不应保留原方向");
         assertEquals(4, east.size(), "旋转不改变射线数量，也不产生填充");
         assertFalse(has(east, 1, 1), "单旗旋转后仍不填充");
     }
