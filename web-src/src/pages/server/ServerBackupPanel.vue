@@ -169,6 +169,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { ElMessageBox } from 'element-plus';
 import { useApi } from '../../composables/useApi.js';
 import {
   backupStats,
@@ -395,7 +396,12 @@ async function confirmPreview() {
 }
 
 async function removeBackup(id) {
-  if (!window.confirm('删除备份 ' + id + '？源 world 不会受影响。')) return;
+  try {
+    await ElMessageBox.confirm('删除备份 ' + id + '？源 world 不会受影响。',
+      '删除备份', { type: 'warning' });
+  } catch {
+    return;
+  }
   try {
     const result = await request('/api/server/backups/delete', {
       method: 'POST',
@@ -412,9 +418,13 @@ async function removeBackup(id) {
 }
 
 async function download(node) {
-  if (Number(node.zipBytes) > 256 * 1024 * 1024
-      && !window.confirm('备份超过 256MB，浏览器下载会占用大量内存。仍要下载？')) {
-    return;
+  if (Number(node.zipBytes) > 256 * 1024 * 1024) {
+    try {
+      await ElMessageBox.confirm('备份超过 256MB，浏览器下载会占用大量内存。仍要下载？',
+        '大文件下载', { type: 'warning' });
+    } catch {
+      return;
+    }
   }
   try {
     await downloadFile('/api/server/backups/download?id=' + encodeURIComponent(node.id), node.id + '.zip');

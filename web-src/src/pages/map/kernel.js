@@ -3,6 +3,7 @@
  * 由 Vue 页面提供 DOM 与 API/导航回调，不依赖旧全局壳。
  */
 /* eslint-disable no-useless-assignment */
+import { ElMessageBox } from 'element-plus';
 import {
   DYE_COLORS as BANNER_DYE_COLORS,
   draw as drawBanner,
@@ -2475,7 +2476,10 @@ export function createMapKernel(ctx) {
     });
 
     restore.addEventListener('click', async () => {
-      if (!window.confirm('执行单区块回溯？会写方块并先备份 .mca。\n区块 (' + cx + ', ' + cz + ')')) {
+      try {
+        await ElMessageBox.confirm('执行单区块回溯？会写方块并先备份 .mca。\n区块 (' + cx + ', ' + cz + ')',
+          '确认回溯', { type: 'warning', confirmButtonText: '执行', cancelButtonText: '取消' });
+      } catch {
         return;
       }
       setStatus('正在执行回溯…');

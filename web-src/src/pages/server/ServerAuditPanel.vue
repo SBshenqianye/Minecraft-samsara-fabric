@@ -81,6 +81,7 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { ElMessageBox } from 'element-plus';
 import { useApi } from '../../composables/useApi.js';
 import {
   auditEntryText,
@@ -189,9 +190,11 @@ function closeDiff() {
 }
 
 async function rollback(entry) {
-  if (!window.confirm('回滚到这次 Web 修改之前？\n' + entry.action
+  try {
+    await ElMessageBox.confirm('回滚到这次 Web 修改之前？\n' + entry.action
       + '\n时间 ' + new Date(Number(entry.createdAt || 0)).toLocaleString()
-      + '\n\n会先保存当前状态，再恢复快照文件。')) {
+      + '\n\n会先保存当前状态，再恢复快照文件。', '确认回滚', { type: 'warning' });
+  } catch {
     return;
   }
   try {

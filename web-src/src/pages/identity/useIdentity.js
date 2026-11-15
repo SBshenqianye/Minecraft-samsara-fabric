@@ -1,4 +1,5 @@
 import { computed, reactive, ref } from 'vue';
+import { ElMessageBox } from 'element-plus';
 import { useApi } from '../../composables/useApi.js';
 import { setPageNav } from '../../composables/usePageNav.js';
 import { openIdentityDetail } from './openDetail.js';
@@ -268,8 +269,13 @@ export function useIdentity() {
     markDirty();
   }
 
-  function removeGroup(group) {
-    if (!window.confirm('确认删除身份组「' + (group.name || '未命名') + '」？不会删除玩家数据。')) return;
+  async function removeGroup(group) {
+    try {
+      await ElMessageBox.confirm('确认删除身份组「' + (group.name || '未命名') + '」？不会删除玩家数据。',
+        '删除身份组', { type: 'warning' });
+    } catch {
+      return;
+    }
     groups.value = groups.value.filter((item) => item._id !== group._id);
     markDirty();
   }
@@ -328,11 +334,14 @@ export function useIdentity() {
       + roleLabel(role) + ' 区域；记得保存。', 'ok');
   }
 
-  function clearRole(groupId, role) {
+  async function clearRole(groupId, role) {
     const group = groupById(groupId);
     if (!group) return;
     if (role === 'data') {
-      if (!window.confirm('清空这个组的 data UUID？\n不会删除玩家数据；保存前必须重新指定 data，否则无法保存。')) {
+      try {
+        await ElMessageBox.confirm('清空这个组的 data UUID？\n不会删除玩家数据；保存前必须重新指定 data，否则无法保存。',
+          '清空 data UUID', { type: 'warning' });
+      } catch {
         return;
       }
       if (group.data && !generated.value.includes(group.data)) {
@@ -415,7 +424,12 @@ export function useIdentity() {
   }
 
   async function backupData(uuid) {
-    if (!window.confirm('备份 data UUID ' + uuid + ' 的玩家数据、成就与统计？')) return false;
+    try {
+      await ElMessageBox.confirm('备份 data UUID ' + uuid + ' 的玩家数据、成就与统计？',
+        '备份玩家数据', { type: 'warning' });
+    } catch {
+      return false;
+    }
     try {
       const result = await request('/api/identity/data/backup', {
         method: 'POST',

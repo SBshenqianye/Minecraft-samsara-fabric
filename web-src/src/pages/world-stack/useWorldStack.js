@@ -1,4 +1,5 @@
 import { computed, ref } from 'vue';
+import { ElMessageBox } from 'element-plus';
 import { useApi } from '../../composables/useApi.js';
 import {
   filesView,
@@ -221,7 +222,12 @@ export function useWorldStack() {
 
   async function cancelImport(jobId) {
     if (!jobId) return;
-    if (!window.confirm('取消排队中的导入 ' + jobId + '？源目录不会被修改。')) return;
+    try {
+      await ElMessageBox.confirm('取消排队中的导入 ' + jobId + '？源目录不会被修改。',
+        '取消导入', { type: 'warning' });
+    } catch {
+      return;
+    }
     try {
       const data = await post('/api/world-stack/import/cancel', { jobId });
       if (!data.ok) {
@@ -271,8 +277,12 @@ export function useWorldStack() {
 
   async function deleteIcon(stack) {
     if (iconBusy.value) return;
-    if (!window.confirm('恢复 ' + stack.id + ' 的默认图标？只会删除手动上传的图标，'
-      + '不会修改存档或世界数据。')) return;
+    try {
+      await ElMessageBox.confirm('恢复 ' + stack.id + ' 的默认图标？只会删除手动上传的图标，'
+        + '不会修改存档或世界数据。', '恢复默认图标', { type: 'warning' });
+    } catch {
+      return;
+    }
     iconBusy.value = true;
     setMessage('正在恢复默认图标…');
     try {

@@ -148,7 +148,7 @@
 
 <script setup>
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import { useApi } from '../../composables/useApi.js';
 import { fmtBytes, fmtTime } from './model.js';
 
@@ -333,8 +333,12 @@ async function exportNode(node) {
 
 async function cleanupSnapshot(item) {
   if (!item?.name) return;
-  if (!window.confirm('删除安全快照 ' + item.name + '？此操作只删除撤销前保留的当前状态副本，'
-    + '不会删除源世界、归档或操作备份。')) return;
+  try {
+    await ElMessageBox.confirm('删除安全快照 ' + item.name + '？此操作只删除撤销前保留的当前状态副本，'
+      + '不会删除源世界、归档或操作备份。', '删除快照', { type: 'warning' });
+  } catch {
+    return;
+  }
   try {
     await json('/api/world-stack/timeline/cleanup', {
       method: 'POST',
