@@ -81,10 +81,15 @@ Start-Process -FilePath 'C:\Program Files\Java\jdk-26.0.2.1\bin\java.exe' `
 
 1. 公告：`say [维护] ...`，先 `list` 检查在线人数。
 2. 有人在线：60 秒倒计时；0 人可直接停服。
-3. 找到 `Launch Server.bat` 的 cmd PID，`taskkill /PID <loop> /T /F` 连同 Java 一起结束。
-4. 备份旧 jar 到 `backups/samsara/mod-jars/`，移除 `mods/` 下旧 samsara jar。
-5. 复制新 jar，**先校验目标文件 SHA-256** 再启动。
-6. 启动：优先用 WMI 脱离当前 shell：
+3. **必须优雅停服**：
+   - 先 `POST /api/server/console` 发送 `{"command":"stop"}`。
+   - 等待日志出现 `Stopping server`，并等待 Java PID 退出、8720/25585/25565 端口释放（最多 120 秒）。
+   - **禁止直接 `taskkill /F`**；只有优雅 stop 超时、进程确认卡死时才允许强制结束，并记录原因。
+   - 不要在玩家在线时强杀进程：未保存的区块/玩家数据会回档到上一次自动保存。
+4. 找到 `Launch Server.bat` 的 cmd PID，等 Java 退出后结束循环。
+5. 备份旧 jar 到 `backups/samsara/mod-jars/`，移除 `mods/` 下旧 samsara jar。
+6. 复制新 jar，**先校验目标文件 SHA-256** 再启动。
+7. 启动：优先用 WMI 脱离当前 shell：
 
 ```powershell
 $cmd='cmd.exe /c "C:\Games\0-minecraft\server\servers\Vanilia 26.3\Launch Server.bat"'
@@ -93,13 +98,14 @@ Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
 }
 ```
 
-7. 生产启动会先做世界备份哈希，可能 3-4 分钟才有 Web；不要过早判定失败。
-8. 验证 `GET /api/status` 的 `version` / `webVersion`，并抽查 `/api/lottery`、`/api/containers`、`/api/track`、`/user`。
-9. 校验构建产物 / 测试服 / 生产服三处 jar SHA-256 一致。
+8. 生产启动会先做世界备份哈希，可能 3-4 分钟才有 Web；不要过早判定失败。
+9. 验证 `GET /api/status` 的 `version` / `webVersion`，并抽查 `/api/lottery`、`/api/containers`、`/api/track`、`/user`。
+10. 校验构建产物 / 测试服 / 生产服三处 jar SHA-256 一致。
 
 ## 坑
 
-- 测试服/生产服的 `stop` 有时不会真正退出；不要只信 API，查端口和 PID，必要时 `taskkill`。
+- 测试服/生产服的 `stop` 有时不会真正退出；不要只信 API，查端口和 PID，**先等优雅停服**，超时再 `taskkill`。
+- **禁止在玩家在线时直接 `taskkill /F`**：未保存的区块与玩家数据会回档到上一次自动保存。我们 2026-11-15 的连续部署中曾这样做，导致 kalinote 的进度回档；之后必须走 `stop` + 等待退出。
 - `Start-Process -RedirectStandardOutput` 指向旧进程占用的日志会失败且无输出。
 - `Copy-Item` 在旧 Java 仍持锁时可能静默失败；复制后必须立刻校验目标哈希。
 - 生产 `Launch Server.bat` 是循环启动；直接替换 jar 前必须停循环或极快完成，否则会被旧进程锁住。
