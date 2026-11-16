@@ -81,8 +81,15 @@ public class ClaimInteractions {
             sb.append(protected_ ? " · ✓ 受保护" : " · ✗ 未保护");
             if (ownerName != null) sb.append(" · ").append(ownerName);
             sb.append(" · ").append(area.size()).append(" 区块");
-            // 动作栏（ActionBar）或聊天栏：由 output.yml 的 claim.actionbar 决定。
-            String line = sb.toString().replace('\n', ' ');
+            // 圈地提示走输出模板 claim.info：文案可在 /samsara/config/output 编辑；
+            // 位置由 output.yml 的 claim.actionbar 决定（动作栏 / 聊天栏）。
+            Map<String, Object> values = new java.util.LinkedHashMap<>();
+            values.put("chunkX", chunkPos.x);
+            values.put("chunkZ", chunkPos.z);
+            values.put("dimension", level.dimension().toString());
+            values.put("status", protected_ ? "✓ 受保护" : "✗ 未保护");
+            values.put("detailLine", " · " + area.size() + " 区块"
+                    + (ownerName != null ? " · " + ownerName : ""));
             boolean actionbar = true;
             try {
                 actionbar = com.shenqianye.samsara.config.ConfigManager.getInstance()
@@ -90,7 +97,10 @@ public class ClaimInteractions {
             } catch (RuntimeException ignored) {
                 // 配置未就绪时默认动作栏
             }
-            sp.sendSystemMessage(Component.literal(line), actionbar);
+            final boolean useActionbar = actionbar;
+            Component message = com.shenqianye.samsara.output.OutputRenderer.render(
+                    "claim.info", values, sp.createCommandSourceStack(), key -> !useActionbar);
+            sp.sendSystemMessage(message, useActionbar);
 
             // 立即发送粒子预览（右键时即时反馈）：按保护区域外边界画，和实际保护一致
             if (level instanceof ServerLevel sl) {
