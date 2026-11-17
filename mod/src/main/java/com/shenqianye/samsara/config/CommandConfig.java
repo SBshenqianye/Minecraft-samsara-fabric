@@ -27,6 +27,7 @@ public final class CommandConfig {
     private boolean tpaCrossDimension;
 
     private boolean viewProtectViewer;
+    private boolean viewHideFromOthers;
     private int viewFreeRoamRadius;
     private boolean viewScrubEnabled;
 
@@ -128,6 +129,11 @@ public final class CommandConfig {
 
     public boolean viewProtectViewer() {
         return viewProtectViewer;
+    }
+
+    /** 回看人偶是否只对观看者可见（默认 true，其他人看不到假玩家）。 */
+    public boolean viewHideFromOthers() {
+        return viewHideFromOthers;
     }
 
     public int viewFreeRoamRadius() {
@@ -320,6 +326,7 @@ public final class CommandConfig {
         tpaCrossDimension = config.bool(id, "tpa.crossDimension");
 
         viewProtectViewer = config.bool(id, "view.protectViewer");
+        viewHideFromOthers = config.bool(id, "view.hideFromOthers");
         viewFreeRoamRadius = config.integer(id, "view.freeRoamRadius");
         viewScrubEnabled = config.bool(id, "view.scrub.enabled");
         viewAimEnabled = config.bool(id, "view.aim.enabled");

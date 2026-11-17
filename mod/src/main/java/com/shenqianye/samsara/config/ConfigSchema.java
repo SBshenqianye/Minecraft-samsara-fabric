@@ -92,6 +92,8 @@ public final class ConfigSchema {
                         "是否允许跨维度传送（false = 仅同一维度）"),
                 ConfigEntry.bool("view.protectViewer", true, "回看",
                         "回看时保护观看者（临时无敌 + 安全跟随点）"),
+                ConfigEntry.bool("view.hideFromOthers", true, "回看",
+                        "回看人偶只对观看者可见（false = 附近玩家也能看到走动的假玩家）"),
                 ConfigEntry.integer("view.freeRoamRadius", 32, 8, 256, "回看",
                         "回看时允许自由活动的半径（格），超出后自动跟随"),
                 ConfigEntry.bool("view.scrub.enabled", true, "回看",

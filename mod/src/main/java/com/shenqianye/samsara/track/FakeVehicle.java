@@ -125,6 +125,10 @@ public final class FakeVehicle {
             if (player.level() != level) {
                 continue;
             }
+            // 回看人偶是个人摄像头：假载具也只发给能看到这个人偶的观看者
+            if (!mannequin.broadcastToPlayer(player)) {
+                continue;
+            }
             if (player.distanceToSqr(mannequin) <= VIEW_RANGE * VIEW_RANGE) {
                 out.add(player);
             }

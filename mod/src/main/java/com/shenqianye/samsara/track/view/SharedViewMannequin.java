@@ -91,6 +91,10 @@ final class SharedViewMannequin {
         }
         target.sharedHost = host;
         target.ownsMannequin = false;
+        // 借用者的观看者也必须被允许看到这个共享人偶
+        if (target.session != null) {
+            host.entity.allowViewer(target.session.viewer);
+        }
         if (!host.borrowers.contains(target)) {
             host.borrowers.add(target);
         }
@@ -103,6 +107,9 @@ final class SharedViewMannequin {
         Host host = target.sharedHost;
         host.borrowers.remove(target);
         target.sharedHost = null;
+        if (target.session != null) {
+            host.entity.denyViewer(target.session.viewer);
+        }
     }
 
     /**
@@ -118,6 +125,10 @@ final class SharedViewMannequin {
         Host host = removeHostForTarget(target);
         if (host == null) {
             return false;
+        }
+        // 原宿主不再允许看到该实体；若提升给借用者，借用者的允许在 borrow 时已登记
+        if (target.session != null) {
+            host.entity.denyViewer(target.session.viewer);
         }
         ViewTarget promoted = null;
         for (ViewTarget borrower : host.borrowers) {

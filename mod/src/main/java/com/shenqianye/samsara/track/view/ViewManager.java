@@ -799,6 +799,7 @@ public final class ViewManager {
                     + (s.eventsTruncated ? " · 事件尾部已截断" : "")
                     + (s.group && !s.followActive ? "\n多目标默认不跟随，可用 --follow <玩家> 指定；"
                     + "对齐：/samsara track view align" : "")
+                    + "\n视角：左键人偶 / 「第一人称」= 人偶眼睛；「上帝视角」/ align = 自由飞行观察点"
                     + "\n停止：/samsara track view stop";
             Samsara.LOGGER.info("[回看] 开始: viewer={} targets={} cycle={} window={} → {} speed={} samples={}",
                     s.viewerName, s.displayName, s.cycleId, ViewTime.format(s.startTrackMs),
@@ -1007,6 +1008,8 @@ public final class ViewManager {
             target.profile = resolveProfile(server, target.uuid, target.name);
         }
         m.applyProfile(target.profile);
+        // 先登记观看者再进世界：第一轮实体追踪就必须只发给本人
+        m.allowViewer(s.viewer);
         m.snapTo(point.x(), point.y(), point.z(), point.yaw(), point.pitch());
         m.setYHeadRot(point.yaw());
         m.setYBodyRot(point.yaw());
@@ -1496,9 +1499,11 @@ public final class ViewManager {
                 ChatUi.run("暂停", "/samsara track view pause", "暂停回看"),
                 ChatUi.run("继续", "/samsara track view resume", "继续回看"),
                 ChatUi.run("倒放/正放", "/samsara track view reverse", "切换正放与倒放"),
-                ChatUi.run("对齐", "/samsara track view align", "一键回到人偶观察点"),
+                ChatUi.run("第一人称", "/samsara track view first",
+                        "相机切到人偶眼睛（左键人偶同效），看人偶第一视角"),
+                ChatUi.run("上帝视角", "/samsara track view align",
+                        "回到人偶身后的观察点，可自由飞行"),
                 ChatUi.run("自瞄", "/samsara track view aim", "即时开关自动瞄准"),
-                ChatUi.text("按住 Ctrl + W/S 拖动", ChatFormatting.DARK_GRAY),
                 ChatUi.run("停止", "/samsara track view stop", "停止回看并恢复状态"));
         MutableComponent line3 = ChatUi.line(
                 ChatUi.text("[进度]", ChatFormatting.GRAY),
@@ -1871,7 +1876,43 @@ public final class ViewManager {
             viewer.setCamera(viewer);
         }
         align(s, viewer, s.trackTime(System.currentTimeMillis()));
-        return "已对齐到 " + (s.group ? "场景中心" : s.displayName) + " 的观察点";
+        return "已回到上帝视角（" + (s.group ? "场景中心" : s.displayName) + " 观察点，可自由飞行）";
+    }
+
+    /**
+     * 第一人称：把相机挂到人偶上（原版旁观左键的等价服务端入口）。
+     * <p>
+     * 原版左键要求人偶在客户端选取距离内；观察点在身后约 4.5 格，
+     * 伸手够不到时用这条命令/控制条按钮切换。返回 {@link #align} 即回到上帝视角。
+     */
+    public synchronized String setFirstPerson(MinecraftServer server, ServerPlayer actor,
+                                              String target, boolean allowOthers) {
+        ViewSession s = findSession(server, actor, target);
+        if (s == null) {
+            return target == null || target.isBlank() ? "你当前没有进行中的回看"
+                    : "没有该观看者的进行中回看: " + target;
+        }
+        if (actor != null && !actor.getUUID().equals(s.viewer) && !allowOthers) {
+            return "切换他人回看视角需要管理员权限";
+        }
+        if (s.state != ViewSession.State.PLAYING && s.state != ViewSession.State.PAUSED) {
+            return "当前状态不能切换视角: " + s.state;
+        }
+        ServerPlayer viewer = server.getPlayerList().getPlayer(s.viewer);
+        if (viewer == null) {
+            return "观看者不在线";
+        }
+        ViewTarget cameraTarget = s.followTarget != null ? findTarget(s, s.followTarget) : s.primary;
+        ViewMannequin mannequin = cameraTarget == null ? null : cameraTarget.mannequin;
+        if (mannequin == null || mannequin.isRemoved()) {
+            return "人偶当前不可见，无法进入第一人称（可先 /samsara track view align）";
+        }
+        if (mannequin.level() != viewer.level()) {
+            return "人偶在另一个维度，无法进入第一人称";
+        }
+        viewer.setCamera(mannequin);
+        return "已切到第一人称（" + cameraTarget.name + "）；「上帝视角」/ "
+                + "/samsara track view align 返回自由视角";
     }
 
     /** 进度跳转（F-101）：绝对时间 / 相对时间 / 百分比，钳到游标窗口。 */

@@ -233,6 +233,13 @@ public final class TrackViewCommand {
                                 .suggests(SuggestionProviders.playersProvider("观看者"))
                                 .executes(ctx -> align(ctx,
                                         StringArgumentType.getString(ctx, "player")))))
+                .then(Commands.literal("first")
+                        .requires(PermissionRequirements.path(path + " first"))
+                        .executes(ctx -> firstPerson(ctx, null))
+                        .then(Commands.argument("player", StringArgumentType.word())
+                                .suggests(SuggestionProviders.playersProvider("观看者"))
+                                .executes(ctx -> firstPerson(ctx,
+                                        StringArgumentType.getString(ctx, "player")))))
                 .then(Commands.literal("ui")
                         .requires(PermissionRequirements.path(path + " ui"))
                         .executes(ctx -> ui(ctx, null))
@@ -424,6 +431,13 @@ public final class TrackViewCommand {
     private static int align(CommandContext<CommandSourceStack> ctx, String target) {
         ServerPlayer viewer = ctx.getSource().getPlayer();
         String msg = ViewManager.getInstance().align(ctx.getSource().getServer(), viewer,
+                target, isAdmin(ctx.getSource()));
+        return reply(ctx.getSource(), msg);
+    }
+
+    private static int firstPerson(CommandContext<CommandSourceStack> ctx, String target) {
+        ServerPlayer viewer = ctx.getSource().getPlayer();
+        String msg = ViewManager.getInstance().setFirstPerson(ctx.getSource().getServer(), viewer,
                 target, isAdmin(ctx.getSource()));
         return reply(ctx.getSource(), msg);
     }

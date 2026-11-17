@@ -1,9 +1,11 @@
 package com.shenqianye.samsara.track.view;
 
 import com.mojang.authlib.GameProfile;
+import com.shenqianye.samsara.config.CommandConfig;
 import com.shenqianye.samsara.track.TrackMannequin;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.damagesource.DamageSource;
@@ -31,6 +33,8 @@ import java.util.UUID;
 public class ViewMannequin extends TrackMannequin {
     private final UUID sourceUuid;
     private final boolean nameTag;
+    /** 只有登记过的观看者能收到这个实体；其他人完全不可见（见 {@link #broadcastToPlayer}）。 */
+    private final ViewAudience audience = new ViewAudience();
 
     public ViewMannequin(Level level, UUID sourceUuid, String name, boolean glow, boolean nameTag) {
         super(level);
@@ -42,6 +46,39 @@ public class ViewMannequin extends TrackMannequin {
         setCustomName(Component.literal("[回看] " + name));
         setCustomNameVisible(nameTag);
         setGlowingTag(glow);
+    }
+
+    /**
+     * 回看是个人摄像头：默认只给观看者发包，其他玩家看不到假玩家/皮肤/动作。
+     * <p>
+     * 这是原版实体追踪的逐玩家开关（{@code ChunkMap.TrackedEntity} 用它决定
+     * 是否与某个玩家建立配对），因此隐藏发生在服务端、无需额外发包；
+     * {@code commands.yml} 的 {@code view.hideFromOthers=false} 可退回旧的“附近玩家可见”。
+     */
+    @Override
+    public boolean broadcastToPlayer(ServerPlayer player) {
+        if (player == null) {
+            return false;
+        }
+        if (!CommandConfig.getInstance().viewHideFromOthers()) {
+            return super.broadcastToPlayer(player);
+        }
+        return audience.allows(player.getUUID());
+    }
+
+    /** 允许该观看者看到这个人偶（会话创建 / 共享借用时登记）。 */
+    void allowViewer(UUID viewer) {
+        audience.allow(viewer);
+    }
+
+    /** 取消观看者可见性（停止观看 / 不再借用）。 */
+    void denyViewer(UUID viewer) {
+        audience.deny(viewer);
+    }
+
+    /** 当前有多少观看者能看到这个人偶（诊断/测试用）。 */
+    int viewerCount() {
+        return audience.size();
     }
 
     public UUID sourceUuid() {
