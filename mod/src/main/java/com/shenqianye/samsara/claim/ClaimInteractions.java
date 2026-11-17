@@ -410,13 +410,17 @@ public class ClaimInteractions {
         }
     }
 
-    /** 将旗帜世界朝向转换为显示文本（仅4个方向） */
+    /**
+     * 玩家直觉方向：显示“旗面正对玩家时，延伸朝玩家前方”。
+     * <p>
+     * 旗面朝向（getFacing）与放置者朝向相反；用户口径：放下时的前方才是“前”。
+     */
     public static String facingToDisplay(String facing) {
         return switch (facing) {
-            case "north" -> "前（北）";
-            case "south" -> "后（南）";
-            case "west" -> "左（西）";
-            case "east" -> "右（东）";
+            case "north" -> "前（南）";
+            case "south" -> "前（北）";
+            case "west" -> "前（东）";
+            case "east" -> "前（西）";
             default -> facing;
         };
     }

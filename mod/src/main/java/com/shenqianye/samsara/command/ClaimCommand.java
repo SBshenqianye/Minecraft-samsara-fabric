@@ -91,7 +91,7 @@ public class ClaimCommand {
         String status = protected_ ? "✓ 受保护" : "✗ 未保护";
         StringBuilder detail = new StringBuilder();
         if (node != null) {
-            detail.append("\n  旗帜朝向: ").append(ClaimInteractions.facingToDisplay(node.getFacing()));
+            detail.append("\n  延伸方向: ").append(ClaimInteractions.facingToDisplay(node.getFacing()));
             if (node.getOwnerName() != null) detail.append(" · 主人: ").append(node.getOwnerName());
             detail.append(" · 图案:");
             for (ClaimNode.PatternEntry pe : node.getPatterns()) {
