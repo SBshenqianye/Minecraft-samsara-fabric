@@ -1,5 +1,6 @@
 package com.shenqianye.samsara.mixin;
 
+import com.shenqianye.samsara.claim.ClaimBannerWatch;
 import com.shenqianye.samsara.rewind.DiffRecorder;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
@@ -32,5 +33,7 @@ public class ServerLevelMixin {
         }
         BlockState before = serverLevel.getBlockState(pos);
         DiffRecorder.record(serverLevel, pos, before, newState);
+        // 爆炸/活塞/setblock/fill 不经过玩家破坏事件，这里兜底注销圈地旗。
+        ClaimBannerWatch.onBlockChanging(serverLevel, pos, before, newState);
     }
 }

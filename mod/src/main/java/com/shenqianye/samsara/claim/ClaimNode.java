@@ -113,6 +113,16 @@ public class ClaimNode {
         return !banners.isEmpty();
     }
 
+    /** 该区块节点是否登记了这个坐标的旗帜（用于过滤重复/陈旧注销请求）。 */
+    public boolean hasBannerAt(int blockX, int blockY, int blockZ) {
+        for (BannerEntry entry : banners) {
+            if (entry.blockX == blockX && entry.blockY == blockY && entry.blockZ == blockZ) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** 获取旋转后的扩展方向集（根据旗帜朝向旋转） */
     public Extension getExtension() {
         if (rotatedExtension == null) {

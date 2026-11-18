@@ -43,6 +43,18 @@ public class AreaService {
     private final java.util.Set<ResourceKey<Level>> dirtyDims = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private volatile long lastDirtyAt = 0L;
 
+    /**
+     * 非玩家方式（爆炸/活塞/setblock/fill/流体）移除的圈地旗。
+     *
+     * <p>这些路径不走 {@code PlayerBlockBreakEvents}，由 {@code Level.setBlock} 的 mixin
+     * 排队到这里，和几何重建一起在 500ms 后统一处理：/fill 清掉一批旗帜也只写一次盘。
+     */
+    private final java.util.Set<BannerRef> pendingRemovals =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    private record BannerRef(ResourceKey<Level> dim, ChunkCoord chunk, int x, int y, int z) {
+    }
+
     private AreaService() {
         Path dir = com.shenqianye.samsara.storage.StoragePaths.get().worldDataRoot();
         try {
@@ -82,10 +94,14 @@ public class AreaService {
 
     /** 服务端 tick 调用：空闲 500ms 后把脏维度的白名单重算并写盘。 */
     public void tick() {
-        if (dirtyDims.isEmpty()) {
+        if (pendingRemovals.isEmpty() && dirtyDims.isEmpty()) {
             return;
         }
         if (System.currentTimeMillis() - lastDirtyAt < GEOMETRY_DEBOUNCE_MS) {
+            return;
+        }
+        applyPendingRemovals();
+        if (dirtyDims.isEmpty()) {
             return;
         }
         java.util.Set<ResourceKey<Level>> batch = new java.util.HashSet<>(dirtyDims);
@@ -98,6 +114,7 @@ public class AreaService {
 
     /** 停服/重载前把未落地的几何变更立刻执行。 */
     public synchronized void flushDirty() {
+        applyPendingRemovals();
         if (dirtyDims.isEmpty()) {
             return;
         }
@@ -107,6 +124,43 @@ public class AreaService {
             rebuildGeometry(dim);
         }
         save();
+    }
+
+    /**
+     * 排队注销一面被非玩家方式移除的圈地旗。
+     *
+     * <p>调用方已经确认「这个坐标确实登记在该区块节点里」。这里只记录，
+     * 由 {@link #tick()} 统一移除并重算，避免 /fill 每面旗都写一次 claims.json。
+     */
+    public void queueBannerRemoval(ResourceKey<Level> dim, ChunkCoord chunk,
+                                   int blockX, int blockY, int blockZ) {
+        pendingRemovals.add(new BannerRef(dim, chunk, blockX, blockY, blockZ));
+        markDirty(dim);
+    }
+
+    /** 把所有排队中的旗帜移除一次性应用到节点（不写盘；由调用方统一 save）。 */
+    private synchronized void applyPendingRemovals() {
+        if (pendingRemovals.isEmpty()) {
+            return;
+        }
+        java.util.List<BannerRef> batch = new java.util.ArrayList<>(pendingRemovals);
+        pendingRemovals.clear();
+        int removed = 0;
+        for (BannerRef ref : batch) {
+            Map<ChunkCoord, ClaimNode> dimMap = dimNodes(ref.dim());
+            ClaimNode node = dimMap.get(ref.chunk());
+            if (node == null || !node.hasBannerAt(ref.x(), ref.y(), ref.z())) {
+                continue;
+            }
+            boolean hasRemaining = node.removeBanner(ref.x(), ref.y(), ref.z());
+            if (!hasRemaining) {
+                dimMap.remove(ref.chunk());
+            }
+            removed++;
+        }
+        if (removed > 0) {
+            Samsara.LOGGER.info("[圈地] 已注销 {} 面被非玩家方式移除的旗帜", removed);
+        }
     }
 
     // ---- 节点管理 ----
