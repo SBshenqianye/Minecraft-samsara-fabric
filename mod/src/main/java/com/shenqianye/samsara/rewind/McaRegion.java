@@ -371,21 +371,60 @@ public class McaRegion {
                     Samsara.LOGGER.warn("[周目管理 samsara] 压缩跳过超大文件 {}（{} 扇区）", f, totalSectors);
                     continue;
                 }
+                long packedSize = 8192L + totalSectors * 4096L;
+                if (packedSize >= size) {
+                    // 没有孤儿扇区可回收：不重写，避免每次停服都抄一遍世界
+                    continue;
+                }
                 try {
-                    byte[] packed = new byte[8192 + (int) (totalSectors * 4096)];
+                    byte[] packed = new byte[(int) packedSize];
+                    String invalid = null;
                     int cursor = 2; // 数据扇区从 2 开始（0~1 为头部）
                     try (RandomAccessFile raf = new RandomAccessFile(f.toFile(), "r")) {
+                        long fileSize = raf.length();
+                        // 第一遍：按 MC 自己的读法校验每个区块的长度前缀。
+                        // entities/poi 文件最后一段经常没有补齐到 4096 整扇区（26.3 实测），
+                        // 按「扇区数 × 4096」读会 EOFException；这里只认长度前缀。
                         for (int[] v : valid) {
-                            raf.seek((long) v[1] * 4096);
-                            raf.readFully(packed, cursor * 4096, v[2] * 4096);
-                            int ho = v[0] * 4;
-                            packed[ho] = (byte) (cursor >>> 16);
-                            packed[ho + 1] = (byte) (cursor >>> 8);
-                            packed[ho + 2] = (byte) cursor;
-                            packed[ho + 3] = (byte) v[2];
-                            System.arraycopy(header, 4096 + v[0] * 4, packed, 4096 + v[0] * 4, 4);
-                            cursor += v[2];
+                            long start = (long) v[1] * 4096L;
+                            if (v[2] <= 0 || start + 5 > fileSize) {
+                                invalid = "slot=" + v[0] + " 起点越界";
+                                break;
+                            }
+                            raf.seek(start);
+                            int chunkLength = raf.readInt();
+                            // chunkLength = 1B 压缩类型 + 负载，不含自身 4B
+                            if (chunkLength < 1 || 4L + chunkLength > (long) v[2] * 4096L
+                                    || start + 4L + chunkLength > fileSize) {
+                                invalid = "slot=" + v[0] + " 长度 " + chunkLength + " 超出声明扇区/文件";
+                                break;
+                            }
                         }
+                        if (invalid == null) {
+                            // 第二遍：只复制区块真实字节；扇区尾部留 0（读取方只看长度前缀）
+                            for (int[] v : valid) {
+                                raf.seek((long) v[1] * 4096L);
+                                int chunkLength = raf.readInt();
+                                int pc = cursor * 4096;
+                                packed[pc] = (byte) (chunkLength >>> 24);
+                                packed[pc + 1] = (byte) (chunkLength >>> 16);
+                                packed[pc + 2] = (byte) (chunkLength >>> 8);
+                                packed[pc + 3] = (byte) chunkLength;
+                                raf.readFully(packed, pc + 4, chunkLength);
+                                int ho = v[0] * 4;
+                                packed[ho] = (byte) (cursor >>> 16);
+                                packed[ho + 1] = (byte) (cursor >>> 8);
+                                packed[ho + 2] = (byte) cursor;
+                                packed[ho + 3] = (byte) v[2];
+                                System.arraycopy(header, 4096 + v[0] * 4, packed, 4096 + v[0] * 4, 4);
+                                cursor += v[2];
+                            }
+                        }
+                    }
+                    if (invalid != null) {
+                        // 宁可保留原文件，也不写出一份缺块的紧凑文件
+                        Samsara.LOGGER.warn("[周目管理 samsara] 压缩跳过 {}（{}，原文件保留）", f, invalid);
+                        continue;
                     }
                     // 备份原文件 → 写临时文件 → 替换
                     Path dst = backupDir.resolve(dir).resolve(f.getFileName().toString());
