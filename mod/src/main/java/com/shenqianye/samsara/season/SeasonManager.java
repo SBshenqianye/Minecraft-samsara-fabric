@@ -239,10 +239,15 @@ public class SeasonManager {
         if (currentPending() != null) {
             return "存在未开始的周目 #" + currentPending().id + "「" + currentPending().name + "」，请先 start 或 end";
         }
-        // M2 修复：不允许在已有 ACTIVE 周目时再创建（否则双 ACTIVE 并存，current() 取错）
+        // 设计文档 §文档：创建新周目时自动结束上一个 ACTIVE，不允许双 ACTIVE 并存。
         Season active = firstActive();
-        if (active != null) {
-            return "已有进行中的周目 #" + active.id + "「" + active.name + "」（ACTIVE），请先 /season end 再创建";
+        String autoEndNote = "";
+        if (SeasonRules.shouldAutoEnd(active)) {
+            String ended = end(active);
+            if (!ended.contains("已结束")) {
+                return "无法自动结束上一个周目：" + ended + "；未创建新周目";
+            }
+            autoEndNote = "\n" + ended;
         }
         if (!"same-world".equals(mode) && !"new-world".equals(mode)) {
             return "模式必须为 same-world 或 new-world";
@@ -254,7 +259,7 @@ public class SeasonManager {
         s.seed = seed;
         data.seasons.add(s);
         save();
-        return "已创建周目 #" + s.id + "「" + name + "」（" + mode + "，PENDING）";
+        return "已创建周目 #" + s.id + "「" + name + "」（" + mode + "，PENDING）" + autoEndNote;
     }
 
     /**
@@ -880,6 +885,14 @@ public class SeasonManager {
         Season s = current();
         if (s == null || s.state != Season.State.ACTIVE) {
             return "当前没有进行中的周目";
+        }
+        return end(s);
+    }
+
+    /** 结束指定 ACTIVE 周目；创建新周目时也走这里，保证只有一条结束路径。 */
+    private String end(Season s) {
+        if (s == null || s.state != Season.State.ACTIVE) {
+            return "该周目不是 ACTIVE 状态";
         }
         String rewindNote = "";
         if (RewindEngine.getInstance().running()) {
