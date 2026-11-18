@@ -94,12 +94,18 @@ export default {
       const after = find('pause-when-empty-seconds')?.querySelector('input')?.value || '';
       const label = save.textContent.trim();
       document.getElementById('server-reload')?.click();
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      const confirmButton = [...document.querySelectorAll('.el-message-box__btns button')]
+        .find((button) => button.textContent.trim() === '丢弃并重读');
+      const asked = Boolean(confirmButton);
+      confirmButton?.click();
       await new Promise((resolve) => setTimeout(resolve, 800));
-      return { before, after, label, restored: save.textContent.trim() };
+      return { before, after, label, asked, restored: save.textContent.trim() };
     })()`);
     check('恢复默认使用原版默认值并标记未保存',
       reset.after === '60' && reset.after !== reset.before && reset.label.includes('保存并重载（'),
       JSON.stringify(reset));
+    check('重新读取前会确认丢弃未保存修改', reset.asked, JSON.stringify(reset));
     check('重新读取清空未保存修改', reset.restored === '保存并重载', reset.restored);
 
     const picker = await evaluate(`(async () => {

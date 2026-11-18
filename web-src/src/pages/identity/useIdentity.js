@@ -255,6 +255,11 @@ export function useIdentity() {
     }
   }
 
+  function removeGenerated(uuid) {
+    generated.value = generated.value.filter((item) => item !== uuid);
+    markDirty();
+  }
+
   async function addGroup() {
     const uuid = await generate(false);
     groups.value = [...groups.value, {
@@ -773,6 +778,7 @@ export function useIdentity() {
     reload,
     runAudit,
     generate,
+    removeGenerated,
     addGroup,
     removeGroup,
     updateGroup,

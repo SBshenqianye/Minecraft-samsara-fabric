@@ -1,5 +1,14 @@
 <template>
   <div class="server-page panel-stack">
+    <el-alert
+      v-if="loadError"
+      id="server-load-error"
+      class="server-load-error"
+      type="error"
+      :closable="false"
+      show-icon
+      :title="loadError"
+    />
     <ServerConfigPanel
       :hidden="activePanel !== 'server-config-panel'"
       :model="model"
@@ -41,17 +50,24 @@ const { request } = useApi();
 const model = ref(null);
 const loading = ref(false);
 const dirtyFiles = ref(0);
+const loadError = ref('');
 
 const activePanel = computed(() => route.meta.serverPanel || 'server-config-panel');
 
 async function loadModel() {
   loading.value = true;
+  loadError.value = '';
   try {
     const result = await request('/api/server');
-    if (!result.ok) throw new Error(result.data?.error || '读取本体配置失败');
+    if (!result.ok) {
+      throw new Error(result.status === 401 || result.status === 403
+        ? 'token 失效或没有权限，请重新连接'
+        : (result.data?.error || '读取本体配置失败'));
+    }
     model.value = result.data || null;
-  } catch {
-    // 失败时保留上一次数据；各面板会显示自己的空态。
+  } catch (e) {
+    // 保留上一次数据，但必须让服主看到“读取失败”，否则空态会被当成“没有配置/没有备份”。
+    loadError.value = '读取服务器信息失败：' + (e.message || String(e));
   } finally {
     loading.value = false;
   }

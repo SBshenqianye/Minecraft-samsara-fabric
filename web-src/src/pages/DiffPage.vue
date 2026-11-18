@@ -42,11 +42,11 @@
             <el-input-number v-model="cz" :min="-1875000" :max="1875000" style="width: 100%" />
           </label>
           <label>
-            起（可选）
+            起（仅回看用）
             <el-input v-model="from" placeholder="2026-11-07T12:00 或 -30m" />
           </label>
           <label>
-            止（可选）
+            止（摘要/回看）
             <el-input v-model="to" placeholder="2026-11-07T14:00" />
           </label>
         </div>

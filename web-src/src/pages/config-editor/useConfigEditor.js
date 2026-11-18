@@ -1,4 +1,5 @@
 import { computed, reactive, ref } from 'vue';
+import { ElMessageBox } from 'element-plus';
 import { useApi } from '../../composables/useApi.js';
 import {
   collectValues,
@@ -183,13 +184,26 @@ export function useConfigEditor() {
   }
 
   async function reloadPage() {
+    if (edits.size > 0) {
+      try {
+        await ElMessageBox.confirm(
+          `有 ${edits.size} 处未保存修改，重新读取会全部丢弃。`,
+          '重新读取配置',
+          { type: 'warning', confirmButtonText: '丢弃并重读', cancelButtonText: '取消' },
+        );
+      } catch {
+        return false;
+      }
+    }
     try {
       await request('/api/reload', { method: 'POST' });
     } catch {
       // 第三方/服务器配置不依赖 samsara 重载；继续刷新页面即可。
     }
-    await load(current.value?.id);
+    const ok = await load(current.value?.id);
+    if (!ok) return false;
     setMessage('已重新读取配置。', 'ok');
+    return true;
   }
 
   return {

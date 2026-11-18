@@ -250,6 +250,7 @@ import { useApi } from '../../composables/useApi.js';
 import ChatTextEditor from '../../components/ChatTextEditor.vue';
 import PlayerPickerDialog from './PlayerPickerDialog.vue';
 import SegmentedButtons from '../../components/SegmentedButtons.vue';
+import { confirmDanger } from '../../composables/useConfirmAction.js';
 import {
   FILE_META,
   JSON_SPECS,
@@ -444,8 +445,16 @@ function setJsonField(file, item, key, value) {
   bump(file);
 }
 
-function removeJsonItem(file, index) {
-  drafts.get(file.id).data.splice(index, 1);
+async function removeJsonItem(file, index) {
+  const draft = drafts.get(file.id);
+  const item = draft?.data?.[index];
+  const proceed = await confirmDanger(
+    '从「' + (file.title || file.id) + '」移除 ' + jsonTitle(item, index)
+      + '？保存并重载后生效。',
+    { title: '移除条目', confirmText: '移除' },
+  );
+  if (!proceed) return;
+  draft.data.splice(index, 1);
   bump(file);
 }
 
@@ -524,7 +533,14 @@ async function save() {
   }
 }
 
-function reload() {
+async function reload() {
+  if (dirtyCount.value > 0) {
+    const proceed = await confirmDanger(
+      `有 ${dirtyCount.value} 个文件未保存，重新读取会丢弃这些修改。`,
+      { title: '重新读取服务器配置', confirmText: '丢弃并重读' },
+    );
+    if (!proceed) return;
+  }
   message.value = '';
   messageKind.value = '';
   emit('reload');

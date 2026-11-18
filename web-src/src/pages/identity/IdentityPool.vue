@@ -182,7 +182,8 @@ function onDataAction(action, item) {
   if (action === 'label') props.identity.editLabel(item.uuid);
   if (action === 'backups') props.identity.openDetail(item.uuid);
   if (action === 'remove') {
-    props.identity.setMessage('已从池子移除空白 data：' + item.uuid, 'ok');
+    props.identity.removeGenerated(item.uuid);
+    props.identity.setMessage('已从当前会话的池子移除：' + item.uuid + '（不会删除磁盘上的数据）', 'ok');
   }
 }
 

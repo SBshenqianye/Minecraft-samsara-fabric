@@ -1,6 +1,7 @@
 <template>
 <TabShell name="lottery">
 <div id="panel-lottery" class="panel-stack" :class="'lottery-tab-' + subpage">
+  <div id="lottery-message" class="message lottery-message-bar" :class="messageKind" role="status">{{ message }}</div>
   <section class="panel" id="lottery-dashboard" :hidden="subpage !== 'overview'">
     <div class="panel-head">
       <div>
@@ -28,7 +29,6 @@
         <button id="lottery-cancel" class="ghost danger" type="button" :disabled="busy" @click="cancel">取消并退款</button>
       </div>
     </div>
-    <div id="lottery-message" class="message" :class="messageKind" role="status">{{ message }}</div>
     <div id="lottery-stats" class="stat-row">
       <div v-for="[label, value] in stats" :key="label" class="stat">
         <span>{{ label }}</span><strong>{{ value }}</strong>

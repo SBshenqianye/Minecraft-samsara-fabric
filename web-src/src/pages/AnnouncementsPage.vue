@@ -467,7 +467,7 @@ function duplicate() {
 async function remove() {
   if (!selected.value) return;
   const proceed = await confirmDanger(
-    '删除公告「' + (selected.value.name || selected.value.id) + '」？保存后不可恢复。',
+    '从列表移除公告「' + (selected.value.name || selected.value.id) + '」？点「保存」后才会写入磁盘，刷新可撤销。',
     { title: '删除公告', confirmText: '删除' },
   );
   if (!proceed) return;

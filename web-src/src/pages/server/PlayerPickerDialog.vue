@@ -31,7 +31,8 @@
             <span class="muted small">{{ (player.online ? '在线 · ' : '') + (player.uuid || '') }}</span>
             <span class="world-stack-badge" :class="{ ok: player.online }">{{ player.online ? '在线' : '缓存' }}</span>
           </button>
-          <p v-if="!visiblePlayers.length" class="muted small">
+          <p v-if="error" class="container-message error">{{ error }}</p>
+          <p v-if="!error && !visiblePlayers.length" class="muted small">
             没有匹配的已知玩家；可以先让玩家进一次服，或手动填写。
           </p>
         </template>
@@ -53,6 +54,7 @@ const title = ref('选择玩家');
 const search = ref('');
 const loading = ref(false);
 const players = ref([]);
+const error = ref('');
 let loaded = false;
 
 const visiblePlayers = computed(() => filterPlayers(players.value, search.value));
@@ -60,12 +62,15 @@ const visiblePlayers = computed(() => filterPlayers(players.value, search.value)
 async function load() {
   if (loaded) return;
   loading.value = true;
+  error.value = '';
   try {
     const result = await request('/api/server/players');
-    players.value = result.ok && Array.isArray(result.data?.players) ? result.data.players : [];
+    if (!result.ok) throw new Error(result.data?.error || '读取玩家列表失败');
+    players.value = Array.isArray(result.data?.players) ? result.data.players : [];
     loaded = true;
-  } catch {
+  } catch (e) {
     players.value = [];
+    error.value = '读取玩家列表失败：' + (e.message || String(e));
   } finally {
     loading.value = false;
   }
