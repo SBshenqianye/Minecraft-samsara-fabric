@@ -6,6 +6,7 @@ import com.shenqianye.samsara.Samsara;
 import com.shenqianye.samsara.config.ConfigManager;
 import com.shenqianye.samsara.config.ConfigSchema;
 import com.shenqianye.samsara.server.ServerBackupPaths;
+import com.shenqianye.samsara.storage.StoragePaths;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtAccounter;
@@ -276,7 +277,7 @@ public final class WorldStackAdmin {
             server = worldDir;
         }
         addFile(out, 0, "服务器根", server, "模组配置与服务器级备份的根目录", false);
-        addFile(out, 1, "config/samsara/", server.resolve("config/samsara"),
+        addFile(out, 1, StoragePaths.CONFIG_DIR + "/", StoragePaths.configDirAt(server),
                 "YAML 配置（不随存档）", false);
         addFile(out, 1, "backups/samsara/world-stack-archive/", archiveRoot(worldDir),
                 "栈层归档备份（不随存档；用户数据，不自动删除）", true);

@@ -7,6 +7,7 @@ import com.shenqianye.samsara.Samsara;
 import com.shenqianye.samsara.config.ConfigManager;
 import com.shenqianye.samsara.config.ConfigSchema;
 import com.shenqianye.samsara.season.StackManifest;
+import com.shenqianye.samsara.storage.StoragePaths;
 import net.fabricmc.loader.api.FabricLoader;
 
 import java.io.BufferedInputStream;
@@ -804,7 +805,7 @@ public final class ServerBackup {
                 Files.move(world, rollback.resolve("world"), StandardCopyOption.ATOMIC_MOVE);
                 movedWorld = true;
             }
-            copyTree(serverRoot.resolve("config/samsara"), rollback.resolve("config-samsara"));
+            copyTree(StoragePaths.configDirAt(serverRoot), rollback.resolve("config-samsara"));
             for (String name : ROOT_FILES) {
                 Path file = serverRoot.resolve(name);
                 if (Files.isRegularFile(file)) {
@@ -882,8 +883,8 @@ public final class ServerBackup {
                     Path rel = configSamsara.relativize(file);
                     String name = rel.toString().replace('\\', '/');
                     Path target = "web.yml".equals(name)
-                            ? serverRoot.resolve("config/samsara/web.yml.restored-" + jobId)
-                            : serverRoot.resolve("config/samsara").resolve(rel);
+                            ? StoragePaths.configDirAt(serverRoot).resolve("web.yml.restored-" + jobId)
+                            : StoragePaths.configDirAt(serverRoot).resolve(rel);
                     copyFile(file, target);
                 }
             }
@@ -912,7 +913,7 @@ public final class ServerBackup {
         }
         Path configSamsara = rollback.resolve("config-samsara");
         if (Files.isDirectory(configSamsara)) {
-            copyTree(configSamsara, serverRoot.resolve("config/samsara"));
+            copyTree(configSamsara, StoragePaths.configDirAt(serverRoot));
         }
     }
 
@@ -943,7 +944,7 @@ public final class ServerBackup {
                     addFile(zip, file, name, stats);
                 }
             }
-            addTree(zip, serverRoot.resolve("config/samsara"), "config-samsara", stats, job);
+            addTree(zip, StoragePaths.configDirAt(serverRoot), "config-samsara", stats, job);
             manifest.put("totalBytes", stats[0]);
             manifest.put("fileCount", stats[1]);
             manifest.put("sha256", "");

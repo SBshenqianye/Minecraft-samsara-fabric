@@ -11,7 +11,7 @@ import com.shenqianye.samsara.config.ConfigSchema;
 import com.shenqianye.samsara.config.ConfigType;
 import com.shenqianye.samsara.config.ConfigValidationException;
 import com.shenqianye.samsara.server.ServerConfigFiles;
-import net.fabricmc.loader.api.FabricLoader;
+import com.shenqianye.samsara.storage.StoragePaths;
 import net.minecraft.server.MinecraftServer;
 
 import java.io.IOException;
@@ -708,11 +708,7 @@ public final class ConfigEditorService {
     }
 
     private static Path configRoot(Path serverRoot) {
-        try {
-            return FabricLoader.getInstance().getConfigDir().toAbsolutePath().normalize();
-        } catch (RuntimeException | LinkageError e) {
-            return serverRoot.resolve("config").toAbsolutePath().normalize();
-        }
+        return StoragePaths.gameConfigDir(serverRoot);
     }
 
     private static Map<String, Object> error(String message) {

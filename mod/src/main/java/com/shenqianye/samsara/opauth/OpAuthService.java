@@ -2,7 +2,7 @@ package com.shenqianye.samsara.opauth;
 
 import com.shenqianye.samsara.command.ChatFormat;
 import com.shenqianye.samsara.permission.PermissionConfig;
-import net.fabricmc.loader.api.FabricLoader;
+import com.shenqianye.samsara.storage.StoragePaths;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
@@ -47,8 +47,7 @@ public final class OpAuthService {
 
     public synchronized void init(MinecraftServer server) {
         this.server = server;
-        Path file = FabricLoader.getInstance().getConfigDir()
-                .resolve("samsara").resolve("op-auth.yml");
+        Path file = StoragePaths.configFile(StoragePaths.OP_AUTH_FILE);
         this.store = new OpAuthStore(file);
         this.store.load();
         this.pending.clear();

@@ -45,13 +45,12 @@ public final class AgentTokenStore {
 
     private static Path defaultFile() {
         try {
-            Path root = StoragePaths.configRoot();
-            if (root != null) {
-                return root.resolve("agent-tokens.json");
-            }
-        } catch (Throwable ignored) {
+            return StoragePaths.configFile(StoragePaths.AGENT_TOKENS_FILE);
+        } catch (RuntimeException | LinkageError e) {
+            // 单测/独立进程没有 FabricLoader：退回当前目录，只用于测试环境。
+            return StoragePaths.configDirAt(Path.of("").toAbsolutePath())
+                    .resolve(StoragePaths.AGENT_TOKENS_FILE);
         }
-        return Path.of("config", "samsara", "agent-tokens.json").toAbsolutePath().normalize();
     }
 
     private static final class Holder {

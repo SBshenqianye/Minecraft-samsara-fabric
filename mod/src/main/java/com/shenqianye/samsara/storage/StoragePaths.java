@@ -36,6 +36,13 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  * </ol>
  */
 public final class StoragePaths {
+    /** 服务器级配置目录（相对服务器根）。 */
+    public static final String CONFIG_DIR = "config/samsara";
+    /** Agent token 文件名（位于 {@link #configRoot()}）。 */
+    public static final String AGENT_TOKENS_FILE = "agent-tokens.json";
+    /** OP 认证文件名（位于 {@link #configRoot()}）。 */
+    public static final String OP_AUTH_FILE = "op-auth.yml";
+
     private static final String LEGACY_SUFFIX = ".legacy";
     private static volatile StoragePaths instance;
     private static volatile Path configRoot;
@@ -72,6 +79,38 @@ public final class StoragePaths {
                     .toAbsolutePath().normalize();
         }
         return configRoot;
+    }
+
+    /**
+     * 当前运行实例的配置根下固定文件。
+     *
+     * <p>只接受文件名：带路径分隔符或 `..` 的输入直接拒绝，避免调用方把配置写到根目录之外。
+     */
+    public static Path configFile(String name) {
+        if (name == null || name.isBlank()
+                || name.indexOf('/') >= 0 || name.indexOf('\\') >= 0 || name.contains("..")) {
+            throw new IllegalArgumentException("非法配置文件名: " + name);
+        }
+        return configRoot().resolve(name);
+    }
+
+    /**
+     * 游戏 config 根目录（{@code <game>/config}）。
+     *
+     * <p>只有「按 serverRoot 计算第三方配置位置」的调用方需要它；FabricLoader 不可用时
+     * 回退到 {@code <serverRoot>/config}（单测/独立进程）。
+     */
+    public static Path gameConfigDir(Path fallbackServerRoot) {
+        try {
+            return FabricLoader.getInstance().getConfigDir().toAbsolutePath().normalize();
+        } catch (RuntimeException | LinkageError e) {
+            return fallbackServerRoot.resolve("config").toAbsolutePath().normalize();
+        }
+    }
+
+    /** 服务器根下的 samsara 配置目录（备份、展示等按 serverRoot 计算的场景）。 */
+    public static Path configDirAt(Path serverRoot) {
+        return serverRoot.toAbsolutePath().normalize().resolve("config").resolve("samsara");
     }
 
     /** 旧配置目录；没有迁移过时为 null。 */
