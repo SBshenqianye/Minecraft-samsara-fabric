@@ -11,7 +11,6 @@ import java.nio.file.StandardCopyOption;
  * 区分开，避免和 {@code config/samsara}、{@code world/samsara} 混淆。
  */
 public final class ServerBackupPaths {
-    public static final String ROOT = "backups/samsara";
     private static final String LEGACY_ROOT = "samsara";
     private static final String[] LEGACY_ENTRIES = {
             "server-backups", "server-backup-jobs", "server-config-backups",
@@ -24,7 +23,7 @@ public final class ServerBackupPaths {
     }
 
     public static Path root(Path serverRoot) {
-        return serverRoot.resolve(ROOT).toAbsolutePath().normalize();
+        return com.shenqianye.samsara.storage.StoragePaths.backupsRootAt(serverRoot);
     }
 
     /**

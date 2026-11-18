@@ -26,10 +26,16 @@ class ArchitectureGuardTest {
     private static final String WEB_PACKAGE = "com/shenqianye/samsara/web/";
     private static final String STORAGE_PACKAGE = "com/shenqianye/samsara/storage/";
 
+    private static final String SAMSARA_PACKAGE = "com/shenqianye/samsara/";
+    private static final String SERVER_BACKUP = "com/shenqianye/samsara/server/ServerBackup.java";
+
     /** 配置根写法：只允许 StoragePaths 自己出现。 */
     private static final Pattern CONFIG_LITERAL = Pattern.compile("\"config/samsara\"");
     private static final Pattern CONFIG_SPLIT_LITERAL =
             Pattern.compile("\"config\"\\s*,\\s*\"samsara\"");
+    private static final Pattern BACKUP_LITERAL = Pattern.compile("\"backups/samsara\"");
+    private static final Pattern BACKUP_SPLIT_LITERAL =
+            Pattern.compile("\"backups\"\\s*,\\s*\"samsara\"");
     private static final Pattern SAMSARA_PACKAGE_IMPORT =
             Pattern.compile("^\\s*import\\s+(static\\s+)?(com\\.shenqianye\\.samsara\\.[\\w.]+)\\s*;");
 
@@ -67,6 +73,24 @@ class ArchitectureGuardTest {
         List<String> violations = storageLayerViolations(sourceRoot());
         assertEquals(List.of(), violations,
                 "storage 只允许依赖根入口 Samsara 与 config 包：\n" + String.join("\n", violations));
+    }
+
+    @Test
+    void serverBackupIncludesCrossSeasonSharedData() {
+        String code = stripComments(read(sourceRoot().resolve(SERVER_BACKUP)));
+        assertTrue(code.contains("sharedDirAt("),
+                "ServerBackup 必须把 samsara/shared 打进本体备份；"
+                        + "请使用 StoragePaths.sharedDirAt(serverRoot)");
+        assertTrue(code.contains("migrateShared") || code.contains("shared"),
+                "恢复逻辑必须处理 shared/");
+    }
+
+    @Test
+    void onlyStoragePathsSpellsBackupDirectory() {
+        List<String> violations = backupLiteralViolations(sourceRoot());
+        assertEquals(List.of(), violations,
+                "不得硬编码 backups/samsara；请用 StoragePaths.backupsRootAt(serverRoot)：\n"
+                        + String.join("\n", violations));
     }
 
     // ---- 守卫自身有效性（故意违规必须被抓到） ----
@@ -126,6 +150,20 @@ class ArchitectureGuardTest {
         assertTrue(violations.get(0).contains("season.SeasonManager"), violations.toString());
     }
 
+    @Test
+    void guardDetectsHardcodedBackupDirectory() throws IOException {
+        write("a/Fake.java", "class Fake {\n"
+                + "  String dir = \"backups/samsara\";\n"
+                + "}\n");
+        write("b/Fake2.java", "class Fake2 {\n"
+                + "  Object p = java.nio.file.Path.of(\"backups\", \"samsara\");\n"
+                + "}\n");
+
+        List<String> violations = backupLiteralViolations(tmp);
+
+        assertEquals(2, violations.size(), violations.toString());
+    }
+
     // ---- 扫描实现 ----
 
     static List<String> configDirViolations(Path root) {
@@ -168,6 +206,23 @@ class ArchitectureGuardTest {
             String imported = importedSamsaraClass(code);
             if (imported != null && imported.startsWith("com.shenqianye.samsara.web.")) {
                 violations.add(relative + " import " + imported);
+            }
+        });
+        return violations;
+    }
+
+    static List<String> backupLiteralViolations(Path root) {
+        List<String> violations = new ArrayList<>();
+        forEachSource(root, (relative, code) -> {
+            if (relative.startsWith(STORAGE_PACKAGE)) {
+                return;
+            }
+            int line = firstMatchLine(code, BACKUP_LITERAL);
+            if (line < 0) {
+                line = firstMatchLine(code, BACKUP_SPLIT_LITERAL);
+            }
+            if (line > 0) {
+                violations.add(relative + ":" + line + " 硬编码 backups/samsara");
             }
         });
         return violations;

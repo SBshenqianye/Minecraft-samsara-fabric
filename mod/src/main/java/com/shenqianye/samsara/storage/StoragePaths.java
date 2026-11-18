@@ -123,6 +123,11 @@ public final class StoragePaths {
         return serverDataDirAt(serverRoot).resolve("shared");
     }
 
+    /** 本模组在服务器根下的备份根 {@code <serverRoot>/backups/samsara}。 */
+    public static Path backupsRootAt(Path serverRoot) {
+        return serverRoot.toAbsolutePath().normalize().resolve("backups").resolve("samsara");
+    }
+
     /** 旧配置目录；没有迁移过时为 null。 */
     public static Path legacyConfigRoot() {
         if (legacyRoot == null) {

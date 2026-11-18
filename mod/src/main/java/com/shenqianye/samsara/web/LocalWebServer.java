@@ -334,33 +334,7 @@ public final class LocalWebServer {
         long start = System.currentTimeMillis();
         int status = 200;
         try {
-            if (!"GET".equals(exchange.getRequestMethod())) {
-                status = 405;
-                sendText(exchange, status, "text/plain; charset=utf-8", "Method Not Allowed");
-                return;
-            }
-            String resource = WebSecurity.staticResource(exchange.getRequestURI().getPath());
-            if (resource == null) {
-                status = 404;
-                sendText(exchange, status, "text/plain; charset=utf-8", "Not Found");
-                return;
-            }
-            byte[] body;
-            try (InputStream in = LocalWebServer.class.getResourceAsStream(resource)) {
-                if (in == null) {
-                    status = 404;
-                    sendText(exchange, status, "text/plain; charset=utf-8", "Not Found");
-                    return;
-                }
-                body = in.readAllBytes();
-            }
-            String type = resource.endsWith(".js") ? "application/javascript; charset=utf-8"
-                    : resource.endsWith(".css") ? "text/css; charset=utf-8"
-                    : resource.endsWith(".png") ? "image/png"
-                    : resource.endsWith(".json") ? "application/json; charset=utf-8"
-                    : "text/html; charset=utf-8";
-            status = 200;
-            sendBytes(exchange, status, type, body);
+            status = StaticContentHandler.serve(exchange);
         } finally {
             log(exchange, status, start);
         }
