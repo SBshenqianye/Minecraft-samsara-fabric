@@ -337,17 +337,32 @@ async function main() {
         const last = items[items.length - 1];
         const values = last ? [...last.querySelectorAll('.struct-row input')].map((input) => input.value) : [];
         const after = items.length;
+        const dirtyCount = (text) => {
+          const matched = /（(\d+)）/.exec(text || '');
+          return matched ? Number(matched[1]) : 0;
+        };
+        const dirtyBefore = dirtyCount(document.getElementById('server-save').textContent);
         if (last) {
           const remove = [...last.querySelectorAll('.server-json-head button')]
             .find((node) => node.textContent.trim() === '删除');
           if (remove) remove.click();
         }
-        await new Promise((resolve) => setTimeout(resolve, 200));
-        return { before, after, values, saveLabel: document.getElementById('server-save').textContent.trim() };
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        const confirmRemove = [...document.querySelectorAll('.el-message-box__btns button')]
+          .find((node) => node.textContent.trim() === '移除');
+        confirmRemove?.click();
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        return {
+          before, after, values, dirtyBefore,
+          dirtyAfter: dirtyCount(document.getElementById('server-save').textContent),
+          saveLabel: document.getElementById('server-save').textContent.trim(),
+        };
       })()`);
       check('从玩家选择填入 UUID/名字', afterPick.after === afterPick.before + 1
           && afterPick.values.some((value) => value.length > 10), JSON.stringify(afterPick.values));
-      check('删除草稿后未保存计数归零', afterPick.saveLabel === '保存并重载', afterPick.saveLabel);
+      check('删除草稿后未保存计数归零',
+        afterPick.dirtyAfter === Math.max(0, afterPick.dirtyBefore - 1),
+        JSON.stringify({ before: afterPick.dirtyBefore, after: afterPick.dirtyAfter, label: afterPick.saveLabel }));
     } else {
       check('玩家选择列表', true, '测试服没有已知玩家，跳过选中校验');
     }
