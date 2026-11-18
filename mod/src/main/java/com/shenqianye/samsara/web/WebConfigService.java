@@ -30,6 +30,9 @@ public final class WebConfigService implements ConfigService {
     @Override
     public Map<String, Object> reload() {
         String message = ConfigManager.getInstance().reloadAll();
+        // 公告是独立 JSON 存储（不走 YAML 配置），也要跟着重新读取；
+        // 否则手动修复/外部编辑 announcements.json 后只能重启才生效。
+        com.shenqianye.samsara.announce.AnnouncementService.getInstance().reload();
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("ok", true);
         out.put("message", message);

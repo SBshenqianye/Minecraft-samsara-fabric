@@ -19,15 +19,17 @@ class AnnouncementStoreTest {
         AnnouncementStore store = new AnnouncementStore(dir.resolve("announcements.json"));
         Announcement item = new Announcement();
         item.id = "test";
-        item.name = "测试公告";
+        item.name = "欢迎公告";
         item.trigger = "manual";
-        item.chatText = "&ehello {player}";
+        item.chatText = "&e[公告] &f欢迎 {player} 来到服务器！\n&7在线 {online} 人 · {world}";
         store.save(List.of(item));
 
         List<Announcement> loaded = store.load();
         assertEquals(1, loaded.size());
         assertEquals("test", loaded.get(0).id);
-        assertEquals("&ehello {player}", loaded.get(0).chatText);
+        assertEquals("欢迎公告", loaded.get(0).name);
+        assertEquals("&e[公告] &f欢迎 {player} 来到服务器！\n&7在线 {online} 人 · {world}",
+                loaded.get(0).chatText);
         assertTrue(store.file().toFile().exists());
     }
 

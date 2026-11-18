@@ -57,6 +57,12 @@ public final class AnnouncementService {
         return store;
     }
 
+    /** 重新从磁盘读取公告；供 `/api/reload` 与手动修复文件后使用。 */
+    public synchronized void reload() {
+        cache = null;
+        announcements();
+    }
+
     public synchronized List<Announcement> announcements() {
         List<Announcement> current = cache;
         if (current == null) {
