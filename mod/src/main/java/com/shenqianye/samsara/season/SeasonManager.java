@@ -2,6 +2,7 @@ package com.shenqianye.samsara.season;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.shenqianye.samsara.Samsara;
 import com.shenqianye.samsara.rewind.RewindEngine;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.core.BlockPos;
@@ -59,6 +60,8 @@ public class SeasonManager {
     /** 同世界重置进行中（倒流完成后还要选排斥点/传送/写历史）；持久化以支持重启恢复 */
     private ResetPending resetPending;
     private boolean completingReset;
+    /** 玩家死亡时所在维度；重生时用于判断是否被原版回退到顶层。 */
+    private final Map<UUID, net.minecraft.resources.ResourceKey<Level>> deathDimensions = new HashMap<>();
 
     /** 待传送目标：坐标 + 目标栈层（v0.24 支持任意栈层重置）。 */
     public record PendingTeleport(int x, int z, String layerId) {
@@ -949,11 +952,60 @@ public class SeasonManager {
                             com.shenqianye.samsara.identity.IdentityService.getInstance()
                                     .identityOf(player.getUUID()),
                             g.x, g.z, data.settings);
-                    setPlayerBirthpoint(player, overworld, indiv[0], indiv[1], data.settings);
+                    setPlayerBirthpoint(player,
+                            birthpointLevel(server, player, overworld), indiv[0], indiv[1], data.settings);
                     break;
                 }
             }
         }
+    }
+
+    /** 玩家死亡时记下所在维度（重生时判断原版是否回退到了顶层）。 */
+    public void onPlayerDeath(ServerPlayer player) {
+        if (player != null) {
+            deathDimensions.put(player.getUUID(), player.level().dimension());
+        }
+    }
+
+    /**
+     * 玩家重生后：若原版把老栈层玩家回退到了别的维度（通常是顶层 world），
+     * 把玩家放回死亡所在层的世界出生点，并把系统重生点固定在那一层。
+     */
+    public void onPlayerRespawn(MinecraftServer server, ServerPlayer player) {
+        if (server == null || player == null) {
+            return;
+        }
+        net.minecraft.resources.ResourceKey<Level> deathDim = deathDimensions.remove(player.getUUID());
+        if (deathDim == null) {
+            return;
+        }
+        ServerLevel target = server.getLevel(deathDim);
+        if (target == null) {
+            return;
+        }
+        ServerPlayer.RespawnConfig rc = player.getRespawnConfig();
+        LevelData.RespawnData rd = rc == null ? null : rc.respawnData();
+        net.minecraft.resources.ResourceKey<Level> respawnDim = rd == null ? null : rd.dimension();
+        if (!RespawnRule.needsFallback(deathDim.toString(),
+                respawnDim == null ? null : respawnDim.toString())) {
+            // 同一层：尊重玩家的床/重生锚或 samsara 已写好的出生点。
+            return;
+        }
+        BlockPos spawn = target.getRespawnData().pos();
+        int y = findSafeSurfaceY(target, spawn.getX(), spawn.getZ());
+        Samsara.LOGGER.info("[周目管理] {} 死在 {}，重生点却落在 {}；回退到该层世界出生点",
+                player.getScoreboardName(), deathDim, respawnDim);
+        player.teleportTo(target, spawn.getX() + 0.5, y, spawn.getZ() + 0.5, Set.of(),
+                player.getYRot(), player.getXRot(), false);
+        setPlayerBirthpoint(player, target, spawn.getX(), spawn.getZ(), data.settings);
+        player.sendSystemMessage(Component.literal(
+                "[周目管理] 已把你放回死亡所在层的世界出生点"));
+    }
+
+    /** 玩家当前所在栈层；找不到时用 fallback（通常是顶层 world）。 */
+    private ServerLevel birthpointLevel(MinecraftServer server, ServerPlayer player, ServerLevel fallback) {
+        ServerLevel current = server.getLevel(player.level().dimension());
+        return current != null ? current : fallback;
     }
 
     /** 同一身份组的多个 alias 只保留一个分组条目。 */
@@ -1243,19 +1295,28 @@ public class SeasonManager {
         return new int[]{gx + dx, gz + dz};
     }
 
-    /** 重置玩家系统出生点（死后无床重生的默认位置）到 (x,z)（M2，可配置关闭） */
-    private void setPlayerBirthpoint(ServerPlayer player, ServerLevel overworld, int x, int z,
+    /**
+     * 重置玩家系统出生点（死后无床重生的默认位置）到 (x,z)（M2，可配置关闭）。
+     *
+     * <p>重生点必须写在玩家当前所在的栈层，而不是固定顶层世界：老世界玩家死亡后
+     * 应该回到自己玩的那一层，否则会掉进顶层同坐标（可能是海/岩浆/未加载区块）。
+     */
+    private void setPlayerBirthpoint(ServerPlayer player, ServerLevel level, int x, int z,
                                      SeasonData.Settings s) {
         if (!s.resetIndividualBirthpoint) {
             return;
         }
+        if (level == null) {
+            Samsara.LOGGER.warn("[周目管理] {} 出生点跳过：目标世界未加载", player.getScoreboardName());
+            return;
+        }
         // y 用与传送一致的“地表上方一格”，避免 getHeight 异常导致 y=2 埋地底
-        int y = findSafeSurfaceY(overworld, x, z);
+        int y = findSafeSurfaceY(level, x, z);
         // 与 SetSpawnCommand(/spawnpoint) 完全一致的写法：
         //  RespawnData.of(dimension, pos, yaw, pitch) + forced=true。
         //  原版只对床/重生锚使用非强制重生点；普通地面 spawn 若 forced=false，
         //  死亡时会被判为“没有床”并回退全局主世界。
-        var respawnData = LevelData.RespawnData.of(overworld.dimension(), new BlockPos(x, y, z),
+        var respawnData = LevelData.RespawnData.of(level.dimension(), new BlockPos(x, y, z),
                 player.getYRot(), player.getXRot());
         player.setRespawnPosition(new ServerPlayer.RespawnConfig(respawnData, true), false);
     }

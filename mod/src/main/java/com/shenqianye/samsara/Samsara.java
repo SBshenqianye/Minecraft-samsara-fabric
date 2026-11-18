@@ -116,6 +116,17 @@ public class Samsara implements DedicatedServerModInitializer {
                     }
                     com.shenqianye.samsara.insurance.InsuranceService.getInstance().onDeath(entity);
                 });
+        // 记下死亡维度：老栈层玩家被原版回退到顶层时，重生后要放回原来那一层。
+        net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents.AFTER_DEATH.register(
+                (entity, source) -> {
+                    if (entity instanceof net.minecraft.server.level.ServerPlayer player) {
+                        SeasonManager.getInstance().onPlayerDeath(player);
+                    }
+                });
+        net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents.AFTER_RESPAWN.register(
+                (oldPlayer, newPlayer, alive) ->
+                        SeasonManager.getInstance().onPlayerRespawn(newPlayer.level().getServer(),
+                                newPlayer));
 
         // 差异记录：常开（数据根在 SERVER_STARTING 解析后传入）
         // 时间倒流：调度器（恢复轮 2s；标记/传送/删除/归档 5s 节流）
