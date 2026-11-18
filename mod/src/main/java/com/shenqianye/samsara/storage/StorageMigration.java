@@ -43,6 +43,8 @@ public final class StorageMigration {
     /** 全局数据条目。 */
     public static final List<String> GLOBAL_ENTRIES = List.of(
             "global", "identity.json", "auth.json", "audit-index.json");
+    /** 跨周目数据条目（奖池/保险基金等，换周目必须保留）。 */
+    public static final List<String> SHARED_ENTRIES = List.of("lottery", "insurance");
 
     private StorageMigration() {
     }
@@ -138,6 +140,44 @@ public final class StorageMigration {
                 moved, worldDataRoot, source, conflicts);
         return (moved > 0 ? "已迁移 " + moved + " 项" : "没有需要迁移的数据")
                 + " → " + worldDataRoot + conflicts;
+    }
+
+    /**
+     * 跨周目数据迁移：把旧版放在世界数据根下的奖池/保险基金搬到服务器级 shared。
+     *
+     * <p>只在目标不存在时移动；目标已存在时保留两份并告警（不合并经济数据，避免算错）。
+     * 幂等：源不存在即跳过。
+     *
+     * @return 人类可读结果
+     */
+    public static String migrateShared(Path worldDataRoot, Path sharedRoot) {
+        if (worldDataRoot == null || sharedRoot == null) {
+            return "跳过：路径未初始化";
+        }
+        List<String> notes = new ArrayList<>();
+        int moved = 0;
+        for (String name : SHARED_ENTRIES) {
+            Path from = worldDataRoot.resolve(name);
+            if (!Files.exists(from)) {
+                continue;
+            }
+            Path to = sharedRoot.resolve(name);
+            if (Files.exists(to)) {
+                notes.add(name + " 目标已存在，保留两份（源留在世界目录，需人工确认）");
+                continue;
+            }
+            try {
+                moved += mergeMove(from, to, notes);
+            } catch (IOException e) {
+                notes.add(name + " 迁移失败：" + e.getMessage() + "（源保留）");
+            }
+        }
+        if (moved == 0 && notes.isEmpty()) {
+            return "跨周目数据：无需迁移";
+        }
+        String suffix = notes.isEmpty() ? "" : "；" + String.join("；", notes);
+        Samsara.LOGGER.info("[周目管理 samsara] 跨周目数据迁移：{} 项 → {}{}", moved, sharedRoot, suffix);
+        return "跨周目数据迁移 " + moved + " 项 → " + sharedRoot + suffix;
     }
 
     /**

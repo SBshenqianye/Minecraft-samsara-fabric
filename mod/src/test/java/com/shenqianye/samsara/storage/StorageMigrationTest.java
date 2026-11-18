@@ -24,8 +24,7 @@ class StorageMigrationTest {
     }
 
     @Test
-    void freshInstallJustCreatesRoots() throws Exception {
-        Path worldRoot = tmp.resolve("world/samsara");
+    void freshInstallJustCreatesRoots() throws Exception {        Path worldRoot = tmp.resolve("world/samsara");
         Path global = worldRoot.resolve("global");
         String result = StorageMigration.migrate(null, null, worldRoot, global, 0);
 
@@ -127,5 +126,37 @@ class StorageMigrationTest {
         assertTrue(Files.exists(track.resolve("cycle2/2026-10-28/b.bin")));
         assertEquals(0, StorageMigration.stripTrackWorldLayer(track));
         assertNotNull(track);
+    }
+
+    @Test
+    void sharedDataMovesOutOfWorldOnce() throws Exception {
+        Path world = tmp.resolve("world/samsara");
+        write(world.resolve("lottery/state.json"), "{\"fund\":1}");
+        write(world.resolve("insurance/claims.json"), "{}");
+        Path shared = tmp.resolve("server/samsara/shared");
+
+        String result = StorageMigration.migrateShared(world, shared);
+
+        assertTrue(result.contains("2"), result);
+        assertEquals("{\"fund\":1}", Files.readString(shared.resolve("lottery/state.json")));
+        assertEquals("{}", Files.readString(shared.resolve("insurance/claims.json")));
+        assertFalse(Files.exists(world.resolve("lottery")));
+        assertFalse(Files.exists(world.resolve("insurance")));
+        assertTrue(StorageMigration.migrateShared(world, shared).contains("无需迁移"));
+    }
+
+    @Test
+    void sharedDataKeepsBothSidesWhenTargetExists() throws Exception {
+        Path world = tmp.resolve("world/samsara");
+        Path shared = tmp.resolve("server/samsara/shared");
+        write(world.resolve("lottery/state.json"), "old");
+        write(shared.resolve("lottery/state.json"), "new");
+
+        String result = StorageMigration.migrateShared(world, shared);
+
+        assertTrue(result.contains("保留两份"), result);
+        assertEquals("new", Files.readString(shared.resolve("lottery/state.json")));
+        assertEquals("old", Files.readString(world.resolve("lottery/state.json")),
+                "冲突时不得删除世界目录里的旧数据");
     }
 }

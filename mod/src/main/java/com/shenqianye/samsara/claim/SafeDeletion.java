@@ -250,7 +250,10 @@ public class SafeDeletion {
      * 按世界维度结构组织备份目录。
      */
     public static String backup(ServerLevel level) {
-        Path backupDir = com.shenqianye.samsara.storage.StoragePaths.get().world("backups")
+        // 调试/安全删除的备份放在服务器级 backups/samsara/claim-deletes，
+        // 不写进玩家存档，也不随世界备份打包。
+        Path backupDir = com.shenqianye.samsara.storage.StoragePaths.get().serverRoot()
+                .resolve("backups").resolve("samsara").resolve("claim-deletes")
                 .resolve("delete_" + LocalDateTime.now().format(TS_FMT));
         try {
             Files.createDirectories(backupDir);

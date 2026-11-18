@@ -76,7 +76,7 @@ public final class LotteryService {
     public synchronized void init(MinecraftServer server) {
         this.server = server;
         this.registries = server.registryAccess();
-        this.root = StoragePaths.get().worldDataRoot().resolve("lottery");
+        this.root = StoragePaths.get().sharedDataRoot().resolve("lottery");
         try {
             Files.createDirectories(root.resolve("days"));
             Files.createDirectories(root.resolve("audit"));

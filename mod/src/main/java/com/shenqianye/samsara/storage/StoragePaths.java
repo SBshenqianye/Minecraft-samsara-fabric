@@ -201,9 +201,13 @@ public final class StoragePaths {
         try {
             Files.createDirectories(worldDataRoot);
             Files.createDirectories(globalDataRoot);
+            Files.createDirectories(serverDataRoot.resolve("shared"));
         } catch (IOException e) {
             Samsara.LOGGER.warn("[周目管理 samsara] 无法创建数据目录: {}", e.getMessage());
         }
+        // 跨周目数据（奖池/保险基金）：旧版放在 world/samsara 下，换周目会清零；
+        // 这里一次性搬到服务器级 shared，失败保留源目录。
+        StorageMigration.migrateShared(worldDataRoot, serverDataRoot.resolve("shared"));
         if (version < StorageMigration.CURRENT_VERSION) {
             config.save(ConfigSchema.STORAGE,
                     java.util.Map.of("migration.version", StorageMigration.CURRENT_VERSION));
@@ -254,6 +258,22 @@ public final class StoragePaths {
     /** 服务器级数据根（仅 globalFollowWorld=false 时使用）。 */
     public Path serverDataRoot() {
         return serverDataRoot;
+    }
+
+    /**
+     * 跨周目共享数据根：{@code <服务器根>/samsara/shared}。
+     *
+     * <p>奖池/保险基金这类“换周目要滚存”的数据固定放在这里，不受
+     * {@code globalFollowWorld} 影响，也不随世界备份/删除。
+     */
+    public Path sharedDataRoot() {
+        return serverDataRoot.resolve("shared");
+    }
+
+    /** 服务器根（world 目录的上一级），用于服务器级备份路径。 */
+    public Path serverRoot() {
+        Path parent = worldRoot.getParent();
+        return parent == null ? worldRoot : parent;
     }
 
     /** 全局数据根（跨世界审计等；v0.20 起身份组运行数据不再放这里）。 */

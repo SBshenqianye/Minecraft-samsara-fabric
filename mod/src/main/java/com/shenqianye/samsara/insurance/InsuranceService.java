@@ -66,7 +66,7 @@ public final class InsuranceService {
     public synchronized void init(MinecraftServer server) {
         this.server = server;
         this.registries = server.registryAccess();
-        this.root = StoragePaths.get().worldDataRoot().resolve("insurance");
+        this.root = StoragePaths.get().sharedDataRoot().resolve("insurance");
         try {
             Files.createDirectories(root);
         } catch (IOException e) {
