@@ -1868,7 +1868,7 @@ public final class LocalWebServer {
             json(exchange, 403, Map.of("error", "token 管理仅管理员可用"));
             return 403;
         }
-        AgentScope required = requiredScope(exchange.getRequestMethod(), path);
+        AgentScope required = ApiScope.required(exchange.getRequestMethod(), path);
         if (!context.has(required)) {
             json(exchange, 403, Map.of("error", "token 缺少 scope：" + required.id()));
             return 403;
@@ -1889,51 +1889,6 @@ public final class LocalWebServer {
         }
         WebAuditService.capture(exchange);
         return 0;
-    }
-
-    private static AgentScope requiredScope(String method, String path) {
-        if ("GET".equals(method)) {
-            return AgentScope.READ;
-        }
-        if (path.startsWith("/api/agent/tokens")) {
-            return AgentScope.OPS;
-        }
-        if (path.startsWith("/api/server/console")) {
-            return AgentScope.RCON;
-        }
-        if (path.startsWith("/api/announcements")) {
-            return path.endsWith("/preview") ? AgentScope.READ : AgentScope.ANNOUNCE;
-        }
-        if (path.startsWith("/api/config")) {
-            if (path.equals("/api/config/preview")) {
-                return AgentScope.READ;
-            }
-            return "PUT".equals(method) ? AgentScope.CONFIG : AgentScope.READ;
-        }
-        if (path.equals("/api/reload")) {
-            return AgentScope.CONFIG;
-        }
-        if (path.startsWith("/api/identity/data")) {
-            return AgentScope.CONFIG;
-        }
-        if (path.startsWith("/api/permissions") || path.startsWith("/api/output")
-                || path.startsWith("/api/identity")) {
-            return AgentScope.CONFIG;
-        }
-        if (path.startsWith("/api/audit")) {
-            return path.equals("/api/audit/preview") ? AgentScope.READ : AgentScope.OPS;
-        }
-        if (path.startsWith("/api/inventory")) {
-            return "GET".equals(method) ? AgentScope.READ : AgentScope.INVENTORY;
-        }
-        if (path.startsWith("/api/items")) {
-            return "GET".equals(method) || path.endsWith("/describe")
-                    ? AgentScope.READ : AgentScope.INVENTORY;
-        }
-        if (path.startsWith("/api/diff")) {
-            return path.equals("/api/diff/view") ? AgentScope.READ : AgentScope.OPS;
-        }
-        return AgentScope.OPS;
     }
 
     private void handleAgent(HttpExchange exchange) throws IOException {
