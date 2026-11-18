@@ -169,12 +169,17 @@ export default {
         sharedRow: [...(box?.querySelectorAll('.world-stack-rows dt') || [])]
           .some((node) => node.textContent.includes('跨周目数据')),
       };
-      if (box) box.hidden = true;
       return result;
     })()`);
     check('备份恢复预览在 Vue 中打开',
       restorePreview.skipped || (!restorePreview.hidden && restorePreview.title.startsWith('恢复预览')
         && restorePreview.rows >= 5 && restorePreview.sharedRow), JSON.stringify(restorePreview));
+
+    // 不直接改 DOM 的 hidden（Vue 不会重置同值 prop）；点“重新读取”让页面自己清空预览。
+    if (!restorePreview.skipped) {
+      await evaluate(`(() => { document.getElementById('server-backup-reload')?.click(); return true; })()`);
+      await sleep(900);
+    }
 
     const createPreview = await evaluate(`(async () => {
       document.getElementById('server-backup-create')?.click();
@@ -187,7 +192,6 @@ export default {
         sharedRow: [...(box?.querySelectorAll('.world-stack-rows dt') || [])]
           .some((node) => node.textContent.includes('跨周目数据')),
       };
-      if (box) box.hidden = true;
       return result;
     })()`);
     check('创建备份预览只读展示空间与保留策略',
