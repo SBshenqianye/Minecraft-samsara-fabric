@@ -142,12 +142,13 @@ export function historyRows(model) {
   const rows = Array.isArray(model.history) ? model.history : [];
   return rows.map((result) => ({
     title: dayText(result.day) + ' · 死亡 ' + (result.deathCount ?? 0),
-    meta: '中奖票 ' + (result.winnerCount ?? 0)
-      + ' · 奖池 ' + vp(result.pot)
-      + ' · 抽成 ' + vp(result.rake)
+    meta: (result.refunded
+      ? '已退款' + (result.refundReason ? '（' + result.refundReason + '）' : '') + ' · '
+      : '中奖票 ' + (result.winnerCount ?? 0) + ' · 奖池 ' + vp(result.pot) + ' · 抽成 ' + vp(result.rake))
       + (Array.isArray(result.winners) && result.winners.length
         ? ' · ' + result.winners.join('、') : ''),
     rollover: Boolean(result.rollover),
+    refunded: Boolean(result.refunded),
   }));
 }
 

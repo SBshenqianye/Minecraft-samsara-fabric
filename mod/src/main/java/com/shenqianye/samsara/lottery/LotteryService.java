@@ -59,6 +59,9 @@ public final class LotteryService {
     private List<ClaimData> claims = new ArrayList<>();
     private final Map<String, DayData> dayCache = new LinkedHashMap<>();
     private final Map<UUID, PendingQuote> pendingQuotes = new LinkedHashMap<>();
+    /** 解码失败的物品原文（隔离区）；只在服务器数据里保存，日志只写哈希。 */
+    private final List<QuarantineEntry> quarantine = new ArrayList<>();
+    private final Set<String> quarantineHashes = new LinkedHashSet<>();
     private int tickCounter;
 
     private LotteryService() {
@@ -86,6 +89,7 @@ public final class LotteryService {
         loadState();
         loadFund();
         loadClaims();
+        loadQuarantine();
         GoldPriceService.getInstance().init();
         ItemValueService.setGoldValueProvider(() -> GoldPriceService.getInstance().blockValue());
         Samsara.LOGGER.info("[lottery] 已加载 · 模式 {} · 数据 {}", dayMode(), root);
@@ -338,7 +342,20 @@ public final class LotteryService {
         bet.items = LotteryItemCodec.encodeAll(List.of(paid), registries);
         bet.at = System.currentTimeMillis();
         day.bets.add(bet);
-        saveDay(day);
+        if (!saveDay(day)) {
+            // 落盘失败：撤销内存里的注单并把物品退回，不能出现“下注成功但重启就没了”。
+            day.bets.remove(bet);
+            ItemStack current = player.getInventory().getItem(prepared.slot());
+            if (current.isEmpty()) {
+                player.getInventory().setItem(prepared.slot(), paid.copy());
+            } else {
+                current.grow(prepared.take());
+                player.getInventory().setItem(prepared.slot(), current);
+            }
+            player.containerMenu.broadcastChanges();
+            Samsara.LOGGER.error("[lottery] 下注保存失败，已退回 {} 的物品", player.getScoreboardName());
+            return BetOutcome.error("下注保存失败（磁盘/权限），物品已退回，请稍后再试。");
+        }
 
         return BetOutcome.ok(prepared.dayId(), prepared.guess(), prepared.tickets(),
                 prepared.actual(), prepared.overpay(), prepared.pot(), prepared.paidEncoded());
@@ -361,7 +378,7 @@ public final class LotteryService {
         int completed = 0;
         boolean remaining = false;
         for (ClaimData claim : mine) {
-            List<ItemStack> items = LotteryItemCodec.decodeAll(claim.items, registries);
+            List<ItemStack> items = decodeItems(claim.items, "待领取");
             Delivery delivery = addToInventory(player, items);
             given.addAll(delivery.given());
             if (delivery.remainder().isEmpty()) {
@@ -373,7 +390,12 @@ public final class LotteryService {
                 remaining = true;
             }
         }
-        saveClaims();
+        if (!saveClaims()) {
+            // 物品已经发出；这里只能明确告诉玩家记录未落盘，避免他们以为仍是待领取。
+            Samsara.LOGGER.error("[lottery] 领取记录保存失败：{}", player.getScoreboardName());
+            return CollectOutcome.error("物品已放入背包，但领取记录保存失败（磁盘/权限）；"
+                    + "重启后可能仍显示待领取，请联系管理员核对。");
+        }
         return CollectOutcome.ok(given, completed, remaining);
     }
 
@@ -427,7 +449,9 @@ public final class LotteryService {
         if ("SETTLED".equals(day.state) || "CANCELLED".equals(day.state)) {
             return "该结算日已经开奖或取消：" + dayId;
         }
-        settle(dayId, false, true);
+        if (!settle(dayId, false, true)) {
+            return "开奖失败：数据未能写入磁盘（磁盘/权限），请检查日志后重试；奖池状态未变更。";
+        }
         return "已开奖：" + dayId;
     }
 
@@ -437,7 +461,7 @@ public final class LotteryService {
         if ("SETTLED".equals(day.state) || "CANCELLED".equals(day.state)) {
             return "该结算日已经结束：" + dayId;
         }
-        refundAll(day, "管理员取消");
+        boolean refunded = refundAll(day, "管理员取消");
         returnSeedToFund(day);
         day.state = "CANCELLED";
         day.result = new ResultData();
@@ -446,9 +470,14 @@ public final class LotteryService {
         day.result.potValue = 0;
         day.result.rakeValue = 0;
         day.result.rollover = false;
+        day.result.refunded = true;
+        day.result.refundReason = "管理员取消";
         day.result.nextDay = bettingDayId();
         day.result.at = System.currentTimeMillis();
-        saveDay(day);
+        boolean saved = saveDay(day);
+        if (!refunded || !saved) {
+            return "已退款并取消，但部分数据未能写入磁盘（磁盘/权限）；请检查日志并核对待领取。";
+        }
         return "已取消并退款：" + dayId;
     }
 
@@ -549,10 +578,10 @@ public final class LotteryService {
     private List<ItemStack> dayPotItems(DayData day) {
         List<ItemStack> pot = new ArrayList<>();
         if (day.seed != null) {
-            pot.addAll(LotteryItemCodec.decodeAll(day.seed, registries));
+            pot.addAll(decodeItems(day.seed, "下注轮基金种子"));
         }
         for (BetData bet : day.bets) {
-            pot.addAll(LotteryItemCodec.decodeAll(bet.items, registries));
+            pot.addAll(decodeItems(bet.items, "下注物品"));
         }
         return pot;
     }
@@ -561,7 +590,7 @@ public final class LotteryService {
     private List<ItemStack> activePotItems(DayData counting) {
         List<ItemStack> pot = dayPotItems(counting);
         if (state.rollover != null) {
-            pot.addAll(LotteryItemCodec.decodeAll(state.rollover, registries));
+            pot.addAll(decodeItems(state.rollover, "奖池滚存"));
         }
         return pot;
     }
@@ -781,7 +810,10 @@ public final class LotteryService {
             if (!missed && !drawReached(candidate)) {
                 return;
             }
-            settle(candidate, missed, false);
+            if (!settle(candidate, missed, false)) {
+                Samsara.LOGGER.error("[lottery] 结算 {} 失败，下一 tick 重试", candidate);
+                return;
+            }
             state.lastSettledDay = maxDay(state.lastSettledDay, candidate);
             saveState();
             if (!missed) {
@@ -859,13 +891,13 @@ public final class LotteryService {
     }
 
     /** 取消/流局时把未使用的基金种子退回基金。 */
-    private void returnSeedToFund(DayData day) {
+    private boolean returnSeedToFund(DayData day) {
         if (day.seed == null || day.seed.isEmpty()) {
-            return;
+            return true;
         }
         fund.addAll(day.seed);
         day.seed = new ArrayList<>();
-        saveFund();
+        return saveFund();
     }
 
     private boolean drawReached(String dayId) {
@@ -876,25 +908,29 @@ public final class LotteryService {
         return gameTime() >= day.drawAt;
     }
 
-    private void settle(String dayId, boolean missed, boolean force) {
+    private boolean settle(String dayId, boolean missed, boolean force) {
         DayData day = loadDay(dayId);
         if (day == null) {
             day = loadOrCreateDay(dayId);
         }
         if ("SETTLED".equals(day.state) || "CANCELLED".equals(day.state)) {
-            return;
+            return true;
         }
         if (!force && !drawReached(dayId)) {
-            return;
+            return true;
         }
+        boolean ok = true;
         if (!day.covered && !day.bets.isEmpty()) {
-            refundAll(day, "统计不完整（服务器离线）");
-            returnSeedToFund(day);
+            ok &= refundAll(day, "统计不完整（服务器离线）");
+            ok &= returnSeedToFund(day);
+            day.result = new ResultData();
+            day.result.refunded = true;
+            day.result.refundReason = "统计不完整（服务器离线）";
         } else if (day.bets.isEmpty()) {
             // 没有票，只记录死亡数；本轮未用掉的种子退回基金
-            returnSeedToFund(day);
+            ok &= returnSeedToFund(day);
         } else {
-            settleWithBets(day);
+            ok &= settleWithBets(day);
         }
         day.state = "SETTLED";
         day.result = day.result == null ? new ResultData() : day.result;
@@ -904,22 +940,27 @@ public final class LotteryService {
         if (day.result.winnerNames == null) {
             day.result.winnerNames = new ArrayList<>();
         }
-        saveDay(day);
+        ok &= saveDay(day);
+        if (!ok) {
+            Samsara.LOGGER.error("[lottery] 开奖数据未能完整写入磁盘：{}（下一 tick 会重试）", dayId);
+            return false;
+        }
         announce(day);
         state.lastSettledDay = maxDay(state.lastSettledDay, dayId);
-        saveState();
+        return saveState();
     }
 
-    private void settleWithBets(DayData day) {
+    private boolean settleWithBets(DayData day) {
+        boolean ok = true;
         potTaken.clear();
         List<ItemStack> pot = new ArrayList<>();
         if (day.seed != null) {
-            pot.addAll(LotteryItemCodec.decodeAll(day.seed, registries));
+            pot.addAll(decodeItems(day.seed, "开奖基金种子"));
         }
         for (BetData bet : day.bets) {
-            pot.addAll(LotteryItemCodec.decodeAll(bet.items, registries));
+            pot.addAll(decodeItems(bet.items, "开奖下注物品"));
         }
-        pot.addAll(LotteryItemCodec.decodeAll(state.rollover, registries));
+        pot.addAll(decodeItems(state.rollover, "开奖滚存"));
         state.rollover = new ArrayList<>();
 
         List<BetData> winners = new ArrayList<>();
@@ -946,8 +987,7 @@ public final class LotteryService {
             result.rollover = true;
             day.result = result;
             day.seed = new ArrayList<>();
-            saveState();
-            return;
+            return saveState();
         }
 
         double rake = result.potValue * LotteryConfig.getInstance().rakePercent() / 100.0;
@@ -956,7 +996,7 @@ public final class LotteryService {
         if ("fund".equalsIgnoreCase(LotteryConfig.getInstance().rakeDestination())) {
             fund.addAll(LotteryItemCodec.encodeAll(potTaken, registries));
             potTaken.clear();
-            saveFund();
+            ok &= saveFund();
         } else if ("rollover".equalsIgnoreCase(LotteryConfig.getInstance().rakeDestination())) {
             List<String> rollover = new ArrayList<>(state.rollover == null ? List.of() : state.rollover);
             rollover.addAll(LotteryItemCodec.encodeAll(potTaken, registries));
@@ -987,8 +1027,9 @@ public final class LotteryService {
         }
         day.result = result;
         day.seed = new ArrayList<>();
-        saveState();
-        saveClaims();
+        ok &= saveState();
+        ok &= saveClaims();
+        return ok;
     }
 
     /** takeValue 的临时收集器：避免把 fund 与“实际抽走”混在一起。 */
@@ -1098,9 +1139,9 @@ public final class LotteryService {
         }
     }
 
-    private void refundAll(DayData day, String reason) {
+    private boolean refundAll(DayData day, String reason) {
         for (BetData bet : day.bets) {
-            List<ItemStack> items = LotteryItemCodec.decodeAll(bet.items, registries);
+            List<ItemStack> items = decodeItems(bet.items, "退款");
             ServerPlayer online = online(bet.ownerUuid);
             List<ItemStack> remaining = items;
             if (online != null) {
@@ -1118,7 +1159,7 @@ public final class LotteryService {
             }
         }
         day.bets.clear();
-        saveClaims();
+        return saveClaims();
     }
 
     private void announce(DayData day) {
@@ -1127,9 +1168,16 @@ public final class LotteryService {
         }
         String cause = day.playerDeaths + " 名玩家、" + day.villagerDeaths + " 名村民、"
                 + day.namedMobDeaths + " 只命名怪";
-        String winnerLine = day.result.winningTickets == 0
-                ? "无人猜中，奖池滚入下一轮。"
-                : "中奖 " + day.result.winningTickets + " 张票。";
+        String winnerLine;
+        if (day.result.refunded) {
+            String reason = day.result.refundReason == null || day.result.refundReason.isBlank()
+                    ? "本轮取消" : day.result.refundReason;
+            winnerLine = "本轮退款（" + reason + "）：票款按原物退回，奖池不滚存。";
+        } else if (day.result.winningTickets == 0) {
+            winnerLine = "无人猜中，奖池滚入下一轮。";
+        } else {
+            winnerLine = "中奖 " + day.result.winningTickets + " 张票。";
+        }
         Component message = OutputRenderer.render("lottery.result", Map.of(
                 "periodLabel", LotteryConfig.getInstance().realDay() ? "昨天" : "上一轮",
                 "deathCount", String.valueOf(day.result.deathCount),
@@ -1315,12 +1363,12 @@ public final class LotteryService {
         }
     }
 
-    private void saveDay(DayData day) {
+    private boolean saveDay(DayData day) {
         if (root == null || day == null) {
-            return;
+            return false;
         }
         dayCache.put(day.dayId, day);
-        write(root.resolve("days").resolve(day.dayId + ".json"), GSON.toJson(day));
+        return write(root.resolve("days").resolve(day.dayId + ".json"), GSON.toJson(day));
     }
 
     private void loadState() {
@@ -1344,12 +1392,12 @@ public final class LotteryService {
         }
     }
 
-    private void saveState() {
+    private boolean saveState() {
         if (root == null) {
-            return;
+            return false;
         }
         state.schemaVersion = SCHEMA;
-        write(root.resolve("state.json"), GSON.toJson(state));
+        return write(root.resolve("state.json"), GSON.toJson(state));
     }
 
     private void loadFund() {
@@ -1370,13 +1418,13 @@ public final class LotteryService {
         }
     }
 
-    private void saveFund() {
+    private boolean saveFund() {
         if (root == null) {
-            return;
+            return false;
         }
         FundData data = new FundData();
         data.items = new ArrayList<>(fund);
-        write(root.resolve("fund.json"), GSON.toJson(data));
+        return write(root.resolve("fund.json"), GSON.toJson(data));
     }
 
     private void loadClaims() {
@@ -1397,16 +1445,91 @@ public final class LotteryService {
         }
     }
 
-    private void saveClaims() {
+    private boolean saveClaims() {
         if (root == null) {
-            return;
+            return false;
         }
         ClaimList data = new ClaimList();
         data.claims = new ArrayList<>(claims);
-        write(root.resolve("claims.json"), GSON.toJson(data));
+        return write(root.resolve("claims.json"), GSON.toJson(data));
     }
 
-    private void write(Path file, String content) {
+    private void loadQuarantine() {
+        quarantine.clear();
+        quarantineHashes.clear();
+        if (root == null) {
+            return;
+        }
+        Path file = root.resolve("quarantine.json");
+        if (!Files.isRegularFile(file)) {
+            return;
+        }
+        try {
+            QuarantineData data = GSON.fromJson(Files.readString(file, StandardCharsets.UTF_8),
+                    QuarantineData.class);
+            if (data != null && data.entries != null) {
+                for (QuarantineEntry entry : data.entries) {
+                    if (entry == null || entry.encoded == null || entry.encoded.isBlank()) {
+                        continue;
+                    }
+                    if (entry.hash == null || entry.hash.isBlank()) {
+                        entry.hash = LotteryItemCodec.hash(entry.encoded);
+                    }
+                    quarantine.add(entry);
+                    quarantineHashes.add(entry.hash);
+                }
+            }
+        } catch (RuntimeException | IOException e) {
+            Samsara.LOGGER.warn("[lottery] 读取隔离区失败：{}", e.getMessage());
+        }
+    }
+
+    /**
+     * 解码一组物品；失败的原文进入隔离区并写 WARN（日志只含哈希）。
+     *
+     * <p>以前解码失败直接 `orElse(EMPTY)`，物品会从奖池/待领取里静默消失。
+     */
+    private List<ItemStack> decodeItems(List<String> encoded, String source) {
+        List<ItemStack> out = new ArrayList<>();
+        if (encoded == null) {
+            return out;
+        }
+        for (String value : encoded) {
+            ItemStack stack = LotteryItemCodec.decode(value, registries);
+            if (!stack.isEmpty()) {
+                out.add(stack);
+            } else if (value != null && !value.isBlank()) {
+                quarantineItem(value, source);
+            }
+        }
+        return out;
+    }
+
+    private void quarantineItem(String encoded, String source) {
+        String hash = LotteryItemCodec.hash(encoded);
+        if (!quarantineHashes.add(hash)) {
+            return;
+        }
+        Samsara.LOGGER.warn("[lottery] 物品解码失败，已放入隔离区：来源={} hash={}", source, hash);
+        if (quarantine.size() >= 1000) {
+            QuarantineEntry removed = quarantine.remove(0);
+            quarantineHashes.remove(removed.hash);
+        }
+        QuarantineEntry entry = new QuarantineEntry();
+        entry.at = System.currentTimeMillis();
+        entry.source = source == null ? "" : source;
+        entry.hash = hash;
+        entry.encoded = encoded;
+        quarantine.add(entry);
+        QuarantineData data = new QuarantineData();
+        data.entries = new ArrayList<>(quarantine);
+        write(root == null ? null : root.resolve("quarantine.json"), GSON.toJson(data));
+    }
+
+    private boolean write(Path file, String content) {
+        if (file == null) {
+            return false;
+        }
         try {
             Files.createDirectories(file.getParent());
             Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
@@ -1417,8 +1540,10 @@ public final class LotteryService {
             } catch (IOException atomicFailure) {
                 Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
             }
+            return true;
         } catch (IOException e) {
             Samsara.LOGGER.warn("[lottery] 写入 {} 失败：{}", file, e.getMessage());
+            return false;
         }
     }
 
@@ -1641,6 +1766,8 @@ public final class LotteryService {
         out.put("pot", day.result == null ? 0 : day.result.potValue);
         out.put("rake", day.result == null ? 0 : day.result.rakeValue);
         out.put("rollover", day.result != null && day.result.rollover);
+        out.put("refunded", day.result != null && day.result.refunded);
+        out.put("refundReason", day.result == null ? "" : day.result.refundReason);
         out.put("winners", day.result == null ? List.of() : day.result.winnerNames);
         out.put("at", day.result == null ? 0 : day.result.at);
         return out;
@@ -1653,6 +1780,7 @@ public final class LotteryService {
         out.put("winnerCount", day.result == null ? 0 : day.result.winningTickets);
         out.put("pot", day.result == null ? 0 : day.result.potValue);
         out.put("rollover", day.result != null && day.result.rollover);
+        out.put("refunded", day.result != null && day.result.refunded);
         List<String> masked = new ArrayList<>();
         if (day.result != null && day.result.winnerNames != null) {
             for (String name : day.result.winnerNames) {
@@ -1743,6 +1871,9 @@ public final class LotteryService {
         public double potValue;
         public double rakeValue;
         public boolean rollover;
+        /** 本轮改为退款：奖池不滚存，票款按原物退回。 */
+        public boolean refunded;
+        public String refundReason = "";
         public List<String> winnerNames = new ArrayList<>();
         public long at;
         public String nextDay = "";
@@ -1757,6 +1888,18 @@ public final class LotteryService {
 
     public static final class FundData {
         public List<String> items = new ArrayList<>();
+    }
+
+    public static final class QuarantineData {
+        public List<QuarantineEntry> entries = new ArrayList<>();
+    }
+
+    /** 解码失败的物品原文；`encoded` 只留在服务器数据目录，不写日志。 */
+    public static final class QuarantineEntry {
+        public long at;
+        public String source = "";
+        public String hash = "";
+        public String encoded = "";
     }
 
     public static final class ClaimData {

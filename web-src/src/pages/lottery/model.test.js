@@ -100,6 +100,13 @@ describe('lottery model', () => {
     const hist = historyRows(model);
     expect(hist[0].title).toBe('第 11 游戏日 · 死亡 5');
     expect(hist[1].rollover).toBe(true);
+    const refunded = historyRows({
+      history: [{ day: 'game-10', deathCount: 3, refunded: true, refundReason: '管理员取消' }],
+    });
+    expect(refunded[0].refunded).toBe(true);
+    expect(refunded[0].meta).toContain('已退款');
+    expect(refunded[0].meta).toContain('管理员取消');
+    expect(refunded[0].meta).not.toContain('奖池');
   });
 
   it('概览大屏数据比例正常', () => {

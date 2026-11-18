@@ -14,8 +14,12 @@ import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HexFormat;
 import java.util.List;
 
 /**
@@ -119,5 +123,23 @@ public final class LotteryItemCodec {
             }
         }
         return out;
+    }
+
+    /**
+     * 原始串的短哈希：用于隔离区日志与去重。
+     *
+     * <p>日志里只写哈希，不写 Base64/NBT 原文，避免把玩家物品数据泄露到日志。
+     */
+    public static String hash(String encoded) {
+        if (encoded == null || encoded.isEmpty()) {
+            return "";
+        }
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] bytes = digest.digest(encoded.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(bytes).substring(0, 16);
+        } catch (NoSuchAlgorithmException e) {
+            return Integer.toHexString(encoded.hashCode());
+        }
     }
 }
