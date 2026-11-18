@@ -58,6 +58,17 @@ npm run check
 
 没有页面白名单：任何重新引入旧内核的改动都会直接失败。
 
+## Java 架构守卫
+
+`mod/src/test/java/com/shenqianye/samsara/architecture/ArchitectureGuardTest.java` 随 `gradle test` 一起跑（`gradle build` 会执行），规则：
+
+1. `FabricLoader.getConfigDir()` 只允许出现在 `storage/StoragePaths.java`；其他模块一律用 `StoragePaths.configRoot()` / `configFile()` / `configDirAt()` / `gameConfigDir()`。
+2. 字面量 `"config/samsara"`（含 `"config","samsara"` 拆分写法）只允许出现在 `StoragePaths`。
+3. 领域包不得 `import com.shenqianye.samsara.web.*`；唯一例外是根入口 `Samsara.java`（负责装配）。需要反向调用时先加接口，在 `Samsara.onInitializeServer` 里装实现（参考 `audit/Audit`）。
+4. `storage` 包只允许依赖根入口 `Samsara` 与 `config` 包。
+
+守卫扫描的是去注释后的源码，注释里写示例不会误报。新增例外必须先进本文件，再改测试；不要用 allowlist 悄悄放过。
+
 ## 回归审计
 
 `tools/agent/scan-legacy.mjs` 只做回归审计：
