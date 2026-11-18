@@ -252,7 +252,21 @@ public final class OutputRenderer {
                                                 CommandSourceStack source) {
         String wrapped = ChatFormat.wrap(message == null ? "" : message,
                 ChatFormat.DEFAULT_MAX_WIDTH);
-        return render(key, Map.of("message", wrapped), source, null);
+        return render(key, replyValues(wrapped), source, null);
+    }
+
+    /**
+     * 把一段多行报告拆成字段级变量：{@code message}（整段，兼容旧模板）、
+     * {@code headline}（首行）、{@code detail}（其余行）。
+     */
+    public static Map<String, Object> replyValues(String message) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        String text = message == null ? "" : message;
+        int newline = text.indexOf('\n');
+        values.put("message", text);
+        values.put("headline", newline < 0 ? text : text.substring(0, newline));
+        values.put("detail", newline < 0 ? "" : text.substring(newline + 1));
+        return values;
     }
 
     /** Web 预览：用样例值渲染，按钮全部可见可点击（只显示标签，不执行命令）。 */

@@ -29,6 +29,31 @@ class OutputRendererTest {
     }
 
     @Test
+    void replyValuesSplitHeadlineAndDetail() {
+        Map<String, Object> values = OutputRenderer.replyValues("第一行\n第二行\n第三行");
+        assertEquals("第一行\n第二行\n第三行", values.get("message"));
+        assertEquals("第一行", values.get("headline"));
+        assertEquals("第二行\n第三行", values.get("detail"));
+        Map<String, Object> single = OutputRenderer.replyValues("只有一行");
+        assertEquals("只有一行", single.get("headline"));
+        assertEquals("", single.get("detail"));
+    }
+
+    @Test
+    void whereTemplateOnlyRendersEnabledFieldLines() {
+        OutputTemplate template = OutputCatalog.template("where.result");
+        List<OutputPreviewFragment> fragments = OutputRenderer.renderRaw(template,
+                template.defaultParts(),
+                Map.of("dimension", "主世界（minecraft:overworld）",
+                        "coordinateLine", "\n坐标 1, 2, 3"),
+                OutputRenderer.ButtonPolicy.all());
+        String text = OutputRenderer.plainText(fragments);
+        assertTrue(text.contains("坐标 1, 2, 3"), text);
+        assertFalse(text.contains("区块"), text);
+        assertFalse(text.contains("朝向"), text);
+    }
+
+    @Test
     void unknownColorCodeStaysLiteral() {
         OutputTemplate template = new OutputTemplate("test", "测试", "test", List.of(),
                 List.of(), List.of());

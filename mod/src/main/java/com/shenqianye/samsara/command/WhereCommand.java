@@ -12,7 +12,6 @@ import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
-import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
@@ -63,21 +62,10 @@ public final class WhereCommand {
             if (!whereAnyFieldEnabled()) {
                 return templateReply(src, "where.allOff", Map.of("file", "commands.yml"));
             }
-            if (whereAllFieldsEnabled()) {
-                Map<String, Object> values = values(player);
-                Component component = OutputRenderer.render("where.result", values, src,
-                        key -> CommandConfig.getInstance().isWhereBroadcastEnabled());
-                ChatUi.send(src, component);
-                return 1;
-            }
-            String detail = describe(player);
-            MutableComponent broadcastButton = ChatUi.runIfPermitted(src, "where broadcast",
-                    "广播位置", "/samsara where broadcast", "把你的位置广播给全服（有冷却）");
-            MutableComponent action = CommandConfig.getInstance().isWhereBroadcastEnabled()
-                    ? ChatUi.line(ChatUi.text(ChatFormat.getContinuePrefix(), ChatFormatting.GRAY),
-                            broadcastButton)
-                    : null;
-            ChatUi.send(src, ChatFormat.formatComponent(detail, player.getUUID()), action);
+            // 逐项开关：只把开启的字段写进模板；关闭的字段为空，不再回退整段内置文本。
+            Component component = OutputRenderer.render("where.result", values(player), src,
+                    key -> CommandConfig.getInstance().isWhereBroadcastEnabled());
+            ChatUi.send(src, component);
             return 1;
         }
 
@@ -95,7 +83,7 @@ public final class WhereCommand {
         LAST_BROADCAST.put(player.getUUID(), now);
 
         Component component;
-        if (whereAnyFieldEnabled() && whereAllFieldsEnabled()) {
+        if (whereAnyFieldEnabled()) {
             Map<String, Object> values = values(player);
             values.put("player", player.getGameProfile().name());
             component = OutputRenderer.render("where.broadcast", values, src, null);
@@ -107,12 +95,6 @@ public final class WhereCommand {
             target.sendSystemMessage(component);
         }
         return 1;
-    }
-
-    private static boolean whereAllFieldsEnabled() {
-        CommandConfig config = CommandConfig.getInstance();
-        return config.whereShowDimension() && config.whereShowCoordinates()
-                && config.whereShowChunk() && config.whereShowFacing();
     }
 
     private static boolean whereAnyFieldEnabled() {
@@ -133,13 +115,24 @@ public final class WhereCommand {
             values.put("x", pos.getX());
             values.put("y", pos.getY());
             values.put("z", pos.getZ());
+            values.put("coordinateLine", "\n坐标 " + pos.getX() + ", " + pos.getY() + ", " + pos.getZ());
         }
-        if (config.whereShowChunk()) {
+        boolean chunk = config.whereShowChunk();
+        boolean facing = config.whereShowFacing();
+        if (chunk) {
             values.put("chunkX", pos.getX() >> 4);
             values.put("chunkZ", pos.getZ() >> 4);
         }
-        if (config.whereShowFacing()) {
+        if (facing) {
             values.put("facing", facingName(player.getDirection()));
+        }
+        if (chunk && facing) {
+            values.put("chunkLine", "\n区块 " + (pos.getX() >> 4) + ", " + (pos.getZ() >> 4)
+                    + " · 朝向 " + facingName(player.getDirection()));
+        } else if (chunk) {
+            values.put("chunkLine", "\n区块 " + (pos.getX() >> 4) + ", " + (pos.getZ() >> 4));
+        } else if (facing) {
+            values.put("facingLine", "\n朝向 " + facingName(player.getDirection()));
         }
         return values;
     }

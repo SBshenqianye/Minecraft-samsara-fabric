@@ -103,7 +103,11 @@ public final class OutputCatalog {
                 number("z", "Z 坐标", "4"),
                 number("chunkX", "区块 X", "3"),
                 number("chunkZ", "区块 Z", "0"),
-                text("facing", "朝向", "北", true)
+                text("facing", "朝向", "北", true),
+                // 逐项开关（where.show*）只置位对应行；关闭的字段为空，不回退整段内置文本。
+                optional("coordinateLine", "坐标行", "\n坐标 55, 48, 4"),
+                optional("chunkLine", "区块行", "\n区块 3, 0 · 朝向 北"),
+                optional("facingLine", "朝向行", "")
         ));
         variables.add(prefix());
         return new OutputTemplate("where.result", "位置", "位置查询结果（/samsara where）",
@@ -113,12 +117,9 @@ public final class OutputCatalog {
                 List.of(
                         new PrefixPart(PREFIX_SAMPLE),
                         new VariablePart("dimension"),
-                        new TextPart("\n坐标 "), new VariablePart("x"),
-                        new TextPart(", "), new VariablePart("y"),
-                        new TextPart(", "), new VariablePart("z"),
-                        new TextPart("\n区块 "), new VariablePart("chunkX"),
-                        new TextPart(", "), new VariablePart("chunkZ"),
-                        new TextPart(" · 朝向 "), new VariablePart("facing"),
+                        new VariablePart("coordinateLine"),
+                        new VariablePart("chunkLine"),
+                        new VariablePart("facingLine"),
                         new TextPart("\n"), new ButtonPart("broadcast")
                 ));
     }
@@ -132,7 +133,10 @@ public final class OutputCatalog {
                 number("z", "Z 坐标", "4"),
                 number("chunkX", "区块 X", "3"),
                 number("chunkZ", "区块 Z", "0"),
-                text("facing", "朝向", "北", true)
+                text("facing", "朝向", "北", true),
+                optional("coordinateLine", "坐标行", "\n坐标 55, 48, 4"),
+                optional("chunkLine", "区块行", "\n区块 3, 0 · 朝向 北"),
+                optional("facingLine", "朝向行", "")
         ));
         variables.add(prefix());
         return new OutputTemplate("where.broadcast", "位置", "位置广播（/samsara where broadcast）",
@@ -141,12 +145,9 @@ public final class OutputCatalog {
                         new PrefixPart(PREFIX_SAMPLE),
                         new VariablePart("player"), new TextPart(" 的位置\n"),
                         new VariablePart("dimension"),
-                        new TextPart("\n坐标 "), new VariablePart("x"),
-                        new TextPart(", "), new VariablePart("y"),
-                        new TextPart(", "), new VariablePart("z"),
-                        new TextPart("\n区块 "), new VariablePart("chunkX"),
-                        new TextPart(", "), new VariablePart("chunkZ"),
-                        new TextPart(" · 朝向 "), new VariablePart("facing")
+                        new VariablePart("coordinateLine"),
+                        new VariablePart("chunkLine"),
+                        new VariablePart("facingLine")
                 ));
     }
 
@@ -404,13 +405,22 @@ public final class OutputCatalog {
     }
 
     /**
-     * 动态报告类消息：内部文本由程序生成，先作为 message 变量迁移到输出系统。
-     * 这样至少可编辑前缀、布局和附加文案；逐字段拆变量后续按命令继续细化。
+     * 动态报告类消息：内部文本由程序生成。
+     *
+     * <p>默认模板仍是 {@code {message}}（旧模板原样可用），同时提供字段级变量：
+     * {@code headline}/{@code detail} 是多行报告的首行与其余行，{@code actor}/{@code target}/
+     * {@code action} 是行为类消息的参与者与动作。服主可以只挑需要的字段重排。
      */
     private static OutputTemplate replyTemplate(String key, String group, String description,
                                                 String prefix) {
         return new OutputTemplate(key, group, description,
-                List.of(text("message", "命令结果", "命令执行结果", true), prefix()),
+                List.of(text("message", "命令结果", "命令执行结果", true),
+                        optional("headline", "首行", "命令执行结果"),
+                        optional("detail", "详细行", "\n更多说明"),
+                        optional("actor", "发起者", "Alice"),
+                        optional("target", "对象", "Bob"),
+                        optional("action", "动作", "同意了传送请求"),
+                        prefix()),
                 List.of(),
                 List.of(new PrefixPart(prefix), new VariablePart("message")));
     }

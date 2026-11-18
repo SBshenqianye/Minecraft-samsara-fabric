@@ -216,8 +216,7 @@ public final class TpaCommand {
                 Set.of(), destination.getYRot(), destination.getXRot(), false);
 
         reply(src, "已同意 " + sender.getName().getString() + " 的传送请求");
-        sender.sendSystemMessage(OutputRenderer.renderLegacy("tpa.reply",
-                accepter.getName().getString() + " 同意了你的传送请求", null));
+        sender.sendSystemMessage(tpaReply(accepter.getName().getString(), "同意了你的传送请求"));
         return 1;
     }
 
@@ -234,8 +233,7 @@ public final class TpaCommand {
         ServerPlayer sender = src.getServer().getPlayerList().getPlayer(request.sender());
         reply(src, "已拒绝 " + (sender != null ? sender.getName().getString() : "对方") + " 的传送请求");
         if (sender != null) {
-            sender.sendSystemMessage(OutputRenderer.renderLegacy("tpa.reply",
-                    denier.getName().getString() + " 拒绝了你的传送请求", null));
+            sender.sendSystemMessage(tpaReply(denier.getName().getString(), "拒绝了你的传送请求"));
         }
         return 1;
     }
@@ -256,8 +254,7 @@ public final class TpaCommand {
         }
         ServerPlayer target = src.getServer().getPlayerList().getPlayer(targetId);
         if (target != null) {
-            target.sendSystemMessage(OutputRenderer.renderLegacy("tpa.reply",
-                    sender.getName().getString() + " 取消了传送请求", null));
+            target.sendSystemMessage(tpaReply(sender.getName().getString(), "取消了传送请求"));
         }
         return reply(src, "已取消传送请求");
     }
@@ -302,5 +299,14 @@ public final class TpaCommand {
     private static int reply(CommandSourceStack src, String message) {
         src.sendSuccess(() -> OutputRenderer.renderLegacy("tpa.reply", message, src), false);
         return 1;
+    }
+
+    /** TPA 结果消息：message 兼容旧模板，actor/action 供字段级模板重排。 */
+    private static net.minecraft.network.chat.Component tpaReply(String actor, String action) {
+        java.util.Map<String, Object> values = new java.util.LinkedHashMap<>(
+                OutputRenderer.replyValues(actor + " " + action));
+        values.put("actor", actor);
+        values.put("action", action);
+        return OutputRenderer.render("tpa.reply", values, null, null);
     }
 }
