@@ -113,6 +113,16 @@ public final class StoragePaths {
         return serverRoot.toAbsolutePath().normalize().resolve("config").resolve("samsara");
     }
 
+    /** 服务器根下的服务器级数据根 {@code <serverRoot>/samsara}。 */
+    public static Path serverDataDirAt(Path serverRoot) {
+        return serverRoot.toAbsolutePath().normalize().resolve("samsara");
+    }
+
+    /** 服务器根下的跨周目数据根 {@code <serverRoot>/samsara/shared}。 */
+    public static Path sharedDirAt(Path serverRoot) {
+        return serverDataDirAt(serverRoot).resolve("shared");
+    }
+
     /** 旧配置目录；没有迁移过时为 null。 */
     public static Path legacyConfigRoot() {
         if (legacyRoot == null) {

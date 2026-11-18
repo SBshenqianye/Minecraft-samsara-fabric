@@ -39,6 +39,12 @@ class ServerBackupTest {
                 StandardCharsets.UTF_8);
         Files.writeString(root.resolve("config/samsara/identity.yml"), "enabled: false\n",
                 StandardCharsets.UTF_8);
+        Files.createDirectories(root.resolve("samsara/shared/lottery"));
+        Files.createDirectories(root.resolve("samsara/shared/insurance"));
+        Files.writeString(root.resolve("samsara/shared/lottery/state.json"), "{\"fund\":100}\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(root.resolve("samsara/shared/insurance/policies.json"), "[]\n",
+                StandardCharsets.UTF_8);
     }
 
     @Test
@@ -179,6 +185,125 @@ class ServerBackupTest {
         Map<String, Object> parentDelete = ServerBackup.delete(root, (String) a.get("id"), true);
         assertEquals(Boolean.FALSE, parentDelete.get("ok"));
         assertTrue(String.valueOf(parentDelete.get("error")).contains("分支"));
+    }
+
+    @Test
+    void backupIncludesSharedAndRestoreRestoresIt() throws Exception {
+        prepareWorld();
+        Map<String, Object> preview = ServerBackup.previewCreate(root);
+        assertEquals(Boolean.TRUE, preview.get("ok"), String.valueOf(preview.get("error")));
+        assertEquals(2, preview.get("sharedFiles"));
+
+        ServerBackup.scheduleCreate(root);
+        ServerBackup.prepare(root);
+        ServerBackup.BackupInfo info = ServerBackup.list(root).get(0);
+        try (var zip = new java.util.zip.ZipFile(info.file)) {
+            assertNotNull(zip.getEntry("shared/lottery/state.json"), "新备份必须包含奖池/基金");
+            assertNotNull(zip.getEntry("shared/insurance/policies.json"), "新备份必须包含保险基金");
+        }
+
+        // 模拟换周目后数据变化，再恢复：shared 应回到备份时的值。
+        Files.writeString(root.resolve("samsara/shared/lottery/state.json"), "{\"fund\":999}\n",
+                StandardCharsets.UTF_8);
+        ServerBackup.Preview restorePreview = ServerBackup.previewRestore(root, info.id);
+        assertTrue(restorePreview.ok, String.join(";", restorePreview.errors));
+        assertTrue(restorePreview.includesShared);
+        assertEquals(2, restorePreview.sharedFiles);
+
+        Map<String, Object> restore = ServerBackup.scheduleRestore(root, info.id);
+        assertTrue((Boolean) restore.get("ok"), String.valueOf(restore.get("error")));
+        ServerBackup.prepare(root);
+
+        assertEquals("{\"fund\":100}\n",
+                Files.readString(root.resolve("samsara/shared/lottery/state.json"), StandardCharsets.UTF_8));
+        // 恢复前的 shared 也保留在回滚目录，可人工找回。
+        assertEquals("{\"fund\":999}\n", Files.readString(
+                ServerBackup.backupRoot(root).resolve("pre-restore-" + restore.get("jobId"))
+                        .resolve("shared/lottery/state.json"), StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void restoreOldZipWithoutSharedKeepsCurrentShared() throws Exception {
+        prepareWorld();
+        ServerBackup.scheduleCreate(root);
+        ServerBackup.prepare(root);
+        ServerBackup.BackupInfo info = ServerBackup.list(root).get(0);
+
+        stripSharedFromZip(Path.of(info.file));
+        Files.writeString(root.resolve("samsara/shared/lottery/state.json"), "{\"fund\":777}\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(root.resolve("world/level.dat"), "level-changed", StandardCharsets.UTF_8);
+
+        ServerBackup.Preview preview = ServerBackup.previewRestore(root, info.id);
+        assertTrue(preview.ok, String.join(";", preview.errors));
+        assertFalse(preview.includesShared);
+        assertEquals(0, preview.sharedFiles);
+
+        Map<String, Object> restore = ServerBackup.scheduleRestore(root, info.id);
+        assertTrue((Boolean) restore.get("ok"), String.valueOf(restore.get("error")));
+        ServerBackup.prepare(root);
+
+        assertEquals("level-original",
+                Files.readString(root.resolve("world/level.dat"), StandardCharsets.UTF_8));
+        assertEquals("{\"fund\":777}\n", Files.readString(
+                root.resolve("samsara/shared/lottery/state.json"), StandardCharsets.UTF_8),
+                "旧备份不含 shared 时不得清零当前奖池/保险基金");
+    }
+
+    @Test
+    void restoreFailureRollsBackShared() throws Exception {
+        prepareWorld();
+        ServerBackup.scheduleCreate(root);
+        ServerBackup.prepare(root);
+        ServerBackup.BackupInfo info = ServerBackup.list(root).get(0);
+
+        Files.writeString(root.resolve("samsara/shared/lottery/state.json"), "{\"fund\":555}\n",
+                StandardCharsets.UTF_8);
+        Map<String, Object> restore = ServerBackup.scheduleRestore(root, info.id);
+        assertTrue((Boolean) restore.get("ok"), String.valueOf(restore.get("error")));
+
+        Files.writeString(Path.of(info.file), "corrupt", StandardCharsets.UTF_8);
+        ServerBackup.prepare(root);
+
+        assertEquals("{\"fund\":555}\n", Files.readString(
+                root.resolve("samsara/shared/lottery/state.json"), StandardCharsets.UTF_8),
+                "恢复失败必须把 shared 放回原处");
+        ServerBackup.Job job = ServerBackup.job(root, (String) restore.get("jobId"));
+        assertNotNull(job);
+        assertEquals("failed", job.status);
+    }
+
+    /** 把新格式 zip 改写成旧格式：去掉 shared/，manifest 回到 format 1。 */
+    private static void stripSharedFromZip(Path zip) throws Exception {
+        Path tmp = zip.resolveSibling(zip.getFileName() + ".old");
+        try (var in = new java.util.zip.ZipFile(zip.toFile());
+             var out = new java.util.zip.ZipOutputStream(Files.newOutputStream(tmp))) {
+            var entries = in.entries();
+            while (entries.hasMoreElements()) {
+                var entry = entries.nextElement();
+                if (entry.isDirectory() || entry.getName().startsWith("shared/")) {
+                    continue;
+                }
+                out.putNextEntry(new java.util.zip.ZipEntry(entry.getName()));
+                if ("manifest.json".equals(entry.getName())) {
+                    String json;
+                    try (var stream = in.getInputStream(entry)) {
+                        json = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+                    }
+                    var manifest = com.google.gson.JsonParser.parseString(json).getAsJsonObject();
+                    manifest.addProperty("format", 1);
+                    manifest.remove("sharedBytes");
+                    manifest.remove("sharedFileCount");
+                    out.write(manifest.toString().getBytes(StandardCharsets.UTF_8));
+                } else {
+                    try (var stream = in.getInputStream(entry)) {
+                        stream.transferTo(out);
+                    }
+                }
+                out.closeEntry();
+            }
+        }
+        Files.move(tmp, zip, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
     }
 
     private static Map<String, Object> timeline(Path root) {

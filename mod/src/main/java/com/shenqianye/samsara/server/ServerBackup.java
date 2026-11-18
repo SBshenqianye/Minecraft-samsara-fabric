@@ -47,9 +47,12 @@ import java.util.zip.ZipOutputStream;
  * {@code backups/samsara/server-backups/pre-restore-<job>/}，失败自动回滚。
  *
  * <p>备份内容：world（排除 session.lock 与 web-map-cache）+ 服务器配置
- * （server.properties/ops/whitelist/banned/eula）+ config/samsara。
- * 恢复时 server.properties 与 web.yml 不直接覆盖，另存为
+ * （server.properties/ops/whitelist/banned/eula）+ config/samsara + 跨周目数据
+ * {@code samsara/shared}。恢复时 server.properties 与 web.yml 不直接覆盖，另存为
  * {@code *.restored-<job>} 供服主确认。
+ *
+ * <p>兼容旧备份：旧 zip 没有 {@code shared/} 时按“无跨周目数据”处理，恢复时保留
+ * 当前奖池/保险基金，绝不因为恢复旧备份而清零。
  */
 public final class ServerBackup {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
@@ -187,6 +190,9 @@ public final class ServerBackup {
         public String worldName = "";
         public long backupBytes;
         public long worldBytes;
+        public long sharedBytes;
+        public int sharedFiles;
+        public boolean includesShared;
         public long freeBytes;
         public long neededBytes;
         public String createdAt = "";
@@ -207,6 +213,9 @@ public final class ServerBackup {
         out.put("worldDir", world.toString());
         out.put("worldName", world.getFileName().toString());
         out.put("worldBytes", sizeOf(world));
+        out.put("sharedDir", StoragePaths.sharedDirAt(serverRoot).toString());
+        out.put("sharedBytes", sizeOf(StoragePaths.sharedDirAt(serverRoot)));
+        out.put("sharedFiles", countFiles(StoragePaths.sharedDirAt(serverRoot)));
         out.put("backupRoot", backupRoot(serverRoot).toString());
         out.put("freeBytes", freeBytes(serverRoot));
         out.put("keep", currentKeep());
@@ -346,18 +355,25 @@ public final class ServerBackup {
     public static synchronized Map<String, Object> previewCreate(Path serverRoot) {
         Map<String, Object> out = new LinkedHashMap<>();
         Path world = worldDir(serverRoot);
+        Path shared = StoragePaths.sharedDirAt(serverRoot);
         long worldBytes = sizeOf(world);
+        long sharedBytes = sizeOf(shared);
+        int sharedFiles = countFiles(shared);
         long free = freeBytes(serverRoot);
         out.put("ok", Files.isDirectory(world) && free > worldBytes + MIN_FREE_MARGIN);
         out.put("worldDir", world.toString());
         out.put("worldName", world.getFileName().toString());
         out.put("worldBytes", worldBytes);
+        out.put("sharedDir", shared.toString());
+        out.put("sharedBytes", sharedBytes);
+        out.put("sharedFiles", sharedFiles);
         out.put("freeBytes", free);
         out.put("neededBytes", worldBytes + MIN_FREE_MARGIN);
         out.put("keep", currentKeep());
         out.put("steps", List.of(
                 "停服后、下一次启动前打包 world（排除 session.lock / web-map-cache）",
                 "同时打包 server.properties、白名单/OP/封禁、eula 与 config/samsara",
+                "同时打包跨周目数据 samsara/shared（奖池/保险基金）",
                 "写入服务器级 backups/samsara/server-backups/<id>.zip，并生成 manifest",
                 "按 serverBackupKeep 只清理本功能创建的旧备份，源 world 永不自动删除"));
         if (!Files.isDirectory(world)) {
@@ -437,6 +453,10 @@ public final class ServerBackup {
         preview.sha256 = info.sha256;
         preview.createdAt = String.valueOf(num(manifest.get("createdAt")));
         preview.neededBytes = preview.worldBytes + MIN_FREE_MARGIN;
+        int[] shared = zipPrefixStats(Path.of(info.file), "shared/");
+        preview.sharedFiles = shared[0];
+        preview.sharedBytes = shared[1];
+        preview.includesShared = shared[0] > 0;
         if (!preview.worldName.equals(world.getFileName().toString())) {
             preview.errors.add("备份的 level-name=" + preview.worldName
                     + "，当前 level-name=" + world.getFileName());
@@ -449,6 +469,12 @@ public final class ServerBackup {
         preview.steps.add("把当前 world 移到 backupRoot/pre-restore-<job>/world（失败可回滚）");
         preview.steps.add("解压备份的 world 覆盖当前 world");
         preview.steps.add("恢复 whitelist/ops/banned/eula 与 config/samsara");
+        if (preview.includesShared) {
+            preview.steps.add("把当前 samsara/shared 移到 pre-restore-<job>/shared，"
+                    + "再恢复备份里的跨周目数据");
+        } else {
+            preview.steps.add("该备份不含跨周目数据（shared），恢复时保留当前奖池/保险基金");
+        }
         preview.steps.add("server.properties 与 web.yml 不直接覆盖，另存为 *.restored-<job> 供确认");
         preview.warnings.add("恢复会替换当前世界；建议先在游戏内确认没有正在进行的导入/归档");
         preview.warnings.add("恢复完成后需要再次启动服务器才会加载新世界");
@@ -744,6 +770,8 @@ public final class ServerBackup {
             job.log.add("zip=" + target + " (" + human(info.zipBytes) + ")");
             job.log.add("world=" + info.worldName + " · files=" + info.fileCount
                     + " · raw=" + human(info.totalBytes));
+            job.log.add("shared=files " + num(manifest.get("sharedFileCount"))
+                    + " · raw " + human(num(manifest.get("sharedBytes"))));
             writeJob(serverRoot, job);
             Samsara.LOGGER.info("[本体备份] {}", job.message);
         } catch (Exception e) {
@@ -777,8 +805,11 @@ public final class ServerBackup {
         writeJob(serverRoot, job);
         Path rollback = backupRoot(serverRoot).resolve("pre-restore-" + pending.jobId);
         Path staging = backupRoot(serverRoot).resolve("restore-" + pending.jobId);
+        Path shared = StoragePaths.sharedDirAt(serverRoot);
         boolean movedWorld = false;
         boolean movedRollback = false;
+        boolean movedShared = false;
+        boolean sharedRestored = false;
         try {
             if (!Files.isRegularFile(zip)) {
                 throw new IOException("备份文件不存在：" + zip);
@@ -806,6 +837,10 @@ public final class ServerBackup {
                 movedWorld = true;
             }
             copyTree(StoragePaths.configDirAt(serverRoot), rollback.resolve("config-samsara"));
+            if (Files.exists(shared)) {
+                Files.move(shared, rollback.resolve("shared"), StandardCopyOption.ATOMIC_MOVE);
+                movedShared = true;
+            }
             for (String name : ROOT_FILES) {
                 Path file = serverRoot.resolve(name);
                 if (Files.isRegularFile(file)) {
@@ -827,6 +862,18 @@ public final class ServerBackup {
             writeJob(serverRoot, job);
             Files.move(restoredWorld, world, StandardCopyOption.ATOMIC_MOVE);
             restoreConfigs(serverRoot, staging, pending.jobId, job);
+            Path restoredShared = staging.resolve("shared");
+            if (Files.isDirectory(restoredShared)) {
+                Files.createDirectories(shared.getParent());
+                Files.move(restoredShared, shared, StandardCopyOption.ATOMIC_MOVE);
+                sharedRestored = true;
+                job.log.add("跨周目数据已恢复：shared/");
+            } else if (movedShared) {
+                // 旧备份没有 shared/：不能删掉当前奖池/保险基金，原样放回。
+                Files.move(rollback.resolve("shared"), shared, StandardCopyOption.ATOMIC_MOVE);
+                movedShared = false;
+                job.log.add("备份不含 shared/（旧格式）：保留当前跨周目数据");
+            }
             State state = readState(serverRoot);
             state.headId = pending.id;
             state.pendingBranch = true;
@@ -854,6 +901,13 @@ public final class ServerBackup {
                 if (movedWorld) {
                     deleteRecursive(world);
                     Files.move(rollback.resolve("world"), world, StandardCopyOption.ATOMIC_MOVE);
+                }
+                if (sharedRestored) {
+                    deleteRecursive(shared);
+                }
+                if (movedShared) {
+                    Files.move(rollback.resolve("shared"), shared, StandardCopyOption.ATOMIC_MOVE);
+                    movedShared = false;
                 }
                 if (movedRollback) {
                     restoreRollbackConfigs(serverRoot, rollback);
@@ -922,7 +976,7 @@ public final class ServerBackup {
     private static Map<String, Object> createZip(Path serverRoot, Path world, Path out, Job job,
                                                 String note) throws IOException {
         Map<String, Object> manifest = new LinkedHashMap<>();
-        manifest.put("format", 1);
+        manifest.put("format", 2);
         manifest.put("worldName", world.getFileName().toString());
         manifest.put("mcVersion", mcVersion());
         manifest.put("modVersion", modVersion());
@@ -935,6 +989,7 @@ public final class ServerBackup {
             manifest.put("stackSummary", "");
         }
         long[] stats = new long[]{0L, 0L}; // bytes, files
+        long[] sharedStats = new long[]{0L, 0L};
         try (OutputStream raw = Files.newOutputStream(out);
              ZipOutputStream zip = new ZipOutputStream(new BufferedOutputStream(raw))) {
             addTree(zip, world, "world", stats, job);
@@ -945,8 +1000,13 @@ public final class ServerBackup {
                 }
             }
             addTree(zip, StoragePaths.configDirAt(serverRoot), "config-samsara", stats, job);
+            addTree(zip, StoragePaths.sharedDirAt(serverRoot), "shared", sharedStats, job);
+            stats[0] += sharedStats[0];
+            stats[1] += sharedStats[1];
             manifest.put("totalBytes", stats[0]);
             manifest.put("fileCount", stats[1]);
+            manifest.put("sharedBytes", sharedStats[0]);
+            manifest.put("sharedFileCount", sharedStats[1]);
             manifest.put("sha256", "");
             zip.putNextEntry(new ZipEntry("manifest.json"));
             zip.write(GSON.toJson(manifest).getBytes(StandardCharsets.UTF_8));
@@ -1272,6 +1332,41 @@ public final class ServerBackup {
         } catch (IOException ignored) {
         }
         return total[0];
+    }
+
+    private static int countFiles(Path path) {
+        if (path == null || !Files.isDirectory(path)) {
+            return 0;
+        }
+        int[] total = new int[]{0};
+        try (var stream = Files.walk(path)) {
+            stream.filter(Files::isRegularFile).forEach(file -> total[0]++);
+        } catch (IOException ignored) {
+        }
+        return total[0];
+    }
+
+    /** 统计 zip 内某个前缀的文件数与原始字节数（预览用；不解压）。 */
+    private static int[] zipPrefixStats(Path zipFile, String prefix) {
+        int[] stats = new int[]{0, 0};
+        if (zipFile == null || !Files.isRegularFile(zipFile)) {
+            return stats;
+        }
+        try (ZipFile zip = new ZipFile(zipFile.toFile())) {
+            var entries = zip.entries();
+            while (entries.hasMoreElements()) {
+                ZipEntry entry = entries.nextElement();
+                if (entry.isDirectory() || !entry.getName().startsWith(prefix)) {
+                    continue;
+                }
+                stats[0]++;
+                if (entry.getSize() > 0) {
+                    stats[1] += (int) Math.min(Integer.MAX_VALUE, entry.getSize());
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return stats;
     }
 
     private static long freeBytes(Path serverRoot) {

@@ -166,13 +166,15 @@ export default {
         hidden: box?.hidden === true,
         title: box?.querySelector('.world-stack-preview-title')?.textContent || '',
         rows: box?.querySelectorAll('.world-stack-rows dt').length || 0,
+        sharedRow: [...(box?.querySelectorAll('.world-stack-rows dt') || [])]
+          .some((node) => node.textContent.includes('跨周目数据')),
       };
       if (box) box.hidden = true;
       return result;
     })()`);
     check('备份恢复预览在 Vue 中打开',
       restorePreview.skipped || (!restorePreview.hidden && restorePreview.title.startsWith('恢复预览')
-        && restorePreview.rows >= 5), JSON.stringify(restorePreview));
+        && restorePreview.rows >= 5 && restorePreview.sharedRow), JSON.stringify(restorePreview));
 
     const createPreview = await evaluate(`(async () => {
       document.getElementById('server-backup-create')?.click();
@@ -182,13 +184,15 @@ export default {
         hidden: box?.hidden === true,
         title: box?.querySelector('.world-stack-preview-title')?.textContent || '',
         rows: box?.querySelectorAll('.world-stack-rows dt').length || 0,
+        sharedRow: [...(box?.querySelectorAll('.world-stack-rows dt') || [])]
+          .some((node) => node.textContent.includes('跨周目数据')),
       };
       if (box) box.hidden = true;
       return result;
     })()`);
     check('创建备份预览只读展示空间与保留策略',
       !createPreview.hidden && createPreview.title.startsWith('创建备份预览')
-      && createPreview.rows >= 5, JSON.stringify(createPreview));
+      && createPreview.rows >= 5 && createPreview.sharedRow, JSON.stringify(createPreview));
 
     // ---- Web 审计 ----
     await navigate('/samsara/system/audit');

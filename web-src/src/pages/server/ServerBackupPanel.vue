@@ -4,7 +4,7 @@
       <div class="panel-head">
         <div>
           <h2>存档备份</h2>
-          <p class="panel-sub">备份 world + 服务器配置 + config/samsara。列表里的“时间线头节点”只是最新一份备份，不是实时世界；当前世界始终在运行中变化，不会出现在备份列表里。每份备份都可以回滚；创建与恢复都在停服后、下次启动前执行，恢复前会自动保留当前 world，失败回滚。</p>
+          <p class="panel-sub">备份 world + 服务器配置 + config/samsara + 跨周目数据 samsara/shared（奖池/保险基金）。列表里的“时间线头节点”只是最新一份备份，不是实时世界；当前世界始终在运行中变化，不会出现在备份列表里。每份备份都可以回滚；创建与恢复都在停服后、下次启动前执行，恢复前会自动保留当前 world 与 shared，失败回滚。</p>
         </div>
         <div class="panel-tools">
           <button id="server-backup-reload" class="ghost" type="button" :disabled="loading" @click="reload">重新读取</button>
@@ -245,6 +245,8 @@ function toRows(previewData) {
   return [
     ['world', previewData.worldName || '—'],
     ['world 大小', formatBytes(previewData.worldBytes)],
+    ['跨周目数据', (previewData.sharedFiles || 0) + ' 个文件 · '
+      + formatBytes(previewData.sharedBytes || 0) + '（samsara/shared）'],
     ['可用空间', formatBytes(previewData.freeBytes)],
     ['需要空间', formatBytes(previewData.neededBytes)],
     ['保留', previewData.keep === 0 ? '不自动清理' : '最新 ' + previewData.keep + ' 份 + 祖先'],
@@ -256,6 +258,9 @@ function restoreRows(previewData) {
   return [
     ['备份大小', formatBytes(previewData.backupBytes)],
     ['备份 world', previewData.worldName || '—'],
+    ['跨周目数据', previewData.includesShared
+      ? (previewData.sharedFiles || 0) + ' 个文件 · ' + formatBytes(previewData.sharedBytes || 0)
+      : '该备份不含 shared（旧格式），恢复时保留当前奖池/保险基金'],
     ['当前 world', formatBytes(previewData.worldBytes)],
     ['可用空间', formatBytes(previewData.freeBytes)],
     ['执行时机', '停服后、下次启动前'],
@@ -306,7 +311,7 @@ function showCreatePreview(data) {
     errors: ok ? [] : [data?.error || '预览未通过'],
     confirmed: false,
     note: '',
-    confirmText: '我确认：停服并重新启动后打包 world、服务器配置与 config/samsara；源 world 保持不变',
+    confirmText: '我确认：停服并重新启动后打包 world、服务器配置、config/samsara 与跨周目数据 shared；源 world 保持不变',
   };
   scrollPreview();
 }
@@ -347,7 +352,7 @@ function showRestorePreview(id, data) {
       ? data.errors : ['恢复预览未通过']),
     confirmed: false,
     note: '',
-    confirmText: '我确认：恢复会替换当前 world；恢复前的世界保留在 pre-restore-<job>/world',
+    confirmText: '我确认：恢复会替换当前 world 与 shared；恢复前的数据保留在 pre-restore-<job>/ 下',
   };
   scrollPreview();
 }
