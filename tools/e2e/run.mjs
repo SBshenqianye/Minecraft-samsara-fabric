@@ -97,6 +97,7 @@ try {
   await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
     source: `
       sessionStorage.setItem('samsara-token', ${JSON.stringify(token)});
+      window.__e2e = true;
       window.__e2eDialogOpen = (id) => {
         const el = document.getElementById(id);
         if (!el) return false;

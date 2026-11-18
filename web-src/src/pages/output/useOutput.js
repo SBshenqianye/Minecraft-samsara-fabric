@@ -19,8 +19,10 @@ export function useOutput() {
   const autoContinue = ref(true);
   const fragments = ref([]);
   const previewHint = ref('');
+  const baselineJson = ref('[]');
   let previewSeq = 0;
   const editorVersion = ref(0);
+  const dirty = computed(() => JSON.stringify(parts.value) !== baselineJson.value);
 
   function bumpEditor() {
     editorVersion.value += 1;
@@ -42,6 +44,7 @@ export function useOutput() {
     key.value = nextKey;
     const target = model.value.messages.find((item) => item.key === nextKey);
     parts.value = target ? cloneParts(target.parts) : [];
+    baselineJson.value = JSON.stringify(parts.value);
     bumpEditor();
     schedulePreview();
   }
@@ -117,6 +120,7 @@ export function useOutput() {
       }
       model.value = result.data.output;
       parts.value = cloneParts(selected.value?.parts || parts.value);
+      baselineJson.value = JSON.stringify(parts.value);
       setMessage(result.data?.message || '已保存并重载', 'ok');
       await renderPreview();
       return true;
@@ -183,6 +187,7 @@ export function useOutput() {
     parts,
     selected,
     errors,
+    dirty,
     message,
     messageKind,
     loading,

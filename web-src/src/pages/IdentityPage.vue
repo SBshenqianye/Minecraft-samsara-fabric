@@ -108,6 +108,7 @@ import IdentityGroupCard from './identity/IdentityGroupCard.vue';
 import IdentityPool from './identity/IdentityPool.vue';
 import { useIdentity } from './identity/useIdentity.js';
 import { clearPageNav } from '../composables/usePageNav.js';
+import { useUnsavedChanges } from '../composables/useUnsavedChanges.js';
 
 defineOptions({ name: 'IdentityPage' });
 
@@ -115,6 +116,7 @@ const ENABLED_CHOICES = [{ value: 'true', label: '启用' }, { value: 'false', l
 const SYNC_CHOICES = [{ value: 'true', label: '启用' }, { value: 'false', label: '关闭' }];
 
 const identity = useIdentity();
+useUnsavedChanges(() => identity.dirty.value);
 
 function setSetting(key, value) {
   identity.settings[key] = value;

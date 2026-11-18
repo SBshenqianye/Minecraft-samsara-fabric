@@ -78,6 +78,31 @@ export default {
     check('公告编辑有未保存提示且刷新可恢复', dirty.changed && dirty.dirty && dirty.clean,
       JSON.stringify(dirty));
 
+    const guard = await evaluate(`(async () => {
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const input = document.querySelector('#announcements-editor input[type="text"]');
+      if (!input) return { skipped: true };
+      input.value = input.value + ' guard';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      await sleep(150);
+      window.__e2e = false;
+      history.pushState({}, '', '/samsara/economy');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+      await sleep(600);
+      const box = document.querySelector('.el-message-box');
+      const text = box?.textContent || '';
+      const buttons = [...(box?.querySelectorAll('.el-message-box__btns button') || [])];
+      const stay = buttons.find((node) => node.textContent.trim() === '留下');
+      stay?.click();
+      await sleep(500);
+      const url = location.pathname;
+      window.__e2e = true;
+      return { skipped: false, opened: Boolean(box), text, stayed: url.endsWith('/samsara/community/announcements') };
+    })()`);
+    check('未保存修改离开页面会确认',
+      guard.skipped || (guard.opened && guard.text.includes('未保存') && guard.stayed),
+      JSON.stringify(guard));
+
     const final = await evaluate(`(() => ({
       errors: window.__e2eErrors || [],
       message: document.getElementById('announcements-message')?.textContent || '',

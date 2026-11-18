@@ -106,6 +106,7 @@ import { useLiveRefresh } from '../composables/useLiveRefresh.js';
 import { useAuth } from '../composables/useAuth.js';
 import { itemCursor } from '../composables/itemCursor.js';
 import { filterItems } from '../composables/itemSearch.js';
+import { useUnsavedChanges } from '../composables/useUnsavedChanges.js';
 
 const SLOT_PX = 48;
 const SLOT_GAP = 2;
@@ -144,6 +145,7 @@ const baselineSlots = ref([]);
 const items = ref([]);
 const revision = ref(0);
 const dirty = ref(false);
+useUnsavedChanges(() => dirty.value);
 const fundValue = ref(0);
 const schema = ref({});
 const cursorPending = computed(() => !!itemCursor.item);

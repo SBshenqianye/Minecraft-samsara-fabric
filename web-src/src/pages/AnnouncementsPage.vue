@@ -280,6 +280,7 @@ import TabShell from '../components/TabShell.vue';
 import PageState from '../components/PageState.vue';
 import { useAuth } from '../composables/useAuth.js';
 import { confirmDanger } from '../composables/useConfirmAction.js';
+import { useUnsavedChanges } from '../composables/useUnsavedChanges.js';
 import {
   createAnnouncement,
   duplicateAnnouncement,
@@ -300,6 +301,7 @@ const previewing = ref(false);
 const sending = ref(false);
 const applying = ref(false);
 const dirty = ref(false);
+useUnsavedChanges(() => dirty.value);
 const message = ref('');
 const messageKind = ref('');
 const preview = ref(null);

@@ -93,6 +93,7 @@ async function main() {
       await until(tokenClosed, 20000, '连接 token（重试）');
     }
     const pageHelpers = `
+      window.__e2e = true;
       window.__e2eAliases = {
         config: '/samsara/config/advanced',
         'config-editor': '/samsara/config/advanced',

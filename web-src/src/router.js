@@ -219,4 +219,24 @@ const router = createRouter({
   routes,
 });
 
+// 有未保存修改时，离开页面前统一确认（配置编辑器/公告/输出/身份/服务器/基金等）。
+router.beforeEach(async (to, from) => {
+  if (to.fullPath === from.fullPath) return true;
+  // E2E 通过整页导航 + 注入脚本跑用例，不能弹出浏览器原生确认框。
+  if (window.__e2e) return true;
+  const { hasUnsavedChanges } = await import('./composables/useUnsavedChanges.js');
+  if (!hasUnsavedChanges()) return true;
+  const { ElMessageBox } = await import('element-plus');
+  try {
+    await ElMessageBox.confirm(
+      '当前页面有未保存的修改，离开会丢失。确定离开？',
+      '未保存的修改',
+      { type: 'warning', confirmButtonText: '离开', cancelButtonText: '留下' },
+    );
+    return true;
+  } catch {
+    return false;
+  }
+});
+
 export default router;

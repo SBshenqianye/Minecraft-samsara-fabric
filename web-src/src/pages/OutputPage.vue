@@ -65,12 +65,14 @@ import TabShell from '../components/TabShell.vue';
 import SegmentedButtons from '../components/SegmentedButtons.vue';
 import OutputEditor from './output/OutputEditor.vue';
 import { clearPageNav, setPageNav } from '../composables/usePageNav.js';
+import { useUnsavedChanges } from '../composables/useUnsavedChanges.js';
 import { useOutput } from './output/useOutput.js';
 
 defineOptions({ name: 'OutputPage' });
 
 const AUTO_CHOICES = [{ value: 'true', label: '开' }, { value: 'false', label: '关' }];
 const store = useOutput();
+useUnsavedChanges(() => store.dirty.value);
 const filter = ref('');
 
 const filteredMessages = computed(() => {

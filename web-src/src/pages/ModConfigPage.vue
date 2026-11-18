@@ -71,6 +71,7 @@ import FolderTree from '../components/FolderTree.vue';
 import ConfigEditorPanel from './config-editor/ConfigEditorPanel.vue';
 import { useConfigEditor } from './config-editor/useConfigEditor.js';
 import { clearPageNav } from '../composables/usePageNav.js';
+import { useUnsavedChanges } from '../composables/useUnsavedChanges.js';
 
 const route = useRoute();
 const router = useRouter();
@@ -79,6 +80,7 @@ const message = ref('');
 const pages = ref([]);
 const loaded = ref(false);
 const editor = useConfigEditor();
+useUnsavedChanges(() => editor.dirty.value);
 editor.setSourceFilter('third-party');
 
 const modId = computed(() => String(route.params.modId || ''));

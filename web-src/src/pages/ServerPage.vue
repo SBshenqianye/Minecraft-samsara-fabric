@@ -35,6 +35,7 @@ import { computed, onActivated, onDeactivated, onBeforeUnmount, onMounted, ref, 
 import { useRoute } from 'vue-router';
 import { useApi } from '../composables/useApi.js';
 import { clearPageNav, setPageNav } from '../composables/usePageNav.js';
+import { useUnsavedChanges } from '../composables/useUnsavedChanges.js';
 import ServerAuditPanel from './server/ServerAuditPanel.vue';
 import ServerBackupPanel from './server/ServerBackupPanel.vue';
 import ServerConfigPanel from './server/ServerConfigPanel.vue';
@@ -50,6 +51,7 @@ const { request } = useApi();
 const model = ref(null);
 const loading = ref(false);
 const dirtyFiles = ref(0);
+useUnsavedChanges(() => dirtyFiles.value > 0);
 const loadError = ref('');
 
 const activePanel = computed(() => route.meta.serverPanel || 'server-config-panel');
