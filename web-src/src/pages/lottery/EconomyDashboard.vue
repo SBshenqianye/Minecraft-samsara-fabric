@@ -58,6 +58,9 @@
         <span>HISTORY</span>
       </div>
       <p v-if="!dash.history.length" class="dash-empty">暂无历史开奖。</p>
+      <p v-else-if="!dash.historyHasValue" class="dash-empty">
+        历史轮次没有奖池记录（早期数据未记录金额），有新开奖后会显示走势。
+      </p>
       <div v-else class="dash-history">
         <div v-for="row in dash.history" :key="row.day" class="dash-history-col">
           <div class="dash-history-bar" :class="{ 'has-winner': row.winner }" :style="{ height: row.height }"></div>

@@ -1,0 +1,284 @@
+/*
+ * 全站视觉统一层（最后加载，覆盖各页面零散样式）。
+ * 只做“密度、对齐、反馈、响应式”，不改业务布局结构。
+ */
+
+/* ---- 1. 页面骨架：内容更紧凑，侧栏只在需要时占位 ---- */
+.app-shell {
+  padding: var(--space-4) var(--space-5) 64px;
+  gap: var(--space-5);
+}
+
+.app-shell.nav-compact {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.app-shell.nav-compact .ia-side {
+  display: none;
+}
+
+.panel-stack {
+  gap: var(--space-4);
+}
+
+.panel {
+  padding: var(--space-4) 18px;
+  box-shadow: var(--shadow-soft);
+}
+
+.panel-head {
+  margin-bottom: var(--space-3);
+}
+
+.panel-head h2 {
+  font-size: var(--text-lg);
+  line-height: 1.35;
+}
+
+.panel-sub {
+  font-size: var(--text-sm);
+  line-height: 1.55;
+}
+
+/* ---- 2. 横幅：保留识别度，但不再吃掉首屏 ---- */
+.page-hero {
+  padding: 14px 22px 16px 26px;
+  border-radius: 14px;
+}
+
+.page-hero-context {
+  margin-bottom: 6px;
+}
+
+.page-hero-title {
+  font-size: clamp(20px, 1.6vw, 26px);
+  line-height: 1.18;
+}
+
+.page-hero-hint {
+  margin-top: 5px;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  max-width: 920px;
+}
+
+/* 标题与说明同一行：横幅高度从 149px 压到约 80px，首屏能多显示一整行内容 */
+.page-hero-text {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  column-gap: 14px;
+  row-gap: 2px;
+  min-width: 0;
+}
+
+.page-hero-text .page-hero-hint {
+  margin-top: 0;
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+.page-hero-main {
+  gap: 16px;
+}
+
+.page-hero-tag {
+  padding: 2px 9px;
+  font-size: 10px;
+  opacity: .82;
+}
+
+/* ---- 3. 表单：标签更清楚，控件不再无限拉宽 ---- */
+.entry {
+  gap: 10px 18px;
+  padding: 10px 0;
+}
+
+.entry-key {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--fg-soft);
+}
+
+.entry-control .el-input,
+.entry-control .el-select,
+.entry-control .el-input-number,
+.entry-control .el-autocomplete {
+  max-width: 560px;
+  width: 100%;
+}
+
+.entry-control .el-textarea {
+  max-width: 720px;
+  width: 100%;
+}
+
+.entry-control .el-input-number {
+  max-width: 220px;
+}
+
+/* 公告编辑器：三列布局保持不变，只限制控件视觉宽度 */
+.announcement-row .el-input,
+.announcement-row .el-select,
+.announcement-row .el-input-number {
+  max-width: 560px;
+}
+
+.announcement-row .el-textarea {
+  max-width: 720px;
+}
+
+/* Element Plus 控件边框与圆角跟随站点 */
+.el-input__wrapper,
+.el-textarea__inner,
+.el-select__wrapper,
+.el-input-number .el-input__wrapper {
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.el-input__wrapper.is-focus,
+.el-textarea__inner:focus,
+.el-select__wrapper.is-focused {
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+
+.el-button {
+  border-radius: 8px;
+  font-weight: 600;
+}
+
+.el-switch.is-checked .el-switch__core {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.el-dialog,
+.el-message-box {
+  border-radius: 14px;
+}
+
+/* ---- 4. 数据可读性：统计数字等宽对齐 ---- */
+.stat strong,
+.economy-card strong,
+.lottery-stat strong,
+.status-chip strong,
+[data-numeric] {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.01em;
+}
+
+/* 历史走势只在有金额时占高度；全 0 时显示说明，不再留一片空白 */
+.dash-history {
+  height: 120px;
+}
+
+.dash-card-wide .dash-empty {
+  margin: 10px 0 2px;
+}
+
+/* ---- 5. 键盘可达：统一焦点环，不改变鼠标外观 ---- */
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 75%, transparent);
+  outline-offset: 2px;
+}
+
+/* ---- 6. 窄屏：先保内容，再收装饰 ---- */
+@media (max-width: 1280px) {
+  .entry-control .el-input,
+  .entry-control .el-textarea,
+  .entry-control .el-select {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 980px) {
+  .app-shell {
+    padding: 12px 12px 56px;
+    gap: var(--space-3);
+  }
+
+  .ia-header {
+    padding: 8px 12px 10px;
+  }
+
+  .page-hero {
+    padding: 12px 14px 14px 18px;
+    border-radius: 12px;
+  }
+
+  .page-hero-context {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+
+  .page-hero-title {
+    font-size: 21px;
+  }
+
+  .page-hero-hint {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .panel {
+    padding: 14px;
+    border-radius: 12px;
+  }
+
+  .panel-head {
+    gap: 10px;
+  }
+
+  .panel-tools {
+    width: 100%;
+  }
+
+  .side-nav {
+    max-height: 42vh;
+  }
+
+  .global-inventory-tab {
+    right: 12px;
+    bottom: 12px;
+  }
+}
+
+@media (max-width: 640px) {
+  .page-hero-tag,
+  .ia-header-context,
+  .version-pill {
+    display: none;
+  }
+
+  .page-hero-title {
+    font-size: 19px;
+  }
+
+  .panel-head h2 {
+    font-size: 14px;
+  }
+
+  .entry {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+
+  .entry-control {
+    width: 100%;
+  }
+}
+
+/* ---- 7. 尊重系统减少动态效果 ---- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

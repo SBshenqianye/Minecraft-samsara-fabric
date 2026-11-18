@@ -7,6 +7,7 @@ import './tokens.css';
 import './style.css';
 import './ia.css';
 import './shell.css';
+import './polish.css';
 // Element Plus 组件样式由 unplugin-vue-components 按需注入；
 // ElMessage / ElMessageBox 是 API 调用，不走模板解析器，需要显式引入。
 import 'element-plus/theme-chalk/base.css';

@@ -159,15 +159,31 @@ watch(() => state.title, (title) => {
     active.value = '';
     if (scrollHandler) window.removeEventListener('scroll', scrollHandler);
     scrollHandler = null;
+    syncShellNav();
     return;
   }
   // 旧脚本 clearNav 会给 app-shell 加 no-nav；Vue 页内导航出现时要恢复侧栏。
   document.querySelector('main.app-shell')?.classList.remove('no-nav');
+  syncShellNav();
 }, { flush: 'post' });
 
-watch(() => state.items, watchScroll, { deep: true });
+function syncShellNav() {
+  // 只有 1 个锚点时侧栏只会占掉 300px 空白：直接收成单栏内容。
+  const shell = document.querySelector('main.app-shell');
+  if (!shell) return;
+  const single = Boolean(state.title) && state.items.length <= 1;
+  shell.classList.toggle('nav-compact', single);
+}
 
-onMounted(watchScroll);
+watch(() => state.items, () => {
+  watchScroll();
+  syncShellNav();
+}, { deep: true });
+
+onMounted(() => {
+  watchScroll();
+  syncShellNav();
+});
 onBeforeUnmount(() => {
   if (scrollHandler) window.removeEventListener('scroll', scrollHandler);
 });

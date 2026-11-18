@@ -184,6 +184,7 @@ export function dashboardModel(model) {
 
   const history = (model.history || []).slice(0, 8).reverse();
   const maxPot = Math.max(1, ...history.map((row) => Number(row.pot || 0)));
+  const historyHasValue = history.some((row) => Number(row.pot || 0) > 0);
 
   return {
     fund: {
@@ -215,6 +216,7 @@ export function dashboardModel(model) {
       height: Math.max(3, Math.round(Number(row.pot || 0) / maxPot * 100)) + '%',
       winner: Number(row.winnerCount || 0) > 0,
     })),
+    historyHasValue,
   };
 }
 

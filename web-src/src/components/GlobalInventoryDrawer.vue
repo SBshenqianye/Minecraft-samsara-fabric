@@ -351,29 +351,31 @@ defineExpose({ open: () => openWindow() });
 <style scoped>
 .global-inventory-tab {
   position: fixed;
-  right: 0;
-  top: 46%;
+  right: 18px;
+  bottom: 18px;
+  top: auto;
   z-index: 60;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  gap: 4px;
-  padding: 12px 6px;
-  border: 1px solid var(--line);
-  border-right: 0;
-  border-radius: 10px 0 0 10px;
+  gap: 7px;
+  padding: 9px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
   background: var(--panel);
-  color: var(--muted);
+  box-shadow: var(--shadow-soft);
+  color: var(--fg-soft);
   font-size: 12px;
-  writing-mode: vertical-rl;
+  font-weight: 600;
   cursor: pointer;
-  transition: background .15s ease, color .15s ease;
+  transition: background .15s ease, color .15s ease, border-color .15s ease;
 }
 
 .global-inventory-tab:hover,
 .global-inventory-tab.active {
   background: var(--accent);
-  color: #fff;
+  border-color: var(--accent);
+  color: var(--accent-ink);
 }
 
 .global-inventory-tab-key {

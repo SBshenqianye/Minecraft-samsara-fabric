@@ -1,7 +1,7 @@
 <template>
 <TabShell name="lottery">
+<div id="lottery-message" class="message lottery-message-bar" :class="messageKind" role="status">{{ message }}</div>
 <div id="panel-lottery" class="panel-stack" :class="'lottery-tab-' + subpage">
-  <div id="lottery-message" class="message lottery-message-bar" :class="messageKind" role="status">{{ message }}</div>
   <section class="panel" id="lottery-dashboard" :hidden="subpage !== 'overview'">
     <div class="panel-head">
       <div>

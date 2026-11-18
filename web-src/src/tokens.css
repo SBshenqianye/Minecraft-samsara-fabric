@@ -28,6 +28,49 @@
   --radius: 16px;
   --radius-sm: 10px;
   --mono: "Cascadia Code", "JetBrains Mono", ui-monospace, Consolas, monospace;
+
+  /* 间距与字号：页面统一用这组刻度，避免 7/9/11px 混用 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 13px;
+  --text-lg: 15px;
+  --text-xl: 20px;
+  --text-2xl: 26px;
+}
+
+/*
+ * Element Plus 在主题 CSS 里也会声明 :root 变量；用 html:root 提高一级特异性，
+ * 保证站点主色覆盖默认蓝色，不再依赖样式加载顺序。
+ */
+html:root {
+  --el-color-primary: var(--accent);
+  --el-color-primary-light-3: color-mix(in srgb, var(--accent) 70%, var(--panel));
+  --el-color-primary-light-5: color-mix(in srgb, var(--accent) 50%, var(--panel));
+  --el-color-primary-light-7: color-mix(in srgb, var(--accent) 30%, var(--panel));
+  --el-color-primary-light-8: color-mix(in srgb, var(--accent) 20%, var(--panel));
+  --el-color-primary-light-9: color-mix(in srgb, var(--accent) 10%, var(--panel));
+  --el-color-primary-dark-2: color-mix(in srgb, var(--accent) 85%, #000);
+  --el-color-danger: var(--danger);
+  --el-color-danger-light-9: var(--danger-soft);
+  --el-color-success: var(--ok);
+  --el-color-warning: var(--amber);
+  --el-font-size-base: var(--text-md);
+  --el-border-radius-base: 8px;
+  --el-border-radius-small: 6px;
+  --el-text-color-primary: var(--fg);
+  --el-text-color-regular: var(--fg-soft);
+  --el-text-color-secondary: var(--muted);
+  --el-border-color: var(--line);
+  --el-border-color-light: var(--line);
+  --el-fill-color-blank: var(--panel);
+  --el-bg-color: var(--panel);
+  --el-bg-color-overlay: var(--panel);
 }
 
 @media (prefers-color-scheme: dark) {
