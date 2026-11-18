@@ -4,10 +4,10 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
 import com.shenqianye.samsara.Samsara;
+import com.shenqianye.samsara.audit.Audit;
 import com.shenqianye.samsara.lottery.LotteryItemCodec;
 import com.shenqianye.samsara.season.PlayerRegistry;
 import com.shenqianye.samsara.storage.StoragePaths;
-import com.shenqianye.samsara.web.WebAuditService;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
@@ -271,7 +271,7 @@ public final class PlayerInventoryService {
                 return conflict;
             }
             String detail = ref.name + " " + spec.id + " revision=" + revision;
-            WebAuditService.get().captureInventory("/api/inventory/write", actor, detail,
+            Audit.captureInventory("/api/inventory/write", actor, detail,
                     GSON.toJson(snapshot(ref, spec, current)));
             applyOnline(ref.online, spec, slots);
             List<String> after = encodeOnline(ref.online, spec);
@@ -307,7 +307,7 @@ public final class PlayerInventoryService {
         }
         int serverDataVersion = serverDataVersion();
         if (dataVersion > 0 && serverDataVersion > 0 && dataVersion != serverDataVersion) {
-            WebAuditService.get().captureInventory("/api/inventory/write/rejected", actor,
+            Audit.captureInventory("/api/inventory/write/rejected", actor,
                     ref.name + " " + spec.id + " DataVersion " + dataVersion + " != "
                             + serverDataVersion, GSON.toJson(snapshot(ref, spec, disk)));
             return error(409, "玩家数据 DataVersion " + dataVersion
@@ -331,7 +331,7 @@ public final class PlayerInventoryService {
         if (!writeQueue(queue, pendingModel)) {
             return error(500, "写入待处理队列失败");
         }
-        WebAuditService.get().captureInventory("/api/inventory/write/queued", actor,
+        Audit.captureInventory("/api/inventory/write/queued", actor,
                 ref.name + " " + spec.id + " revision=" + revision,
                 GSON.toJson(snapshot(ref, spec, effective)));
         Map<String, Object> out = new LinkedHashMap<>();
@@ -422,7 +422,7 @@ public final class PlayerInventoryService {
                 conflict.put("currentRevision", currentRevision);
                 return conflict;
             }
-            WebAuditService.get().captureInventory("/api/inventory/identity/write", actor,
+            Audit.captureInventory("/api/inventory/identity/write", actor,
                     "data=" + data + " " + spec.id + " revision=" + revision,
                     GSON.toJson(snapshot(ref, spec, current)));
             applyOnline(online, spec, slots);
@@ -444,7 +444,7 @@ public final class PlayerInventoryService {
         }
         int serverVersion = serverDataVersion();
         if (dataVersion > 0 && serverVersion > 0 && dataVersion != serverVersion) {
-            WebAuditService.get().captureInventory("/api/inventory/identity/write/rejected", actor,
+            Audit.captureInventory("/api/inventory/identity/write/rejected", actor,
                     "data=" + data + " " + spec.id + " DataVersion " + dataVersion
                             + " != " + serverVersion, GSON.toJson(snapshot(ref, spec, disk)));
             return error(409, "身份数据 DataVersion " + dataVersion
@@ -473,7 +473,7 @@ public final class PlayerInventoryService {
         } catch (IOException | RuntimeException e) {
             return error(500, "写入身份数据失败：" + e.getMessage());
         }
-        WebAuditService.get().captureInventory("/api/inventory/identity/write/file", actor,
+        Audit.captureInventory("/api/inventory/identity/write/file", actor,
                 "data=" + data + " " + spec.id + " revision=" + revision,
                 GSON.toJson(snapshot(ref, spec, disk)));
         return identityWriteModel(ref, spec, slots, false, false);
@@ -575,7 +575,7 @@ public final class PlayerInventoryService {
                 continue;
             }
             List<String> before = encodeOnline(player, spec);
-            WebAuditService.get().captureInventory("/api/inventory/queued", "system",
+            Audit.captureInventory("/api/inventory/queued", "system",
                     player.getGameProfile().name() + " " + spec.id
                             + (stopping ? " 停服前应用" : " 登录时应用"),
                     GSON.toJson(snapshot(new PlayerRef(player.getUUID(),

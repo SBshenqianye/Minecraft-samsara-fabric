@@ -42,6 +42,9 @@ public class Samsara implements DedicatedServerModInitializer {
         LOGGER.info("[周目管理 samsara] 已加载 —— 空间/时间/逆熵，世界生命周期管理");
         // 存储分层：先把旧 config/samsara 整体改名备份，再建新配置目录
         com.shenqianye.samsara.storage.StoragePaths.bootstrapConfig();
+        // 审计 sink：web 层实现，装进领域侧接口（业务模块不反向依赖 web）
+        com.shenqianye.samsara.audit.Audit.install(
+                com.shenqianye.samsara.web.WebAuditService.get());
         // 新世界：在世界打开之前完成旧栈顶 demote（只做目录 rename）
         com.shenqianye.samsara.season.StackBootstrap.prepare();
         // 配置层（YAML + schema）：权限与命令配置都从这里读

@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.sun.net.httpserver.HttpExchange;
 import com.shenqianye.samsara.Samsara;
+import com.shenqianye.samsara.audit.Audit;
 import com.shenqianye.samsara.config.ConfigManager;
 import com.shenqianye.samsara.storage.StoragePaths;
 import net.fabricmc.loader.api.FabricLoader;
@@ -33,7 +34,7 @@ import java.util.stream.Stream;
  * {@code WorldStackTimeline} 负责；本体存档由 {@code ServerBackup} 负责；RCON 命令
  * 只审计命令本身，不承诺世界回滚。这样不会为一次配置保存复制整个 world。
  */
-public final class WebAuditService {
+public final class WebAuditService implements Audit.Sink {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final AtomicLong SEQ = new AtomicLong();
     private static final long MAX_SNAPSHOT_BYTES = 32L * 1024 * 1024;
@@ -137,6 +138,7 @@ public final class WebAuditService {
     }
 
     /** 玩家背包/末影箱写入审计；与容器一样只保存编辑前快照，不自动回滚。 */
+    @Override
     public synchronized void captureInventory(String action, String actor, String detail,
                                               String snapshotJson) {
         captureSnapshotFile("inventory.json", action, actor, detail,
