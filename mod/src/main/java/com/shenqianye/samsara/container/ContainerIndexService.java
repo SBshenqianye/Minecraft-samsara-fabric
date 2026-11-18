@@ -557,27 +557,43 @@ public final class ContainerIndexService {
                 pending = GSON.fromJson(Files.readString(file, StandardCharsets.UTF_8),
                         PendingWrite.class);
             } catch (RuntimeException | IOException e) {
-                Samsara.LOGGER.warn("[container] 待写入队列文件无效，已删除 {}: {}", file, e.getMessage());
-                deleteQuietly(file);
+                Samsara.LOGGER.warn("[container] 待写入队列文件无效，已隔离为 .bad {}: {}",
+                        file.getFileName(), e.getMessage());
+                quarantine(file, ".bad");
                 continue;
             }
             if (pending == null || pending.dimension == null || pending.slots == null) {
-                deleteQuietly(file);
+                quarantine(file, ".bad");
                 continue;
             }
             ServerLevel level = level(pending.dimension);
             if (level == null) continue;
             if (level.getChunkSource().getChunkNow(pending.x >> 4, pending.z >> 4) == null) continue;
-            // 队列代表管理员最终期望的整箱内容；应用时忽略 revision（缓存可能不是最新）。
-            WriteResult result = write(pending.dimension, pending.x, pending.y, pending.z, -1L,
-                    pending.slots);
+            // 用排队时记录的 revision 应用：若玩家在此期间动过箱子，宁可停下来等人工确认，
+            // 也不要用旧快照整箱覆盖玩家新放入的物品。
+            WriteResult result = write(pending.dimension, pending.x, pending.y, pending.z,
+                    pending.revision, pending.slots);
             if (result.ok() || result.status() == 400 || result.status() == 404) {
                 if (!result.ok()) {
                     Samsara.LOGGER.warn("[container] 待写入队列应用失败，已丢弃 {}: {}",
                             file.getFileName(), result.error());
                 }
                 deleteQuietly(file);
+            } else if (result.status() == 409) {
+                Samsara.LOGGER.warn("[container] 容器在排队后被修改，保留待写入文件待人工确认：{}",
+                        file.getFileName());
+                quarantine(file, ".conflict");
             }
+        }
+    }
+
+    /** 把有问题的待写入文件改名保留，避免下次扫描重复报错，也不静默丢数据。 */
+    private void quarantine(Path file, String suffix) {
+        try {
+            Files.move(file, file.resolveSibling(file.getFileName() + suffix),
+                    StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException e) {
+            Samsara.LOGGER.warn("[container] 隔离待写入文件失败 {}: {}", file, e.getMessage());
         }
     }
 

@@ -426,18 +426,12 @@ public final class InsuranceService {
         ServerPlayer owner = player(policy.ownerUuid);
         ItemStack original = LotteryItemCodec.decode(policy.item, registries);
         if (original.isEmpty()) return Result.error("保单快照损坏。");
-        if (owner != null) {
-            if (!give(owner, original)) {
-                return Result.error("背包空间不足，物品未发放；腾出空间后再试。");
-            }
-        } else {
-            ClaimData claim = new ClaimData();
-            claim.ownerUuid = policy.ownerUuid;
-            claim.ownerName = policy.ownerName;
-            claim.item = policy.item;
-            claim.value = policy.value;
-            claim.at = System.currentTimeMillis();
-            claims.add(claim);
+        if (owner == null) {
+            // 离线时没有可靠的发放通道：直接拒绝审核，保单保持 PENDING，避免“显示通过但物品消失”。
+            return Result.error("玩家不在线，无法发放理赔物品；请等其上线后再审核。");
+        }
+        if (!give(owner, original)) {
+            return Result.error("背包空间不足，物品未发放；腾出空间后再试。");
         }
         policy.status = "CLAIMED";
         policy.claimedAt = System.currentTimeMillis();

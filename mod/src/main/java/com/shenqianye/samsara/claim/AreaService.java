@@ -32,6 +32,8 @@ public class AreaService {
 
     /** 按维度存储的旗帜节点：维度 → (区块坐标 → 节点) */
     private final Map<ResourceKey<Level>, Map<ChunkCoord, ClaimNode>> nodes = new ConcurrentHashMap<>();
+    /** 解析失败的数据根：写回时跳过，避免把损坏文件覆盖成空表（否则圈地保护静默消失）。 */
+    private final java.util.Set<Path> failedRoots = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     /**
      * 几何重建节流：连续放/拆多面旗时只在最后一次变更 500ms 后重算一次。
@@ -328,6 +330,11 @@ public class AreaService {
         }
         for (Path root : com.shenqianye.samsara.season.StackPaths.dataRoots(worldRoot)) {
             Path target = root.resolve("claims").resolve("claims.json");
+            if (failedRoots.contains(root)) {
+                Samsara.LOGGER.warn("[周目管理 samsara] {} 上次解析失败，跳过写回以防覆盖；"
+                        + "请修复或备份后删除该文件再重试", target);
+                continue;
+            }
             ClaimsData data = byRoot.getOrDefault(root, new ClaimsData());
             try {
                 Files.createDirectories(target.getParent());
@@ -375,27 +382,42 @@ public class AreaService {
 
     private void load() {
         Path worldRoot = com.shenqianye.samsara.storage.StoragePaths.get().worldRoot();
+        boolean anyFailure = false;
         for (Path root : com.shenqianye.samsara.season.StackPaths.dataRoots(worldRoot)) {
             Path target = root.resolve("claims").resolve("claims.json");
-            if (Files.exists(target)) {
-                loadFile(target);
+            if (Files.exists(target) && !loadFile(target)) {
+                failedRoots.add(root);
+                anyFailure = true;
             }
         }
-        for (ResourceKey<Level> dim : nodes.keySet()) {
-            rebuildGeometry(dim);
+        if (anyFailure) {
+            // 读取失败时不要用“空节点”重建几何：那会把所有圈地从保护集里删掉，
+            // 接下来的倒流/重置会删掉玩家基地。保留上一份 geometry，等文件修复后重启恢复。
+            Samsara.LOGGER.warn("[周目管理 samsara] 有圈地文件解析失败，保留现有几何保护；"
+                    + "本次不清理维度、不写回失败的数据根");
+        } else {
+            for (ResourceKey<Level> dim : nodes.keySet()) {
+                rebuildGeometry(dim);
+            }
+            // claims.json 已无节点的历史维度：geometry.json 里残留的白名单要清掉，
+            // 否则会出现“没有旗帜却仍在保护”，且倒流/重置会误跳过这些区块。
+            GeometryStore.getInstance().clearExcept(nodes.keySet());
         }
-        // claims.json 已无节点的历史维度：geometry.json 里残留的白名单要清掉，
-        // 否则会出现“没有旗帜却仍在保护”，且倒流/重置会误跳过这些区块。
-        GeometryStore.getInstance().clearExcept(nodes.keySet());
         int totalNodes = nodes.values().stream().mapToInt(Map::size).sum();
         Samsara.LOGGER.info("[周目管理 samsara] 加载 {} 个圈地旗（{} 个维度）",
                 totalNodes, nodes.size());
     }
 
-    private void loadFile(Path target) {
-        for (ClaimNode node : readClaims(target)) {
+    /** @return false 表示文件存在但解析失败（不能当成“没有圈地”）。 */
+    private boolean loadFile(Path target) {
+        List<ClaimNode> parsed = new ArrayList<>();
+        if (!readClaimsInto(target, parsed)) {
+            return false;
+        }
+        for (ClaimNode node : parsed) {
             dimNodes(node.getDimension()).put(node.getLocation(), node);
         }
+        return true;
     }
 
     /**
@@ -406,13 +428,19 @@ public class AreaService {
      */
     public static List<ClaimNode> readClaims(Path target) {
         List<ClaimNode> out = new ArrayList<>();
+        readClaimsInto(target, out);
+        return out;
+    }
+
+    /** @return false 表示文件存在但解析失败（空表不代表失败）。 */
+    private static boolean readClaimsInto(Path target, List<ClaimNode> out) {
         if (target == null || !Files.exists(target)) {
-            return out;
+            return true;
         }
         try {
             ClaimsData data = GSON.fromJson(
                     Files.readString(target, StandardCharsets.UTF_8), ClaimsData.class);
-            if (data == null || data.nodes == null) return out;
+            if (data == null || data.nodes == null) return true;
             for (ClaimsData.NodeEntry ne : data.nodes) {
                 ResourceKey<Level> dim = Level.OVERWORLD;
                 if (ne.dimension != null && !ne.dimension.isEmpty()) {
@@ -459,10 +487,12 @@ public class AreaService {
                 }
                 out.add(node);
             }
+            return true;
         } catch (Exception e) {
             Samsara.LOGGER.warn("[周目管理 samsara] {} 解析失败: {}", target, e.getMessage());
+            out.clear();
+            return false;
         }
-        return out;
     }
     public String configPath() {
         return file.toAbsolutePath().normalize().toString();

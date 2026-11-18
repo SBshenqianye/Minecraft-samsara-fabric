@@ -39,11 +39,9 @@ public class ClaimInteractions {
             if (level.isClientSide() || !(player instanceof ServerPlayer sp)) {
                 return InteractionResult.PASS;
             }
-            // 防抖：同一玩家 1 秒内不重复触发
+            // 防抖：同一玩家 1 秒内不重复触发（只在确认是圈地旗帜后记录，
+            // 避免开箱子/用锄头等普通右键把旗帜交互的冷却吃掉）
             long now = level.getGameTime();
-            Long last = lastInteraction.get(sp.getUUID());
-            if (last != null && now - last < DEBOUNCE_TICKS) return InteractionResult.PASS;
-            lastInteraction.put(sp.getUUID(), now);
 
             BlockPos pos = hitResult.getBlockPos();
             if (!(level.getBlockEntity(pos) instanceof BannerBlockEntity be)) {
@@ -56,6 +54,10 @@ public class ClaimInteractions {
             }
             List<ClaimNode.PatternEntry> patterns = readPatterns(be);
             if (patterns.isEmpty()) return InteractionResult.PASS;
+
+            Long last = lastInteraction.get(sp.getUUID());
+            if (last != null && now - last < DEBOUNCE_TICKS) return InteractionResult.PASS;
+            lastInteraction.put(sp.getUUID(), now);
 
             ChunkCoord chunkPos = new ChunkCoord(pos.getX() >> 4, pos.getZ() >> 4);
             String facing = getFacing(level, pos);

@@ -552,8 +552,11 @@ public class RewindEngine {
         }
         if (!toDeleteNow.isEmpty()) {
             List<int[]> batch = toDeleteNow;
+            // 白名单索引必须在服务器线程构建：后台线程只做文件 I/O
+            java.util.Map<Path, java.util.Map<String, Integer>> wlIndex =
+                    pendingQueue.buildWhitelistIndex();
             submitDeletion(() -> {
-                int n = pendingQueue.deleteAndBackup(batch);
+                int n = pendingQueue.deleteAndBackup(batch, wlIndex);
                 Samsara.LOGGER.info("[周目管理 samsara] 后台物理删除完成: {} 个已到倒流时刻区块清零（备份+清零）", n);
             });
         }
@@ -1095,13 +1098,18 @@ public class RewindEngine {
             }
         }
 
-        /** 删除并备份一组区块（幂等：已清零的自动跳过）。可在线程外调用。 */
-        synchronized int deleteAndBackup(List<int[]> coords) {
-            int deleted = 0;
-            for (int[] c : coords) {
-                // 这批区块是"完成时未加载"的，不在待删队列里；直接按默认维度根做 I/O
-                deleted += doDeleteOne(defaultDimRoot, c[0], c[1]);
+        /** 删除并备份一组区块（幂等：已清零的自动跳过）。可在线程外调用；白名单索引由调用方在服务器线程构建。 */
+        synchronized int deleteAndBackup(List<int[]> coords,
+                                        java.util.Map<Path, java.util.Map<String, Integer>> wlIndex) {
+            if (coords.isEmpty()) {
+                return 0;
             }
+            // 走与待删队列相同的批量路径：备份 + 圈地白名单保护 + 按 region 文件分组
+            List<QueuedChunk> batch = new ArrayList<>(coords.size());
+            for (int[] c : coords) {
+                batch.add(new QueuedChunk(c[0], c[1], defaultDimRoot));
+            }
+            int deleted = batchDeleteByDimRoot(batch, wlIndex);
             if (deleted > 0) {
                 save();
                 dirtyCount = 0;

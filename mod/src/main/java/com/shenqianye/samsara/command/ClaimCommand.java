@@ -5,6 +5,7 @@ import com.shenqianye.samsara.claim.AreaService;
 import com.shenqianye.samsara.claim.ClaimInteractions;
 import com.shenqianye.samsara.claim.ClaimNode;
 import com.shenqianye.samsara.claim.ClaimParticles;
+import com.shenqianye.samsara.claim.ClaimRangeConfig;
 import com.shenqianye.samsara.command.ui.ChatUi;
 import com.shenqianye.samsara.command.ui.SuggestionProviders;
 import com.shenqianye.samsara.geometry.ChunkCoord;
@@ -94,8 +95,10 @@ public class ClaimCommand {
             detail.append("\n  延伸方向: ").append(ClaimInteractions.facingToDisplay(node.getFacing()));
             if (node.getOwnerName() != null) detail.append(" · 主人: ").append(node.getOwnerName());
             detail.append(" · 图案:");
+            var rangeConfig = ClaimRangeConfig.getInstance();
             for (ClaimNode.PatternEntry pe : node.getPatterns()) {
-                detail.append(" ").append(pe.patternId()).append("(").append(pe.color() + 1).append("区块)");
+                detail.append(" ").append(pe.patternId()).append("(")
+                        .append(rangeConfig.distanceForColor(pe.color())).append("区块)");
             }
         }
         return new InfoData(x, z, dim.identifier().toString(), status, detail.toString());

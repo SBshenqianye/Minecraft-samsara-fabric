@@ -261,14 +261,23 @@ public class SafeDeletion {
         Set<ChunkCoord> whitelist = AreaService.getInstance().getWhitelist(level.dimension());
         int backedUp = 0;
         int scanned = 0;
+        int unreadable = 0;
 
         List<Path> regionDirs = findAllDimensionRegionDirs(level);
         for (Path regionDir : regionDirs) {
             if (!Files.exists(regionDir)) continue;
+            Set<ChunkCoord> dimWhitelist = whitelistForRegionDir(level, regionDir, whitelist);
             try (DirectoryStream<Path> stream = Files.newDirectoryStream(regionDir, "*.mca")) {
                 for (Path mcaFile : stream) {
                     scanned++;
-                    if (mcaContainsNonWhitelisted(mcaFile, whitelist)) {
+                    Boolean nonWhitelisted = mcaContainsNonWhitelisted(mcaFile, dimWhitelist);
+                    if (nonWhitelisted == null) {
+                        // 读不出来时必须按整文件备份：把“无法判断”当成“有东西要删”，
+                        // 否则后续 execute 会删掉一个从未备份过的区域文件。
+                        unreadable++;
+                        Samsara.LOGGER.warn("[周目管理 samsara] 无法读取 {}，按整文件备份", mcaFile);
+                    }
+                    if (Boolean.TRUE.equals(nonWhitelisted) || nonWhitelisted == null) {
                         Path worldDir = level.getServer()
                                 .getWorldPath(LevelResource.ROOT).toAbsolutePath().normalize();
                         Path relPath = worldDir.relativize(mcaFile);
@@ -287,6 +296,9 @@ public class SafeDeletion {
         sb.append("备份完成：\n");
         sb.append("  扫描: ").append(scanned).append(" 个区域文件\n");
         sb.append("  备份: ").append(backedUp).append(" 个（包含非白名单区块）\n");
+        if (unreadable > 0) {
+            sb.append("  ⚠ 无法读取: ").append(unreadable).append(" 个（已按整文件备份）\n");
+        }
         sb.append("  路径: ").append(backupDir);
         if (backedUp > 0) {
             Path zipFile = backupDir.resolveSibling(backupDir.getFileName() + ".zip");
@@ -302,8 +314,32 @@ public class SafeDeletion {
         return sb.toString();
     }
 
-    /** 检查 .mca 文件是否包含非白名单区块 */
-    private static boolean mcaContainsNonWhitelisted(Path mcaFile, Set<ChunkCoord> whitelist) {
+    /**
+     * 区域文件所属维度的白名单。
+     *
+     * <p>备份是“先备份再 execute”的安全网：必须按文件自己的维度判断，
+     * 否则下界/末地坐标会拿主世界白名单比较，导致该备份的档案被跳过。
+     */
+    private static Set<ChunkCoord> whitelistForRegionDir(ServerLevel level, Path regionDir,
+                                                        Set<ChunkCoord> fallback) {
+        Path worldDir = level.getServer().getWorldPath(LevelResource.ROOT)
+                .toAbsolutePath().normalize();
+        Path rel = worldDir.relativize(regionDir.toAbsolutePath().normalize());
+        // dimensions/<ns>/<dim>/{region,entities,poi}
+        if (rel.getNameCount() >= 4 && "dimensions".equals(rel.getName(0).toString())) {
+            String namespace = rel.getName(1).toString();
+            String dimension = rel.getName(2).toString();
+            ResourceKey<Level> key = ResourceKey.create(
+                    net.minecraft.core.registries.Registries.DIMENSION,
+                    net.minecraft.resources.Identifier.fromNamespaceAndPath(namespace, dimension));
+            return AreaService.getInstance().getWhitelist(key);
+        }
+        // 旧布局：world/region、world/entities、world/poi → 主维度
+        return fallback;
+    }
+
+    /** 检查 .mca 文件是否包含非白名单区块；返回 null 表示无法读取（调用方按整文件备份）。 */
+    private static Boolean mcaContainsNonWhitelisted(Path mcaFile, Set<ChunkCoord> whitelist) {
         try (RandomAccessFile raf = new RandomAccessFile(mcaFile.toFile(), "r")) {
             if (raf.length() < 8192) return false;
             String fileName = mcaFile.getFileName().toString();
@@ -331,8 +367,12 @@ public class SafeDeletion {
                     }
                 }
             }
-        } catch (Exception ignored) {}
-        return false;
+            return false;
+        } catch (Exception e) {
+            Samsara.LOGGER.warn("[周目管理 samsara] 读取区域文件失败 {}: {}",
+                    mcaFile, e.getMessage());
+            return null;
+        }
     }
 
     /**
