@@ -102,7 +102,6 @@ const collapsed = ref(new Set());
 const loading = ref(false);
 const busy = ref(false);
 const savingOwners = ref(false);
-const error = ref('');
 const message = ref('');
 const messageKind = ref('');
 const ownerInput = ref('');
@@ -151,7 +150,6 @@ function applyModel(data) {
 
 async function load() {
   loading.value = true;
-  error.value = '';
   setMessage('');
   try {
     const result = await api('/api/permissions');
@@ -159,7 +157,7 @@ async function load() {
     applyModel(result.data);
     setMessage('已读取权限树', 'ok');
   } catch (e) {
-    error.value = e.message || String(e);
+    setMessage(e.message || String(e), 'error');
   } finally {
     loading.value = false;
   }

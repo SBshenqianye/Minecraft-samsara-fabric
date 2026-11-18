@@ -24,22 +24,28 @@
       <div class="announcements-layout">
         <aside class="announcements-side">
           <div id="announcements-list" class="announcements-list">
-            <button
-              v-for="(item, index) in list"
-              :key="index + ':' + (item.id || item.name)"
-              type="button"
-              class="announcement-item"
-              :class="{ active: index === selectedIndex }"
-              @click="selectedIndex = index"
+            <PageState
+              :loading="loading"
+              :empty="!loading && !list.length"
+              empty-text="还没有公告，点“+ 新建”。"
+              :rows="3"
             >
-              <span class="announcement-name">{{ item.name || item.id || '未命名' }}</span>
-              <span class="announcement-badges">
-                <span class="config-editor-badge">{{ item.trigger || 'manual' }}</span>
-                <span v-if="!item.enabled" class="config-editor-badge">停用</span>
-                <span v-if="item.bossbar" class="config-editor-badge">BossBar</span>
-              </span>
-            </button>
-            <p v-if="!list.length" class="muted small">还没有公告，点“+ 新建”。</p>
+              <button
+                v-for="(item, index) in list"
+                :key="index + ':' + (item.id || item.name)"
+                type="button"
+                class="announcement-item"
+                :class="{ active: index === selectedIndex }"
+                @click="selectedIndex = index"
+              >
+                <span class="announcement-name">{{ item.name || item.id || '未命名' }}</span>
+                <span class="announcement-badges">
+                  <span class="config-editor-badge">{{ item.trigger || 'manual' }}</span>
+                  <span v-if="!item.enabled" class="config-editor-badge">停用</span>
+                  <span v-if="item.bossbar" class="config-editor-badge">BossBar</span>
+                </span>
+              </button>
+            </PageState>
           </div>
         </aside>
 
@@ -270,9 +276,10 @@
 
 <script setup>
 import { computed, nextTick, reactive, ref, watch } from 'vue';
-import { ElMessageBox } from 'element-plus';
 import TabShell from '../components/TabShell.vue';
+import PageState from '../components/PageState.vue';
 import { useAuth } from '../composables/useAuth.js';
+import { confirmDanger } from '../composables/useConfirmAction.js';
 import {
   createAnnouncement,
   duplicateAnnouncement,
@@ -293,7 +300,6 @@ const previewing = ref(false);
 const sending = ref(false);
 const applying = ref(false);
 const dirty = ref(false);
-const error = ref('');
 const message = ref('');
 const messageKind = ref('');
 const preview = ref(null);
@@ -349,14 +355,13 @@ function applyModel(data) {
 
 async function load() {
   loading.value = true;
-  error.value = '';
   setMessage('');
   try {
     const result = await api('/api/announcements');
     if (!result.ok) throw new Error(result.data?.error || '读取公告失败');
     applyModel(result.data);
   } catch (e) {
-    error.value = e.message || String(e);
+    setMessage(e.message || String(e), 'error');
   } finally {
     loading.value = false;
   }
@@ -364,12 +369,11 @@ async function load() {
 
 async function reload() {
   await load();
-  if (!error.value) setMessage('已重新读取公告。', 'ok');
+  if (messageKind.value !== 'error') setMessage('已重新读取公告。', 'ok');
 }
 
 async function save() {
   saving.value = true;
-  error.value = '';
   setMessage('');
   try {
     const result = await api('/api/announcements', {
@@ -425,11 +429,14 @@ async function send() {
       throw new Error((firstData.errors || []).join('；') || firstData.error || '发送失败');
     }
     if (firstData.preview) preview.value = firstData.preview;
-    await ElMessageBox.confirm(
+    const proceed = await confirmDanger(
       (firstData.message || '预览通过') + '\n\n确认推送给 ' + (firstData.recipients || 0) + ' 名玩家？',
-      '发送公告',
-      { confirmButtonText: '发送', cancelButtonText: '取消', type: 'warning' },
+      { title: '发送公告', confirmText: '发送' },
     );
+    if (!proceed) {
+      setMessage('已取消发送。');
+      return;
+    }
     const result = await api('/api/announcements/send', {
       method: 'POST',
       body: JSON.stringify({ announcement: selected.value, dryRun: false, confirm: true }),
@@ -459,15 +466,11 @@ function duplicate() {
 
 async function remove() {
   if (!selected.value) return;
-  try {
-    await ElMessageBox.confirm(
-      '删除公告「' + (selected.value.name || selected.value.id) + '」？',
-      '删除公告',
-      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' },
-    );
-  } catch {
-    return;
-  }
+  const proceed = await confirmDanger(
+    '删除公告「' + (selected.value.name || selected.value.id) + '」？保存后不可恢复。',
+    { title: '删除公告', confirmText: '删除' },
+  );
+  if (!proceed) return;
   list.value.splice(selectedIndex.value, 1);
   selectedIndex.value = Math.max(0, selectedIndex.value - 1);
   dirty.value = true;
