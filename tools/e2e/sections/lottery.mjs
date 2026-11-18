@@ -130,6 +130,32 @@ export default {
       && fund.navItems.join('|') === '物品价值表'
       && !fund.subnav.includes('基金仓库'), JSON.stringify(fund));
 
+    // 排序只影响下方列表的显示顺序，不得改写仓库槽位或触发保存。
+    const sortView = await evaluate(`(async () => {
+      const token = sessionStorage.getItem('samsara-token') || '';
+      const read = async () => {
+        const response = await fetch('/api/lottery/fund', {
+          headers: { Authorization: 'Bearer ' + token },
+        });
+        return (await response.json()).slots;
+      };
+      const before = await read();
+      const option = [...document.querySelectorAll('.fund-sort .el-segmented__item')]
+        .find((node) => node.textContent.trim() === '价值');
+      option?.click();
+      await new Promise((resolve) => setTimeout(resolve, 700));
+      const after = await read();
+      return {
+        clicked: Boolean(option),
+        same: JSON.stringify(before) === JSON.stringify(after),
+        size: before.length,
+        errors: (window.__e2eErrors || []).slice(0, 2),
+      };
+    })()`);
+    check('基金排序只改视图，不改槽位',
+      sortView.clicked && sortView.same && sortView.size > 0,
+      JSON.stringify(sortView));
+
     const errors = await evaluate('window.__e2eErrors || []');
     check('经济业务页没有未捕获脚本错误', errors.length === 0, errors.slice(0, 3).join(' | '));
 

@@ -39,11 +39,12 @@
           placeholder="搜索仓库物品（中文 / 英文 / ID）"
           aria-label="搜索仓库物品"
         />
-        <div class="fund-sort" role="group" aria-label="排列顺序">
+        <div class="fund-sort" role="group" aria-label="列表显示顺序（不影响仓库槽位）">
+          <span class="muted small">显示顺序</span>
           <Segmented
             :model-value="itemSort"
             :options="sortOptions"
-            aria-label="排列顺序"
+            aria-label="列表显示顺序（不影响仓库槽位）"
             @update:model-value="setSort"
           />
           <el-button
@@ -152,12 +153,12 @@ const sortDesc = ref(false);
 const columns = ref(computeColumns());
 const visiblePages = ref(1);
 const sortOptions = [
-  { id: 'added', label: '添加顺序', hint: '按放入仓库的先后（槽位顺序）' },
-  { id: 'name', label: '名称', hint: '按物品中文 / 英文名称' },
-  { id: 'count', label: '数量', hint: '按堆叠数量' },
-  { id: 'nbt', label: 'NBT', hint: '按数据组件数目' },
-  { id: 'rarity', label: '稀有度', hint: '按原版稀有度' },
-  { id: 'value', label: '价值', hint: '按 VP 价值' },
+  { id: 'added', label: '添加顺序', hint: '只改变下方列表的显示顺序，不改仓库槽位' },
+  { id: 'name', label: '名称', hint: '按名称排序（仅显示）' },
+  { id: 'count', label: '数量', hint: '按堆叠数量排序（仅显示）' },
+  { id: 'nbt', label: 'NBT', hint: '按数据组件数目排序（仅显示）' },
+  { id: 'rarity', label: '稀有度', hint: '按原版稀有度排序（仅显示）' },
+  { id: 'value', label: '价值', hint: '按 VP 价值排序（仅显示）' },
 ];
 const pageSlots = computed(() => columns.value * PAGE_ROWS);
 const focusedSlot = ref(null);
@@ -195,9 +196,7 @@ const layout = computed(() => {
   ];
 });
 
-const filteredItems = computed(() => filterItems(items.value || [], itemQuery.value)
-  .slice()
-  .sort((a, b) => (Number(a.slot) || 0) - (Number(b.slot) || 0)));
+const filteredItems = computed(() => filterItems(sortedItems.value, itemQuery.value));
 
 const liveState = useLiveRefresh({
   mode: () => 'live',
@@ -362,8 +361,8 @@ const RARITY_ORDER = { common: 1, uncommon: 2, rare: 3, epic: 4 };
 
 function setSort(next) {
   if (next === itemSort.value) return;
+  // 视图排序：只改下方列表的显示顺序，不改 slots，也不触发保存。
   itemSort.value = next;
-  applySort();
 }
 
 function sortKey(row) {
@@ -377,7 +376,7 @@ function sortKey(row) {
   }
 }
 
-function applySort() {
+const sortedItems = computed(() => {
   const rows = (items.value || []).slice();
   const direction = sortDesc.value ? -1 : 1;
   rows.sort((a, b) => {
@@ -389,18 +388,11 @@ function applySort() {
     return String(a.zh || a.name || a.id || '')
       .localeCompare(String(b.zh || b.name || b.id || ''), 'zh-CN') * direction;
   });
-  const next = normalize(new Array(Math.max(pageSlots.value, rows.length + 1)).fill(''));
-  rows.forEach((row, index) => { next[index] = row.encoded; });
-  slots.value = next;
-  items.value = rows.map((row, index) => Object.assign({}, row, { slot: index }));
-  visiblePages.value = sectionCountFor(next);
-  dirty.value = true;
-  save();
-}
+  return rows;
+});
 
 function toggleSortDirection() {
   sortDesc.value = !sortDesc.value;
-  applySort();
 }
 
 async function save() {
