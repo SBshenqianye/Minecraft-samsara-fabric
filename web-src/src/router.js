@@ -18,6 +18,7 @@ const TrackPage = () => import('./pages/TrackPage.vue');
 const DiffPage = () => import('./pages/DiffPage.vue');
 const ModConfigPage = () => import('./pages/ModConfigPage.vue');
 const UserPage = () => import('./pages/UserPage.vue');
+const StorageLayoutPage = () => import('./pages/StorageLayoutPage.vue');
 
 const samsara = (section, page, component, title, panel, extra = {}) => ({
   component,
@@ -102,6 +103,18 @@ const routes = [
             page: 'server',
             title: 'Web 审计',
             serverPanel: 'server-audit-panel',
+          },
+        },
+
+        // 只读存储布局：每类数据在哪个路径/多大/是否随周目与备份
+        {
+          path: 'samsara/system/storage',
+          component: StorageLayoutPage,
+          meta: {
+            workspace: 'samsara',
+            section: 'system',
+            page: 'storage',
+            title: '存储布局',
           },
         },
 

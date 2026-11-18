@@ -225,10 +225,12 @@ public final class ConfigSchema {
         file(CLAIM_RANGE, "圈地范围", claimRangeEntries());
 
         file(STORAGE, "存储", List.of(
-                ConfigEntry.bool("globalFollowWorld", true, "全局数据",
-                        "true = 全局数据随存档（<存档根>/samsara/global）；"
-                                + "false = 服务器级（<服务器根>/samsara/global）。"
-                                + "切换时程序自动双向迁移"),
+                ConfigEntry.bool("globalFollowWorld", true, "玩家/存档数据",
+                        "只作用于适合跟存档走的玩家数据与存档数据（如身份组/背包/全局索引），"
+                                + "**不包含任何配置**：config/samsara 永远固定在服务器级，"
+                                + "跨周目奖池/保险基金固定在 samsara/shared。"
+                                + "true = 跟随存档（<存档根>/samsara/global）；"
+                                + "false = 服务器级（<服务器根>/samsara/global）。切换时程序自动双向迁移"),
                 ConfigEntry.string("worldDataRoot", "", "路径",
                         "世界数据根覆盖；留空 = <存档根>/samsara"),
                 ConfigEntry.string("globalDataRoot", "", "路径",

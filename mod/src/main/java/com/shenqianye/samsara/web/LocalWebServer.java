@@ -260,6 +260,7 @@ public final class LocalWebServer {
         server.createContext("/api/agent", this::handleAgent);
         server.createContext("/api/reload", this::handleReload);
         server.createContext("/api/status", this::handleStatus);
+        server.createContext("/api/storage", this::handleStorage);
         if (identityService != null) {
             server.createContext("/api/identity", this::handleIdentity);
         }
@@ -1810,6 +1811,30 @@ public final class LocalWebServer {
                 return;
             }
             json(exchange, 200, service.status());
+        } finally {
+            log(exchange, status, start);
+        }
+    }
+
+    /** 只读存储布局：每类数据在哪里、多大、是否随周目/备份。 */
+    private void handleStorage(HttpExchange exchange) throws IOException {
+        long start = System.currentTimeMillis();
+        int status = 200;
+        try {
+            int auth = authorize(exchange);
+            if (auth != 0) {
+                status = auth;
+                return;
+            }
+            if (!"GET".equals(exchange.getRequestMethod())) {
+                status = 405;
+                json(exchange, status, Map.of("error", "Method Not Allowed"));
+                return;
+            }
+            json(exchange, 200, new StorageLayoutWebService().model());
+        } catch (RuntimeException e) {
+            status = 500;
+            json(exchange, status, Map.of("error", errorDetail(e)));
         } finally {
             log(exchange, status, start);
         }

@@ -57,6 +57,7 @@ export const SECTION_NAV = {
   ],
   system: [
     { id: 'audit', label: 'Web 审计', target: '/samsara/system/audit' },
+    { id: 'storage', label: '存储布局', target: '/samsara/system/storage' },
   ],
 };
 

@@ -12,6 +12,7 @@ import permissions from './permissions.mjs';
 import server from './server.mjs';
 import serverConsole from './server-console.mjs';
 import skyInventory from './sky-inventory.mjs';
+import storage from './storage.mjs';
 import worldStack from './world-stack.mjs';
 
 /**
@@ -33,5 +34,6 @@ export const sections = {
   pages,
   'world-stack': worldStack,
   'sky-inventory': skyInventory,
+  storage,
   batch5,
 };

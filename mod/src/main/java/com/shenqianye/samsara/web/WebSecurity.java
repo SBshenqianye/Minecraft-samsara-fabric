@@ -76,6 +76,7 @@ public final class WebSecurity {
                  "/samsara/community", "/samsara/community/announcements",
                  "/samsara/community/identity",
                  "/samsara/system", "/samsara/system/audit",
+                 "/samsara/system/storage",
                  "/track", "/diff", "/inventory", "/identity-inventory",
                  "/identity-inventory-inline" ->
                 "/web/vue/index.html";
