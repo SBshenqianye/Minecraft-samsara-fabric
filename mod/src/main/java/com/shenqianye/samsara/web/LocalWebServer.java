@@ -616,174 +616,8 @@ public final class LocalWebServer {
             log(exchange, status, start);
         }
     }
-
-    private static Map<String, Object> inspectIdentityData(String raw) {
-        try {
-            return com.shenqianye.samsara.identity.IdentityDataInspector.inspect(
-                    com.shenqianye.samsara.identity.IdentityService.getInstance().server(),
-                    java.util.UUID.fromString(raw));
-        } catch (RuntimeException e) {
-            return Map.of("ok", false, "error", "data UUID 格式不正确");
-        }
-    }
-
-    private static Map<String, Object> backupIdentityData(Object raw) {
-        try {
-            return com.shenqianye.samsara.identity.IdentityDataInspector.backup(
-                    java.util.UUID.fromString(String.valueOf(raw)));
-        } catch (RuntimeException e) {
-            return Map.of("ok", false, "error", "data UUID 格式不正确");
-        }
-    }
-
     private void handleIdentity(HttpExchange exchange) throws IOException {
-        long start = System.currentTimeMillis();
-        int status = 200;
-        try {
-            int auth = authorize(exchange);
-            if (auth != 0) {
-                status = auth;
-                return;
-            }
-            if (identityService == null) {
-                status = 503;
-                json(exchange, status, Map.of("error", "身份服务未启动"));
-                return;
-            }
-            String path = exchange.getRequestURI().getPath();
-            String method = exchange.getRequestMethod();
-            Map<String, Object> body = Map.of();
-            if ("POST".equals(method) || "PUT".equals(method)) {
-                try {
-                    body = parseObject(readBody(exchange));
-                } catch (BodyTooLarge e) {
-                    status = 413;
-                    json(exchange, status, Map.of("error", "请求体过大"));
-                    return;
-                } catch (RuntimeException e) {
-                    status = 400;
-                    json(exchange, status, Map.of("error", "请求体应为 JSON 对象"));
-                    return;
-                }
-            }
-            Map<String, Object> result;
-            switch (path) {
-                case "/api/identity" -> {
-                    if ("GET".equals(method)) {
-                        result = identityService.model();
-                    } else if ("PUT".equals(method) || "POST".equals(method)) {
-                        result = identityService.save(body);
-                    } else {
-                        status = 405;
-                        result = Map.of("error", "Method Not Allowed");
-                    }
-                }
-                case "/api/identity/preview" -> {
-                    if (!"POST".equals(method)) {
-                        status = 405;
-                        result = Map.of("error", "Method Not Allowed");
-                    } else {
-                        result = identityService.preview(body);
-                    }
-                }
-                case "/api/identity/rebind" -> {
-                    if (!"POST".equals(method)) {
-                        status = 405;
-                        result = Map.of("error", "Method Not Allowed");
-                    } else {
-                        result = identityService.rebind(body);
-                    }
-                }
-                case "/api/identity/reload" -> {
-                    if (!"POST".equals(method)) {
-                        status = 405;
-                        result = Map.of("error", "Method Not Allowed");
-                    } else {
-                        result = identityService.reload();
-                    }
-                }
-                case "/api/identity/audit" -> {
-                    if (!"GET".equals(method)) {
-                        status = 405;
-                        result = Map.of("error", "Method Not Allowed");
-                    } else {
-                        result = identityService.audit();
-                    }
-                }
-                case "/api/identity/generate" -> {
-                    if (!"POST".equals(method)) {
-                        status = 405;
-                        result = Map.of("error", "Method Not Allowed");
-                    } else {
-                        result = identityService.generate();
-                    }
-                }
-                case "/api/identity/resolve" -> {
-                    if (!"POST".equals(method)) {
-                        status = 405;
-                        result = Map.of("error", "Method Not Allowed");
-                    } else {
-                        result = identityService.resolve(body);
-                    }
-                }
-                case "/api/identity/data" -> {
-                    if (!"GET".equals(method)) {
-                        status = 405;
-                        result = Map.of("error", "Method Not Allowed");
-                    } else {
-                        Map<String, String> query = parseQuery(exchange.getRequestURI().getRawQuery());
-                        result = inspectIdentityData(query.get("uuid"));
-                    }
-                }
-                case "/api/identity/data/backup" -> {
-                    if (!"POST".equals(method)) {
-                        status = 405;
-                        result = Map.of("error", "Method Not Allowed");
-                    } else {
-                        result = backupIdentityData(body.get("uuid"));
-                    }
-                }
-                case "/api/identity/data/list" -> {
-                    if (!"GET".equals(method)) {
-                        status = 405;
-                        result = Map.of("error", "Method Not Allowed");
-                    } else {
-                        result = identityService.dataList();
-                    }
-                }
-                case "/api/identity/data/backups" -> {
-                    if (!"GET".equals(method)) {
-                        status = 405;
-                        result = Map.of("error", "Method Not Allowed");
-                    } else {
-                        Map<String, String> query = parseQuery(exchange.getRequestURI().getRawQuery());
-                        result = identityService.dataBackups(query.get("uuid"));
-                    }
-                }
-                case "/api/identity/data/label" -> {
-                    if (!"POST".equals(method)) {
-                        status = 405;
-                        result = Map.of("error", "Method Not Allowed");
-                    } else {
-                        result = identityService.dataLabel(body);
-                    }
-                }
-                default -> {
-                    status = 404;
-                    result = Map.of("error", "Not Found");
-                }
-            }
-            if (status == 200 && Boolean.FALSE.equals(result.get("ok"))) {
-                status = 400;
-            }
-            json(exchange, status, result);
-        } catch (RuntimeException e) {
-            status = 500;
-            json(exchange, status, Map.of("error", "服务器内部错误"));
-            LOG.warn("[web] 处理 {} 失败: {}", exchange.getRequestURI().getPath(), e.getMessage());
-        } finally {
-            log(exchange, status, start);
-        }
+        new IdentityWebHandler(this, identityService).handle(exchange);
     }
 
     private void handleOutput(HttpExchange exchange) throws IOException {
@@ -1477,7 +1311,7 @@ public final class LocalWebServer {
     }
 
     @SuppressWarnings("unchecked")
-    private static Map<String, Object> parseObject(String body) {
+    static Map<String, Object> parseObject(String body) {
         Map<String, Object> map = GSON.fromJson(body, MAP_TYPE);
         return map == null ? Map.of() : map;
     }
@@ -1666,86 +1500,9 @@ public final class LocalWebServer {
     }
 
     private void handleInventory(HttpExchange exchange) throws IOException {
-        long start = System.currentTimeMillis();
-        int status = 200;
-        try {
-            int auth = authorize(exchange);
-            if (auth != 0) {
-                status = auth;
-                return;
-            }
-            String path = exchange.getRequestURI().getPath();
-            String method = exchange.getRequestMethod();
-            if ("GET".equals(method) && "/api/inventory".equals(path)) {
-                Map<String, Object> result = inventoryService.read(
-                        parseQuery(exchange.getRequestURI().getRawQuery()));
-                status = result.get("ok") == Boolean.TRUE ? 200
-                        : result.get("status") instanceof Number number ? number.intValue() : 400;
-                json(exchange, status, result);
-                return;
-            }
-            if ("POST".equals(method) && ("/api/inventory/write".equals(path)
-                    || "/api/inventory/item".equals(path))) {
-                String body;
-                try {
-                    body = readBody(exchange);
-                } catch (BodyTooLarge e) {
-                    status = 413;
-                    json(exchange, status, Map.of("error", "请求体过大"));
-                    return;
-                }
-                Map<String, Object> result;
-                if ("/api/inventory/item".equals(path)) {
-                    result = inventoryService.item(body);
-                } else {
-                    AgentAuthService.AuthContext context = AgentAuthService.getInstance()
-                            .context(exchange);
-                    String actor = context == null ? "admin" : context.actor();
-                    result = inventoryService.write(body, actor);
-                }
-                Object requested = result.get("status");
-                status = requested instanceof Number number ? number.intValue()
-                        : result.get("ok") == Boolean.TRUE ? 200 : 400;
-                json(exchange, status, result);
-                return;
-            }
-            if ("GET".equals(method) && "/api/inventory/web".equals(path)) {
-                json(exchange, 200, inventoryService.webRead());
-                return;
-            }
-            if ("POST".equals(method) && ("/api/inventory/web/write".equals(path)
-                    || "/api/inventory/web/deposit".equals(path)
-                    || "/api/inventory/web/withdraw".equals(path))) {
-                String body;
-                try {
-                    body = readBody(exchange);
-                } catch (BodyTooLarge e) {
-                    status = 413;
-                    json(exchange, status, Map.of("error", "请求体过大"));
-                    return;
-                }
-                Map<String, Object> result = "/api/inventory/web/write".equals(path)
-                        ? inventoryService.webWrite(body)
-                        : "/api/inventory/web/deposit".equals(path)
-                        ? inventoryService.webDeposit(body)
-                        : inventoryService.webWithdraw(body);
-                Object requested = result.get("status");
-                status = requested instanceof Number number ? number.intValue()
-                        : result.get("ok") == Boolean.TRUE ? 200 : 400;
-                json(exchange, status, result);
-                return;
-            }
-            status = 404;
-            json(exchange, status, Map.of("error", "未知背包接口"));
-        } catch (RuntimeException e) {
-            status = 500;
-            json(exchange, status, Map.of("error", errorDetail(e)));
-            LOG.warn("[web] 背包操作 {} 失败: {}", exchange.getRequestURI().getPath(),
-                    e.getMessage());
-        } finally {
-            log(exchange, status, start);
-        }
+        new InventoryWebHandler(this, inventoryService).handle(exchange);
     }
+
 
     private void handleItems(HttpExchange exchange) throws IOException {
         long start = System.currentTimeMillis();
@@ -1854,7 +1611,7 @@ public final class LocalWebServer {
      * 鉴权 + scope + 限流 + 幂等重放。返回 0 表示继续处理；非 0 时响应已发送，
      * 调用方只需把状态码写入日志并返回。
      */
-    private int authorize(HttpExchange exchange) throws IOException {
+    int authorize(HttpExchange exchange) throws IOException {
         AgentAuthService.AuthContext context = AgentAuthService.getInstance().authenticate(
                 exchange.getRequestHeaders().getFirst("Authorization"), token);
         if (context == null) {
@@ -1968,7 +1725,7 @@ public final class LocalWebServer {
         }
     }
 
-    private static String readBody(HttpExchange exchange) throws IOException, BodyTooLarge {
+    static String readBody(HttpExchange exchange) throws IOException, BodyTooLarge {
         return readBody(exchange, WebSecurity.MAX_BODY_BYTES);
     }
 
@@ -2026,8 +1783,12 @@ public final class LocalWebServer {
         }
     }
 
-    private static void log(HttpExchange exchange, int status, long startMs) {
-        URI uri = exchange.getRequestURI();
+    /** 路由处理器记录失败（不把堆栈发给前端，只写服务端日志）。 */
+    void warnRoute(HttpExchange exchange, RuntimeException error) {
+        LOG.warn("[web] 处理 {} 失败: {}", exchange.getRequestURI().getPath(), error.getMessage());
+    }
+
+    static void log(HttpExchange exchange, int status, long startMs) {        URI uri = exchange.getRequestURI();
         // 只记录方法/路径/状态码/耗时；不记录 token，也不记录查询串（避免泄漏）。
         LOG.debug("[web] {} {} → {} ({}ms)", exchange.getRequestMethod(), uri.getPath(),
                 status, System.currentTimeMillis() - startMs);
@@ -2037,6 +1798,7 @@ public final class LocalWebServer {
                                String source, String revision, boolean confirm) {
     }
 
-    private static final class BodyTooLarge extends Exception {
+    static final class BodyTooLarge extends Exception {
     }
 }
+

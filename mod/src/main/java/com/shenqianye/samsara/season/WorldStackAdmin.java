@@ -690,7 +690,7 @@ public final class WorldStackAdmin {
         }
         info.path = raw.toAbsolutePath().normalize().toString();
         info.canonicalPath = real.toString();
-        if (!allowed(real, worldDir, serverRoot, importRoots)) {
+        if (!WorldStackImportGuard.allowed(real, worldDir, serverRoot, importRoots)) {
             p.fields.put("path", "路径不在服务器根或 web.yml importRoots 允许范围内");
             p.errors.add("路径不在允许范围：请把所在目录加入 web.yml 的 importRoots");
             return null;
@@ -718,7 +718,7 @@ public final class WorldStackAdmin {
                 || Files.isDirectory(real.resolve("playerdata")));
         info.layout = info.legacy ? "legacy" : info.hasDimensions ? "v26.3" : "unknown";
         info.hasSamsaraStack = Files.isRegularFile(real.resolve("samsara/stack.json"));
-        info.sessionLocked = sessionLocked(real.resolve("session.lock"));
+        info.sessionLocked = WorldStackImportGuard.sessionLocked(real.resolve("session.lock"));
         LevelInfo level = LevelInfo.read(real);
         info.dataVersion = level.dataVersion;
         info.snapshot = level.snapshot;
@@ -732,73 +732,9 @@ public final class WorldStackAdmin {
         info.sizeBytes = stats.bytes;
         info.fileCount = stats.files;
         info.playerFiles = countFiles(real.resolve("players/data"));
-        p.playerConflicts = playerConflicts(worldDir, real);
-        p.conflictFiles = conflictFiles(worldDir, real);
+        p.playerConflicts = WorldStackImportGuard.playerConflicts(worldDir, real);
+        p.conflictFiles = WorldStackImportGuard.conflictFiles(worldDir, real);
         return info;
-    }
-
-    private static boolean allowed(Path real, Path worldDir, Path serverRoot, List<Path> importRoots) {
-        Path worldAbs = worldDir.toAbsolutePath().normalize();
-        List<Path> roots = new ArrayList<>();
-        if (serverRoot != null) {
-            roots.add(serverRoot);
-        } else if (worldAbs.getParent() != null) {
-            roots.add(worldAbs.getParent());
-        }
-        if (importRoots != null) {
-            roots.addAll(importRoots);
-        }
-        for (Path root : roots) {
-            try {
-                Path canonical = root.toRealPath();
-                if (real.startsWith(canonical)) {
-                    return true;
-                }
-            } catch (IOException ignored) {
-                if (real.startsWith(root.toAbsolutePath().normalize())) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    private static boolean sessionLocked(Path lock) {
-        if (!Files.isRegularFile(lock)) {
-            return false;
-        }
-        try (FileChannel channel = FileChannel.open(lock, StandardOpenOption.READ,
-                StandardOpenOption.WRITE);
-             FileLock ignored = channel.tryLock()) {
-            return ignored == null;
-        } catch (Exception e) {
-            return true;
-        }
-    }
-
-    private static int playerConflicts(Path worldDir, Path source) {
-        return conflictFiles(worldDir, source).size();
-    }
-
-    private static List<String> conflictFiles(Path worldDir, Path source) {
-        List<String> out = new ArrayList<>();
-        Path src = source.resolve("players/data");
-        Path dst = worldDir.resolve("players/data");
-        if (!Files.isDirectory(src)) {
-            return out;
-        }
-        try (Stream<Path> stream = Files.walk(src)) {
-            stream.filter(Files::isRegularFile).forEach(file -> {
-                Path rel = src.relativize(file);
-                if (Files.exists(dst.resolve(rel))) {
-                    out.add(rel.toString().replace('\\', '/'));
-                }
-            });
-        } catch (IOException ignored) {
-            // 预览阶段不阻断；真正复制时逐文件记录
-        }
-        out.sort(Comparator.naturalOrder());
-        return out.size() > 20 ? out.subList(0, 20) : out;
     }
 
     // ---- 排序/归档 ----
@@ -1449,7 +1385,7 @@ public final class WorldStackAdmin {
                         + (sourceLevel.versionName.isBlank() ? "snapshot" : sourceLevel.versionName)
                         + "）；正式版服务器会拒绝打开，已中止（原栈与源目录保持不变）");
             }
-            if (sessionLocked(source.resolve("session.lock"))) {
+            if (WorldStackImportGuard.sessionLocked(source.resolve("session.lock"))) {
                 throw new IOException("源目录 session.lock 仍被占用");
             }
             if ("top".equals(pending.position)) {
@@ -2468,3 +2404,4 @@ public final class WorldStackAdmin {
         int files;
     }
 }
+
