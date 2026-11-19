@@ -27,6 +27,8 @@ public final class StorageLayoutWebService {
                 true, "进本体备份", "圈地、轨迹、地图、容器、当前周目状态"));
         rows.add(row("shared", "跨周目共享数据", paths.sharedDataRoot(),
                 false, "进本体备份", "奖池 / 基金 / 保险基金，换周目滚存"));
+        rows.add(row("runtime", "运行数据", paths.runtimeDataRoot(),
+                false, "进本体备份", "金价缓存 / 开新周目投票 / 公告历史"));
         rows.add(row("identity", "身份组与背包", paths.identityDataRoot(),
                 false, "进本体备份", "固定跟随主存档，不随世界栈切换"));
         rows.add(row("global", "全局索引", paths.globalDataRoot(),

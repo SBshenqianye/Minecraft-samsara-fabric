@@ -46,7 +46,7 @@ public final class GoldPriceService {
     }
 
     public synchronized void init() {
-        cachePath = StoragePaths.configRoot().resolve("gold-price.json");
+        cachePath = StoragePaths.runtimeFile("gold-price.json");
         load();
     }
 

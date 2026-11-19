@@ -33,19 +33,45 @@ public final class SeasonAdvanceVoteManager {
 
     private static SeasonAdvanceVoteManager instance;
 
-    private final Path file;
+    private Path file;
     private SeasonAdvanceVote active;
     private long lastCheckAt;
+    private boolean loaded;
 
     private SeasonAdvanceVoteManager() {
-        file = StoragePaths.configRoot().resolve("season-advance.json");
-        active = SeasonAdvanceVote.load(file);
+        // 延迟到 StoragePaths.init 之后再解析路径并读取状态（单例在 mod init 就可能被创建）。
+    }
+
+    /** 运行数据文件；旧的 config/samsara/season-advance.json 只读回退。 */
+    private Path file() {
+        if (file != null) {
+            return file;
+        }
+        Path runtime = StoragePaths.runtimeFile("season-advance.json");
+        if (!java.nio.file.Files.isRegularFile(runtime)) {
+            Path legacy = StoragePaths.configRoot().resolve("season-advance.json");
+            if (java.nio.file.Files.isRegularFile(legacy)) {
+                file = legacy;
+                return legacy;
+            }
+        }
+        file = runtime;
+        return runtime;
+    }
+
+    private void ensureLoaded() {
+        if (loaded) {
+            return;
+        }
+        loaded = true;
+        Path f = file();
+        active = SeasonAdvanceVote.load(f);
         if (active != null) {
             Samsara.LOGGER.info("[周目管理 samsara] 已恢复开新周目投票：{} 发起（{}）",
                     active.initiatorName, active.mode);
-        } else if (java.nio.file.Files.exists(file)) {
+        } else if (java.nio.file.Files.exists(f)) {
             Samsara.LOGGER.warn("[周目管理 samsara] {} 无法恢复为进行中投票（可能损坏或已结束），保留原文件",
-                    file);
+                    f);
         }
     }
 
@@ -58,6 +84,7 @@ public final class SeasonAdvanceVoteManager {
 
     /** 当前进行中的投票；没有时为 null。 */
     public synchronized SeasonAdvanceVote active() {
+        ensureLoaded();
         return active;
     }
 
@@ -68,6 +95,7 @@ public final class SeasonAdvanceVoteManager {
      * 只允许玩家发起；有管理员在线、在线 ≤1、已有 pending 时拒绝。
      */
     public synchronized String requestAdvance(MinecraftServer server, ServerPlayer player, String mode) {
+        ensureLoaded();
         long now = System.currentTimeMillis();
         expireIfNeeded(server, now);
         if (player == null) {
@@ -121,8 +149,8 @@ public final class SeasonAdvanceVoteManager {
 
         SeasonAdvanceVote vote = SeasonAdvanceVote.create(normalized, player.getUUID(),
                 player.getScoreboardName(), online, layerId, seed, levelType, archiveData, now);
-        if (!vote.save(file)) {
-            return "投票状态写入失败（config/samsara/season-advance.json），请检查磁盘权限后重试。";
+        if (!vote.save(file())) {
+            return "投票状态写入失败（samsara/runtime/season-advance.json），请检查磁盘权限后重试。";
         }
         active = vote;
         broadcast(server, "🗳 " + vote.initiatorName + " 发起了开新周目投票（"
@@ -133,6 +161,7 @@ public final class SeasonAdvanceVoteManager {
 
     /** {@code /samsara season agree}：同意当前投票；全部同意后执行 reset。 */
     public synchronized String agree(MinecraftServer server, ServerPlayer player) {
+        ensureLoaded();
         if (player == null) {
             return "只有游戏内玩家可以同意开新周目投票。";
         }
@@ -172,6 +201,7 @@ public final class SeasonAdvanceVoteManager {
 
     /** {@code /samsara season cancel}：发起者撤回，或管理员取消进行中的投票。 */
     public synchronized String cancel(MinecraftServer server, ServerPlayer player) {
+        ensureLoaded();
         long now = System.currentTimeMillis();
         if (expireIfNeeded(server, now)) {
             return "投票已过期，没有进行中的投票。";
@@ -189,7 +219,7 @@ public final class SeasonAdvanceVoteManager {
         String initiatorName = active.initiatorName;
         String mode = modeLabel(active.mode);
         active = null;
-        SeasonAdvanceVote.deleteFile(file);
+        SeasonAdvanceVote.deleteFile(file());
         String verb = initiator ? "撤回" : "取消";
         broadcast(server, "🗳 " + (admin && !initiator ? "管理员 " : "") + actor
                 + " 已" + verb + "开新周目投票（发起者 " + initiatorName + " · " + mode + "）");
@@ -198,6 +228,7 @@ public final class SeasonAdvanceVoteManager {
 
     /** {@code /samsara season vote-status}：发起者、模式、名单、剩余时间。 */
     public synchronized String statusText(MinecraftServer server) {
+        ensureLoaded();
         long now = System.currentTimeMillis();
         if (expireIfNeeded(server, now)) {
             return noVoteText();
@@ -237,6 +268,7 @@ public final class SeasonAdvanceVoteManager {
 
     /** 每 20 秒检查一次过期，并把期间新加入的在线玩家并入 eligible。 */
     public synchronized void tick(MinecraftServer server) {
+        ensureLoaded();
         long now = System.currentTimeMillis();
         if (now - lastCheckAt < CHECK_INTERVAL_MS) {
             return;
@@ -255,6 +287,7 @@ public final class SeasonAdvanceVoteManager {
 
     /** 玩家加入时立刻并入 eligible；离线玩家已投的票不删除。 */
     public synchronized void onPlayerJoin(MinecraftServer server, ServerPlayer player) {
+        ensureLoaded();
         if (player == null) {
             return;
         }
@@ -314,7 +347,7 @@ public final class SeasonAdvanceVoteManager {
 
         vote.markPassed();
         active = null;
-        SeasonAdvanceVote.deleteFile(file);
+        SeasonAdvanceVote.deleteFile(file());
         broadcast(server, "✅ 全员同意，开新周目已执行（" + modeLabel(vote.mode) + "）\n" + result);
         return "✅ 全员同意，开新周目已执行（" + modeLabel(vote.mode) + "）\n" + result;
     }
@@ -336,15 +369,15 @@ public final class SeasonAdvanceVoteManager {
         }
         String initiator = active.initiatorName;
         active = null;
-        SeasonAdvanceVote.deleteFile(file);
+        SeasonAdvanceVote.deleteFile(file());
         broadcast(server, "⌛ 开新周目投票已过期（48 小时内未全员同意；发起者 "
                 + initiator + "）");
         return true;
     }
 
     private void saveActive() {
-        if (active != null && !active.save(file)) {
-            Samsara.LOGGER.warn("[周目管理 samsara] 开新周目投票状态写入失败：{}", file);
+        if (active != null && !active.save(file())) {
+            Samsara.LOGGER.warn("[周目管理 samsara] 开新周目投票状态写入失败：{}", file());
         }
     }
 
@@ -408,3 +441,5 @@ public final class SeasonAdvanceVoteManager {
                 Component.literal("[周目管理] " + message), false);
     }
 }
+
+

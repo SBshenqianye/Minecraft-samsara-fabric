@@ -193,6 +193,9 @@ public final class ServerBackup {
         public long sharedBytes;
         public int sharedFiles;
         public boolean includesShared;
+        public long runtimeBytes;
+        public int runtimeFiles;
+        public boolean includesRuntime;
         public long freeBytes;
         public long neededBytes;
         public String createdAt = "";
@@ -216,6 +219,9 @@ public final class ServerBackup {
         out.put("sharedDir", StoragePaths.sharedDirAt(serverRoot).toString());
         out.put("sharedBytes", sizeOf(StoragePaths.sharedDirAt(serverRoot)));
         out.put("sharedFiles", countFiles(StoragePaths.sharedDirAt(serverRoot)));
+        out.put("runtimeDir", StoragePaths.runtimeDirAt(serverRoot).toString());
+        out.put("runtimeBytes", sizeOf(StoragePaths.runtimeDirAt(serverRoot)));
+        out.put("runtimeFiles", countFiles(StoragePaths.runtimeDirAt(serverRoot)));
         out.put("backupRoot", backupRoot(serverRoot).toString());
         out.put("freeBytes", freeBytes(serverRoot));
         out.put("keep", currentKeep());
@@ -356,6 +362,7 @@ public final class ServerBackup {
         Map<String, Object> out = new LinkedHashMap<>();
         Path world = worldDir(serverRoot);
         Path shared = StoragePaths.sharedDirAt(serverRoot);
+        Path runtime = StoragePaths.runtimeDirAt(serverRoot);
         long worldBytes = sizeOf(world);
         long sharedBytes = sizeOf(shared);
         int sharedFiles = countFiles(shared);
@@ -367,6 +374,9 @@ public final class ServerBackup {
         out.put("sharedDir", shared.toString());
         out.put("sharedBytes", sharedBytes);
         out.put("sharedFiles", sharedFiles);
+        out.put("runtimeDir", runtime.toString());
+        out.put("runtimeBytes", sizeOf(runtime));
+        out.put("runtimeFiles", countFiles(runtime));
         out.put("freeBytes", free);
         out.put("neededBytes", worldBytes + MIN_FREE_MARGIN);
         out.put("keep", currentKeep());
@@ -457,6 +467,10 @@ public final class ServerBackup {
         preview.sharedFiles = shared[0];
         preview.sharedBytes = shared[1];
         preview.includesShared = shared[0] > 0;
+        int[] runtime = zipPrefixStats(Path.of(info.file), "runtime/");
+        preview.runtimeFiles = runtime[0];
+        preview.runtimeBytes = runtime[1];
+        preview.includesRuntime = runtime[0] > 0;
         if (!preview.worldName.equals(world.getFileName().toString())) {
             preview.errors.add("备份的 level-name=" + preview.worldName
                     + "，当前 level-name=" + world.getFileName());
@@ -474,6 +488,12 @@ public final class ServerBackup {
                     + "再恢复备份里的跨周目数据");
         } else {
             preview.steps.add("该备份不含跨周目数据（shared），恢复时保留当前奖池/保险基金");
+        }
+        if (preview.includesRuntime) {
+            preview.steps.add("把当前 samsara/runtime 移到 pre-restore-<job>/runtime，"
+                    + "再恢复备份里的金价/投票/公告数据");
+        } else {
+            preview.steps.add("该备份不含运行数据（runtime），恢复时保留当前金价/投票/公告");
         }
         preview.steps.add("server.properties 与 web.yml 不直接覆盖，另存为 *.restored-<job> 供确认");
         preview.warnings.add("恢复会替换当前世界；建议先在游戏内确认没有正在进行的导入/归档");
@@ -772,6 +792,8 @@ public final class ServerBackup {
                     + " · raw=" + human(info.totalBytes));
             job.log.add("shared=files " + num(manifest.get("sharedFileCount"))
                     + " · raw " + human(num(manifest.get("sharedBytes"))));
+            job.log.add("runtime=files " + num(manifest.get("runtimeFileCount"))
+                    + " · raw " + human(num(manifest.get("runtimeBytes"))));
             writeJob(serverRoot, job);
             Samsara.LOGGER.info("[本体备份] {}", job.message);
         } catch (Exception e) {
@@ -806,10 +828,13 @@ public final class ServerBackup {
         Path rollback = backupRoot(serverRoot).resolve("pre-restore-" + pending.jobId);
         Path staging = backupRoot(serverRoot).resolve("restore-" + pending.jobId);
         Path shared = StoragePaths.sharedDirAt(serverRoot);
+        Path runtime = StoragePaths.runtimeDirAt(serverRoot);
         boolean movedWorld = false;
         boolean movedRollback = false;
         boolean movedShared = false;
         boolean sharedRestored = false;
+        boolean movedRuntime = false;
+        boolean runtimeRestored = false;
         try {
             if (!Files.isRegularFile(zip)) {
                 throw new IOException("备份文件不存在：" + zip);
@@ -840,6 +865,10 @@ public final class ServerBackup {
             if (Files.exists(shared)) {
                 Files.move(shared, rollback.resolve("shared"), StandardCopyOption.ATOMIC_MOVE);
                 movedShared = true;
+            }
+            if (Files.exists(runtime)) {
+                Files.move(runtime, rollback.resolve("runtime"), StandardCopyOption.ATOMIC_MOVE);
+                movedRuntime = true;
             }
             for (String name : ROOT_FILES) {
                 Path file = serverRoot.resolve(name);
@@ -873,6 +902,17 @@ public final class ServerBackup {
                 Files.move(rollback.resolve("shared"), shared, StandardCopyOption.ATOMIC_MOVE);
                 movedShared = false;
                 job.log.add("备份不含 shared/（旧格式）：保留当前跨周目数据");
+            }
+            Path restoredRuntime = staging.resolve("runtime");
+            if (Files.isDirectory(restoredRuntime)) {
+                Files.createDirectories(runtime.getParent());
+                Files.move(restoredRuntime, runtime, StandardCopyOption.ATOMIC_MOVE);
+                runtimeRestored = true;
+                job.log.add("运行数据已恢复：runtime/");
+            } else if (movedRuntime) {
+                Files.move(rollback.resolve("runtime"), runtime, StandardCopyOption.ATOMIC_MOVE);
+                movedRuntime = false;
+                job.log.add("备份不含 runtime/（旧格式）：保留当前运行数据");
             }
             State state = readState(serverRoot);
             state.headId = pending.id;
@@ -908,6 +948,13 @@ public final class ServerBackup {
                 if (movedShared) {
                     Files.move(rollback.resolve("shared"), shared, StandardCopyOption.ATOMIC_MOVE);
                     movedShared = false;
+                }
+                if (runtimeRestored) {
+                    deleteRecursive(runtime);
+                }
+                if (movedRuntime) {
+                    Files.move(rollback.resolve("runtime"), runtime, StandardCopyOption.ATOMIC_MOVE);
+                    movedRuntime = false;
                 }
                 if (movedRollback) {
                     restoreRollbackConfigs(serverRoot, rollback);
@@ -990,6 +1037,7 @@ public final class ServerBackup {
         }
         long[] stats = new long[]{0L, 0L}; // bytes, files
         long[] sharedStats = new long[]{0L, 0L};
+        long[] runtimeStats = new long[]{0L, 0L};
         try (OutputStream raw = Files.newOutputStream(out);
              ZipOutputStream zip = new ZipOutputStream(new BufferedOutputStream(raw))) {
             addTree(zip, world, "world", stats, job);
@@ -1001,12 +1049,15 @@ public final class ServerBackup {
             }
             addTree(zip, StoragePaths.configDirAt(serverRoot), "config-samsara", stats, job);
             addTree(zip, StoragePaths.sharedDirAt(serverRoot), "shared", sharedStats, job);
-            stats[0] += sharedStats[0];
-            stats[1] += sharedStats[1];
+            addTree(zip, StoragePaths.runtimeDirAt(serverRoot), "runtime", runtimeStats, job);
+            stats[0] += sharedStats[0] + runtimeStats[0];
+            stats[1] += sharedStats[1] + runtimeStats[1];
             manifest.put("totalBytes", stats[0]);
             manifest.put("fileCount", stats[1]);
             manifest.put("sharedBytes", sharedStats[0]);
             manifest.put("sharedFileCount", sharedStats[1]);
+            manifest.put("runtimeBytes", runtimeStats[0]);
+            manifest.put("runtimeFileCount", runtimeStats[1]);
             manifest.put("sha256", "");
             zip.putNextEntry(new ZipEntry("manifest.json"));
             zip.write(GSON.toJson(manifest).getBytes(StandardCharsets.UTF_8));

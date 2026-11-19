@@ -159,4 +159,35 @@ class StorageMigrationTest {
         assertEquals("old", Files.readString(world.resolve("lottery/state.json")),
                 "冲突时不得删除世界目录里的旧数据");
     }
+
+    @Test
+    void runtimeDataCopiedFromConfigAndSourceKept() throws Exception {
+        Path config = tmp.resolve("config/samsara");
+        Path runtime = tmp.resolve("server/samsara/runtime");
+        write(config.resolve("gold-price.json"), "{\"price\":2400}");
+        write(config.resolve("season-advance.json"), "{}");
+        write(config.resolve("announcements.json"), "{\"announcements\":[]}");
+
+        String result = StorageMigration.migrateRuntime(config, runtime);
+
+        assertTrue(result.contains("3"), result);
+        assertEquals("{\"price\":2400}", Files.readString(runtime.resolve("gold-price.json")));
+        assertTrue(Files.isRegularFile(config.resolve("gold-price.json")), "源文件必须保留");
+        assertTrue(Files.isRegularFile(config.resolve("announcements.json")), "源文件必须保留");
+    }
+
+    @Test
+    void runtimeDataKeepsBothSidesWhenTargetExists() throws Exception {
+        Path config = tmp.resolve("config/samsara");
+        Path runtime = tmp.resolve("server/samsara/runtime");
+        write(config.resolve("announcements.json"), "old");
+        write(runtime.resolve("announcements.json"), "new");
+
+        String result = StorageMigration.migrateRuntime(config, runtime);
+
+        assertTrue(result.contains("保留两份"), result);
+        assertEquals("new", Files.readString(runtime.resolve("announcements.json")));
+        assertEquals("old", Files.readString(config.resolve("announcements.json")),
+                "冲突时不得删除 config 里的旧文件");
+    }
 }

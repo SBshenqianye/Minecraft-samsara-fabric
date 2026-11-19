@@ -86,6 +86,8 @@ public final class LotteryService {
         } catch (IOException e) {
             Samsara.LOGGER.warn("[lottery] 无法创建乐透数据目录：{}", e.getMessage());
         }
+        // 旧世界/旧栈层已结算的轮次补进 shared；不动 fund/state/claims，避免重复计钱。
+        LotteryHistoryMigration.merge(StoragePaths.get().worldRoot(), root);
         loadState();
         loadFund();
         loadClaims();

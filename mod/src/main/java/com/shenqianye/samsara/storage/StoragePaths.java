@@ -123,6 +123,24 @@ public final class StoragePaths {
         return serverDataDirAt(serverRoot).resolve("shared");
     }
 
+    /** 服务器根下的运行数据根 {@code <serverRoot>/samsara/runtime}。 */
+    public static Path runtimeDirAt(Path serverRoot) {
+        return serverDataDirAt(serverRoot).resolve("runtime");
+    }
+
+    /**
+     * 当前运行实例的运行数据文件（金价/周目投票/公告历史）。
+     *
+     * <p>只接受文件名，与 {@link #configFile} 同样的越界检查。
+     */
+    public static Path runtimeFile(String name) {
+        if (name == null || name.isBlank()
+                || name.indexOf('/') >= 0 || name.indexOf('\\') >= 0 || name.contains("..")) {
+            throw new IllegalArgumentException("非法运行数据文件名: " + name);
+        }
+        return get().runtimeDataRoot().resolve(name);
+    }
+
     /** 本模组在服务器根下的备份根 {@code <serverRoot>/backups/samsara}。 */
     public static Path backupsRootAt(Path serverRoot) {
         return serverRoot.toAbsolutePath().normalize().resolve("backups").resolve("samsara");
@@ -217,12 +235,16 @@ public final class StoragePaths {
             Files.createDirectories(worldDataRoot);
             Files.createDirectories(globalDataRoot);
             Files.createDirectories(serverDataRoot.resolve("shared"));
+            Files.createDirectories(serverDataRoot.resolve("runtime"));
         } catch (IOException e) {
             Samsara.LOGGER.warn("[周目管理 samsara] 无法创建数据目录: {}", e.getMessage());
         }
         // 跨周目数据（奖池/保险基金）：旧版放在 world/samsara 下，换周目会清零；
         // 这里一次性搬到服务器级 shared，失败保留源目录。
         StorageMigration.migrateShared(worldDataRoot, serverDataRoot.resolve("shared"));
+        // 运行数据（金价/周目投票/公告）从 config 复制到服务器级 runtime；
+        // 源文件保留（服主可能还在看），失败不影响启动。
+        StorageMigration.migrateRuntime(configRoot(), serverDataRoot.resolve("runtime"));
         if (version < StorageMigration.CURRENT_VERSION) {
             config.save(ConfigSchema.STORAGE,
                     java.util.Map.of("migration.version", StorageMigration.CURRENT_VERSION));
@@ -283,6 +305,11 @@ public final class StoragePaths {
      */
     public Path sharedDataRoot() {
         return serverDataRoot.resolve("shared");
+    }
+
+    /** 运行数据根：{@code <服务器根>/samsara/runtime}（金价/周目投票/公告历史）。 */
+    public Path runtimeDataRoot() {
+        return serverDataRoot.resolve("runtime");
     }
 
     /** 服务器根（world 目录的上一级），用于服务器级备份路径。 */

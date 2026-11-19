@@ -45,6 +45,11 @@ class ServerBackupTest {
                 StandardCharsets.UTF_8);
         Files.writeString(root.resolve("samsara/shared/insurance/policies.json"), "[]\n",
                 StandardCharsets.UTF_8);
+        Files.createDirectories(root.resolve("samsara/runtime"));
+        Files.writeString(root.resolve("samsara/runtime/gold-price.json"), "{\"price\":2400}\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(root.resolve("samsara/runtime/announcements.json"), "{\"announcements\":[]}\n",
+                StandardCharsets.UTF_8);
     }
 
     @Test
@@ -198,17 +203,22 @@ class ServerBackupTest {
         ServerBackup.prepare(root);
         ServerBackup.BackupInfo info = ServerBackup.list(root).get(0);
         try (var zip = new java.util.zip.ZipFile(info.file)) {
-            assertNotNull(zip.getEntry("shared/lottery/state.json"), "新备份必须包含奖池/基金");
             assertNotNull(zip.getEntry("shared/insurance/policies.json"), "新备份必须包含保险基金");
+            assertNotNull(zip.getEntry("runtime/gold-price.json"), "新备份必须包含运行数据");
+            assertNotNull(zip.getEntry("runtime/announcements.json"), "新备份必须包含公告");
         }
 
         // 模拟换周目后数据变化，再恢复：shared 应回到备份时的值。
         Files.writeString(root.resolve("samsara/shared/lottery/state.json"), "{\"fund\":999}\n",
                 StandardCharsets.UTF_8);
+        Files.writeString(root.resolve("samsara/runtime/gold-price.json"), "{\"price\":1}\n",
+                StandardCharsets.UTF_8);
         ServerBackup.Preview restorePreview = ServerBackup.previewRestore(root, info.id);
         assertTrue(restorePreview.ok, String.join(";", restorePreview.errors));
         assertTrue(restorePreview.includesShared);
         assertEquals(2, restorePreview.sharedFiles);
+        assertTrue(restorePreview.includesRuntime);
+        assertEquals(2, restorePreview.runtimeFiles);
 
         Map<String, Object> restore = ServerBackup.scheduleRestore(root, info.id);
         assertTrue((Boolean) restore.get("ok"), String.valueOf(restore.get("error")));
@@ -216,6 +226,8 @@ class ServerBackupTest {
 
         assertEquals("{\"fund\":100}\n",
                 Files.readString(root.resolve("samsara/shared/lottery/state.json"), StandardCharsets.UTF_8));
+        assertEquals("{\"price\":2400}\n",
+                Files.readString(root.resolve("samsara/runtime/gold-price.json"), StandardCharsets.UTF_8));
         // 恢复前的 shared 也保留在回滚目录，可人工找回。
         assertEquals("{\"fund\":999}\n", Files.readString(
                 ServerBackup.backupRoot(root).resolve("pre-restore-" + restore.get("jobId"))
@@ -223,20 +235,23 @@ class ServerBackupTest {
     }
 
     @Test
-    void restoreOldZipWithoutSharedKeepsCurrentShared() throws Exception {
+    void restoreOldZipWithoutNewSectionsKeepsCurrentData() throws Exception {
         prepareWorld();
         ServerBackup.scheduleCreate(root);
         ServerBackup.prepare(root);
         ServerBackup.BackupInfo info = ServerBackup.list(root).get(0);
 
-        stripSharedFromZip(Path.of(info.file));
+        stripNewSectionsFromZip(Path.of(info.file));
         Files.writeString(root.resolve("samsara/shared/lottery/state.json"), "{\"fund\":777}\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(root.resolve("samsara/runtime/gold-price.json"), "{\"price\":1}\n",
                 StandardCharsets.UTF_8);
         Files.writeString(root.resolve("world/level.dat"), "level-changed", StandardCharsets.UTF_8);
 
         ServerBackup.Preview preview = ServerBackup.previewRestore(root, info.id);
         assertTrue(preview.ok, String.join(";", preview.errors));
         assertFalse(preview.includesShared);
+        assertFalse(preview.includesRuntime);
         assertEquals(0, preview.sharedFiles);
 
         Map<String, Object> restore = ServerBackup.scheduleRestore(root, info.id);
@@ -248,6 +263,9 @@ class ServerBackupTest {
         assertEquals("{\"fund\":777}\n", Files.readString(
                 root.resolve("samsara/shared/lottery/state.json"), StandardCharsets.UTF_8),
                 "旧备份不含 shared 时不得清零当前奖池/保险基金");
+        assertEquals("{\"price\":1}\n", Files.readString(
+                root.resolve("samsara/runtime/gold-price.json"), StandardCharsets.UTF_8),
+                "旧备份不含 runtime 时不得覆盖当前运行数据");
     }
 
     @Test
@@ -274,14 +292,14 @@ class ServerBackupTest {
     }
 
     /** 把新格式 zip 改写成旧格式：去掉 shared/，manifest 回到 format 1。 */
-    private static void stripSharedFromZip(Path zip) throws Exception {
+    private static void stripNewSectionsFromZip(Path zip) throws Exception {
         Path tmp = zip.resolveSibling(zip.getFileName() + ".old");
         try (var in = new java.util.zip.ZipFile(zip.toFile());
              var out = new java.util.zip.ZipOutputStream(Files.newOutputStream(tmp))) {
             var entries = in.entries();
             while (entries.hasMoreElements()) {
                 var entry = entries.nextElement();
-                if (entry.isDirectory() || entry.getName().startsWith("shared/")) {
+                if (entry.isDirectory() || (entry.getName().startsWith("shared/") || entry.getName().startsWith("runtime/"))) {
                     continue;
                 }
                 out.putNextEntry(new java.util.zip.ZipEntry(entry.getName()));
@@ -294,6 +312,8 @@ class ServerBackupTest {
                     manifest.addProperty("format", 1);
                     manifest.remove("sharedBytes");
                     manifest.remove("sharedFileCount");
+                    manifest.remove("runtimeBytes");
+                    manifest.remove("runtimeFileCount");
                     out.write(manifest.toString().getBytes(StandardCharsets.UTF_8));
                 } else {
                     try (var stream = in.getInputStream(entry)) {
@@ -320,3 +340,4 @@ class ServerBackupTest {
         return null;
     }
 }
+

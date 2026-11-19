@@ -13,26 +13,44 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
-/** 公告数据文件 {@code config/samsara/announcements.json}。 */
+/** 公告数据文件：服务器级 {@code samsara/runtime/announcements.json}（旧 config 文件只读回退）。 */
 public final class AnnouncementStore {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting()
             .disableHtmlEscaping().create();
 
-    private final Path file;
+    private final Path explicitFile;
+    private volatile Path resolved;
 
     public AnnouncementStore() {
-        this(StoragePaths.configRoot().resolve("announcements.json"));
+        this.explicitFile = null;
     }
 
     AnnouncementStore(Path file) {
-        this.file = file.toAbsolutePath().normalize();
+        this.explicitFile = file.toAbsolutePath().normalize();
     }
 
     public Path file() {
-        return file;
+        if (explicitFile != null) {
+            return explicitFile;
+        }
+        Path cached = resolved;
+        if (cached != null) {
+            return cached;
+        }
+        // 延迟解析：AnnouncementStore 在 StoragePaths.init 之前就可能被构造。
+        Path runtime = StoragePaths.runtimeFile("announcements.json");
+        if (!Files.isRegularFile(runtime)) {
+            Path legacy = StoragePaths.configRoot().resolve("announcements.json");
+            if (Files.isRegularFile(legacy)) {
+                return legacy;
+            }
+        }
+        resolved = runtime;
+        return runtime;
     }
 
     public synchronized List<Announcement> load() {
+        Path file = file();
         if (!Files.isRegularFile(file)) {
             List<Announcement> defaults = defaults();
             save(defaults);
@@ -56,6 +74,7 @@ public final class AnnouncementStore {
     }
 
     public synchronized void save(List<Announcement> announcements) {
+        Path file = file();
         Data data = new Data();
         data.announcements = announcements == null ? List.of() : announcements;
         try {

@@ -180,6 +180,52 @@ public final class StorageMigration {
         return "跨周目数据迁移 " + moved + " 项 → " + sharedRoot + suffix;
     }
 
+    /** 运行数据条目（从 config 复制到服务器级 runtime，源文件保留）。 */
+    public static final List<String> RUNTIME_ENTRIES = List.of(
+            "gold-price.json", "season-advance.json", "announcements.json");
+
+    /**
+     * 把 config 下的运行数据复制到服务器级 runtime（不删除源文件）。
+     *
+     * <p>幂等：目标已存在就跳过并告警（保留两份）；复制失败只记录，不阻断启动。
+     */
+    public static String migrateRuntime(Path configRoot, Path runtimeRoot) {
+        if (configRoot == null || runtimeRoot == null) {
+            return "跳过：路径未初始化";
+        }
+        List<String> notes = new ArrayList<>();
+        int copied = 0;
+        for (String name : RUNTIME_ENTRIES) {
+            Path from = configRoot.resolve(name);
+            if (!Files.isRegularFile(from)) {
+                continue;
+            }
+            Path to = runtimeRoot.resolve(name);
+            if (Files.exists(to)) {
+                notes.add(name + " 目标已存在，保留两份（源留在 config）");
+                continue;
+            }
+            try {
+                Files.createDirectories(runtimeRoot);
+                Files.copy(from, to, StandardCopyOption.COPY_ATTRIBUTES);
+                if (Files.size(from) != Files.size(to)) {
+                    notes.add(name + " 复制后大小不一致，请人工核对");
+                    Files.deleteIfExists(to);
+                    continue;
+                }
+                copied++;
+            } catch (IOException e) {
+                notes.add(name + " 复制失败：" + e.getMessage() + "（源保留）");
+            }
+        }
+        if (copied == 0 && notes.isEmpty()) {
+            return "运行数据：无需迁移";
+        }
+        String suffix = notes.isEmpty() ? "" : "；" + String.join("；", notes);
+        Samsara.LOGGER.info("[周目管理 samsara] 运行数据迁移：{} 项 → {}{}", copied, runtimeRoot, suffix);
+        return "运行数据迁移 " + copied + " 项 → " + runtimeRoot + suffix;
+    }
+
     /**
      * 全局数据双向迁移（F-128）。
      *
