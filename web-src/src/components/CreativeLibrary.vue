@@ -306,7 +306,7 @@ defineExpose({ reload: ensureAll });
 
 .creative-tabs button.active {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-ink);
 }
 
 .creative-toolbar {
@@ -369,3 +369,5 @@ defineExpose({ reload: ensureAll });
   margin: 0;
 }
 </style>
+
+

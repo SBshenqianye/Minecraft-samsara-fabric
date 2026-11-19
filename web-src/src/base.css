@@ -522,7 +522,7 @@ details[open].file-block > .file-summary { border-bottom-color: var(--line); }
 .pattern-direction-picker { display: grid; grid-template-columns: repeat(3, 20px); grid-template-rows: repeat(3, 20px); gap: 2px; flex: 0 0 auto; }
 .pattern-direction-cell { width: 20px; height: 20px; padding: 0; border-radius: 5px; border: 1px solid var(--line); background: var(--panel-soft); color: var(--muted); font-size: 10px; line-height: 1; }
 .pattern-direction-cell:hover { border-color: var(--accent); color: var(--accent); }
-.pattern-direction-cell.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.pattern-direction-cell.active { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .pattern-direction-center { display: grid; place-items: center; color: var(--line-strong); font-size: 14px; user-select: none; }
 .pattern-direction-cell.center { border-style: dashed; font-size: 9px; }
 .pattern-direction-cell.center.active { border-style: solid; }
@@ -2383,3 +2383,4 @@ html { scroll-padding-top: calc(var(--header-h, 128px) + var(--ia-section-h, 56p
   border-radius: 10px;
   background: #c6c6c6;
 }
+

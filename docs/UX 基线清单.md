@@ -73,7 +73,6 @@
 - N（窄屏）与 T（暗色）本轮只做了共享 CSS 适配与抽查；逐页人工截图仍是遗留项，见下。
 
 ## 本轮修复（2026-11-18 第二轮）
-
 | 问题 | 修法 | 证据 |
 |---|---|---|
 | 页面间跳转会静默丢掉未保存修改 | 新增 `useUnsavedChanges` + `router.beforeEach` 统一确认；配置编辑器、公告、输出、身份、服务器配置、基金仓库已接入 | `useUnsavedChanges.test.js` 3 项；E2E 导航不再被弹窗卡住（`window.__e2e` 仅测试环境跳过） |
@@ -81,9 +80,26 @@
 | 概览历史走势全 0 仍画空白柱 | 无金额时显示说明 | E2E 截图 + 单测 |
 | 公告/权限/乐透/服务器读取失败显示为空 | `PageState` 错误态 + 重读确认 | E2E server/announcements |
 
+## 自动化巡检（2026-11-19）
+
+新增 `tools/agent/ux-sweep.mjs`：390×844 视口 + `prefers-color-scheme: dark` + `prefers-reduced-motion`，逐路由检查：
+
+- 页面级横向溢出：`document.documentElement.scrollWidth > innerWidth + 1`；
+- 可见焦点元素数量、是否存在正 `tabindex`；
+- 关键文字与有效背景的对比度（< 3.0 记为问题）；
+- 未捕获脚本错误。
+
+22 条代表路由的结果：**0 页面级溢出、0 正 tabindex、0 脚本错误**。
+唯一真实对比度问题是选中态白字压在青绿底上（1.86:1），已统一改为 `var(--accent-ink)`：
+
+- `.section-tab.active`、`.el-segmented__item-selected`
+- `CreativeLibrary` / `InventoryWindow` / `ModeSwitch` / `ContainerPage` / `pattern-direction-cell.active`
+
+内部滚动容器（长 ID、地图视口、世界栈文件树）会出现在 `offenders` 里，但它们自身可滚动，不算页面溢出。
+
 ## 遗留（未打勾，不假装完成）
 
-1. **N/T 逐页人工复核**：57 条路由还没有全部在 390px 与暗色系统下截图对照；目前只有共享 CSS 与抽检页面。
-2. **K 键盘全流程**：只保证焦点环与常规 Tab 顺序，复杂拖拽（身份组卡片、基金格子）没有键盘替代操作。
+1. **N/T 逐页人工截图**：自动化巡检已覆盖 22 条代表路由的 390px 溢出与暗色对比度，但全站 57 条路径仍未逐张截图归档。
+2. **K 键盘全流程**：无正 tabindex、焦点环已统一；复杂拖拽（身份组卡片、基金格子）仍没有键盘替代操作。
 3. **长文本边界**：极端长玩家名/MOTD/模组 ID 只在样例数据下验证。
-4. 以上遗留都回到 `docs/待办.md` 的 G-01/G-03 治理项，后续按页面补截图与断言。
+4. 以上遗留都回到 `docs/待办.md` 的 G-01/G-03 治理项。

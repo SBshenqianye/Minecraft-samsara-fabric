@@ -43,7 +43,7 @@ function onUpdate(value) {
 .samsara-segmented {
   --el-segmented-bg-color: var(--panel-soft, #1e242c);
   --el-segmented-item-selected-bg-color: var(--accent, #58a6ff);
-  --el-segmented-item-selected-color: #fff;
+  --el-segmented-item-selected-color: var(--accent-ink, #fff);
   --el-segmented-item-hover-bg-color: color-mix(in srgb, var(--accent, #58a6ff) 16%, transparent);
   --el-segmented-item-active-bg-color: color-mix(in srgb, var(--accent, #58a6ff) 22%, transparent);
   --el-segmented-color: var(--muted, #9aa7b5);

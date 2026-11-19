@@ -40,6 +40,8 @@ defineEmits(['update:modelValue']);
 
 .mode-switch button.active {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-ink);
 }
 </style>
+
+

@@ -251,7 +251,7 @@
 .section-tab.active {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--accent-ink);
   box-shadow: 0 6px 16px color-mix(in srgb, var(--accent) 25%, transparent);
 }
 
@@ -617,3 +617,4 @@
     padding: 14px 0 64px;
   }
 }
+

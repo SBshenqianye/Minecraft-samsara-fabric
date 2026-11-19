@@ -1134,7 +1134,7 @@ function samePos(a, b) {
 
 .mode-switch button.active {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-ink);
 }
 
 .mode-note {
@@ -1281,4 +1281,6 @@ function samePos(a, b) {
 }
 
 </style>
+
+
 

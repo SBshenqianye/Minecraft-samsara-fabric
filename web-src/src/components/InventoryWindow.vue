@@ -508,7 +508,7 @@ async function save(silent) {
   border: 1px solid var(--accent);
   border-radius: 7px;
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-ink);
   font-size: 11px;
   cursor: pointer;
 }
@@ -544,3 +544,5 @@ async function save(silent) {
   cursor: pointer;
 }
 </style>
+
+
