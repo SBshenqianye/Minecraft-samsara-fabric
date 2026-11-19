@@ -63,6 +63,7 @@ public final class LocalWebServer {
     private final InventoryWebService inventoryService;
     private final ItemWebService itemService;
     private final TrackWebService trackService;
+    private final StorageLayoutWebService storageLayoutService = new StorageLayoutWebService();
     private final String token;
     private final int port;
     private HttpServer server;
@@ -1588,7 +1589,7 @@ public final class LocalWebServer {
                 json(exchange, status, Map.of("error", "Method Not Allowed"));
                 return;
             }
-            json(exchange, 200, new StorageLayoutWebService().model());
+            json(exchange, 200, storageLayoutService.model());
         } catch (RuntimeException e) {
             status = 500;
             json(exchange, status, Map.of("error", errorDetail(e)));
@@ -1801,4 +1802,5 @@ public final class LocalWebServer {
     static final class BodyTooLarge extends Exception {
     }
 }
+
 

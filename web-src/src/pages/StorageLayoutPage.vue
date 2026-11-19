@@ -26,8 +26,8 @@
             </div>
             <p class="mono small storage-path" :title="row.path">{{ row.path }}</p>
             <div class="storage-stats">
-              <span>{{ formatBytes(row.bytes) }}</span>
-              <span>{{ row.files }} 个文件</span>
+              <span>{{ row.truncated ? '≥ ' : '' }}{{ formatBytes(row.bytes) }}</span>
+              <span>{{ row.truncated ? '≥ ' : '' }}{{ row.files }} 个文件</span>
               <span>最近写入 {{ formatTime(row.updatedAt) }}</span>
             </div>
             <p class="muted small">{{ row.note }}</p>

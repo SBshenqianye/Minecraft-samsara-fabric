@@ -17,7 +17,27 @@ import java.util.Map;
  */
 public final class StorageLayoutWebService {
 
+    private volatile Map<String, Object> cached;
+    private volatile long cachedAt;
+
     public Map<String, Object> model() {
+        long now = System.currentTimeMillis();
+        Map<String, Object> hit = cached;
+        if (hit != null && now - cachedAt < 30_000L) {
+            return hit;
+        }
+        synchronized (this) {
+            if (cached != null && System.currentTimeMillis() - cachedAt < 30_000L) {
+                return cached;
+            }
+            Map<String, Object> built = build();
+            cached = built;
+            cachedAt = System.currentTimeMillis();
+            return built;
+        }
+    }
+
+    private Map<String, Object> build() {
         StoragePaths paths = StoragePaths.get();
         Path serverRoot = paths.serverRoot();
         List<Map<String, Object>> rows = new ArrayList<>();
@@ -58,26 +78,33 @@ public final class StorageLayoutWebService {
         row.put("files", stats.files);
         row.put("updatedAt", stats.updatedAt);
         row.put("exists", stats.exists);
+        row.put("truncated", stats.truncated);
         return row;
     }
 
-    private record Stats(long bytes, int files, long updatedAt, boolean exists) {
+    private record Stats(long bytes, int files, long updatedAt, boolean exists, boolean truncated) {
     }
 
     private static Stats stats(Path path) {
         if (path == null || !Files.exists(path)) {
-            return new Stats(0, 0, 0, false);
+            return new Stats(0, 0, 0, false, false);
         }
         if (Files.isRegularFile(path)) {
             try {
-                return new Stats(Files.size(path), 1, Files.getLastModifiedTime(path).toMillis(), true);
+                return new Stats(Files.size(path), 1, Files.getLastModifiedTime(path).toMillis(), true, false);
             } catch (IOException e) {
-                return new Stats(0, 1, 0, true);
+                return new Stats(0, 1, 0, true, false);
             }
         }
         long[] total = new long[]{0, 0, 0};
+        boolean[] truncated = {false};
+        // 大世界目录可能几十万文件：给页面 250ms/目录的预算，超时标“≥”，避免接口卡住。
+        long deadline = System.currentTimeMillis() + 250;
+        int limit = 50_000;
         try (var stream = Files.walk(path)) {
-            stream.filter(Files::isRegularFile).forEach(file -> {
+            var iterator = stream.filter(Files::isRegularFile).iterator();
+            while (iterator.hasNext()) {
+                Path file = iterator.next();
                 try {
                     total[0] += Files.size(file);
                     total[1]++;
@@ -85,10 +112,14 @@ public final class StorageLayoutWebService {
                 } catch (IOException ignored) {
                     // 单个文件读不到不影响整体统计（例如正在被写）。
                 }
-            });
+                if (total[1] >= limit || (total[1] % 512 == 0 && System.currentTimeMillis() > deadline)) {
+                    truncated[0] = true;
+                    break;
+                }
+            }
         } catch (IOException ignored) {
-            // 目录不可读时返回 0，由页面显示“无法读取”。
+            // 目录不可读时返回 0，由页面显示“不存在/无法读取”。
         }
-        return new Stats(total[0], (int) total[1], total[2], true);
+        return new Stats(total[0], (int) total[1], total[2], true, truncated[0]);
     }
 }

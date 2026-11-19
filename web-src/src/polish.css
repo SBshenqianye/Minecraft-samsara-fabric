@@ -148,6 +148,13 @@
   font-weight: 600;
 }
 
+/* 主按钮放在亮色 accent 上时用深色字，暗色模式不会出现白字压亮青绿。 */
+html:root .el-button--primary {
+  --el-button-text-color: var(--accent-ink);
+  --el-button-hover-text-color: var(--accent-ink);
+  --el-button-active-text-color: var(--accent-ink);
+}
+
 .el-switch.is-checked .el-switch__core {
   background: var(--accent);
   border-color: var(--accent);

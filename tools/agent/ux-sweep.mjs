@@ -110,6 +110,8 @@ for (const route of ROUTES) {
       if (!text || text.length > 80) continue;
       const style = getComputedStyle(el);
       if (style.display === 'none' || style.visibility === 'hidden') continue;
+      // Element Plus 分段选择器的选中底色由独立覆盖层绘制，逐项算对比度会误报。
+      if (String(el.className).includes('el-segmented__item')) continue;
       const fg = parse(style.color);
       if (!fg || fg[3] === 0) continue;
       const bg = bgOf(el);

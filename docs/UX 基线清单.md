@@ -93,7 +93,10 @@
 唯一真实对比度问题是选中态白字压在青绿底上（1.86:1），已统一改为 `var(--accent-ink)`：
 
 - `.section-tab.active`、`.el-segmented__item-selected`
+- Element Plus 主按钮（`el-button--primary`）的文字/悬停/按下色
 - `CreativeLibrary` / `InventoryWindow` / `ModeSwitch` / `ContainerPage` / `pattern-direction-cell.active`
+
+修复后重跑：**0 溢出、0 正 tabindex、0 低对比度、0 脚本错误**。Element Plus 分段选择器的选中底色是独立覆盖层，巡检对 `.el-segmented__item` 跳过以避免误报。
 
 内部滚动容器（长 ID、地图视口、世界栈文件树）会出现在 `offenders` 里，但它们自身可滚动，不算页面溢出。
 
