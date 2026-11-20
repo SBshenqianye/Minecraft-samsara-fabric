@@ -34,14 +34,8 @@ final class AuditWebHandler {
                 int limit = Math.max(1, Math.min(100, WebHttp.intParam(query, "limit", 30)));
                 List<Map<String, Object>> entries = WebAuditService.get().listPage(offset, limit);
                 int total = WebAuditService.get().total();
-                Map<String, Object> out = new LinkedHashMap<>();
-                out.put("ok", true);
-                out.put("entries", entries);
-                out.put("offset", offset);
-                out.put("limit", limit);
-                out.put("total", total);
-                out.put("hasMore", offset + entries.size() < total);
-                WebHttp.json(exchange, 200, out);
+                WebHttp.json(exchange, 200, new AuditPage(true, entries, offset, limit, total,
+                        offset + entries.size() < total));
                 return;
             }
             if (!"POST".equals(method)) {

@@ -299,76 +299,8 @@ public class DebugCommand {
                                         .suggests(SuggestionProviders.playerListProvider())
                                         .executes(ctx -> reply(ctx.getSource(),
                                                 previewGroups(ctx, StringArgumentType.getString(ctx, "names"))))))
-                        .then(Commands.literal("rewind")
-                                .requires(PermissionRequirements.ownerAnd("debug rewind"))
-                                .then(Commands.literal("preview")
-                                        .requires(PermissionRequirements.ownerAnd("debug rewind preview"))
-                                        .executes(ctx -> reply(ctx.getSource(),
-                                                RewindEngine.getInstance().preview(ctx.getSource().getServer()))))
-                                .then(Commands.literal("status")
-                                        .requires(PermissionRequirements.ownerAnd("debug rewind status"))
-                                        .executes(ctx -> reply(ctx.getSource(), RewindEngine.getInstance().status())))
-                                .then(Commands.literal("abort")
-                                        .requires(PermissionRequirements.ownerAnd("debug rewind abort"))
-                                        .executes(ctx -> reply(ctx.getSource(), RewindEngine.getInstance().abort())))
-                                .then(Commands.literal("purge")
-                                        .requires(PermissionRequirements.ownerAnd("debug rewind purge"))
-                                        .executes(ctx -> reply(ctx.getSource(),
-                                                debugRewindPurge(ctx.getSource()))))
-                                .then(Commands.literal("compact")
-                                        .requires(PermissionRequirements.ownerAnd("debug rewind compact"))
-                                        .executes(ctx -> reply(ctx.getSource(),
-                                                RewindEngine.getInstance().compactNow(ctx.getSource().getServer()))))
-                                .then(Commands.literal("restore")
-                                        .requires(PermissionRequirements.ownerAnd("debug rewind restore"))
-                                        .then(Commands.argument("pos", net.minecraft.commands.arguments.coordinates.ColumnPosArgument.columnPos())
-                                                .executes(ctx -> reply(ctx.getSource(),
-                                                        RewindEngine.getInstance().restoreChunkNow(
-                                                                ctx.getSource().getServer(),
-                                                                posToChunkX(ctx, "pos"),
-                                                                posToChunkZ(ctx, "pos"))))))
-                                .then(Commands.literal("set")
-                                        .requires(PermissionRequirements.ownerAnd("debug rewind set"))
-                                        .then(Commands.argument("dur", StringArgumentType.greedyString())
-                                                .suggests(SuggestionProviders.durationsProvider())
-                                                .executes(ctx -> reply(ctx.getSource(), manager().setRewindDuration(
-                                                        StringArgumentType.getString(ctx, "dur")))))))
-                        .then(Commands.literal("track")
-                                .requires(PermissionRequirements.ownerAnd("debug track"))
-                                .then(Commands.literal("replay")
-                                        .requires(PermissionRequirements.ownerAnd("debug track replay"))
-                                        .then(Commands.argument("player", StringArgumentType.word())
-                                                .suggests(SuggestionProviders.knownPlayersProvider("监控目标"))
-                                                // 时间参数用 greedyString：`23:28` / ISO 里的 `:` 不能走 word()，
-                                                // 而自定义 ArgumentType 需要客户端也装模组（本服是服务端模组）→ 登录时会
-                                                // “Unrecognized argument type”。这里一次收下 start [speed] [cycle] 自行拆分。
-                                                .then(Commands.argument("args", StringArgumentType.greedyString())
-                                                        .executes(ctx -> reply(ctx.getSource(),
-                                                                debugTrackReplay(ctx))))))
-                                .then(Commands.literal("stop")
-                                        .requires(PermissionRequirements.ownerAnd("debug track stop"))
-                                        .executes(ctx -> reply(ctx.getSource(),
-                                                com.shenqianye.samsara.track.TrackReplay.stop()))
-                                        .then(Commands.argument("player", StringArgumentType.word())
-                                                .suggests(SuggestionProviders.knownPlayersProvider("监控目标"))
-                                                .executes(ctx -> reply(ctx.getSource(),
-                                                        com.shenqianye.samsara.track.TrackReplay.stop(
-                                                                StringArgumentType.getString(ctx, "player"))))))
-                                .then(Commands.literal("status")
-                                        .requires(PermissionRequirements.ownerAnd("debug track status"))
-                                        .executes(ctx -> reply(ctx.getSource(), debugTrackStatus(ctx.getSource(), null)))
-                                        .then(Commands.argument("player", StringArgumentType.word())
-                                                .suggests(SuggestionProviders.knownPlayersProvider("监控目标"))
-                                                .executes(ctx -> reply(ctx.getSource(), debugTrackStatus(ctx.getSource(),
-                                                        StringArgumentType.getString(ctx, "player"))))))
-                                .then(TrackViewCommand.debugViewNode())
-                                .then(TrackViewCommand.debugListNode())
-                                .then(Commands.literal("sweep")
-                                        .requires(PermissionRequirements.ownerAnd("debug track sweep"))
-                                        .executes(ctx -> {
-                                            com.shenqianye.samsara.track.TrackRecorder.getInstance().sweepAsync();
-                                            return reply(ctx.getSource(), "已在后台启动轨迹保留扫描（降采样）");
-                                        })))
+                        .then(DebugRewindCommands.node())
+                        .then(DebugTrackCommands.node())
                         .then(Commands.literal("config")
                                 .requires(PermissionRequirements.ownerAnd("debug config"))
                                 .executes(ctx -> reply(ctx.getSource(), manager().config(null, null)))
@@ -395,157 +327,7 @@ public class DebugCommand {
                                                 .suggests(SuggestionProviders.boolProvider())
                                                 .executes(ctx -> reply(ctx.getSource(), manager().setResetIndividualBirthpoint(
                                                         Boolean.parseBoolean(StringArgumentType.getString(ctx, "on"))))))))
-                        .then(Commands.literal("claim")
-                                .requires(PermissionRequirements.ownerAnd("debug claim"))
-                                // debug claim give <dir> <dist>
-                                .then(Commands.literal("give")
-                                        .requires(PermissionRequirements.ownerAnd("debug claim give"))
-                                        .then(Commands.argument("dir", StringArgumentType.word())
-                                                .suggests(SuggestionProviders.choices(DebugCommand::claimDirTooltip,
-                                                        "f", "b", "l", "r",
-                                                        "fl", "fr", "bl", "br",
-                                                        "dl", "dr", "c", "m",
-                                                        "sc", "x", "a"))
-                                                .then(Commands.argument("dist", IntegerArgumentType.integer(1, 16))
-                                                        .executes(ctx -> reply(ctx.getSource(), debugGiveBanner(
-                                                                ctx.getSource(),
-                                                                StringArgumentType.getString(ctx, "dir"),
-                                                                IntegerArgumentType.getInteger(ctx, "dist")))))))
-                                // debug claim flags：一次性给全套测试旗（白底橙图案，含图标图案）
-                                .then(Commands.literal("flags")
-                                        .requires(PermissionRequirements.ownerAnd("debug claim flags"))
-                                        .executes(ctx -> reply(ctx.getSource(), debugGiveFlags(ctx.getSource()))))
-                                // debug claim list
-                                .then(Commands.literal("list")
-                                        .requires(PermissionRequirements.ownerAnd("debug claim list"))
-                                        .executes(ctx -> reply(ctx.getSource(), debugListNodes())))
-                                // debug claim rebuild
-                                .then(Commands.literal("rebuild")
-                                        .requires(PermissionRequirements.ownerAnd("debug claim rebuild"))
-                                        .executes(ctx -> reply(ctx.getSource(), debugRebuild())))
-                                // debug claim scan
-                                .then(Commands.literal("scan")
-                                        .requires(PermissionRequirements.ownerAnd("debug claim scan"))
-                                        .executes(ctx -> reply(ctx.getSource(), debugScan(ctx.getSource()))))
-                                // debug claim remove <x> <z>
-                                .then(Commands.literal("remove")
-                                        .requires(PermissionRequirements.ownerAnd("debug claim remove"))
-                                        .then(Commands.argument("x", IntegerArgumentType.integer())
-                                                .suggests(SuggestionProviders.chunkXProvider())
-                                                .then(Commands.argument("z", IntegerArgumentType.integer())
-                                                        .suggests(SuggestionProviders.chunkZProvider())
-                                                        .executes(ctx -> reply(ctx.getSource(),
-                                                                debugRemoveNode(
-                                                                        IntegerArgumentType.getInteger(ctx, "x"),
-                                                                        IntegerArgumentType.getInteger(ctx, "z")))))))
-                                // debug claim info <x> <z>
-                                .then(Commands.literal("info")
-                                        .requires(PermissionRequirements.ownerAnd("debug claim info"))
-                                        .then(Commands.argument("x", IntegerArgumentType.integer())
-                                                .suggests(SuggestionProviders.chunkXProvider())
-                                                .then(Commands.argument("z", IntegerArgumentType.integer())
-                                                        .suggests(SuggestionProviders.chunkZProvider())
-                                                        .executes(ctx -> {
-                                                            net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> dim = net.minecraft.world.level.Level.OVERWORLD;
-                                                            try { dim = ctx.getSource().getPlayerOrException().level().dimension(); }
-                                                            catch (Exception ignored) {}
-                                                            return reply(ctx.getSource(),
-                                                                    ClaimCommand.infoAt(dim,
-                                                                            IntegerArgumentType.getInteger(ctx, "x"),
-                                                                            IntegerArgumentType.getInteger(ctx, "z")));
-                                                        }))))
-                                // debug claim particle ...
-                                .then(Commands.literal("particle")
-                                        .requires(PermissionRequirements.ownerAnd("debug claim particle"))
-                                        .then(Commands.literal("day")
-                                                .requires(PermissionRequirements.ownerAnd("debug claim particle day"))
-                                                .then(Commands.argument("name", StringArgumentType.word())
-                                                        .suggests((ctx, builder) -> {
-                                                            for (String name : com.shenqianye.samsara.claim.ClaimParticleConfig.getAvailableParticleNames()) {
-                                                                builder.suggest(name);
-                                                            }
-                                                            return builder.buildFuture();
-                                                        })
-                                                        .executes(ctx -> reply(ctx.getSource(),
-                                                                debugSetParticle("day", StringArgumentType.getString(ctx, "name"))))))
-                                        .then(Commands.literal("night")
-                                                .requires(PermissionRequirements.ownerAnd("debug claim particle night"))
-                                                .then(Commands.argument("name", StringArgumentType.word())
-                                                        .suggests((ctx, builder) -> {
-                                                            for (String name : com.shenqianye.samsara.claim.ClaimParticleConfig.getAvailableParticleNames()) {
-                                                                builder.suggest(name);
-                                                            }
-                                                            return builder.buildFuture();
-                                                        })
-                                                        .executes(ctx -> reply(ctx.getSource(),
-                                                                debugSetParticle("night", StringArgumentType.getString(ctx, "name"))))))
-                                        .then(Commands.literal("font")
-                                                .requires(PermissionRequirements.ownerAnd("debug claim particle font"))
-                                                .then(Commands.argument("name", StringArgumentType.word())
-                                                        .suggests((ctx, builder) -> {
-                                                            for (String name : com.shenqianye.samsara.claim.ClaimParticleConfig.getAvailableParticleNames()) {
-                                                                builder.suggest(name);
-                                                            }
-                                                            return builder.buildFuture();
-                                                        })
-                                                        .executes(ctx -> reply(ctx.getSource(),
-                                                                debugSetParticle("font", StringArgumentType.getString(ctx, "name"))))))
-                                        .then(Commands.literal("beam")
-                                                .requires(PermissionRequirements.ownerAnd("debug claim particle beam"))
-                                                .then(Commands.argument("name", StringArgumentType.word())
-                                                        .suggests((ctx, builder) -> {
-                                                            for (String name : com.shenqianye.samsara.claim.ClaimParticleConfig.getAvailableParticleNames()) {
-                                                                builder.suggest(name);
-                                                            }
-                                                            return builder.buildFuture();
-                                                        })
-                                                        .executes(ctx -> reply(ctx.getSource(),
-                                                                debugSetParticle("beam", StringArgumentType.getString(ctx, "name"))))))
-                                        .then(Commands.literal("list")
-                                                .requires(PermissionRequirements.ownerAnd("debug claim particle list"))
-                                                .executes(ctx -> reply(ctx.getSource(), debugListParticles())))
-                                        .then(Commands.literal("shared")
-                                                .requires(PermissionRequirements.ownerAnd("debug claim particle shared"))
-                                                .then(Commands.argument("on_off", StringArgumentType.word())
-                                                        .suggests(SuggestionProviders.boolProvider())
-                                                        .executes(ctx -> reply(ctx.getSource(),
-                                                                debugSetSharedDisplay(StringArgumentType.getString(ctx, "on_off"))))))
-                                        .then(Commands.literal("global")
-                                                .requires(PermissionRequirements.ownerAnd("debug claim particle global"))
-                                                .then(Commands.argument("on_off", StringArgumentType.word())
-                                                        .suggests(SuggestionProviders.boolProvider())
-                                                        .executes(ctx -> reply(ctx.getSource(),
-                                                                debugSetGlobalDisplay(StringArgumentType.getString(ctx, "on_off")))))))
-                                // debug claim delete dryrun|backup|execute|report
-                                // dryrun: 列出将被删除的区块（不实际操作）
-                                // backup: 备份受影响区域的 .mca 文件到 config/samsara/backups/
-                                // execute: 报告待删除区块数（服务端运行时不直接删除，需停服手动操作）
-                                // report: 生成删除报告（白名单数、待删数、示例坐标）
-                                .then(Commands.literal("delete")
-                                        .requires(PermissionRequirements.ownerAnd("debug claim delete"))
-                                        .then(Commands.literal("dryrun")
-                                                .requires(PermissionRequirements.ownerAnd("debug claim delete dryrun"))
-                                                .executes(ctx -> reply(ctx.getSource(), debugDeleteDryRun(ctx.getSource()))))
-                                        .then(Commands.literal("backup")
-                                                .requires(PermissionRequirements.ownerAnd("debug claim delete backup"))
-                                                .executes(ctx -> reply(ctx.getSource(), debugDeleteBackup(ctx.getSource()))))
-                                        .then(Commands.literal("execute")
-                                                .requires(PermissionRequirements.ownerAnd("debug claim delete execute"))
-                                                .executes(ctx -> reply(ctx.getSource(), debugDeleteExecute(ctx.getSource()))))
-                                        .then(Commands.literal("report")
-                                                .requires(PermissionRequirements.ownerAnd("debug claim delete report"))
-                                                .executes(ctx -> reply(ctx.getSource(), debugDeleteReport(ctx.getSource())))))
-                                // debug claim owner <x> <z> — 查看指定区块的旗帜归属
-                                .then(Commands.literal("owner")
-                                        .requires(PermissionRequirements.ownerAnd("debug claim owner"))
-                                        .then(Commands.argument("x", IntegerArgumentType.integer())
-                                                .suggests(SuggestionProviders.chunkXProvider())
-                                                .then(Commands.argument("z", IntegerArgumentType.integer())
-                                                        .suggests(SuggestionProviders.chunkZProvider())
-                                                        .executes(ctx -> reply(ctx.getSource(),
-                                                                debugClaimOwner(
-                                                                        IntegerArgumentType.getInteger(ctx, "x"),
-                                                                        IntegerArgumentType.getInteger(ctx, "z"))))))))
+                        .then(DebugClaimCommands.node())
                         .then(IdentityCommand.debugIdentityNode())
                         .then(permNode())
                         .then(completionNode()));
@@ -725,23 +507,6 @@ public class DebugCommand {
         }
         return manager().reset();
     }
-
-    /**
-     * debug rewind purge：立即物理删除「已到倒流时刻」的未保留区块（备份 + 清零，不可逆）
-     * ——需二次确认（《设计规范》〈破坏性操作：二次确认〉/ 需求 `F-63`）。
-     */
-    private static String debugRewindPurge(CommandSourceStack src) {
-        if (!ConfirmGuard.confirm("rewind.purge")) {
-            return "⚠ 危险操作确认：立即删除已到倒流时刻的未保留区块\n"
-                    + "· 备份 + 清零，不可逆（重启后按当前版本重新生成）\n"
-                    + "· 仍加载的区块入待删队列，卸载即删\n"
-                    + "· 圈地（旗帜白名单）区块不在删除范围内\n"
-                    + "再次输入 /samsara debug rewind purge（" + ConfirmGuard.ttlSeconds()
-                    + " 秒内）才会真正执行。";
-        }
-        return RewindEngine.getInstance().purgeNow(src.getServer());
-    }
-
     /**
      * fakeplayers 三种形态 + clear：
      *  - `clear`             → 清空注入池
@@ -842,7 +607,7 @@ public class DebugCommand {
      * 形状提示（延伸距离同为 d）：`a`/`x` 围成**正方形**、`sc` 围成**菱形**、
      * 单条条纹只有**线**；放好旗帜后右键可看到实际世界方向与"是否围成面"。
      */
-    private static String debugGiveBanner(CommandSourceStack src, String dir, int dist) {
+    static String debugGiveBanner(CommandSourceStack src, String dir, int dist) {
         String key = dir.toLowerCase();
         String patternId = switch (key) {
             case "f"  -> "stripe_top";
@@ -896,7 +661,7 @@ public class DebugCommand {
      * {@code /samsara debug claim flags}：给执行者一套测试旗。
      * 白底 + 橙色方向图案 + 橙色图标图案（skull），全部满足注册条件，方便一次测完所有方向。
      */
-    private static String debugGiveFlags(CommandSourceStack src) {
+    static String debugGiveFlags(CommandSourceStack src) {
         net.minecraft.server.level.ServerPlayer player;
         try {
             player = src.getPlayerOrException();
@@ -938,7 +703,7 @@ public class DebugCommand {
      * <p>
      * 方向字母按**图案在旗帜上的位置**命名（观看者视角，与 MC 图案 id 同一视角）。
      */
-    private static String claimDirTooltip(String dir) {
+    static String claimDirTooltip(String dir) {
         return switch (dir) {
             case "f" -> "前：stripe_top（单条纹·线）";
             case "b" -> "后：stripe_bottom（单条纹·线）";
@@ -960,7 +725,7 @@ public class DebugCommand {
     }
 
     /** debug list：列出所有已注册的圈地旗帜 */
-    private static String debugListNodes() {
+    static String debugListNodes() {
         var allNodes = com.shenqianye.samsara.claim.AreaService.getInstance().getAllNodes();
         if (allNodes.isEmpty()) {
             return "当前无圈地旗帜";
@@ -988,7 +753,7 @@ public class DebugCommand {
     }
 
     /** debug rebuild：强制重算白名单 */
-    private static String debugRebuild() {
+    static String debugRebuild() {
         // 重建所有维度
         for (var dimEntry : com.shenqianye.samsara.claim.AreaService.getInstance().getAllNodes().keySet()) {
             com.shenqianye.samsara.claim.AreaService.getInstance().recompute(dimEntry);
@@ -1006,14 +771,14 @@ public class DebugCommand {
     }
 
     /** debug scan：扫描世界中已放置的圈地旗帜 */
-    private static String debugScan(CommandSourceStack src) {
+    static String debugScan(CommandSourceStack src) {
         var level = src.getServer().getLevel(net.minecraft.world.level.Level.OVERWORLD);
         if (level == null) return "主世界不可用";
         return com.shenqianye.samsara.command.ClaimCommand.scanLevel(level);
     }
 
     /** debug remove：移除指定位置的圈地旗帜（默认 overworld） */
-    private static String debugRemoveNode(int x, int z) {
+    static String debugRemoveNode(int x, int z) {
         return com.shenqianye.samsara.claim.AreaService.getInstance().removeNode(
                 net.minecraft.world.level.Level.OVERWORLD,
                 new com.shenqianye.samsara.geometry.ChunkCoord(x, z));
@@ -1024,7 +789,7 @@ public class DebugCommand {
     // execute 会真正删除区块（不可逆），因此带二次确认；删除动作在后台线程执行备份 + 清零。
 
     /** debug claim delete dryrun：预览将被删除的区块（不实际操作） */
-    private static String debugDeleteDryRun(CommandSourceStack src) {
+    static String debugDeleteDryRun(CommandSourceStack src) {
         try {
             var level = src.getServer().getLevel(net.minecraft.world.level.Level.OVERWORLD);
             if (level == null) return "主世界不可用";
@@ -1036,7 +801,7 @@ public class DebugCommand {
     }
 
     /** debug claim delete backup：备份受影响区域的 .mca 文件到 config/samsara/backups/ */
-    private static String debugDeleteBackup(CommandSourceStack src) {
+    static String debugDeleteBackup(CommandSourceStack src) {
         try {
             var level = src.getServer().getLevel(net.minecraft.world.level.Level.OVERWORLD);
             if (level == null) return "主世界不可用";
@@ -1055,7 +820,7 @@ public class DebugCommand {
      * 与实际实现不符——{@code SafeDeletion.execute()} 会入队 {@code PendingDeleteQueue} 并
      * <b>立即删除所有未加载区块</b>，无需停服手动操作。
      */
-    private static String debugDeleteExecute(CommandSourceStack src) {
+    static String debugDeleteExecute(CommandSourceStack src) {
         if (!ConfirmGuard.confirm("claim.delete.execute")) {
             return "⚠ 危险操作确认：删除全部未圈地（非白名单）区块\n"
                     + "· 立即删除【未加载】区块（备份 + 清零，不可逆）；仍加载的区块入待删队列、卸载即删\n"
@@ -1074,68 +839,9 @@ public class DebugCommand {
         }
     }
 
-    /** debug track replay <player> <start> [speed] [cycle] */
-    private static String debugTrackReplay(CommandContext<CommandSourceStack> ctx) {
-        String name = StringArgumentType.getString(ctx, "player");
-        String raw = StringArgumentType.getString(ctx, "args").trim();
-        String[] parts = raw.isEmpty() ? new String[0] : raw.split("\\s+");
-        if (parts.length == 0) {
-            return "用法：/samsara debug track replay <玩家> <开始时间> [倍速] [周目]";
-        }
-        String start = parts[0];
-        double speed = 1.0;
-        if (parts.length > 1) {
-            try {
-                speed = Double.parseDouble(parts[1]);
-            } catch (NumberFormatException e) {
-                return "倍速必须是数字：" + parts[1];
-            }
-        }
-        String cycle = parts.length > 2 ? parts[2] : null;
-        if (parts.length > 3) {
-            return "参数过多：开始时间之后只接受 [倍速] [周目]";
-        }
-        var server = ctx.getSource().getServer();
-        UUID uuid = com.shenqianye.samsara.track.TrackRecorder.resolveUuid(server, name);
-        if (uuid == null) {
-            return "找不到玩家 " + name + "（需在线或出现在 usercache.json）";
-        }
-        return com.shenqianye.samsara.track.TrackReplay.start(server, uuid, name, start, speed, cycle);
-    }
-
-    /** debug track status [player] */
-    private static String debugTrackStatus(CommandSourceStack src, String name) {
-        StringBuilder sb = new StringBuilder(com.shenqianye.samsara.track.TrackReplay.status());
-        if (name == null) {
-            return sb.toString();
-        }
-        UUID uuid = com.shenqianye.samsara.track.TrackRecorder.resolveUuid(src.getServer(), name);
-        if (uuid == null) {
-            return sb.append("\n找不到玩家 ").append(name).toString();
-        }
-        var files = com.shenqianye.samsara.track.TrackRecorder.getInstance().recentFiles(uuid, 3);
-        if (files.isEmpty()) {
-            return sb.append("\n").append(name).append(" 最近 7 天没有轨迹文件").toString();
-        }
-        sb.append("\n").append(name).append(" 最近轨迹（最多 3 个文件）：");
-        for (var f : files) {
-            long size;
-            try {
-                size = java.nio.file.Files.size(f);
-            } catch (java.io.IOException e) {
-                size = -1;
-            }
-            var parent = f.getParent();
-            String where = parent == null ? f.getFileName().toString()
-                    : parent.getParent().getFileName() + "/" + parent.getFileName() + "/" + f.getFileName();
-            sb.append("\n  ").append(where).append(" · ").append(size / 1024).append(" KB · ")
-                    .append(com.shenqianye.samsara.track.TrackStore.countSamples(f)).append(" 点");
-        }
-        return sb.toString();
-    }
 
     /** debug claim delete report：生成删除报告（白名单数、待删数、示例坐标） */
-    private static String debugDeleteReport(CommandSourceStack src) {
+    static String debugDeleteReport(CommandSourceStack src) {
         try {
             var level = src.getServer().getLevel(net.minecraft.world.level.Level.OVERWORLD);
             if (level == null) return "主世界不可用";
@@ -1147,7 +853,7 @@ public class DebugCommand {
     }
 
     /** debug claim owner <x> <z>：查看指定区块的旗帜归属 */
-    private static String debugClaimOwner(int x, int z) {
+    static String debugClaimOwner(int x, int z) {
         // 搜索所有维度
         com.shenqianye.samsara.claim.ClaimNode node = null;
         net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> foundDim = null;
@@ -1175,7 +881,7 @@ public class DebugCommand {
     }
 
     /** debug particle：设置粒子类型 */
-    private static String debugSetParticle(String type, String name) {
+    static String debugSetParticle(String type, String name) {
         var config = com.shenqianye.samsara.claim.ClaimParticleConfig.getInstance();
         if (!com.shenqianye.samsara.claim.ClaimParticleConfig.isValidParticle(name)) {
             return "无效粒子类型: " + name + "\n可用: " + com.shenqianye.samsara.claim.ClaimParticleConfig.getAvailableParticles();
@@ -1190,7 +896,7 @@ public class DebugCommand {
     }
 
     /** debug particle list：显示当前粒子配置 */
-    private static String debugListParticles() {
+    static String debugListParticles() {
         var config = com.shenqianye.samsara.claim.ClaimParticleConfig.getInstance();
         return "当前粒子配置：\n  昼间边界: " + config.getDayParticleName()
                 + "\n  夜间边界: " + config.getNightParticleName()
@@ -1202,14 +908,14 @@ public class DebugCommand {
     }
 
     /** debug particle shared：设置共享显示 */
-    private static String debugSetSharedDisplay(String onOff) {
+    static String debugSetSharedDisplay(String onOff) {
         boolean shared = onOff.equalsIgnoreCase("on") || onOff.equalsIgnoreCase("true");
         com.shenqianye.samsara.claim.ClaimParticleConfig.getInstance().setSharedDisplay(shared);
         return "共享显示已设为: " + (shared ? "ON（所有人可见 TextDisplay）" : "OFF（仅手持旗帜者可见粒子）");
     }
 
     /** debug particle global：设置全图显示 */
-    private static String debugSetGlobalDisplay(String onOff) {
+    static String debugSetGlobalDisplay(String onOff) {
         boolean global = onOff.equalsIgnoreCase("on") || onOff.equalsIgnoreCase("true");
         com.shenqianye.samsara.claim.ClaimParticleConfig.getInstance().setGlobalDisplay(global);
         return "全图显示已设为: " + (global ? "ON（不在管理区域内也显示边界）" : "OFF（仅管理区域内显示）");
@@ -1340,3 +1046,4 @@ public class DebugCommand {
         return reply(ctx.getSource(), message);
     }
 }
+

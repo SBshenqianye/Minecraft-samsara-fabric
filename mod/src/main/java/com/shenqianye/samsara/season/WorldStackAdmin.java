@@ -76,7 +76,7 @@ public final class WorldStackAdmin {
         return ServerBackupPaths.root(parent == null ? worldDir : parent);
     }
 
-    private static String serverRelative(Path worldDir, Path path) {
+    static String serverRelative(Path worldDir, Path path) {
         Path parent = worldDir.toAbsolutePath().normalize().getParent();
         try {
             return (parent == null ? worldDir : parent).relativize(path.toAbsolutePath().normalize())
@@ -276,7 +276,7 @@ public final class WorldStackAdmin {
         out.add(node);
     }
 
-    private static long layerBytes(Path worldDir, StackLayer layer) {
+    static long layerBytes(Path worldDir, StackLayer layer) {
         long total = sizeOf(StackPaths.layerDimensions(worldDir, layer));
         Path meta = layer.metaDir(worldDir);
         if (layer.top) {
@@ -734,80 +734,13 @@ public final class WorldStackAdmin {
     }
 
     public static Preview previewArchive(Path worldDir, String id) {
-        Preview p = new Preview();
-        p.position = "archive";
-        p.targetId = id == null ? "" : id.trim();
-        StackManifest manifest = StackManifest.load(worldDir);
-        StackLayer layer = manifest.byId(p.targetId);
-        if (layer == null) {
-            p.fields.put("id", "栈层不存在");
-            p.errors.add("栈层不存在：" + p.targetId);
-        } else if (layer.top) {
-            p.fields.put("id", "不允许归档栈顶 world");
-            p.errors.add("不允许归档栈顶 world；请先导入新栈顶或使用 reset new");
-        }
-        if (!readImportQueue(worldDir).isEmpty() || pending(worldDir, PENDING_ARCHIVE)
-                || pending(worldDir, PENDING_PROMOTE)) {
-            p.errors.add("已有待执行任务；请先重启服务器完成或手动清理 pending 文件");
-        }
-        if (Files.isRegularFile(worldDir.resolve("samsara/pending-new.json"))) {
-            p.errors.add("已有 pending-new.json；请先重启完成 reset new，再做归档");
-        }
-        if (layer != null && !layer.top) {
-            p.source = new SourceInfo();
-            p.source.path = relative(worldDir, layer.metaDir(worldDir));
-            p.source.canonicalPath = layer.metaDir(worldDir).toString();
-            p.source.layout = "stack-layer";
-            p.source.sizeBytes = layerBytes(worldDir, layer);
-            p.freeBytes = freeBytes(worldDir);
-            p.neededBytes = p.source.sizeBytes;
-            p.requiresRestart = true;
-            p.backupPath = serverRelative(worldDir, archiveRoot(worldDir))
-                    + "/" + layer.id + "-<job>";
-            p.steps.add("移动 " + serverRelative(worldDir, StackPaths.layerDimensions(worldDir, layer))
-                    + " -> " + serverRelative(worldDir, archiveRoot(worldDir))
-                    + "/" + layer.id + "-<job>/dimensions");
-            p.steps.add("移动 " + serverRelative(worldDir, layer.metaDir(worldDir))
-                    + " -> " + serverRelative(worldDir, archiveRoot(worldDir))
-                    + "/" + layer.id + "-<job>/meta");
-            p.steps.add("从 stack.json 移除该层并重排 index；world 保持栈顶");
-            p.warnings.add("归档会保留完整备份，不直接删除；重启时执行");
-            p.warnings.add("该层的 claims/diff/track 随 meta 一起归档，不再参与运行");
-        }
-        p.ok = p.errors.isEmpty();
-        return p;
+        return WorldStackArchive.preview(worldDir, id);
     }
 
     public static synchronized ScheduleResult scheduleArchive(Path worldDir, String id) {
-        Preview preview = previewArchive(worldDir, id);
-        ScheduleResult result = new ScheduleResult();
-        result.preview = preview;
-        if (!preview.ok) {
-            result.ok = false;
-            return result;
-        }
-        String jobId = newJobId("arc");
-        PendingArchive pending = new PendingArchive();
-        pending.jobId = jobId;
-        pending.id = preview.targetId;
-        pending.createdAt = System.currentTimeMillis();
-        pending.archivePath = archiveRoot(worldDir).resolve(pending.id + "-" + jobId).toString();
-        if (!write(worldDir, PENDING_ARCHIVE, pending)) {
-            result.ok = false;
-            preview.errors.add("无法写入 pending-archive.json");
-            return result;
-        }
-        Job job = newJob(jobId, "archive", preview.targetId);
-        job.source = preview.source == null ? "" : preview.source.canonicalPath;
-        job.requiresRestart = true;
-        job.message = "已排队：重启服务器后归档 " + pending.id;
-        writeJob(worldDir, job);
-        result.ok = true;
-        result.jobId = jobId;
-        result.requiresRestart = true;
-        result.job = job;
-        return result;
+        return WorldStackArchive.schedule(worldDir, id);
     }
+
 
     // ---- 导入排队 ----
 
@@ -1978,7 +1911,7 @@ public final class WorldStackAdmin {
         }
     }
 
-    private static boolean write(Path worldDir, String name, Object value) {
+    static boolean write(Path worldDir, String name, Object value) {
         try {
             writeAtomic(stackFile(worldDir, name), value);
             return true;
@@ -2000,7 +1933,7 @@ public final class WorldStackAdmin {
         }
     }
 
-    private static boolean pending(Path worldDir, String name) {
+    static boolean pending(Path worldDir, String name) {
         return Files.isRegularFile(stackFile(worldDir, name));
     }
 
@@ -2008,7 +1941,7 @@ public final class WorldStackAdmin {
         return worldDir.resolve("samsara").resolve(name);
     }
 
-    private static long freeBytes(Path worldDir) {
+    static long freeBytes(Path worldDir) {
         try {
             return Files.getFileStore(worldDir).getUsableSpace();
         } catch (IOException e) {
@@ -2090,7 +2023,7 @@ public final class WorldStackAdmin {
         return String.format(java.util.Locale.ROOT, "%.1f %s", value, units[unit]);
     }
 
-    private static String relative(Path worldDir, Path path) {
+    static String relative(Path worldDir, Path path) {
         try {
             return worldDir.relativize(path.toAbsolutePath().normalize()).toString()
                     .replace('\\', '/');
@@ -2318,5 +2251,6 @@ public final class WorldStackAdmin {
         int files;
     }
 }
+
 
 
