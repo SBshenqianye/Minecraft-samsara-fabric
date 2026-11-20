@@ -165,4 +165,12 @@ class McaRegionCompactTest {
         assertArrayEquals(a, readPayload(fa, 3));
         assertArrayEquals(b, readPayload(fb, 7));
     }
+
+    @Test
+    void logSummaryNeverRendersNullMessage() {
+        assertEquals("IOException", McaRegion.describe(new java.io.IOException()));
+        assertTrue(McaRegion.describe(new java.io.IOException("磁盘已满")).endsWith("磁盘已满"));
+        assertTrue(McaRegion.describe(new java.io.IOException("磁盘已满")).startsWith("IOException"));
+        assertEquals("unknown", McaRegion.describe(null));
+    }
 }

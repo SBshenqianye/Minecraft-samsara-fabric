@@ -91,7 +91,7 @@ public class McaRegion {
             }
             return deleted;
         } catch (IOException e) {
-            Samsara.LOGGER.error("[周目管理 samsara] 快速清零失败 {}: {}", file, e.getMessage());
+            Samsara.LOGGER.error("[周目管理 samsara] 快速清零失败 {}: {}", file, describe(e));
             return 0;
         }
     }
@@ -130,7 +130,7 @@ public class McaRegion {
                 raf.seek(0);
                 raf.write(header, 0, HEADER_SIZE);
             } catch (IOException e) {
-                Samsara.LOGGER.error("[周目管理 samsara] 写回区域文件失败 {}: {}", file, e.getMessage());
+                Samsara.LOGGER.error("[周目管理 samsara] 写回区域文件失败 {}: {}", file, describe(e));
                 return 0;
             }
         }
@@ -188,7 +188,7 @@ public class McaRegion {
                     Samsara.LOGGER.info("[周目管理 samsara] 索引快删（{} 区块）: {}", estimated, fileName);
                     total += estimated;
                 } catch (IOException ex) {
-                    Samsara.LOGGER.warn("[周目管理 samsara] 索引快删失败 {}: {}", fileName, ex.getMessage());
+                    Samsara.LOGGER.warn("[周目管理 samsara] 索引快删失败 {}: {}", fileName, describe(ex));
                 }
             } else {
                 // 混合文件或无索引：读 header → 按情况处理
@@ -208,7 +208,7 @@ public class McaRegion {
                         Samsara.LOGGER.info("[周目管理 samsara] 全文件删除（{} 区块）: {}", occupied, fileName);
                         total += occupied;
                     } catch (IOException ex) {
-                        Samsara.LOGGER.warn("[周目管理 samsara] 全文件删除失败 {}: {}", fileName, ex.getMessage());
+                        Samsara.LOGGER.warn("[周目管理 samsara] 全文件删除失败 {}: {}", fileName, describe(ex));
                     }
                 } else {
                     // 混合：只清零待删 slot（同文件内其他区块——含受保护区块——不动）
@@ -272,7 +272,7 @@ public class McaRegion {
                 raf.seek(0);
                 raf.write(header, 0, HEADER_SIZE);
             } catch (IOException e) {
-                Samsara.LOGGER.error("[周目管理 samsara] 写回区域文件失败 {}: {}", file, e.getMessage());
+                Samsara.LOGGER.error("[周目管理 samsara] 写回区域文件失败 {}: {}", file, describe(e));
             }
         }
         return deleted;
@@ -304,7 +304,7 @@ public class McaRegion {
             Samsara.LOGGER.info("[周目管理 samsara] 全空区域文件已删除: {}", file.getFileName());
             return true;
         } catch (IOException e) {
-            Samsara.LOGGER.warn("[周目管理 samsara] 删除全空区域文件失败（可能被占用，停服窗口重试）: {}", e.getMessage());
+            Samsara.LOGGER.warn("[周目管理 samsara] 删除全空区域文件失败（可能被占用，停服窗口重试）: {}", describe(e));
             return false;
         }
     }
@@ -437,7 +437,7 @@ public class McaRegion {
                     rewritten++;
                 } catch (IOException e) {
                     Samsara.LOGGER.warn("[周目管理 samsara] 压缩 {} 失败（可能被占用）: {}",
-                            f, e.getClass().getSimpleName() + ": " + e.getMessage());
+                            f, e.getClass().getSimpleName() + ": " + describe(e));
                     Samsara.LOGGER.debug("[周目管理 samsara] 压缩失败堆栈", e);
                 }
             }
@@ -521,5 +521,15 @@ public class McaRegion {
             // 忽略
         }
         return out;
+    }
+
+    /** 日志用的异常摘要：message 为空时至少给出异常类型，避免出现 {@code ": null"}。 */
+    static String describe(Throwable error) {
+        if (error == null) {
+            return "unknown";
+        }
+        String message = error.getMessage();
+        String type = error.getClass().getSimpleName();
+        return message == null || message.isBlank() ? type : type + ": " + message;
     }
 }

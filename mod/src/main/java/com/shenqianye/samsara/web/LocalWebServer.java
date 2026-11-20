@@ -354,24 +354,9 @@ public final class LocalWebServer {
 
 
     private void handleReload(HttpExchange exchange) throws IOException {
-        long start = System.currentTimeMillis();
-        int status = 200;
-        try {
-            int auth = authorize(exchange);
-            if (auth != 0) {
-                status = auth;
-                return;
-            }
-            if (!"POST".equals(exchange.getRequestMethod())) {
-                status = 405;
-                json(exchange, status, WebHttp.error("Method Not Allowed"));
-                return;
-            }
-            json(exchange, 200, service.reload());
-        } finally {
-            log(exchange, status, start);
-        }
+        respond(exchange, "POST", () -> service.reload());
     }
+
     private void handleIdentity(HttpExchange exchange) throws IOException {
         new IdentityWebHandler(this, identityService).handle(exchange);
     }
@@ -446,27 +431,21 @@ public final class LocalWebServer {
     }
 
 
-    private void handleStatus(HttpExchange exchange) throws IOException {        long start = System.currentTimeMillis();
-        int status = 200;
-        try {
-            int auth = authorize(exchange);
-            if (auth != 0) {
-                status = auth;
-                return;
-            }
-            if (!"GET".equals(exchange.getRequestMethod())) {
-                status = 405;
-                json(exchange, status, WebHttp.error("Method Not Allowed"));
-                return;
-            }
-            json(exchange, 200, service.status());
-        } finally {
-            log(exchange, status, start);
-        }
+    private void handleStatus(HttpExchange exchange) throws IOException {
+        respond(exchange, "GET", () -> service.status());
     }
 
     /** 只读存储布局：每类数据在哪里、多大、是否随周目/备份。 */
     private void handleStorage(HttpExchange exchange) throws IOException {
+        respond(exchange, "GET", () -> storageLayoutService.model());
+    }
+
+    /**
+     * 只读/无 body 接口的统一壳：鉴权 → 方法校验 → JSON → 失败 500 → 访问日志。
+     * 返回体由 {@code body} 提供，异常不会把堆栈发给前端。
+     */
+    private void respond(HttpExchange exchange, String method,
+                         java.util.function.Supplier<Object> body) throws IOException {
         long start = System.currentTimeMillis();
         int status = 200;
         try {
@@ -475,12 +454,12 @@ public final class LocalWebServer {
                 status = auth;
                 return;
             }
-            if (!"GET".equals(exchange.getRequestMethod())) {
+            if (!method.equals(exchange.getRequestMethod())) {
                 status = 405;
                 json(exchange, status, WebHttp.error("Method Not Allowed"));
                 return;
             }
-            json(exchange, 200, storageLayoutService.model());
+            json(exchange, 200, body.get());
         } catch (RuntimeException e) {
             status = 500;
             json(exchange, status, WebHttp.error(errorDetail(e)));
@@ -576,7 +555,8 @@ public final class LocalWebServer {
         LOG.warn("[web] 处理 {} 失败: {}", exchange.getRequestURI().getPath(), error.getMessage());
     }
 
-    static void log(HttpExchange exchange, int status, long startMs) {        URI uri = exchange.getRequestURI();
+    static void log(HttpExchange exchange, int status, long startMs) {
+        URI uri = exchange.getRequestURI();
         // 只记录方法/路径/状态码/耗时；不记录 token，也不记录查询串（避免泄漏）。
         LOG.debug("[web] {} {} → {} ({}ms)", exchange.getRequestMethod(), uri.getPath(),
                 status, System.currentTimeMillis() - startMs);
