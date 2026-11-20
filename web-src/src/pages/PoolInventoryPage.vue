@@ -297,16 +297,6 @@ function normalize(list) {
   return out;
 }
 
-function sectionCountFor(list) {
-  if (props.kind !== 'fund') return 1;
-  const out = list || [];
-  let last = -1;
-  for (let i = out.length - 1; i >= 0; i--) {
-    if (out[i]) { last = i; break; }
-  }
-  return Math.max(1, Math.ceil((last + 2) / pageSlots.value));
-}
-
 const hasMore = computed(() => props.kind === 'fund'
   && visiblePages.value * pageSlots.value < slots.value.length);
 

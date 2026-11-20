@@ -128,6 +128,9 @@ export function createReporter() {
   function summary() {
     const failed = results.filter((result) => !result.ok);
     console.log('');
+    // ASCII 汇总行：控制台编码会把上面的中文数字截断（278 显示成 78），脚本只认这一行。
+    console.log('E2E_SUMMARY pass=' + (results.length - failed.length)
+      + ' total=' + results.length + ' failed=' + failed.length);
     console.log('结果：' + (results.length - failed.length) + ' / ' + results.length + ' 通过');
     if (failed.length) {
       console.log('失败：');

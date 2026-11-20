@@ -156,7 +156,7 @@ await closePage(session);
 const failed = results.filter((row) => row.overflow || row.errors.length || row.badTabIndex
   || row.lowContrast.length);
 console.log('\n== 汇总 ==');
-console.log('routes=' + results.length + ' problems=' + failed.length);
+console.log('UX_SUMMARY routes=' + results.length + ' problems=' + failed.length);
 for (const row of failed) {
   console.log('- ' + row.route + ' overflow=' + row.overflow
     + ' offenders=' + row.offenders.join(',') + ' errors=' + row.errors.slice(0, 2).join(' | ')
