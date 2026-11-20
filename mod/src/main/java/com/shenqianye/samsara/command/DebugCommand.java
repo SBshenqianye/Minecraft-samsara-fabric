@@ -119,8 +119,7 @@ public class DebugCommand {
                 .executes(ctx -> sendHelp(ctx.getSource()))
                 .then(Commands.literal("help")
                         .executes(ctx -> sendHelp(ctx.getSource())))
-                .then(Commands.literal("version")
-                        .executes(ctx -> replyVersion(ctx.getSource())))
+                .then(DebugMetaCommands.versionNode())
                 .then(Commands.literal("restart")
                         .requires(src -> com.shenqianye.samsara.permission.PermissionChecker
                                 .check(src, "restart"))
@@ -134,10 +133,8 @@ public class DebugCommand {
                 .then(com.shenqianye.samsara.opauth.OpAuthCommand.registerNode())
                 .then(com.shenqianye.samsara.opauth.OpAuthCommand.loginNode())
                 .then(com.shenqianye.samsara.opauth.OpAuthCommand.adminNode())
-                .then(Commands.literal("mspt")
-                        .executes(ctx -> reply(ctx.getSource(), mspt())))
-                .then(Commands.literal("tps")
-                        .executes(ctx -> reply(ctx.getSource(), tps())))
+                .then(DebugMetaCommands.msptNode())
+                .then(DebugMetaCommands.tpsNode())
                 .then(SeasonCommand.seasonNode())
                 .then(WorldCommand.worldNode())
                 .then(SeedCommand.seedNode())
@@ -564,8 +561,7 @@ public class DebugCommand {
         CommandAliases.register(dispatcher, "claim", ClaimCommand::claimNode);
         CommandAliases.register(dispatcher, "where", WhereCommand::whereNode);
         CommandAliases.register(dispatcher, "lottery", LotteryCommand::lotteryNode);
-        CommandAliases.register(dispatcher, "version", () -> Commands.literal("version")
-                .executes(ctx -> replyVersion(ctx.getSource())));
+        CommandAliases.register(dispatcher, "version", DebugMetaCommands::versionNode);
         CommandAliases.register(dispatcher, "tpa", TpaCommand::tpaNode);
         CommandAliases.register(dispatcher, "tpahere", TpaCommand::tpaHereNode);
         CommandAliases.register(dispatcher, "tpaccept", TpaCommand::acceptNode);
@@ -579,18 +575,7 @@ public class DebugCommand {
         TrackViewCommand.registerAlias(dispatcher);
 
         // 条件别名：/mspt 和 /tps（仅当其他模组未注册时）
-        boolean hasMspt = dispatcher.getRoot().getChild("mspt") != null;
-        boolean hasTps = dispatcher.getRoot().getChild("tps") != null;
-        if (!hasMspt) {
-            dispatcher.register(Commands.literal("mspt")
-                    .executes(ctx -> reply(ctx.getSource(), mspt())));
-            CommandAliases.markRoot("mspt");
-        }
-        if (!hasTps) {
-            dispatcher.register(Commands.literal("tps")
-                    .executes(ctx -> reply(ctx.getSource(), tps())));
-            CommandAliases.markRoot("tps");
-        }
+        DebugMetaCommands.registerAliases(dispatcher);
     }
 
     /** 构建 /samsara debug completion 子命令（补全诊断） */
@@ -1316,42 +1301,6 @@ public class DebugCommand {
     }
 
     /** /samsara version：从 FabricLoader 取模组版本 + 显示名 + 游戏版本 */
-    private static Map<String, Object> versionValues() {
-        String version = "unknown";
-        String name = "samsara";
-        String gameVersion = "unknown";
-        try {
-            var loader = net.fabricmc.loader.api.FabricLoader.getInstance();
-            var container = loader.getModContainer("samsara");
-            if (container.isPresent()) {
-                version = container.get().getMetadata().getVersion().getFriendlyString();
-                name = container.get().getMetadata().getName();
-            }
-            // 游戏版本从 minecraft 容器读取，升级 MC 时这里不会再漏改
-            var minecraft = loader.getModContainer("minecraft");
-            if (minecraft.isPresent()) {
-                gameVersion = minecraft.get().getMetadata().getVersion().getFriendlyString();
-            }
-        } catch (Exception e) {
-            // 取不到版本就用 unknown
-        }
-        Map<String, Object> values = new LinkedHashMap<>();
-        values.put("name", name);
-        values.put("version", version);
-        values.put("minecraft", gameVersion);
-        return values;
-    }
-
-    private static String versionInfo() {
-        Map<String, Object> values = versionValues();
-        return "周目管理（" + values.get("name") + "） · 版本 " + values.get("version")
-                + " · MC " + values.get("minecraft") + " / Fabric —— 空间/时间/逆熵";
-    }
-
-    private static int replyVersion(CommandSourceStack src) {
-        ChatUi.send(src, OutputRenderer.render("version", versionValues(), src, null));
-        return 1;
-    }
 
     private static int restart(CommandSourceStack src, int seconds) {
         if (!com.shenqianye.samsara.shutdown.ShutdownAnnouncer.request(
@@ -1361,31 +1310,6 @@ public class DebugCommand {
         return 1;
     }
 
-    /** MSPT 追踪：由 Samsara.onTick() 每 tick 调用 */
-    private static long lastTickNanos = System.nanoTime();
-    private static double cachedMspt = 50.0;
-
-    /** 由服务端 tick 事件调用，更新 MSPT */
-    public static void onTick() {
-        long now = System.nanoTime();
-        cachedMspt = (now - lastTickNanos) / 1_000_000.0;
-        lastTickNanos = now;
-    }
-
-    /** /samsara mspt */
-    private static String mspt() {
-        String color = cachedMspt < 40 ? "§a" : cachedMspt < 50 ? "§e" : "§c";
-        return "MSPT: " + color + String.format("%.1f", cachedMspt) + "ms§r"
-                + "（目标 50ms = 20 TPS）";
-    }
-
-    /** /samsara tps */
-    private static String tps() {
-        double tps = Math.min(20.0, 1000.0 / Math.max(cachedMspt, 0.1));
-        String color = tps >= 19.5 ? "§a" : tps >= 15.0 ? "§e" : "§c";
-        return "TPS: " + color + String.format("%.1f", tps) + "§r"
-                + "（MSPT=" + String.format("%.1f", cachedMspt) + "ms）";
-    }
 
     private static boolean isOwner(CommandSourceStack src) {
         return src.permissions().hasPermission(Permissions.COMMANDS_OWNER);

@@ -154,7 +154,7 @@ public class Samsara implements DedicatedServerModInitializer {
             com.shenqianye.samsara.insurance.InsuranceService.getInstance().tick(server);
             com.shenqianye.samsara.container.ContainerIndexService.getInstance().tick(server);
             com.shenqianye.samsara.container.PlayerInventoryService.getInstance().tick(server);
-            com.shenqianye.samsara.command.DebugCommand.onTick();
+            com.shenqianye.samsara.command.DebugMetaCommands.onTick();
             if (++unloadFlushCounter[0] >= 20) {
                 unloadFlushCounter[0] = 0;
                 RewindEngine.getInstance().flushUnloadBuffer(server);
