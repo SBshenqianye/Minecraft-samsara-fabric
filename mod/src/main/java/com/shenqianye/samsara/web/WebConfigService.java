@@ -2,6 +2,7 @@ package com.shenqianye.samsara.web;
 
 import com.shenqianye.samsara.config.ConfigManager;
 import com.shenqianye.samsara.config.ConfigSchema;
+import com.shenqianye.samsara.config.ConfigViews;
 import com.shenqianye.samsara.config.YamlStore;
 import com.shenqianye.samsara.storage.StoragePaths;
 import net.fabricmc.loader.api.FabricLoader;
@@ -14,7 +15,7 @@ import java.util.Map;
 /** 生产环境的 Web 配置服务：只读写 YAML 配置，不碰世界数据。 */
 public final class WebConfigService implements ConfigService {
     @Override
-    public Map<String, Object> configModel() {
+    public ConfigViews.Model configModel() {
         return ConfigManager.getInstance().apiModel();
     }
 
@@ -28,16 +29,12 @@ public final class WebConfigService implements ConfigService {
     }
 
     @Override
-    public Map<String, Object> reload() {
+    public ConfigViews.Reload reload() {
         String message = ConfigManager.getInstance().reloadAll();
         // 公告是独立 JSON 存储（不走 YAML 配置），也要跟着重新读取；
         // 否则手动修复/外部编辑 announcements.json 后只能重启才生效。
         com.shenqianye.samsara.announce.AnnouncementService.getInstance().reload();
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("ok", true);
-        out.put("message", message);
-        out.put("config", ConfigManager.getInstance().apiModel());
-        return out;
+        return new ConfigViews.Reload(true, message, ConfigManager.getInstance().apiModel());
     }
 
     @Override

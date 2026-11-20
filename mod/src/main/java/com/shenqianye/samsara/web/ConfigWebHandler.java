@@ -5,6 +5,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.reflect.TypeToken;
+import com.shenqianye.samsara.config.ConfigViews;
 import com.shenqianye.samsara.config.spec.ConfigEditorService;
 import com.shenqianye.samsara.web.http.WebHttp;
 import com.sun.net.httpserver.HttpExchange;
@@ -85,34 +86,18 @@ final class ConfigWebHandler {
                 var estimate = com.shenqianye.samsara.track.TrackRetention.estimate(
                         com.shenqianye.samsara.track.TrackRetention.parseCurve(raw),
                         keepAll, actualPerSample);
-                Map<String, Object> out = new LinkedHashMap<>();
-                out.put("ok", true);
-                out.put("bytesPerSample", estimate.bytesPerSample());
-                out.put("actualBytesPerSample", usage.bytesPerSample());
-                out.put("actualTotalBytes", usage.totalBytes());
-                out.put("actualTotalSamples", usage.totalSamples());
-                out.put("actualFileCount", usage.fileCount());
-                out.put("actualPlayerCount", usage.playerCount());
-                out.put("actualBytesPerPlayer", usage.bytesPerPlayer());
-                out.put("freshSamplesPerDay", estimate.freshSamplesPerDay());
-                out.put("freshBytesPerDay", estimate.freshBytesPerDay());
-                out.put("steadyBytes", estimate.steadyBytes());
-                out.put("growthPerDay", estimate.growthPerDay());
-                out.put("unbounded", estimate.unbounded());
-                out.put("keepAll", estimate.keepAll());
-                out.put("warning", estimate.warning());
-                List<Map<String, Object>> tiers = new java.util.ArrayList<>();
+                List<ConfigViews.CurveTier> tiers = new java.util.ArrayList<>();
                 for (var tier : estimate.tiers()) {
-                    Map<String, Object> item = new LinkedHashMap<>();
-                    item.put("ageDays", tier.ageDays());
-                    item.put("keepRatio", tier.keepRatio());
-                    item.put("bytesPerDay", tier.bytesPerDay());
-                    item.put("cumulativeBytes", tier.cumulativeBytes());
-                    item.put("older", tier.older());
-                    tiers.add(item);
+                    tiers.add(new ConfigViews.CurveTier(tier.ageDays(), tier.keepRatio(),
+                            tier.bytesPerDay(), tier.cumulativeBytes(), tier.older()));
                 }
-                out.put("tiers", tiers);
-                WebHttp.json(exchange, 200, out);
+                WebHttp.json(exchange, 200, new ConfigViews.Curve(true,
+                        estimate.bytesPerSample(), usage.bytesPerSample(),
+                        usage.totalBytes(), usage.totalSamples(), usage.fileCount(),
+                        usage.playerCount(), usage.bytesPerPlayer(),
+                        estimate.freshSamplesPerDay(), estimate.freshBytesPerDay(),
+                        estimate.steadyBytes(), estimate.growthPerDay(), estimate.unbounded(),
+                        estimate.keepAll(), estimate.warning(), tiers));
                 return;
             }
             if ("GET".equals(method)) {
@@ -139,11 +124,11 @@ final class ConfigWebHandler {
                 return;
             }
             if (request.file().contains(":") || !request.source().isBlank()) {
-                Map<String, Object> result = ConfigEditorService.getInstance().save(
+                ConfigViews.Save result = ConfigEditorService.getInstance().save(
                         serverService == null ? null : serverService.server(),
                         host.serverRoot(), request.file(), request.values(),
                         request.confirm(), request.revision());
-                if (!Boolean.TRUE.equals(result.get("ok"))) {
+                if (!result.ok()) {
                     status = 400;
                     WebHttp.json(exchange, status, result);
                     return;

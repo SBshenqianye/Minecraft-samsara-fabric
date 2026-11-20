@@ -272,8 +272,8 @@ public final class ConfigManager {
     }
 
     /** Web API 使用的 schema + 当前值模型。 */
-    public synchronized Map<String, Object> apiModel() {
-        List<Map<String, Object>> files = new ArrayList<>();
+    public synchronized ConfigViews.Model apiModel() {
+        List<ConfigViews.File> files = new ArrayList<>();
         for (String id : ConfigSchema.fileIds()) {
             if (ConfigSchema.OUTPUT.equals(id)) {
                 // 输出模板有独立变量元数据，走 /api/output，不在扁平配置表单里重复编辑
@@ -284,38 +284,21 @@ public final class ConfigManager {
                 continue;
             }
             Map<String, Object> values = cache.getOrDefault(id, Map.of());
-            List<Map<String, Object>> entries = new ArrayList<>();
+            List<ConfigViews.Entry> entries = new ArrayList<>();
             for (ConfigEntry entry : ConfigSchema.entries(id)) {
-                Map<String, Object> item = new LinkedHashMap<>();
-                item.put("path", entry.path());
-                item.put("type", entry.type().id());
-                item.put("description", entry.description());
-                item.put("group", entry.group());
-                item.put("restart", entry.restart());
-                item.put("visibleWhen", entry.visibleWhen());
-                item.put("min", entry.min());
-                item.put("max", entry.max());
-                item.put("choices", entry.choices());
-                item.put("default", ConfigSchema.deepCopy(entry.defaultValue()));
-                if (ConfigSchema.isSensitive(id, entry.path())) {
-                    item.put("value", "");
-                    item.put("sensitive", true);
-                    item.put("configured", !string(id, entry.path()).isBlank());
-                } else {
-                    item.put("value", ConfigSchema.deepCopy(values.get(entry.path())));
-                }
-                entries.add(item);
+                boolean sensitive = ConfigSchema.isSensitive(id, entry.path());
+                Object value = sensitive ? ""
+                        : ConfigSchema.deepCopy(values.get(entry.path()));
+                entries.add(new ConfigViews.Entry(entry.path(), entry.type().id(),
+                        entry.description(), entry.group(), entry.restart(), entry.visibleWhen(),
+                        entry.min(), entry.max(), entry.choices(),
+                        ConfigSchema.deepCopy(entry.defaultValue()), value,
+                        sensitive ? Boolean.TRUE : null,
+                        sensitive ? !string(id, entry.path()).isBlank() : null));
             }
-            Map<String, Object> file = new LinkedHashMap<>();
-            file.put("id", id);
-            file.put("name", ConfigSchema.fileName(id) + ".yml");
-            file.put("path", file(id).toString());
-            file.put("entries", entries);
-            files.add(file);
+            files.add(new ConfigViews.File(id, ConfigSchema.fileName(id) + ".yml",
+                    file(id).toString(), entries));
         }
-        Map<String, Object> model = new LinkedHashMap<>();
-        model.put("files", files);
-        model.put("warnings", warnings());
-        return model;
+        return new ConfigViews.Model(files, warnings());
     }
 }

@@ -122,8 +122,8 @@ class OutputPermissionWebServerTest {
 
     private static final class FakeConfig implements ConfigService {
         @Override
-        public Map<String, Object> configModel() {
-            return Map.of("files", List.of());
+        public com.shenqianye.samsara.config.ConfigViews.Model configModel() {
+            return new com.shenqianye.samsara.config.ConfigViews.Model(List.of(), List.of());
         }
 
         @Override
@@ -132,8 +132,8 @@ class OutputPermissionWebServerTest {
         }
 
         @Override
-        public Map<String, Object> reload() {
-            return Map.of("ok", true, "config", configModel());
+        public com.shenqianye.samsara.config.ConfigViews.Reload reload() {
+            return new com.shenqianye.samsara.config.ConfigViews.Reload(true, "", configModel());
         }
 
         @Override

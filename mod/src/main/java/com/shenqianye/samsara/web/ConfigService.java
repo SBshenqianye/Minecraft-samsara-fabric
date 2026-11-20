@@ -1,5 +1,7 @@
 package com.shenqianye.samsara.web;
 
+import com.shenqianye.samsara.config.ConfigViews;
+
 import java.util.Map;
 
 /**
@@ -10,13 +12,13 @@ import java.util.Map;
  */
 public interface ConfigService {
     /** GET /api/config */
-    Map<String, Object> configModel();
+    ConfigViews.Model configModel();
 
     /** PUT /api/config；失败返回字段级错误。 */
     SaveOutcome save(String fileId, Map<String, Object> values);
 
     /** POST /api/reload */
-    Map<String, Object> reload();
+    ConfigViews.Reload reload();
 
     /** GET /api/status */
     ServerStatus status();

@@ -280,16 +280,14 @@ class LocalWebServerTest {
         int reloads;
 
         @Override
-        public Map<String, Object> configModel() {
-            return Map.of("files", List.of(Map.of(
-                    "id", "commands",
-                    "name", "commands.yml",
-                    "path", "/tmp/commands.yml",
-                    "entries", List.of(Map.of(
-                            "path", "where.enabled",
-                            "type", "boolean",
-                            "value", true,
-                            "default", true)))));
+        public com.shenqianye.samsara.config.ConfigViews.Model configModel() {
+            return new com.shenqianye.samsara.config.ConfigViews.Model(
+                    List.of(new com.shenqianye.samsara.config.ConfigViews.File(
+                            "commands", "commands.yml", "/tmp/commands.yml",
+                            List.of(new com.shenqianye.samsara.config.ConfigViews.Entry(
+                                    "where.enabled", "boolean", "", "", false, null, null, null,
+                                    List.of(), true, true, null, null)))),
+                    List.of());
         }
 
         @Override
@@ -303,9 +301,9 @@ class LocalWebServerTest {
         }
 
         @Override
-        public Map<String, Object> reload() {
+        public com.shenqianye.samsara.config.ConfigViews.Reload reload() {
             reloads++;
-            return Map.of("ok", true, "config", configModel());
+            return new com.shenqianye.samsara.config.ConfigViews.Reload(true, "", configModel());
         }
 
         @Override

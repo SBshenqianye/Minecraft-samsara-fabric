@@ -8,6 +8,7 @@ import com.shenqianye.samsara.Samsara;
 import com.shenqianye.samsara.config.ConfigEntry;
 import com.shenqianye.samsara.config.ConfigManager;
 import com.shenqianye.samsara.config.ConfigSchema;
+import com.shenqianye.samsara.config.ConfigViews;
 import com.shenqianye.samsara.config.ConfigType;
 import com.shenqianye.samsara.config.ConfigValidationException;
 import com.shenqianye.samsara.server.ServerConfigFiles;
@@ -77,7 +78,7 @@ public final class ConfigEditorService {
 
     // ---------------------------------------------------------------- pages
 
-    public Map<String, Object> pages(Path serverRoot) {
+    public ConfigViews.Pages pages(Path serverRoot) {
         List<PageSpec> pages = new ArrayList<>();
         List<String> warnings = new ArrayList<>();
         for (String id : ConfigSchema.fileIds()) {
@@ -95,12 +96,7 @@ public final class ConfigEditorService {
             }
         }
         pages.addAll(discoverThirdParty(serverRoot, warnings));
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("ok", true);
-        out.put("pages", pages);
-        out.put("modNames", discoverModNames(serverRoot));
-        out.put("warnings", warnings);
-        return out;
+        return new ConfigViews.Pages(true, pages, discoverModNames(serverRoot), warnings);
     }
 
     /** 从 mods/*.jar 的 fabric.mod.json 读取 modId → 显示名，供工作区导航两行显示。 */
@@ -318,18 +314,16 @@ public final class ConfigEditorService {
 
     // -------------------------------------------------------------- preview
 
-    public Map<String, Object> preview(Path serverRoot, String id, Map<String, Object> updates) {
+    public ConfigViews.Save preview(Path serverRoot, String id, Map<String, Object> updates) {
         Resolved resolved = resolve(serverRoot, id);
         if (resolved == null) {
             return error("未知配置页面：" + id);
         }
         Validation validation = validate(resolved, updates);
         if (!validation.ok()) {
-            Map<String, Object> out = error("配置校验失败");
-            out.put("fields", validation.errors());
-            return out;
+            return invalid("配置校验失败", validation.errors());
         }
-        List<Map<String, Object>> changes = new ArrayList<>();
+        List<ConfigViews.Change> changes = new ArrayList<>();
         StringBuilder diff = new StringBuilder();
         for (Map.Entry<String, Object> e : validation.proposed().entrySet()) {
             Object before = resolved.actualValues().get(e.getKey());
@@ -337,32 +331,21 @@ public final class ConfigEditorService {
             if (Objects.equals(before, after)) {
                 continue;
             }
-            Map<String, Object> change = new LinkedHashMap<>();
-            change.put("path", e.getKey());
-            change.put("before", before);
-            change.put("after", after);
-            changes.add(change);
+            changes.add(new ConfigViews.Change(e.getKey(), before, after));
             if (diff.length() < 16_000) {
                 diff.append("- ").append(e.getKey()).append(": ").append(shortValue(before)).append('\n');
                 diff.append("+ ").append(e.getKey()).append(": ").append(shortValue(after)).append('\n');
             }
         }
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("ok", true);
-        out.put("file", id);
-        out.put("revision", resolved.page().revision());
-        out.put("requiresConfirmation", resolved.page().requiresConfirmation());
-        out.put("changed", changes.size());
-        out.put("changes", changes);
-        out.put("diff", diff.toString());
-        out.put("fields", Map.of());
-        return out;
+        return new ConfigViews.Save(true, null, null, resolved.page().requiresConfirmation(),
+                Map.of(), id, resolved.page().revision(), changes.size(), changes,
+                diff.toString(), null, null);
     }
 
     // ----------------------------------------------------------------- save
 
-    public Map<String, Object> save(MinecraftServer server, Path serverRoot, String id,
-                                    Map<String, Object> updates, boolean confirm, String revision) {
+    public ConfigViews.Save save(MinecraftServer server, Path serverRoot, String id,
+                                Map<String, Object> updates, boolean confirm, String revision) {
         Resolved resolved = resolve(serverRoot, id);
         if (resolved == null) {
             return error("未知配置页面：" + id);
@@ -372,18 +355,15 @@ public final class ConfigEditorService {
             return error(page.readOnlyReason().isBlank() ? "此页面只读" : page.readOnlyReason());
         }
         if (page.requiresConfirmation() && !confirm) {
-            Map<String, Object> out = error("需要先预览并确认后再写入");
-            out.put("requiresConfirmation", true);
-            return out;
+            return new ConfigViews.Save(false, "需要先预览并确认后再写入", null, true, null,
+                    null, null, null, null, null, null, null);
         }
         if (revision != null && !revision.isBlank() && !revision.equals(page.revision())) {
             return error("文件已被其他程序修改，请刷新后重新预览");
         }
         Validation validation = validate(resolved, updates);
         if (!validation.ok()) {
-            Map<String, Object> out = error("配置校验失败");
-            out.put("fields", validation.errors());
-            return out;
+            return invalid("配置校验失败", validation.errors());
         }
         try {
             ConfigFileIO.backup(resolved.file(), serverRoot);
@@ -400,9 +380,7 @@ public final class ConfigEditorService {
             var result = ConfigManager.getInstance().save(resolved.samsaraId(),
                     validation.effectiveUpdates());
             if (!result.ok()) {
-                Map<String, Object> out = error("配置校验失败");
-                out.put("fields", result.errors());
-                return out;
+                return invalid("配置校验失败", result.errors());
             }
         } else if (resolved.serverId() != null) {
             ServerConfigFiles.SaveResult result = ServerConfigFiles.save(
@@ -410,14 +388,12 @@ public final class ConfigEditorService {
             if (!result.ok) {
                 return error(result.error);
             }
-            Map<String, Object> out = success(result.message);
-            out.put("page", buildServer(serverRoot, resolved.serverId()).page());
-            out.put("backupPath", result.backupPath);
-            return out;
+            return new ConfigViews.Save(true, null, result.message, null, null, null, null,
+                    null, null, null, buildServer(serverRoot, resolved.serverId()).page(),
+                    result.backupPath);
         }
-        Map<String, Object> out = success("已保存 " + page.fileName());
-        out.put("page", buildPage(serverRoot, id));
-        return out;
+        return new ConfigViews.Save(true, null, "已保存 " + page.fileName(), null, null, null,
+                null, null, null, null, buildPage(serverRoot, id), null);
     }
 
     // ---------------------------------------------------------------- helpers
@@ -711,18 +687,14 @@ public final class ConfigEditorService {
         return StoragePaths.gameConfigDir(serverRoot);
     }
 
-    private static Map<String, Object> error(String message) {
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("ok", false);
-        out.put("error", message == null ? "" : message);
-        return out;
+    private static ConfigViews.Save error(String message) {
+        return new ConfigViews.Save(false, message == null ? "" : message, null, null, null, null,
+                null, null, null, null, null, null);
     }
 
-    private static Map<String, Object> success(String message) {
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("ok", true);
-        out.put("message", message == null ? "" : message);
-        return out;
+    private static ConfigViews.Save invalid(String message, Map<String, String> fields) {
+        return new ConfigViews.Save(false, message, null, null, fields, null, null, null, null,
+                null, null, null);
     }
 
     private record Validation(boolean ok, Map<String, String> errors,

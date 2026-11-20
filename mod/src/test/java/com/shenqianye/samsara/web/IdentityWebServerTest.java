@@ -161,8 +161,9 @@ class IdentityWebServerTest {
 
     private static final class FakeConfig implements ConfigService {
         @Override
-        public Map<String, Object> configModel() {
-            return Map.of("files", java.util.List.of());
+        public com.shenqianye.samsara.config.ConfigViews.Model configModel() {
+            return new com.shenqianye.samsara.config.ConfigViews.Model(
+                    java.util.List.of(), java.util.List.of());
         }
 
         @Override
@@ -171,8 +172,8 @@ class IdentityWebServerTest {
         }
 
         @Override
-        public Map<String, Object> reload() {
-            return Map.of("ok", true);
+        public com.shenqianye.samsara.config.ConfigViews.Reload reload() {
+            return new com.shenqianye.samsara.config.ConfigViews.Reload(true, "", configModel());
         }
 
         @Override
