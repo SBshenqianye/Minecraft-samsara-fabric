@@ -36,6 +36,9 @@ class ArchitectureGuardTest {
     private static final Pattern BACKUP_LITERAL = Pattern.compile("\"backups/samsara\"");
     private static final Pattern BACKUP_SPLIT_LITERAL =
             Pattern.compile("\"backups\"\\s*,\\s*\"samsara\"");
+    /** 链式写法 {@code .resolve("backups").resolve("samsara")} 也必须走 StoragePaths。 */
+    private static final Pattern BACKUP_CHAIN_LITERAL =
+            Pattern.compile("resolve\\(\"backups\"\\)\\s*\\.\\s*resolve\\(\"samsara\"\\)");
     private static final Pattern SAMSARA_PACKAGE_IMPORT =
             Pattern.compile("^\\s*import\\s+(static\\s+)?(com\\.shenqianye\\.samsara\\.[\\w.]+)\\s*;");
 
@@ -158,10 +161,13 @@ class ArchitectureGuardTest {
         write("b/Fake2.java", "class Fake2 {\n"
                 + "  Object p = java.nio.file.Path.of(\"backups\", \"samsara\");\n"
                 + "}\n");
+        write("c/Fake3.java", "class Fake3 {\n"
+                + "  Object p = root.resolve(\"backups\").resolve(\"samsara\");\n"
+                + "}\n");
 
         List<String> violations = backupLiteralViolations(tmp);
 
-        assertEquals(2, violations.size(), violations.toString());
+        assertEquals(3, violations.size(), violations.toString());
     }
 
     // ---- 扫描实现 ----
@@ -220,6 +226,9 @@ class ArchitectureGuardTest {
             int line = firstMatchLine(code, BACKUP_LITERAL);
             if (line < 0) {
                 line = firstMatchLine(code, BACKUP_SPLIT_LITERAL);
+            }
+            if (line < 0) {
+                line = firstMatchLine(code, BACKUP_CHAIN_LITERAL);
             }
             if (line > 0) {
                 violations.add(relative + ":" + line + " 硬编码 backups/samsara");

@@ -65,7 +65,8 @@ public final class ConfigFileIO {
         }
         Path root = serverRoot == null ? file.getParent() : serverRoot;
         String stamp = LocalDateTime.now().format(STAMP);
-        Path base = root.resolve("backups").resolve("samsara").resolve("config-editor").resolve(stamp);
+        Path base = com.shenqianye.samsara.storage.StoragePaths.backupsRootAt(root)
+                .resolve("config-editor").resolve(stamp);
         Path relative;
         try {
             relative = root.toAbsolutePath().normalize().relativize(file.toAbsolutePath().normalize());

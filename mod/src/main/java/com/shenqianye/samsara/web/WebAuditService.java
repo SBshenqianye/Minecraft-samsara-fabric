@@ -62,7 +62,7 @@ public final class WebAuditService implements Audit.Sink {
             config = game.resolve("config").resolve("samsara");
         }
         this.configRoot = config;
-        this.root = game.resolve("backups").resolve("samsara").resolve("web-audit");
+        this.root = StoragePaths.backupsRootAt(game).resolve("web-audit");
     }
 
     public static WebAuditService get() {

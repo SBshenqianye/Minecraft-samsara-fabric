@@ -231,7 +231,7 @@ public final class ChunkRestoreService {
         McaRegion.RegionPos rp = McaRegion.RegionPos.ofChunk(cx, cz);
         String name = "r." + rp.rx() + "." + rp.rz() + ".mca";
         String ts = LocalDateTime.now(ZoneId.systemDefault()).format(TS);
-        Path base = StoragePaths.get().configRootPath().resolve("backups")
+        Path base = StoragePaths.get().configBackupsRoot()
                 .resolve(BACKUP_PREFIX + ts)
                 .resolve(target.layerId()).resolve(target.dimShort());
         boolean copied = false;

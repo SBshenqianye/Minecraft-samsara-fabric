@@ -62,4 +62,14 @@ class StoragePathsTest {
         assertEquals("agent-tokens.json", StoragePaths.AGENT_TOKENS_FILE);
         assertEquals("op-auth.yml", StoragePaths.OP_AUTH_FILE);
     }
+
+    @Test
+    void backupDirConstantMatchesServerBackupRoot() {
+        Path server = tmp.resolve("server");
+        assertEquals("backups/samsara", StoragePaths.BACKUP_DIR);
+        assertEquals(server.toAbsolutePath().normalize().resolve("backups").resolve("samsara"),
+                StoragePaths.backupsRootAt(server));
+        assertTrue(StoragePaths.backupsRootAt(server).endsWith(StoragePaths.BACKUP_DIR),
+                "backupsRootAt 必须与 BACKUP_DIR 常量一致");
+    }
 }

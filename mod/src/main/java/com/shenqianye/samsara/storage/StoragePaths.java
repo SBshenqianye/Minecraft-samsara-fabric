@@ -38,6 +38,8 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 public final class StoragePaths {
     /** 服务器级配置目录（相对服务器根）。 */
     public static final String CONFIG_DIR = "config/samsara";
+    /** 服务器根下本模组的备份目录（相对路径）。 */
+    public static final String BACKUP_DIR = "backups/samsara";
     /** Agent token 文件名（位于 {@link #configRoot()}）。 */
     public static final String AGENT_TOKENS_FILE = "agent-tokens.json";
     /** OP 认证文件名（位于 {@link #configRoot()}）。 */
@@ -144,6 +146,11 @@ public final class StoragePaths {
     /** 本模组在服务器根下的备份根 {@code <serverRoot>/backups/samsara}。 */
     public static Path backupsRootAt(Path serverRoot) {
         return serverRoot.toAbsolutePath().normalize().resolve("backups").resolve("samsara");
+    }
+
+    /** 配置目录内的备份根 {@code config/samsara/backups}（配置/区块/倒流的写前快照）。 */
+    public Path configBackupsRoot() {
+        return configRootDir.resolve("backups");
     }
 
     /** 旧配置目录；没有迁移过时为 null。 */
