@@ -343,151 +343,9 @@ public final class LocalWebServer {
     }
 
     private void handleConfig(HttpExchange exchange) throws IOException {
-        long start = System.currentTimeMillis();
-        int status = 200;
-        try {
-            int auth = authorize(exchange);
-            if (auth != 0) {
-                status = auth;
-                return;
-            }
-            String method = exchange.getRequestMethod();
-            String path = exchange.getRequestURI().getPath();
-            if ("GET".equals(method) && "/api/config/pages".equals(path)) {
-                json(exchange, 200, ConfigEditorService.getInstance().pages(serverRoot()));
-                return;
-            }
-            if ("POST".equals(method) && "/api/config/preview".equals(path)) {
-                String body;
-                try {
-                    body = readBody(exchange);
-                } catch (BodyTooLarge e) {
-                    status = 413;
-                    json(exchange, status, Map.of("error", "请求体过大"));
-                    return;
-                }
-                SaveRequest request = parseSave(body);
-                if (request == null) {
-                    status = 400;
-                    json(exchange, status, Map.of("error",
-                            "请求体应为 {\"file\":\"samsara:commands\",\"values\":{...}}"));
-                    return;
-                }
-                json(exchange, 200, ConfigEditorService.getInstance()
-                        .preview(serverRoot(), request.file(), request.values()));
-                return;
-            }
-            if ("GET".equals(method)
-                    && "/api/config/retention-estimate".equals(path)) {
-                Map<String, String> query = parseQuery(exchange.getRequestURI().getRawQuery());
-                String curveJson = query.get("curve");
-                List<Map<String, Object>> raw;
-                try {
-                    raw = curveJson == null || curveJson.isBlank() ? List.of()
-                            : GSON.fromJson(curveJson,
-                            new TypeToken<List<Map<String, Object>>>() { }.getType());
-                } catch (RuntimeException e) {
-                    status = 400;
-                    json(exchange, status, Map.of("error", "curve 应为 JSON 数组"));
-                    return;
-                }
-                boolean keepAll = "1".equals(query.get("keepAll"))
-                        || "true".equalsIgnoreCase(query.get("keepAll"));
-                var usage = com.shenqianye.samsara.track.TrackRecorder.getInstance().usage();
-                long actualPerSample = usage.totalSamples() > 0
-                        ? Math.max(1L, Math.round(usage.bytesPerSample()))
-                        : com.shenqianye.samsara.track.TrackRetention.BYTES_PER_SAMPLE;
-                var estimate = com.shenqianye.samsara.track.TrackRetention.estimate(
-                        com.shenqianye.samsara.track.TrackRetention.parseCurve(raw),
-                        keepAll, actualPerSample);
-                Map<String, Object> out = new LinkedHashMap<>();
-                out.put("ok", true);
-                out.put("bytesPerSample", estimate.bytesPerSample());
-                out.put("actualBytesPerSample", usage.bytesPerSample());
-                out.put("actualTotalBytes", usage.totalBytes());
-                out.put("actualTotalSamples", usage.totalSamples());
-                out.put("actualFileCount", usage.fileCount());
-                out.put("actualPlayerCount", usage.playerCount());
-                out.put("actualBytesPerPlayer", usage.bytesPerPlayer());
-                out.put("freshSamplesPerDay", estimate.freshSamplesPerDay());
-                out.put("freshBytesPerDay", estimate.freshBytesPerDay());
-                out.put("steadyBytes", estimate.steadyBytes());
-                out.put("growthPerDay", estimate.growthPerDay());
-                out.put("unbounded", estimate.unbounded());
-                out.put("keepAll", estimate.keepAll());
-                out.put("warning", estimate.warning());
-                List<Map<String, Object>> tiers = new java.util.ArrayList<>();
-                for (var tier : estimate.tiers()) {
-                    Map<String, Object> item = new LinkedHashMap<>();
-                    item.put("ageDays", tier.ageDays());
-                    item.put("keepRatio", tier.keepRatio());
-                    item.put("bytesPerDay", tier.bytesPerDay());
-                    item.put("cumulativeBytes", tier.cumulativeBytes());
-                    item.put("older", tier.older());
-                    tiers.add(item);
-                }
-                out.put("tiers", tiers);
-                json(exchange, 200, out);
-                return;
-            }
-            if ("GET".equals(method)) {
-                json(exchange, 200, service.configModel());
-                return;
-            }
-            if (!"PUT".equals(method)) {
-                status = 405;
-                json(exchange, status, Map.of("error", "Method Not Allowed"));
-                return;
-            }
-            String body;
-            try {
-                body = readBody(exchange);
-            } catch (BodyTooLarge e) {
-                status = 413;
-                json(exchange, status, Map.of("error", "请求体过大"));
-                return;
-            }
-            SaveRequest request = parseSave(body);
-            if (request == null) {
-                status = 400;
-                json(exchange, status, Map.of("error",
-                        "请求体应为 {\"file\":\"commands\",\"values\":{...}}"));
-                return;
-            }
-            if (request.file().contains(":") || !request.source().isBlank()) {
-                Map<String, Object> result = ConfigEditorService.getInstance().save(
-                        serverService == null ? null : serverService.server(),
-                        serverRoot(), request.file(), request.values(),
-                        request.confirm(), request.revision());
-                if (!Boolean.TRUE.equals(result.get("ok"))) {
-                    status = 400;
-                    json(exchange, status, result);
-                    return;
-                }
-                json(exchange, 200, result);
-                return;
-            }
-            ConfigService.SaveOutcome outcome = service.save(request.file(), request.values());
-            if (!outcome.ok()) {
-                status = 400;
-                Map<String, Object> error = new LinkedHashMap<>();
-                error.put("error", "配置校验失败");
-                error.put("fields", outcome.errors());
-                json(exchange, status, error);
-                return;
-            }
-            Map<String, Object> result = new LinkedHashMap<>();
-            result.put("ok", true);
-            result.put("config", service.configModel());
-            json(exchange, 200, result);
-        } catch (RuntimeException e) {
-            status = 500;
-            json(exchange, status, Map.of("error", "服务器内部错误"));
-            LOG.warn("[web] 处理 {} 失败: {}", exchange.getRequestURI().getPath(), e.getMessage());
-        } finally {
-            log(exchange, status, start);
-        }
+        new ConfigWebHandler(this, service, serverService).handle(exchange);
     }
+
 
     private void handleAnnouncements(HttpExchange exchange) throws IOException {
         long start = System.currentTimeMillis();
@@ -770,140 +628,9 @@ public final class LocalWebServer {
      * 只暴露公开状态、世界栈列表、地图与在线玩家；管理端路径不在这里注册。
      */
     private void handleUser(HttpExchange exchange) throws IOException {
-        long start = System.currentTimeMillis();
-        int status = 200;
-        try {
-            if (userService == null) {
-                status = 503;
-                json(exchange, status, Map.of("error", "用户端 Web 未启动"));
-                return;
-            }
-            if (!"GET".equals(exchange.getRequestMethod())) {
-                status = 405;
-                json(exchange, status, Map.of("error", "Method Not Allowed"));
-                return;
-            }
-            String path = exchange.getRequestURI().getPath();
-            Map<String, String> query = parseQuery(exchange.getRequestURI().getRawQuery());
-            if ("/api/user/status".equals(path)) {
-                json(exchange, 200, userService.status());
-                return;
-            }
-            if ("/api/user/worlds".equals(path)) {
-                json(exchange, 200, userService.worlds());
-                return;
-            }
-            if ("/api/user/lottery".equals(path)) {
-                json(exchange, 200, userService.lottery());
-                return;
-            }
-            if ("/api/user/lottery/values".equals(path)) {
-                json(exchange, 200, userService.lotteryValues(
-                        query.getOrDefault("q", ""),
-                        query.getOrDefault("category", ""),
-                        query.getOrDefault("sort", "value-desc"),
-                        intParam(query, "offset", 0),
-                        intParam(query, "limit", 100)));
-                return;
-            }
-            if ("/api/user/worlds/icon".equals(path)) {
-                WorldStackIconService.IconFile icon = userService.icon(query.getOrDefault("stack", ""));
-                if (icon == null) {
-                    status = 404;
-                    json(exchange, status, Map.of("error", "没有这个栈层图标"));
-                    return;
-                }
-                sendBytes(exchange, 200, icon.mime(), icon.bytes());
-                return;
-            }
-            if ("/api/user/map/avatar".equals(path)) {
-                String id = query.getOrDefault("id", "");
-                String uuid = query.getOrDefault("uuid", id);
-                String name = query.getOrDefault("name", id);
-                MojangSkinService.Skin skin = userService.avatar(uuid, name);
-                if (skin == null) {
-                    status = 404;
-                    json(exchange, status, Map.of("error", "没有可用的 Mojang 皮肤"));
-                    return;
-                }
-                sendBytes(exchange, 200, skin.mime(), skin.bytes());
-                return;
-            }
-            if ("/api/user/map/head".equals(path)) {
-                String id = query.getOrDefault("id", "");
-                String uuid = query.getOrDefault("uuid", id);
-                String name = query.getOrDefault("name", id);
-                MojangSkinService.Skin skin = userService.head(uuid, name);
-                if (skin == null) {
-                    status = 404;
-                    json(exchange, status, Map.of("error", "没有可用的玩家头像"));
-                    return;
-                }
-                sendBytes(exchange, 200, skin.mime(), skin.bytes());
-                return;
-            }
-            if ("/api/user/map/body".equals(path)) {
-                String id = query.getOrDefault("id", "");
-                MojangSkinService.Skin skin = userService.body(
-                        query.getOrDefault("uuid", id), query.getOrDefault("name", id));
-                if (skin == null) {
-                    status = 404;
-                    json(exchange, status, Map.of("error", "没有可用的 3D 皮肤"));
-                    return;
-                }
-                sendBytes(exchange, 200, skin.mime(), skin.bytes());
-                return;
-            }
-            if ("/api/user/map".equals(path)) {
-                json(exchange, 200, userService.mapModel());
-                return;
-            }
-            if ("/api/user/map/players".equals(path)) {
-                json(exchange, 200, userService.players());
-                return;
-            }
-            if ("/api/user/map/live".equals(path)) {
-                json(exchange, 200, userService.live());
-                return;
-            }
-            if ("/api/user/map/tile".equals(path)) {
-                String stack = query.getOrDefault("stack", "");
-                String dimension = query.getOrDefault("dim", "");
-                Integer rx = intParam(query.get("rx"));
-                Integer rz = intParam(query.get("rz"));
-                Integer scale = intParam(query.get("scale"));
-                if (dimension.isBlank() || rx == null || rz == null || scale == null) {
-                    status = 400;
-                    json(exchange, status, Map.of("error",
-                            "参数应为 stack=<栈层>&dim=<维度>&rx=<int>&rz=<int>&scale=1|2|4|8"));
-                    return;
-                }
-                if (scale != 1 && scale != 2 && scale != 4 && scale != 8) {
-                    status = 400;
-                    json(exchange, status, Map.of("error", "scale 只能是 1、2、4、8"));
-                    return;
-                }
-                byte[] png = userService.tile(stack, dimension, rx, rz, scale,
-                        !"0".equals(query.get("shade")));
-                if (png == null) {
-                    status = 404;
-                    json(exchange, status, Map.of("error", "没有这个地图区块"));
-                    return;
-                }
-                sendBytes(exchange, 200, "image/png", png);
-                return;
-            }
-            status = 404;
-            json(exchange, status, Map.of("error", "Not Found"));
-        } catch (RuntimeException e) {
-            status = 500;
-            json(exchange, status, Map.of("error", "服务器内部错误"));
-            LOG.warn("[web] 用户端处理 {} 失败: {}", exchange.getRequestURI().getPath(),
-                    e.getMessage());
-        } finally {
-            log(exchange, status, start);
-        }
+        new UserWebHandler(userService).handle(exchange);
     }
+
 
     private void handleMap(HttpExchange exchange) throws IOException {
         long start = System.currentTimeMillis();
@@ -1058,90 +785,9 @@ public final class LocalWebServer {
     }
 
     private void handleServer(HttpExchange exchange) throws IOException {
-        long start = System.currentTimeMillis();
-        int status = 200;
-        try {
-            int auth = authorize(exchange);
-            if (auth != 0) {
-                status = auth;
-                return;
-            }
-            if (serverService == null) {
-                status = 503;
-                json(exchange, status, Map.of("error", "本体服务未启动"));
-                return;
-            }
-            String path = exchange.getRequestURI().getPath();
-            String method = exchange.getRequestMethod();
-            Map<String, Object> body = Map.of();
-            if ("POST".equals(method) || "PUT".equals(method)) {
-                try {
-                    body = parseObject(readBody(exchange));
-                } catch (BodyTooLarge e) {
-                    status = 413;
-                    json(exchange, status, Map.of("error", "请求体过大"));
-                    return;
-                } catch (RuntimeException e) {
-                    status = 400;
-                    json(exchange, status, Map.of("error", "请求体应为 JSON 对象"));
-                    return;
-                }
-            }
-            Map<String, Object> result;
-            if ("GET".equals(method)) {
-                if ("/api/server".equals(path) || "/api/server/config".equals(path)
-                        || "/api/server/backups".equals(path)) {
-                    result = serverService.model();
-                } else if ("/api/server/jobs".equals(path)) {
-                    result = serverService.jobs();
-                } else if ("/api/server/players".equals(path)) {
-                    result = serverService.players();
-                } else if ("/api/server/backups/download".equals(path)) {
-                    String id = parseQuery(exchange.getRequestURI().getRawQuery()).get("id");
-                    var file = serverService.backupFile(id);
-                    if (file == null) {
-                        status = 404;
-                        json(exchange, status, Map.of("error", "备份不存在"));
-                        return;
-                    }
-                    sendFile(exchange, 200, "application/zip", id + ".zip", file);
-                    return;
-                } else {
-                    status = 404;
-                    result = Map.of("error", "Not Found");
-                }
-            } else if ("POST".equals(method)) {
-                switch (path) {
-                    case "/api/server/config" -> result = serverService.saveConfig(body);
-                    case "/api/server/backups/preview" -> result = serverService.previewCreate();
-                    case "/api/server/backups" -> result = serverService.createBackup(body);
-                    case "/api/server/backups/delete" -> result = serverService.deleteBackup(body);
-                    case "/api/server/backups/preview-restore" ->
-                            result = serverService.previewRestore(body);
-                    case "/api/server/backups/restore" -> result = serverService.restore(body);
-                    case "/api/server/console" -> result = serverService.console(body);
-                case "/api/server/console/complete" -> result = serverService.completeConsole(body);
-                    default -> {
-                        status = 404;
-                        result = Map.of("error", "Not Found");
-                    }
-                }
-            } else {
-                status = 405;
-                result = Map.of("error", "Method Not Allowed");
-            }
-            if (status == 200 && Boolean.FALSE.equals(result.get("ok"))) {
-                status = 400;
-            }
-            json(exchange, status, result);
-        } catch (RuntimeException e) {
-            status = 500;
-            json(exchange, status, Map.of("error", "服务器内部错误"));
-            LOG.warn("[web] 处理 {} 失败: {}", exchange.getRequestURI().getPath(), e.getMessage());
-        } finally {
-            log(exchange, status, start);
-        }
+        new ServerWebHandler(this, serverService).handle(exchange);
     }
+
 
     private void handleAudit(HttpExchange exchange) throws IOException {
         long start = System.currentTimeMillis();
@@ -1211,104 +857,7 @@ public final class LocalWebServer {
     }
 
     private void handleWorldStack(HttpExchange exchange) throws IOException {
-        long start = System.currentTimeMillis();
-        int status = 200;
-        try {
-            int auth = authorize(exchange);
-            if (auth != 0) {
-                status = auth;
-                return;
-            }
-            if (worldStackService == null) {
-                status = 503;
-                json(exchange, status, Map.of("error", "世界栈服务未启动"));
-                return;
-            }
-            String path = exchange.getRequestURI().getPath();
-            String method = exchange.getRequestMethod();
-            int bodyLimit = "/api/world-stack/icon".equals(path)
-                    ? WebSecurity.MAX_ICON_BODY_BYTES : WebSecurity.MAX_BODY_BYTES;
-            Map<String, Object> body = Map.of();
-            if ("POST".equals(method) || "PUT".equals(method)) {
-                try {
-                    body = parseObject(readBody(exchange, bodyLimit));
-                } catch (BodyTooLarge e) {
-                    status = 413;
-                    json(exchange, status, Map.of("error", "请求体过大"));
-                    return;
-                } catch (RuntimeException e) {
-                    status = 400;
-                    json(exchange, status, Map.of("error", "请求体应为 JSON 对象"));
-                    return;
-                }
-            }
-            Object result;
-            if ("GET".equals(method)) {
-                if ("/api/world-stack".equals(path)) {
-                    result = worldStackService.model();
-                } else if ("/api/world-stack/timeline".equals(path)) {
-                    result = worldStackService.timeline();
-                } else if ("/api/world-stack/timeline/export".equals(path)) {
-                    Map<String, String> query = parseQuery(exchange.getRequestURI().getRawQuery());
-                    result = worldStackService.exportTimeline(query.get("id"));
-                } else if ("/api/world-stack/timeline/snapshots".equals(path)) {
-                    result = worldStackService.timelineSnapshots();
-                } else if ("/api/world-stack/jobs".equals(path)) {
-                    result = worldStackService.jobs();
-                } else if (path.startsWith("/api/world-stack/jobs/")) {
-                    String id = URLDecoder.decode(
-                            path.substring("/api/world-stack/jobs/".length()),
-                            StandardCharsets.UTF_8);
-                    result = worldStackService.job(id);
-                } else {
-                    status = 404;
-                    result = Map.of("error", "Not Found");
-                }
-            } else if ("POST".equals(method)) {
-                switch (path) {
-                    case "/api/world-stack/import/preview" ->
-                            result = worldStackService.previewImport(body);
-                    case "/api/world-stack/import/cancel" ->
-                            result = worldStackService.cancelImport(body);
-                    case "/api/world-stack/import" ->
-                            result = worldStackService.importWorld(body);
-                    case "/api/world-stack/reorder" ->
-                            result = worldStackService.reorder(body);
-                    case "/api/world-stack/archive/preview" ->
-                            result = worldStackService.previewArchive(body);
-                    case "/api/world-stack/archive" ->
-                            result = worldStackService.archive(body);
-                    case "/api/world-stack/icon" ->
-                            result = worldStackService.saveIcon(body);
-                    case "/api/world-stack/icon/delete" ->
-                            result = worldStackService.deleteIcon(body);
-                    case "/api/world-stack/timeline/preview" ->
-                            result = worldStackService.previewTimelineRestore(body);
-                    case "/api/world-stack/timeline/restore" ->
-                            result = worldStackService.restoreTimeline(body);
-                    case "/api/world-stack/timeline/cleanup" ->
-                            result = worldStackService.cleanupTimelineSnapshot(body);
-                    default -> {
-                        status = 404;
-                        result = Map.of("error", "Not Found");
-                    }
-                }
-            } else {
-                status = 405;
-                result = Map.of("error", "Method Not Allowed");
-            }
-            if (status == 200 && result instanceof Map<?, ?> map
-                    && Boolean.FALSE.equals(map.get("ok"))) {
-                status = 400;
-            }
-            json(exchange, status, result);
-        } catch (RuntimeException | LinkageError e) {
-            status = 500;
-            json(exchange, status, Map.of("error", "服务器内部错误：" + errorDetail(e)));
-            LOG.warn("[web] 处理 {} 失败: {}", exchange.getRequestURI().getPath(), e.toString());
-        } finally {
-            log(exchange, status, start);
-        }
+        new WorldStackWebHandler(this, worldStackService).handle(exchange);
     }
 
     @SuppressWarnings("unchecked")
@@ -1318,63 +867,7 @@ public final class LocalWebServer {
     }
 
     private void handleLottery(HttpExchange exchange) throws IOException {
-        long start = System.currentTimeMillis();
-        int status = 200;
-        try {
-            int auth = authorize(exchange);
-            if (auth != 0) {
-                status = auth;
-                return;
-            }
-            String path = exchange.getRequestURI().getPath();
-            String method = exchange.getRequestMethod();
-            if ("GET".equals(method) && "/api/lottery".equals(path)) {
-                json(exchange, 200, lotteryService.adminModel());
-                return;
-            }
-            if ("GET".equals(method) && "/api/lottery/values".equals(path)) {
-                Map<String, String> query = parseQuery(exchange.getRequestURI().getRawQuery());
-                json(exchange, 200, lotteryService.values(
-                        query.getOrDefault("q", ""),
-                        query.getOrDefault("category", ""),
-                        query.getOrDefault("sort", "value-desc"),
-                        intParam(query, "offset", 0),
-                        intParam(query, "limit", 100)));
-                return;
-            }
-            if ("GET".equals(method) && "/api/lottery/fund".equals(path)) {
-                json(exchange, 200, lotteryService.fundInventory());
-                return;
-            }
-            if ("POST".equals(method) && "/api/lottery/fund/write".equals(path)) {
-                String body;
-                try {
-                    body = readBody(exchange);
-                } catch (BodyTooLarge e) {
-                    status = 413;
-                    json(exchange, status, Map.of("error", "请求体过大"));
-                    return;
-                }
-                Map<String, Object> result = lotteryService.writeFundInventory(body);
-                Object requested = result.get("status");
-                status = requested instanceof Number number ? number.intValue()
-                        : result.get("ok") == Boolean.TRUE ? 200 : 400;
-                json(exchange, status, result);
-                return;
-            }
-            if ("POST".equals(method) && "/api/lottery/draw".equals(path)) {
-                json(exchange, 200, lotteryService.draw());
-                return;
-            }
-            if ("POST".equals(method) && "/api/lottery/cancel".equals(path)) {
-                json(exchange, 200, lotteryService.cancel());
-                return;
-            }
-            status = 404;
-            json(exchange, status, Map.of("error", "未知的乐透接口"));
-        } finally {
-            log(exchange, status, start);
-        }
+        new LotteryWebHandler(this, lotteryService).handle(exchange);
     }
 
     private void handleContainers(HttpExchange exchange) throws IOException {
@@ -1600,7 +1093,7 @@ public final class LocalWebServer {
 
     // ---- 工具 ----
 
-    private Path serverRoot() {
+    Path serverRoot() {
         if (serverService != null) {
             return serverService.serverRoot();
         }
@@ -1730,7 +1223,7 @@ public final class LocalWebServer {
         return readBody(exchange, WebSecurity.MAX_BODY_BYTES);
     }
 
-    private static String readBody(HttpExchange exchange, int maxBytes)
+    static String readBody(HttpExchange exchange, int maxBytes)
             throws IOException, BodyTooLarge {
         String declared = exchange.getRequestHeaders().getFirst("Content-Length");
         if (declared != null) {
@@ -1753,37 +1246,6 @@ public final class LocalWebServer {
         }
     }
 
-    private static SaveRequest parseSave(String body) {
-        try {
-            JsonElement parsed = GSON.fromJson(body, JsonElement.class);
-            if (parsed == null || !parsed.isJsonObject()) {
-                return null;
-            }
-            JsonObject object = parsed.getAsJsonObject();
-            if (!object.has("file") || !object.get("file").isJsonPrimitive()) {
-                return null;
-            }
-            String file = object.get("file").getAsString();
-            if (!object.has("values") || !object.get("values").isJsonObject()) {
-                return null;
-            }
-            Map<String, Object> values = new LinkedHashMap<>();
-            for (Map.Entry<String, JsonElement> e : object.getAsJsonObject("values").entrySet()) {
-                values.put(e.getKey(), GSON.fromJson(e.getValue(), Object.class));
-            }
-            String source = object.has("source") && object.get("source").isJsonPrimitive()
-                    ? object.get("source").getAsString() : "";
-            String revision = object.has("revision") && object.get("revision").isJsonPrimitive()
-                    ? object.get("revision").getAsString() : "";
-            boolean confirm = object.has("confirm")
-                    && object.get("confirm").isJsonPrimitive()
-                    && object.get("confirm").getAsBoolean();
-            return new SaveRequest(file, values, source, revision, confirm);
-        } catch (RuntimeException e) {
-            return null;
-        }
-    }
-
     /** 路由处理器记录失败（不把堆栈发给前端，只写服务端日志）。 */
     void warnRoute(HttpExchange exchange, RuntimeException error) {
         LOG.warn("[web] 处理 {} 失败: {}", exchange.getRequestURI().getPath(), error.getMessage());
@@ -1795,12 +1257,10 @@ public final class LocalWebServer {
                 status, System.currentTimeMillis() - startMs);
     }
 
-    private record SaveRequest(String file, Map<String, Object> values,
-                               String source, String revision, boolean confirm) {
-    }
-
     static final class BodyTooLarge extends Exception {
     }
 }
+
+
 
 
