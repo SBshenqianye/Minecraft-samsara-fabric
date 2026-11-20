@@ -11,6 +11,7 @@ import com.shenqianye.samsara.lottery.GoldPriceService;
 import com.shenqianye.samsara.lottery.ItemValueService;
 import com.shenqianye.samsara.lottery.LotteryConfig;
 import com.shenqianye.samsara.lottery.LotteryService;
+import com.shenqianye.samsara.lottery.LotteryViews;
 import com.shenqianye.samsara.output.OutputRenderer;
 import com.shenqianye.samsara.permission.PermissionRequirements;
 import net.minecraft.commands.CommandSourceStack;
@@ -139,20 +140,20 @@ public final class LotteryCommand {
 
     private static int status(CommandSourceStack source) {
         ServerPlayer player = source.getPlayer();
-        Map<String, Object> model = LotteryService.getInstance().statusModel(player);
+        LotteryViews.Status model = LotteryService.getInstance().statusModel(player);
         Map<String, Object> values = new LinkedHashMap<>();
-        values.put("dayLabel", String.valueOf(model.get("bettingDay")));
-        values.put("drawTime", String.valueOf(model.get("drawTime")));
-        values.put("cutoffTime", String.valueOf(model.get("cutoff")));
-        values.put("potLine", ItemValueService.getInstance().format(number(model.get("pot"))) + " VP");
-        values.put("ticketCount", String.valueOf(model.get("tickets")));
-        values.put("playerCount", String.valueOf(model.get("players")));
-        values.put("myTickets", String.valueOf(model.get("myTickets")));
-        Object last = model.get("last");
+        values.put("dayLabel", model.bettingDay());
+        values.put("drawTime", model.drawTime());
+        values.put("cutoffTime", model.cutoff());
+        values.put("potLine", ItemValueService.getInstance().format(model.pot()) + " VP");
+        values.put("ticketCount", String.valueOf(model.tickets()));
+        values.put("playerCount", String.valueOf(model.players()));
+        values.put("myTickets", model.myTickets());
+        LotteryViews.Result last = model.last();
         values.put("lastResultLine", last == null ? "上期：暂无记录。夜之城还没开始死人。"
-                : "上期：" + ((Map<?, ?>) last).get("deathCount") + " 个，"
-                + ((Map<?, ?>) last).get("winnerCount") + " 人中奖，奖池 "
-                + ItemValueService.getInstance().format(number(((Map<?, ?>) last).get("pot"))) + " VP");
+                : "上期：" + last.deathCount() + " 个，"
+                + last.winnerCount() + " 人中奖，奖池 "
+                + ItemValueService.getInstance().format(last.pot()) + " VP");
         ChatUi.send(source, OutputRenderer.render("lottery.status", values, source, null));
         return 1;
     }
@@ -272,16 +273,16 @@ public final class LotteryCommand {
     }
 
     private static int list(CommandSourceStack source, int page) {
-        List<Map<String, Object>> rows = LotteryService.getInstance().historyModel(page, 8);
+        List<LotteryViews.Result> rows = LotteryService.getInstance().historyModel(page, 8);
         if (rows.isEmpty()) {
             return reply(source, "尚无历史开奖。");
         }
         List<String> lines = new ArrayList<>();
-        for (Map<String, Object> row : rows) {
-            lines.add("· " + row.get("day") + " · 死亡 " + row.get("deathCount")
-                    + " · 中奖 " + row.get("winnerCount") + " 张 · 奖池 "
-                    + ItemValueService.getInstance().format(number(row.get("pot"))) + " VP"
-                    + (Boolean.TRUE.equals(row.get("rollover")) ? " · 滚存" : ""));
+        for (LotteryViews.Result row : rows) {
+            lines.add("· " + row.day() + " · 死亡 " + row.deathCount()
+                    + " · 中奖 " + row.winnerCount() + " 张 · 奖池 "
+                    + ItemValueService.getInstance().format(row.pot()) + " VP"
+                    + (row.rollover() ? " · 滚存" : ""));
         }
         int total = LotteryService.getInstance().historyCount();
         int pages = Math.max(1, (total + 7) / 8);
@@ -427,19 +428,17 @@ public final class LotteryCommand {
     }
 
     private static int fundList(CommandSourceStack source) {
-        Map<String, Object> model = LotteryService.getInstance().fundModel();
-        Object items = model.get("items");
-        if (!(items instanceof List<?> list) || list.isEmpty()) {
+        LotteryViews.Fund model = LotteryService.getInstance().fundModel();
+        if (model.items().isEmpty()) {
             return reply(source, "服务器基金为空。");
         }
         List<String> lines = new ArrayList<>();
-        lines.add("服务器基金 · 总价值 " + ItemValueService.getInstance().format(number(model.get("value"))) + " VP");
+        lines.add("服务器基金 · 总价值 "
+                + ItemValueService.getInstance().format(model.value()) + " VP");
         int index = 0;
-        for (Object value : list) {
-            if (value instanceof Map<?, ?> item) {
-                lines.add("[" + index + "] " + item.get("count") + " × " + item.get("item")
-                        + " · " + ItemValueService.getInstance().format(number(item.get("value"))) + " VP");
-            }
+        for (Map<String, Object> item : model.items()) {
+            lines.add("[" + index + "] " + item.get("count") + " × " + item.get("item")
+                    + " · " + ItemValueService.getInstance().format(number(item.get("value"))) + " VP");
             index++;
         }
         return reply(source, String.join("\n", lines));

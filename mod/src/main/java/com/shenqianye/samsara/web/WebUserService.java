@@ -1,5 +1,6 @@
 package com.shenqianye.samsara.web;
 
+import com.shenqianye.samsara.lottery.LotteryViews;
 import com.shenqianye.samsara.season.StackLayer;
 import com.shenqianye.samsara.season.StackManifest;
 import com.shenqianye.samsara.season.StackTeleport;
@@ -151,11 +152,9 @@ public final class WebUserService {
     }
 
     /** 公网只读乐透：奖池/票数/开奖时间/上期脱敏结果，不含实时死亡数。 */
-    public Map<String, Object> lottery() {
-        Map<String, Object> model = new LinkedHashMap<>(lotteryService().publicModel());
-        model.put("insurance", com.shenqianye.samsara.insurance.InsuranceService
-                .getInstance().summary());
-        return model;
+    public LotteryViews.PublicModel lottery() {
+        return lotteryService().publicModel().withInsurance(
+                com.shenqianye.samsara.insurance.InsuranceService.getInstance().summary());
     }
 
     /** 公网价值表：价格公开，不含玩家/保单/路径信息。 */

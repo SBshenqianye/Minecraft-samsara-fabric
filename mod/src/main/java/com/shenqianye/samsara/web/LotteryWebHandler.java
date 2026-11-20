@@ -1,5 +1,6 @@
 package com.shenqianye.samsara.web;
 
+import com.shenqianye.samsara.lottery.LotteryViews;
 import com.shenqianye.samsara.web.http.WebHttp;
 import com.sun.net.httpserver.HttpExchange;
 
@@ -55,10 +56,8 @@ final class LotteryWebHandler {
                     WebHttp.json(exchange, status, WebHttp.error("请求体过大"));
                     return;
                 }
-                Map<String, Object> result = lotteryService.writeFundInventory(body);
-                Object requested = result.get("status");
-                status = requested instanceof Number number ? number.intValue()
-                        : result.get("ok") == Boolean.TRUE ? 200 : 400;
+                LotteryViews.Outcome result = lotteryService.writeFundInventory(body);
+                status = result.httpStatus();
                 WebHttp.json(exchange, status, result);
                 return;
             }
@@ -77,3 +76,4 @@ final class LotteryWebHandler {
         }
     }
 }
+

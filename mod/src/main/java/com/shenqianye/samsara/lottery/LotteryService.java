@@ -403,30 +403,23 @@ public final class LotteryService {
 
     // ---- 状态 / 历史 ----
 
-    public synchronized Map<String, Object> statusModel(ServerPlayer player) {
+    public synchronized LotteryViews.Status statusModel(ServerPlayer player) {
         String betting = bettingDayId();
         DayData day = loadOrCreateDay(betting);
         DayData last = lastSettled();
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("bettingDay", betting);
-        out.put("countingDay", todayId());
-        out.put("drawTime", drawLabel(betting));
-        out.put("cutoff", cutoffLabel(betting));
-        out.put("pot", potValue(day) + valueOfEncoded(state.rollover));
-        out.put("tickets", totalTickets(day));
-        out.put("players", distinctPlayers(day));
-        out.put("myTickets", myTickets(day, player));
-        out.put("last", last == null ? null : resultModel(last));
-        out.put("enabled", LotteryConfig.getInstance().enabled());
-        return out;
+        return new LotteryViews.Status(betting, todayId(), drawLabel(betting), cutoffLabel(betting),
+                potValue(day) + valueOfEncoded(state.rollover), totalTickets(day),
+                distinctPlayers(day), myTickets(day, player),
+                last == null ? null : resultModel(last),
+                LotteryConfig.getInstance().enabled());
     }
 
-    public synchronized List<Map<String, Object>> historyModel(int page, int pageSize) {
+    public synchronized List<LotteryViews.Result> historyModel(int page, int pageSize) {
         List<String> ids = listSettledDayIds();
         ids.sort((a, b) -> compareDayId(b, a));
         int from = Math.max(0, (page - 1) * pageSize);
         int to = Math.min(ids.size(), from + pageSize);
-        List<Map<String, Object>> out = new ArrayList<>();
+        List<LotteryViews.Result> out = new ArrayList<>();
         for (int i = from; i < to; i++) {
             DayData day = loadDay(ids.get(i));
             if (day != null && day.result != null) {
@@ -483,16 +476,13 @@ public final class LotteryService {
         return "已取消并退款：" + dayId;
     }
 
-    public synchronized Map<String, Object> fundModel() {
+    public synchronized LotteryViews.Fund fundModel() {
         List<ItemStack> items = LotteryItemCodec.decodeAll(fund, registries);
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("value", ItemValueService.getInstance().valueOf(items));
-        out.put("items", itemModels(items));
-        return out;
+        return new LotteryViews.Fund(ItemValueService.getInstance().valueOf(items), itemModels(items));
     }
 
     /** 基金仓库：至少 54 格，按 Web 提交的槽位数自动扩容，无硬上限。 */
-    public synchronized Map<String, Object> fundInventory() {
+    public synchronized LotteryViews.FundInventory fundInventory() {
         List<String> slots = new ArrayList<>(fund);
         while (slots.size() < MIN_FUND_SLOTS) slots.add("");
         List<Map<String, Object>> items = new ArrayList<>();
@@ -507,21 +497,14 @@ public final class LotteryService {
             row.put("slot", i);
             items.add(row);
         }
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("ok", true);
-        out.put("size", slots.size());
-        out.put("minSize", MIN_FUND_SLOTS);
-        out.put("slots", slots);
-        out.put("items", items);
-        out.put("value", ItemValueService.getInstance()
-                .valueOf(LotteryItemCodec.decodeAll(slots, registries)));
-        return out;
+        return new LotteryViews.FundInventory(true, slots.size(), MIN_FUND_SLOTS, slots, items,
+                ItemValueService.getInstance().valueOf(LotteryItemCodec.decodeAll(slots, registries)));
     }
 
     /** 写回基金仓库；槽位数不设上限，提交更短的数组即可缩容回最小 54 格。 */
-    public synchronized Map<String, Object> writeFundInventory(List<String> slots) {
+    public synchronized LotteryViews.Outcome writeFundInventory(List<String> slots) {
         if (slots == null) {
-            return Map.of("ok", false, "status", 400, "error", "缺少 slots");
+            return new LotteryViews.WriteError(false, 400, "缺少 slots");
         }
         List<String> normalized = new ArrayList<>(slots);
         while (normalized.size() < MIN_FUND_SLOTS) normalized.add("");
@@ -530,12 +513,10 @@ public final class LotteryService {
             if (encoded == null || encoded.isBlank()) continue;
             ItemStack stack = LotteryItemCodec.decode(encoded, registries);
             if (stack.isEmpty()) {
-                return Map.of("ok", false, "status", 400,
-                        "error", "第 " + i + " 格物品编码无效");
+                return new LotteryViews.WriteError(false, 400, "第 " + i + " 格物品编码无效");
             }
             if (stack.getCount() <= 0) {
-                return Map.of("ok", false, "status", 400,
-                        "error", "第 " + i + " 格数量无效");
+                return new LotteryViews.WriteError(false, 400, "第 " + i + " 格数量无效");
             }
         }
         fund = normalized;
@@ -598,23 +579,16 @@ public final class LotteryService {
     }
 
     /** 管理端待领取列表：退款/中奖因背包满或离线而暂存的实物。 */
-    public synchronized List<Map<String, Object>> claimModels() {
-        List<Map<String, Object>> out = new ArrayList<>();
+    public synchronized List<LotteryViews.Claim> claimModels() {
+        List<LotteryViews.Claim> out = new ArrayList<>();
         for (ClaimData claim : claims) {
             if (claim.claimed) {
                 continue;
             }
-            Map<String, Object> row = new LinkedHashMap<>();
-            row.put("owner", claim.ownerName);
-            row.put("dataUuid", claim.dataUuid);
-            row.put("reason", claim.reason);
-            row.put("at", claim.at);
-            row.put("items", itemModels(LotteryItemCodec.decodeAll(claim.items, registries)));
-            out.add(row);
+            out.add(new LotteryViews.Claim(claim.ownerName, claim.dataUuid, claim.reason, claim.at,
+                    itemModels(LotteryItemCodec.decodeAll(claim.items, registries))));
         }
-        out.sort((a, b) -> Long.compare(
-                ((Number) b.getOrDefault("at", 0L)).longValue(),
-                ((Number) a.getOrDefault("at", 0L)).longValue()));
+        out.sort((a, b) -> Long.compare(b.at(), a.at()));
         return out;
     }
 
@@ -683,108 +657,85 @@ public final class LotteryService {
                 : "；背包空间不足，" + delivery.remainder().get(0).getCount() + " 个仍在基金");
     }
 
-    private Map<String, Object> goldModel() {
+    private LotteryViews.Gold goldModel() {
         LotteryConfig config = LotteryConfig.getInstance();
         ItemValueService values = ItemValueService.getInstance();
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("enabled", config.goldSyncEnabled());
-        out.put("price", GoldPriceService.getInstance().currentUsdPerOunce());
-        out.put("updatedAt", GoldPriceService.getInstance().updatedAt());
-        out.put("source", GoldPriceService.getInstance().source());
-        out.put("baseBlockValue", config.goldBaseBlockValue());
-        out.put("reference", config.goldReferenceUsdPerOunce());
-        out.put("blockValue", values.unitValue("minecraft:gold_block"));
-        out.put("ingotValue", values.unitValue("minecraft:gold_ingot"));
-        out.put("nuggetValue", values.unitValue("minecraft:gold_nugget"));
-        return out;
+        return new LotteryViews.Gold(config.goldSyncEnabled(),
+                GoldPriceService.getInstance().currentUsdPerOunce(),
+                GoldPriceService.getInstance().updatedAt(),
+                GoldPriceService.getInstance().source(),
+                config.goldBaseBlockValue(),
+                config.goldReferenceUsdPerOunce(),
+                values.unitValue("minecraft:gold_block"),
+                values.unitValue("minecraft:gold_ingot"),
+                values.unitValue("minecraft:gold_nugget"));
     }
 
-    public synchronized Map<String, Object> adminModel() {
+    public synchronized LotteryViews.Admin adminModel() {
         String betting = bettingDayId();
         DayData day = loadOrCreateDay(betting);
         DayData counting = loadOrCreateDay(todayId());
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("enabled", LotteryConfig.getInstance().enabled());
-        out.put("mode", dayMode());
-        out.put("bettingDay", dayModel(day));
-        out.put("countingDay", dayModel(counting));
         double rolloverValue = valueOfEncoded(state.rollover == null ? List.of() : state.rollover);
-        out.put("rollover", rolloverValue);
-        out.put("rolloverItems", itemModels(LotteryItemCodec.decodeAll(
-                state.rollover == null ? List.of() : state.rollover, registries)));
-        out.put("activePot", potValue(counting) + rolloverValue);
-        out.put("activePotItems", itemModels(activePotItems(counting)));
-        out.put("bettingPot", potValue(day));
-        out.put("bettingPotItems", itemModels(dayPotItems(day)));
-        out.put("claims", claimModels());
-        out.put("gold", goldModel());
-        out.put("fund", fundModel());
-        out.put("history", historyModel(1, 10));
-        out.put("configPath", LotteryConfig.getInstance().configPath());
-        return out;
+        return new LotteryViews.Admin(
+                LotteryConfig.getInstance().enabled(),
+                dayMode(),
+                dayModel(day),
+                dayModel(counting),
+                rolloverValue,
+                itemModels(LotteryItemCodec.decodeAll(
+                        state.rollover == null ? List.of() : state.rollover, registries)),
+                potValue(counting) + rolloverValue,
+                itemModels(activePotItems(counting)),
+                potValue(day),
+                itemModels(dayPotItems(day)),
+                claimModels(),
+                goldModel(),
+                fundModel(),
+                historyModel(1, 10),
+                LotteryConfig.getInstance().configPath(),
+                null);
     }
 
-    public synchronized Map<String, Object> publicModel() {
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("ok", true);
-        out.put("scope", "user");
-        out.put("enabled", LotteryConfig.getInstance().enabled() && LotteryConfig.getInstance().publicVisible());
-        if (!LotteryConfig.getInstance().publicVisible()) {
-            return out;
+    public synchronized LotteryViews.PublicModel publicModel() {
+        LotteryConfig config = LotteryConfig.getInstance();
+        boolean visible = config.publicVisible();
+        boolean enabled = config.enabled() && visible;
+        if (!visible) {
+            return new LotteryViews.PublicModel(true, "user", enabled, null, null, null, null, null,
+                    null, null);
         }
         String betting = bettingDayId();
         DayData day = loadOrCreateDay(betting);
         DayData counting = loadOrCreateDay(todayId());
         double rolloverValue = valueOfEncoded(state.rollover == null ? List.of() : state.rollover);
-        Map<String, Object> round = new LinkedHashMap<>();
-        round.put("day", betting);
-        round.put("drawTime", drawLabel(betting));
-        round.put("cutoff", cutoffLabel(betting));
-        round.put("ownPot", potValue(day));
-        round.put("seedValue", valueOfEncoded(day.seed == null ? List.of() : day.seed));
-        round.put("pot", potValue(day) + rolloverValue);
-        round.put("tickets", totalTickets(day));
-        round.put("players", distinctPlayers(day));
-        round.put("items", publicItemModels(itemModels(dayPotItems(day))));
-        out.put("round", round);
-        Map<String, Object> active = new LinkedHashMap<>();
-        active.put("day", counting.dayId);
-        active.put("drawTime", drawLabel(counting.dayId));
-        active.put("cutoff", cutoffLabel(counting.dayId));
-        active.put("seedValue", valueOfEncoded(counting.seed == null ? List.of() : counting.seed));
-        active.put("pot", potValue(counting) + rolloverValue);
-        active.put("tickets", totalTickets(counting));
-        active.put("players", distinctPlayers(counting));
-        active.put("items", publicItemModels(itemModels(activePotItems(counting))));
-        out.put("active", active);
-        out.put("rollover", rolloverValue);
+        LotteryViews.Round round = new LotteryViews.Round(betting, drawLabel(betting),
+                cutoffLabel(betting), potValue(day),
+                valueOfEncoded(day.seed == null ? List.of() : day.seed),
+                potValue(day) + rolloverValue, totalTickets(day), distinctPlayers(day),
+                publicItemModels(itemModels(dayPotItems(day))));
+        LotteryViews.Active active = new LotteryViews.Active(counting.dayId,
+                drawLabel(counting.dayId), cutoffLabel(counting.dayId),
+                valueOfEncoded(counting.seed == null ? List.of() : counting.seed),
+                potValue(counting) + rolloverValue, totalTickets(counting),
+                distinctPlayers(counting), publicItemModels(itemModels(activePotItems(counting))));
         DayData last = lastSettled();
-        out.put("last", last == null ? null : publicResult(last));
-        Map<String, Object> fundModel = fundModel();
-        Map<String, Object> fund = new LinkedHashMap<>();
-        fund.put("value", fundModel.get("value"));
+        LotteryViews.Fund fundModel = fundModel();
         List<Map<String, Object>> publicItems = new ArrayList<>();
-        if (fundModel.get("items") instanceof List<?> list) {
-            for (Object entry : list) {
-                if (entry instanceof Map<?, ?> raw) {
-                    Map<String, Object> item = new LinkedHashMap<>();
-                    for (String key : List.of("id", "item", "name", "zh", "icon", "count", "value")) {
-                        if (raw.containsKey(key)) item.put(key, raw.get(key));
-                    }
-                    publicItems.add(item);
-                }
+        for (Map<String, Object> raw : fundModel.items()) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            for (String key : List.of("id", "item", "name", "zh", "icon", "count", "value")) {
+                if (raw.containsKey(key)) item.put(key, raw.get(key));
             }
+            publicItems.add(item);
         }
-        fund.put("count", publicItems.size());
-        fund.put("items", publicItems);
-        out.put("fund", fund);
-        Map<String, Object> gold = new LinkedHashMap<>();
-        gold.put("enabled", LotteryConfig.getInstance().goldSyncEnabled());
-        gold.put("price", GoldPriceService.getInstance().currentUsdPerOunce());
-        gold.put("updatedAt", GoldPriceService.getInstance().updatedAt());
-        gold.put("blockValue", ItemValueService.getInstance().unitValue("minecraft:gold_block"));
-        out.put("gold", gold);
-        return out;
+        LotteryViews.PublicFund fund = new LotteryViews.PublicFund(fundModel.value(),
+                publicItems.size(), publicItems);
+        LotteryViews.PublicGold gold = new LotteryViews.PublicGold(config.goldSyncEnabled(),
+                GoldPriceService.getInstance().currentUsdPerOunce(),
+                GoldPriceService.getInstance().updatedAt(),
+                ItemValueService.getInstance().unitValue("minecraft:gold_block"));
+        return new LotteryViews.PublicModel(true, "user", enabled, round, active, rolloverValue,
+                last == null ? null : publicResult(last), fund, gold, null);
     }
 
     private static String iconName(String itemId) {
@@ -1728,69 +1679,50 @@ public final class LotteryService {
         return out;
     }
 
-    private Map<String, Object> dayModel(DayData day) {
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("day", day.dayId);
-        out.put("state", day.state);
-        out.put("covered", day.covered);
-        out.put("deathCount", day.deathCount);
-        out.put("playerDeaths", day.playerDeaths);
-        out.put("villagerDeaths", day.villagerDeaths);
-        out.put("namedMobDeaths", day.namedMobDeaths);
-        out.put("tickets", totalTickets(day));
-        out.put("seeded", day.seeded);
-        out.put("seedValue", valueOfEncoded(day.seed == null ? List.of() : day.seed));
-        out.put("seedItems", itemModels(day.seed == null ? List.of()
-                : LotteryItemCodec.decodeAll(day.seed, registries)));
-        out.put("ownPot", potValue(day));
-        out.put("pot", potValue(day) + valueOfEncoded(state.rollover));
-        out.put("potItems", itemModels(dayPotItems(day)));
-        out.put("drawTime", drawLabel(day.dayId));
-        out.put("cutoff", cutoffLabel(day.dayId));
-        List<Map<String, Object>> bets = new ArrayList<>();
+    private LotteryViews.Day dayModel(DayData day) {
+        List<LotteryViews.Bet> bets = new ArrayList<>();
         for (BetData bet : day.bets) {
-            Map<String, Object> item = new LinkedHashMap<>();
-            item.put("name", bet.ownerName);
-            item.put("guess", bet.guess);
-            item.put("tickets", ticketsOf(bet));
-            item.put("value", bet.value);
-            bets.add(item);
+            bets.add(new LotteryViews.Bet(bet.ownerName, bet.guess, ticketsOf(bet), bet.value));
         }
-        out.put("bets", bets);
-        return out;
+        return new LotteryViews.Day(day.dayId, day.state, day.covered, day.deathCount,
+                day.playerDeaths, day.villagerDeaths, day.namedMobDeaths, totalTickets(day),
+                day.seeded,
+                valueOfEncoded(day.seed == null ? List.of() : day.seed),
+                itemModels(day.seed == null ? List.of()
+                        : LotteryItemCodec.decodeAll(day.seed, registries)),
+                potValue(day),
+                potValue(day) + valueOfEncoded(state.rollover),
+                itemModels(dayPotItems(day)),
+                drawLabel(day.dayId), cutoffLabel(day.dayId), bets);
     }
 
-    private Map<String, Object> resultModel(DayData day) {
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("day", day.dayId);
-        out.put("deathCount", day.result == null ? day.deathCount : day.result.deathCount);
-        out.put("winnerCount", day.result == null ? 0 : day.result.winningTickets);
-        out.put("pot", day.result == null ? 0 : day.result.potValue);
-        out.put("rake", day.result == null ? 0 : day.result.rakeValue);
-        out.put("rollover", day.result != null && day.result.rollover);
-        out.put("refunded", day.result != null && day.result.refunded);
-        out.put("refundReason", day.result == null ? "" : day.result.refundReason);
-        out.put("winners", day.result == null ? List.of() : day.result.winnerNames);
-        out.put("at", day.result == null ? 0 : day.result.at);
-        return out;
+    private LotteryViews.Result resultModel(DayData day) {
+        return new LotteryViews.Result(day.dayId,
+                day.result == null ? day.deathCount : day.result.deathCount,
+                day.result == null ? 0 : day.result.winningTickets,
+                day.result == null ? 0 : day.result.potValue,
+                day.result == null ? 0 : day.result.rakeValue,
+                day.result != null && day.result.rollover,
+                day.result != null && day.result.refunded,
+                day.result == null ? "" : day.result.refundReason,
+                day.result == null ? List.of() : day.result.winnerNames,
+                day.result == null ? 0 : day.result.at);
     }
 
-    private Map<String, Object> publicResult(DayData day) {
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("day", day.dayId);
-        out.put("deathCount", day.result == null ? day.deathCount : day.result.deathCount);
-        out.put("winnerCount", day.result == null ? 0 : day.result.winningTickets);
-        out.put("pot", day.result == null ? 0 : day.result.potValue);
-        out.put("rollover", day.result != null && day.result.rollover);
-        out.put("refunded", day.result != null && day.result.refunded);
+    private LotteryViews.PublicResult publicResult(DayData day) {
         List<String> masked = new ArrayList<>();
         if (day.result != null && day.result.winnerNames != null) {
             for (String name : day.result.winnerNames) {
                 masked.add(mask(name));
             }
         }
-        out.put("winners", masked);
-        return out;
+        return new LotteryViews.PublicResult(day.dayId,
+                day.result == null ? day.deathCount : day.result.deathCount,
+                day.result == null ? 0 : day.result.winningTickets,
+                day.result == null ? 0 : day.result.potValue,
+                day.result != null && day.result.rollover,
+                day.result != null && day.result.refunded,
+                masked);
     }
 
     private int claimCount(UUID uuid) {
