@@ -309,8 +309,13 @@ class LocalWebServerTest {
         }
 
         @Override
-        public Map<String, Object> status() {
-            return Map.of("version", "0.18.0-test", "worldDataRoot", "/tmp/world/samsara");
+        public ServerStatus status() {
+            return new ServerStatus("test", "test", "26.3", "/tmp/config", "/tmp/world/samsara",
+                    "/tmp/global", true, "", "", "/tmp/identity", true, "", List.of(), List.of());
         }
     }
 }
+
+
+
+

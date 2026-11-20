@@ -6,9 +6,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 只读「存储布局」模型：每类数据在哪、多大、最近写入、是否随周目/备份。
@@ -17,12 +15,35 @@ import java.util.Map;
  */
 public final class StorageLayoutWebService {
 
-    private volatile Map<String, Object> cached;
+    public record StorageLayout(
+            boolean ok,
+            String serverRoot,
+            boolean globalFollowWorld,
+            List<Row> rows
+    ) {
+    }
+
+    public record Row(
+            String id,
+            String label,
+            String path,
+            boolean followsWorld,
+            String backup,
+            String note,
+            long bytes,
+            int files,
+            long updatedAt,
+            boolean exists,
+            boolean truncated
+    ) {
+    }
+
+    private volatile StorageLayout cached;
     private volatile long cachedAt;
 
-    public Map<String, Object> model() {
+    public StorageLayout model() {
         long now = System.currentTimeMillis();
-        Map<String, Object> hit = cached;
+        StorageLayout hit = cached;
         if (hit != null && now - cachedAt < 30_000L) {
             return hit;
         }
@@ -30,17 +51,17 @@ public final class StorageLayoutWebService {
             if (cached != null && System.currentTimeMillis() - cachedAt < 30_000L) {
                 return cached;
             }
-            Map<String, Object> built = build();
+            StorageLayout built = build();
             cached = built;
             cachedAt = System.currentTimeMillis();
             return built;
         }
     }
 
-    private Map<String, Object> build() {
+    private StorageLayout build() {
         StoragePaths paths = StoragePaths.get();
         Path serverRoot = paths.serverRoot();
-        List<Map<String, Object>> rows = new ArrayList<>();
+        List<Row> rows = new ArrayList<>();
         rows.add(row("config", "服务器配置", paths.configRootPath(),
                 false, "进本体备份", "可手改的 YAML / web.yml"));
         rows.add(row("world", "世界数据（当前周目）", paths.worldDataRoot(),
@@ -55,31 +76,14 @@ public final class StorageLayoutWebService {
                 false, "进本体备份", "跟随 globalFollowWorld 的玩家/存档数据"));
         rows.add(row("backups", "备份目录", StoragePaths.backupsRootAt(serverRoot),
                 false, "不备份", "本体 / 世界栈 / 删除 / 配置备份"));
-
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("ok", true);
-        out.put("serverRoot", serverRoot.toString());
-        out.put("globalFollowWorld", paths.globalFollowWorld());
-        out.put("rows", rows);
-        return out;
+        return new StorageLayout(true, serverRoot.toString(), paths.globalFollowWorld(), rows);
     }
 
-    private static Map<String, Object> row(String id, String label, Path path,
-                                           boolean followsWorld, String backup, String note) {
-        Map<String, Object> row = new LinkedHashMap<>();
-        row.put("id", id);
-        row.put("label", label);
-        row.put("path", path == null ? "" : path.toString());
-        row.put("followsWorld", followsWorld);
-        row.put("backup", backup);
-        row.put("note", note);
+    private static Row row(String id, String label, Path path,
+                           boolean followsWorld, String backup, String note) {
         Stats stats = stats(path);
-        row.put("bytes", stats.bytes);
-        row.put("files", stats.files);
-        row.put("updatedAt", stats.updatedAt);
-        row.put("exists", stats.exists);
-        row.put("truncated", stats.truncated);
-        return row;
+        return new Row(id, label, path == null ? "" : path.toString(), followsWorld, backup, note,
+                stats.bytes, stats.files, stats.updatedAt, stats.exists, stats.truncated);
     }
 
     private record Stats(long bytes, int files, long updatedAt, boolean exists, boolean truncated) {

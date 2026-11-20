@@ -10,6 +10,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -175,8 +176,14 @@ class IdentityWebServerTest {
         }
 
         @Override
-        public Map<String, Object> status() {
-            return Map.of("version", "0.20.0-test");
+        public ServerStatus status() {
+            return new ServerStatus("test", "test", "26.3", "/tmp/config", "/tmp/world/samsara",
+                    "/tmp/global", true, "", "", "/tmp/identity", true, "", List.of(), List.of());
         }
     }
 }
+
+
+
+
+

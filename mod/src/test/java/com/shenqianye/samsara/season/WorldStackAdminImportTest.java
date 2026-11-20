@@ -391,7 +391,7 @@ class WorldStackAdminImportTest {
         Files.createDirectories(archive);
         Files.writeString(archive.resolve("marker.txt"), "keep", StandardCharsets.UTF_8);
 
-        int removed = WorldStackAdmin.pruneBackups(world, 2);
+        int removed = WorldStackBackupRetention.prune(world, WorldStackAdmin.backupRoot(world), 2);
 
         assertEquals(2, removed);
         try (var stream = Files.list(backup)) {
@@ -499,3 +499,4 @@ class WorldStackAdminImportTest {
         assertEquals(false, result.get("ok"));
     }
 }
+

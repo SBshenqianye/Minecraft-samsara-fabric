@@ -19,7 +19,7 @@ public interface ConfigService {
     Map<String, Object> reload();
 
     /** GET /api/status */
-    Map<String, Object> status();
+    ServerStatus status();
 
     record SaveOutcome(boolean ok, Map<String, String> errors) {
     }

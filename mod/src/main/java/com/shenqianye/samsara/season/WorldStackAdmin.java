@@ -110,92 +110,6 @@ public final class WorldStackAdmin {
         }
     }
 
-    /** 保留份数；读不到配置时回退默认值。 */
-    public static int backupKeep() {
-        try {
-            return Math.max(0, ConfigManager.getInstance()
-                    .integer(ConfigSchema.WEB, "backupKeep"));
-        } catch (RuntimeException e) {
-            return 5;
-        }
-    }
-
-    /**
-     * 只清理服务器级 {@code world-stack-backup}（导入/提升栈顶的临时回滚备份）。
-     * {@code world-stack-archive} 是用户数据，永不自动删除。
-     *
-     * @return 实际删除的目录数
-     */
-    public static int pruneBackups(Path worldDir, int keep) {
-        if (keep <= 0) {
-            return 0;
-        }
-        Path root = backupRoot(worldDir);
-        if (!Files.isDirectory(root)) {
-            return 0;
-        }
-        List<Path> dirs = new ArrayList<>();
-        try (Stream<Path> stream = Files.list(root)) {
-            stream.filter(Files::isDirectory)
-                    // pre-restore 是撤销前保留的当前状态，属于用户安全网，不参与自动清理。
-                    .filter(path -> {
-                        String name = path.getFileName().toString();
-                        return !name.startsWith("pre-restore-") && !name.startsWith("restore-");
-                    })
-                    .forEach(dirs::add);
-        } catch (IOException e) {
-            Samsara.LOGGER.warn("[世界栈] 读取备份目录失败 {}: {}", root, e.getMessage());
-            return 0;
-        }
-        if (dirs.size() <= keep) {
-            return 0;
-        }
-        dirs.sort(Comparator.comparingLong(WorldStackAdmin::lastModified).reversed());
-        int removed = 0;
-        for (int i = keep; i < dirs.size(); i++) {
-            Path old = dirs.get(i);
-            if (protectedBackup(worldDir, old)) {
-                continue;
-            }
-            deleteRecursive(old);
-            if (!Files.exists(old)) {
-                removed++;
-            }
-        }
-        if (removed > 0) {
-            Samsara.LOGGER.info("[世界栈] 备份清理（保留最新 {} 份）: 删除 {} 个旧目录",
-                    keep, removed);
-        }
-        return removed;
-    }
-
-    /**
-     * pre-restore 是撤销/恢复的安全网，永不自动删除；时间线末端操作快照也保留，
-     * 否则用户刚排队撤销、重启前恰好触发保留策略时会丢失撤销依据。
-     */
-    private static boolean protectedBackup(Path worldDir, Path dir) {
-        String name = dir.getFileName().toString();
-        if (name.startsWith(WorldStackTimeline.PRE_RESTORE_PREFIX)
-                || name.startsWith(WorldStackTimeline.RESTORE_STAGING_PREFIX)) {
-            return true;
-        }
-        Path operation = dir.resolve(WorldStackTimeline.FILE_NAME);
-        if (!Files.isRegularFile(operation)) {
-            return false;
-        }
-        WorldStackTimeline.Operation op = WorldStackTimeline.readOperation(worldDir, operation);
-        return op != null && op.restorable && op.restoredAt == 0
-                && WorldStackTimeline.headId(worldDir).equals(op.id);
-    }
-
-    private static long lastModified(Path path) {
-        try {
-            return Files.getLastModifiedTime(path).toMillis();
-        } catch (IOException e) {
-            return 0L;
-        }
-    }
-
     // ---- 模型 ----
 
     public static Model model(Path worldDir, Path serverRoot, List<Path> importRoots) {
@@ -225,7 +139,7 @@ public final class WorldStackAdmin {
         model.lastReport = readJobFile(worldDir.resolve("samsara").resolve(JOBS_DIR)
                 .resolve(LAST_RESULT));
         model.files = fileTree(worldDir, model.stacks);
-        model.backupKeep = backupKeep();
+        model.backupKeep = WorldStackBackupRetention.backupKeep();
         return model;
     }
 
@@ -282,7 +196,7 @@ public final class WorldStackAdmin {
         addFile(out, 1, "backups/samsara/world-stack-archive/", archiveRoot(worldDir),
                 "栈层归档备份（不随存档；用户数据，不自动删除）", true);
         addFile(out, 1, "backups/samsara/world-stack-backup/", backupRoot(worldDir),
-                "导入/提升栈顶的备份（不随存档，保留最近 " + backupKeep() + " 份）", true);
+                "导入/提升栈顶的备份（不随存档，保留最近 " + WorldStackBackupRetention.backupKeep() + " 份）", true);
         addFile(out, 1, "backups/samsara/server-backups/", server.resolve("backups/samsara/server-backups"),
                 "本体存档备份（world + 服务器配置，不随存档）", false);
         addFile(out, 1, "backups/samsara/server-backup-jobs/", server.resolve("backups/samsara/server-backup-jobs"),
@@ -1010,7 +924,7 @@ public final class WorldStackAdmin {
             WorldStackTimeline.consumePendingRestore(worldDir);
             return;
         }
-        pruneBackups(worldDir, backupKeep());
+        WorldStackBackupRetention.prune(worldDir, backupRoot(worldDir), WorldStackBackupRetention.backupKeep());
         int pendingCount = (imports.isEmpty() ? 0 : 1)
                 + (Files.exists(archiveFile) ? 1 : 0) + (Files.exists(promoteFile) ? 1 : 0);
         if (Files.isRegularFile(worldDir.resolve("samsara/pending-new.json"))
@@ -2404,4 +2318,5 @@ public final class WorldStackAdmin {
         int files;
     }
 }
+
 

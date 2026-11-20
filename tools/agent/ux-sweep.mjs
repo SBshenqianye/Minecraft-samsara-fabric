@@ -9,13 +9,21 @@ const base = (args.base || 'http://127.0.0.1:8722').replace(/\/+$/, '');
 const token = args.token || process.env.SAMSARA_TOKEN || 'testtoken';
 
 const ROUTES = [
-  '/samsara/economy', '/samsara/economy/lottery', '/samsara/economy/fund',
-  '/samsara/economy/insurance', '/samsara/sky/track', '/samsara/sky/diff',
-  '/samsara/sky/containers', '/samsara/config', '/samsara/config/editor',
-  '/samsara/config/permissions', '/samsara/config/output', '/samsara/config/advanced',
-  '/samsara/world/stack', '/samsara/world/map', '/samsara/community/announcements',
-  '/samsara/community/identity', '/samsara/system/audit', '/samsara/system/storage',
-  '/vanilla/config', '/vanilla/backup', '/vanilla/console', '/user',
+  '/', '/samsara/economy', '/samsara/economy/overview', '/samsara/economy/current',
+  '/samsara/economy/values', '/samsara/economy/fund', '/samsara/economy/fund-inventory',
+  '/samsara/economy/lottery', '/samsara/economy/insurance', '/samsara/economy/history',
+  '/samsara/sky/track', '/samsara/sky/diff', '/samsara/sky/containers',
+  '/samsara/sky/inventory', '/samsara/sky/web-inventory',
+  '/samsara/config', '/samsara/config/editor', '/samsara/config/advanced',
+  '/samsara/config/permissions', '/samsara/config/output', '/samsara/config/claim-range',
+  '/samsara/world', '/samsara/world/stack', '/samsara/world/map',
+  '/samsara/community', '/samsara/community/announcements', '/samsara/community/identity',
+  '/samsara/system', '/samsara/system/audit', '/samsara/system/storage',
+  '/vanilla', '/vanilla/config', '/vanilla/backup', '/vanilla/console', '/vanilla/audit',
+  '/server', '/server/config', '/server/backup', '/server/console', '/server/audit',
+  '/containers', '/identity-inventory-inline', '/identity-inventory', '/user',
+  '/lottery', '/track', '/diff', '/sky/containers', '/inventory', '/config-editor',
+  '/permissions', '/announcements',
 ];
 
 const session = await launchPage({ profilePrefix: 'samsara-ux-' });

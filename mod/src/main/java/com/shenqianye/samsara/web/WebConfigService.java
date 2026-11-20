@@ -41,36 +41,33 @@ public final class WebConfigService implements ConfigService {
     }
 
     @Override
-    public Map<String, Object> status() {
+    public ServerStatus status() {
         StoragePaths paths = StoragePaths.ready() ? StoragePaths.get() : null;
         ConfigManager config = ConfigManager.getInstance();
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("version", FabricLoader.getInstance().getModContainer("samsara")
-                .map(c -> c.getMetadata().getVersion().getFriendlyString()).orElse("unknown"));
-        out.put("webVersion", WebVersion.VALUE);
-        out.put("minecraft", SharedConstants.getCurrentVersion().name());
-        out.put("configRoot", paths == null ? StoragePaths.configRoot().toString()
-                : paths.configRootPath().toString());
-        out.put("worldDataRoot", paths == null ? "（服务器尚未启动）" : paths.worldDataRoot().toString());
-        out.put("globalDataRoot", paths == null ? "（服务器尚未启动）" : paths.globalDataRoot().toString());
-        out.put("globalFollowWorld", paths == null
+        String version = FabricLoader.getInstance().getModContainer("samsara")
+                .map(c -> c.getMetadata().getVersion().getFriendlyString()).orElse("unknown");
+        String configRoot = paths == null ? StoragePaths.configRoot().toString()
+                : paths.configRootPath().toString();
+        String worldRoot = paths == null ? "（服务器尚未启动）" : paths.worldDataRoot().toString();
+        String globalRoot = paths == null ? "（服务器尚未启动）" : paths.globalDataRoot().toString();
+        boolean follow = paths == null
                 ? config.bool(ConfigSchema.STORAGE, "globalFollowWorld")
-                : paths.globalFollowWorld());
-        out.put("migration", paths == null ? "尚未初始化" : paths.migrationSummary());
-        out.put("globalMigration", paths == null ? "" : paths.globalMigrationSummary());
+                : paths.globalFollowWorld();
         com.shenqianye.samsara.identity.IdentityService identity =
                 com.shenqianye.samsara.identity.IdentityService.getInstance();
-        out.put("identityRoot", identity.identityRoot() == null ? "（服务器尚未启动）"
-                : identity.identityRoot().toString());
-        out.put("identityEnabled", identity.enabled());
-        out.put("identityConfig", identity.configStore() == null ? ""
-                : identity.configStore().file().toString());
-        List<String> warnings = ConfigManager.getInstance().warnings();
-        out.put("warnings", warnings);
-        out.put("configFiles", ConfigSchema.fileIds().stream()
-                .map(id -> Map.of("id", id, "path",
+        String identityRoot = identity.identityRoot() == null ? "（服务器尚未启动）"
+                : identity.identityRoot().toString();
+        String identityConfig = identity.configStore() == null ? ""
+                : identity.configStore().file().toString();
+        List<ServerStatus.ConfigFileRef> files = ConfigSchema.fileIds().stream()
+                .map(id -> new ServerStatus.ConfigFileRef(id,
                         config.file(id).toAbsolutePath().normalize().toString()))
-                .toList());
-        return out;
+                .toList();
+        return new ServerStatus(version, WebVersion.VALUE,
+                SharedConstants.getCurrentVersion().name(), configRoot, worldRoot, globalRoot, follow,
+                paths == null ? "尚未初始化" : paths.migrationSummary(),
+                paths == null ? "" : paths.globalMigrationSummary(),
+                identityRoot, identity.enabled(), identityConfig,
+                ConfigManager.getInstance().warnings(), files);
     }
 }

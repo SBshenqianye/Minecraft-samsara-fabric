@@ -137,8 +137,9 @@ class OutputPermissionWebServerTest {
         }
 
         @Override
-        public Map<String, Object> status() {
-            return Map.of("version", "test");
+        public ServerStatus status() {
+            return new ServerStatus("test", "test", "26.3", "/tmp/config", "/tmp/world/samsara",
+                    "/tmp/global", true, "", "", "/tmp/identity", true, "", List.of(), List.of());
         }
     }
 
@@ -199,3 +200,7 @@ class OutputPermissionWebServerTest {
         }
     }
 }
+
+
+
+

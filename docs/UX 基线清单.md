@@ -90,6 +90,7 @@
 - 未捕获脚本错误。
 
 22 条代表路由的结果：**0 页面级溢出、0 正 tabindex、0 脚本错误**。
+扩展到 `router.js` 里全部 52 条静态路径/别名（含 `/server/*`、旧别名与公开端）后重跑，仍是 **0 问题**。
 唯一真实对比度问题是选中态白字压在青绿底上（1.86:1），已统一改为 `var(--accent-ink)`：
 
 - `.section-tab.active`、`.el-segmented__item-selected`
