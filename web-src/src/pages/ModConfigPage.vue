@@ -1,7 +1,7 @@
 <template>
   <TabShell name="mod-config" :title="modId || '其他模组'"
       description="按模组配置路径递归浏览；文件页复用 PageSpec/FormSpec 配置编辑器。">
-    <p v-if="error" class="container-message error">{{ error }}</p>
+    <StateBlock :error="error" />
     <p v-if="message" class="container-message ok">{{ message }}</p>
 
     <div class="mod-config-layout">
@@ -67,6 +67,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import TabShell from '../components/TabShell.vue';
+import StateBlock from '../components/StateBlock.vue';
 import FolderTree from '../components/FolderTree.vue';
 import ConfigEditorPanel from './config-editor/ConfigEditorPanel.vue';
 import { useConfigEditor } from './config-editor/useConfigEditor.js';

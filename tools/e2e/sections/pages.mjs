@@ -77,9 +77,11 @@ export default {
         })(),
         extra: (${page.extra.toString()})(),
         errors: window.__e2eErrors || [],
+        stateErrors: document.querySelectorAll('[data-state="error"]').length,
       }))()`);
       check(page.label, state.path === page.route && state.panel
-        && state.extra && state.errors.length === 0, JSON.stringify(state));
+        && state.extra && state.errors.length === 0 && state.stateErrors === 0,
+        JSON.stringify(state));
     }
 
     const errors = await evaluate('window.__e2eErrors || []');

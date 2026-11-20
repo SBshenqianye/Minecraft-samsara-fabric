@@ -31,6 +31,15 @@
 - 页面/组件禁止直接 `fetch`；统一走 `useApi`（含 `authHeaders` / `loadBinary`）。
 - 不在浏览器内编译模板；CSP 禁止 `unsafe-eval`。
 
+## 4.1 加载 / 错误 / 空态（强制）
+
+- **整页状态**用 `components/PageState.vue`（`loading` / `error` / `empty`，可带 `#actions` 重试）。
+- **区块状态**用 `components/StateBlock.vue`（同一组 props，内联、无整页外边距），嵌在页面自己的布局里；出错时**只影响该区块**，不吞掉同页已加载的数据。
+- 禁止在页面里手写 `<p class="container-message error">`、“读取中…”“加载中…”这类一次性状态文案；确有特殊排版（如顶部全局 banner）时，不要复用错误块类名。
+- 顶栏按钮的 `:loading`（Element Plus）不受此限。
+- 守卫：`tools/agent/check-page-state.mjs` 已接入 `npm run check`（`check:page-state`），顶层页面出现手写错误块会直接失败；E2E 的 `pages` 段还会断言页面上不出现 `[data-state="error"]`。
+
+
 ## 5. 新增或重构页面
 
 1. 先写 `pages/XxxPage.vue`，复杂逻辑抽到 `pages/<page>/model.js` 并补单测。

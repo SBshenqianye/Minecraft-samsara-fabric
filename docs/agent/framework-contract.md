@@ -18,9 +18,10 @@
 4. 禁止 `import legacy-core/`、`import src/legacy/`、`useLegacyPage`、`LegacyPanel`、`window.Samsara*`。
 5. 复杂内核放 `src/pages/<page>/`：纯逻辑进 `model.js` 并加单测，Vue 组件只做展示与事件绑定。
 6. 禁止 `innerHTML` / `insertAdjacentHTML` / `document.write`。
-7. 新增 SPA 路由只改两处：`router.js` + `WebSecurity.staticResource`；需要子导航再加 `navigation.js`。
-8. 保持状态页面加入 `KEEP_ALIVE_PAGES`，并 `defineOptions({ name: 'XxxPage' })`。
-9. 页面连接状态与 token 用 `useSession` / `useApi`；跨页导航用 `samsara:navigate` 事件，不直接操作全局壳。
+7. 加载/错误/空态只用 `PageState`（整页）或 `StateBlock`（区块）；禁止手写 `container-message error` 与“读取中…”文案，`npm run check` 的 `check-page-state` 会校验。
+8. 新增 SPA 路由只改两处：`router.js` + `WebSecurity.staticResource`；需要子导航再加 `navigation.js`。
+9. 保持状态页面加入 `KEEP_ALIVE_PAGES`，并 `defineOptions({ name: 'XxxPage' })`。
+10. 页面连接状态与 token 用 `useSession` / `useApi`；跨页导航用 `samsara:navigate` 事件，不直接操作全局壳。
 
 ## 3. 每次改动的固定流程
 

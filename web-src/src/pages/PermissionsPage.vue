@@ -7,7 +7,7 @@
         <el-input v-model="tokenInput" type="password" placeholder="Bearer token" show-password />
         <el-button type="primary" :loading="connecting" @click="connect">连接</el-button>
       </div>
-      <p v-if="authError" class="container-message error">{{ authError }}</p>
+      <StateBlock :error="authError" />
     </section>
 
     <section v-else class="panel permissions-panel">
@@ -82,6 +82,7 @@
 <script setup>
 import { computed, reactive, ref } from 'vue';
 import TabShell from '../components/TabShell.vue';
+import StateBlock from '../components/StateBlock.vue';
 import PermissionNode from './permissions/PermissionNode.vue';
 import {
   addOwner,

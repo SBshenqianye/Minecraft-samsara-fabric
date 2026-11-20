@@ -7,7 +7,7 @@
         <el-input v-model="tokenInput" type="password" placeholder="Bearer token" show-password />
         <el-button type="primary" :loading="connecting" @click="connect">连接</el-button>
       </div>
-      <p v-if="authError" class="container-message error">{{ authError }}</p>
+      <StateBlock :error="authError" />
     </section>
 
     <section v-else class="panel announcements-panel">
@@ -278,6 +278,7 @@
 import { computed, nextTick, reactive, ref, watch } from 'vue';
 import TabShell from '../components/TabShell.vue';
 import PageState from '../components/PageState.vue';
+import StateBlock from '../components/StateBlock.vue';
 import { useAuth } from '../composables/useAuth.js';
 import { confirmDanger } from '../composables/useConfirmAction.js';
 import { useUnsavedChanges } from '../composables/useUnsavedChanges.js';

@@ -931,6 +931,11 @@ async function main() {
         20000, '原生公告页');
     await until("document.querySelectorAll('#announcements-list .announcement-item').length >= 1",
         20000, '公告列表');
+
+    const announcementsStateErrors = await evaluate(
+      "document.querySelectorAll('[data-state=\"error\"]').length");
+    check('公告页没有渲染错误状态块', announcementsStateErrors === 0,
+        'errors=' + announcementsStateErrors);
     const announcements = await evaluate(`(async () => {
       const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
       const items = document.querySelectorAll('#announcements-list .announcement-item').length;
@@ -2512,6 +2517,10 @@ async function main() {
     check('面包屑为 samsara / 天网 / 轨迹回看',
         subnavSky.crumb.join('|') === 'samsara|天网|轨迹回看', JSON.stringify(subnavSky));
 
+    const trackStateErrors = await evaluate(
+      "document.querySelectorAll('[data-state=\"error\"]').length");
+    check('轨迹页没有渲染错误状态块', trackStateErrors === 0, 'errors=' + trackStateErrors);
+
     await navigate(base + '/samsara/world/map');
     await until("document.querySelector('.section-subnav [data-subnav=\"world-stack\"]')",
         20000, '世界三级导航');
@@ -2923,6 +2932,22 @@ async function main() {
     await navigate(base + '/samsara/sky/containers');
     await until("document.querySelector('.container-page.embedded')", 40000, '天网统一页');
     await until("document.querySelectorAll('.map-marker').length >= 1", 30000, '天网地图标记');
+
+    const emptyState = await evaluate(`(async () => {
+      const input = document.querySelector('.sky-search input');
+      if (!input) return { found: false, reason: 'no-search-input' };
+      input.value = 'zzz-no-such-item-xyz';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      const deadline = Date.now() + 10000;
+      while (Date.now() < deadline) {
+        const state = document.querySelector('[data-state="empty"]');
+        if (state) return { found: true, text: state.textContent.trim().slice(0, 60) };
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+      return { found: false, reason: 'timeout' };
+    })()`);
+    check('容器页空结果使用统一空态', emptyState.found, JSON.stringify(emptyState));
+
     const skyUnified = await evaluate(`(async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       let opened = false;

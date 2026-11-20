@@ -45,6 +45,21 @@ export default {
       await until("document.querySelector('.container-page.embedded')", 30000, '天网统一页');
       await until("document.querySelectorAll('.map-marker').length >= 1", 30000, '天网地图标记');
 
+      const emptyState = await evaluate(`(async () => {
+        const input = document.querySelector('.sky-search input');
+        if (!input) return { found: false, reason: 'no-search-input' };
+        input.value = 'zzz-no-such-item-xyz';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        const deadline = Date.now() + 10000;
+        while (Date.now() < deadline) {
+          const state = document.querySelector('[data-state="empty"]');
+          if (state) return { found: true, text: state.textContent.trim().slice(0, 60) };
+          await new Promise((resolve) => setTimeout(resolve, 200));
+        }
+        return { found: false, reason: 'timeout' };
+      })()`);
+      check('容器页空结果使用统一空态', emptyState.found, JSON.stringify(emptyState));
+
       const playerWindow = await evaluate(`(async () => {
         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
         let openedVia = '';

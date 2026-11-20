@@ -7,11 +7,11 @@
         <el-input v-model="tokenInput" type="password" placeholder="Bearer token" show-password />
         <el-button type="primary" :loading="connecting" @click="connect">连接</el-button>
       </div>
-      <p v-if="error" class="container-message error">{{ error }}</p>
+      <StateBlock :error="error" />
     </section>
 
     <template v-else>
-      <p v-if="error" class="container-message error">{{ error }}</p>
+      <StateBlock :error="error" />
       <p v-if="message" class="container-message ok">{{ message }}</p>
 
       <section class="panel">
@@ -65,7 +65,7 @@
             <span>保护区</span><strong>{{ summary.protected ? '是' : '否' }}</strong>
             <span>倒流运行中</span><strong>{{ summary.rewindRunning ? '是' : '否' }}</strong>
           </div>
-          <p v-if="summary.error" class="container-message error">{{ summary.error }}</p>
+          <StateBlock :error="summary.error" />
         </div>
       </section>
 
@@ -103,6 +103,7 @@
 import { computed, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
 import TabShell from '../components/TabShell.vue';
+import StateBlock from '../components/StateBlock.vue';
 import { useAuth } from '../composables/useAuth.js';
 
 const {

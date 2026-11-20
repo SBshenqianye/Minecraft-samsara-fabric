@@ -7,11 +7,11 @@
         <el-input v-model="tokenInput" type="password" placeholder="Bearer token" show-password />
         <el-button type="primary" :loading="connecting" @click="connect">连接</el-button>
       </div>
-      <p v-if="error" class="container-message error">{{ error }}</p>
+      <StateBlock :error="error" />
     </section>
 
     <template v-else>
-      <p v-if="error" class="container-message error">{{ error }}</p>
+      <StateBlock :error="error" />
       <section class="panel">
         <div class="track-toolbar">
           <div>
@@ -56,9 +56,8 @@
             </div>
           </article>
         </div>
-        <p v-else class="muted small">
-          {{ loading ? '读取中…' : '所选范围内没有可回看的轨迹。' }}
-        </p>
+        <StateBlock v-else :loading="loading" :rows="2" :empty="!loading"
+          empty-text="所选范围内没有可回看的轨迹。" />
       </section>
     </template>
   </TabShell>
@@ -68,6 +67,7 @@
 import { ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import TabShell from '../components/TabShell.vue';
+import StateBlock from '../components/StateBlock.vue';
 import { useAuth } from '../composables/useAuth.js';
 
 const {

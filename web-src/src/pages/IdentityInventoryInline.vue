@@ -1,6 +1,6 @@
 <template>
   <div class="identity-inline-editor">
-    <p v-if="error" class="container-message error">{{ error }}</p>
+    <StateBlock :error="error" />
     <p v-if="message" class="container-message ok">{{ message }}</p>
     <div class="identity-inline-toolbar">
       <button class="ghost tiny" type="button" :disabled="saving || loading" title="重新读取" aria-label="重新读取" @click="load">↻</button>
@@ -44,13 +44,14 @@
         />
       </section>
     </div>
-    <p v-else-if="loading" class="muted small">读取中…</p>
+    <StateBlock v-else-if="loading" :loading="true" :rows="2" />
   </div>
 </template>
 
 <script setup>
 import { computed, onMounted, ref } from 'vue';
 import ItemWorkbench from '../components/ItemWorkbench.vue';
+import StateBlock from '../components/StateBlock.vue';
 import { getToken, useApi } from '../composables/useApi.js';
 
 const dataUuid = ref('');

@@ -25,11 +25,11 @@
           {{ connecting ? '连接中…' : '连接' }}
         </button>
       </div>
-      <p v-if="error" class="container-message error">{{ error }}</p>
+      <StateBlock :error="error" />
     </section>
 
     <template v-else>
-      <p v-if="error" class="container-message error">{{ error }}</p>
+      <StateBlock :error="error" />
 
       <section class="container-card">
         <div class="container-map">
@@ -49,7 +49,7 @@
               <strong>容器结果</strong>
               <span class="muted small">索引 {{ indexSize }} 个（全维度） · 当前维度 {{ visibleContainers.length }} 个</span>
               <span class="spacer"></span>
-              <span class="muted small">{{ loading ? '读取中…' : '' }}</span>
+              <StateBlock :loading="loading" :rows="1" />
             </div>
             <label class="sky-search sky-search-inline">
               <span class="sky-search-label">搜索容器</span>
@@ -125,9 +125,8 @@
                 </span>
               </button>
             </div>
-            <p v-else class="muted small">
-              {{ loading ? '读取中…' : (filters.q ? '没有容器包含匹配该物品。' : '没有找到容器；可点“刷新索引”。') }}
-            </p>
+            <StateBlock v-else :loading="loading" :rows="2" :empty="!loading"
+              :empty-text="filters.q ? '没有容器包含匹配该物品。' : '没有找到容器；可点“刷新索引”。'" />
           </section>
 
           <section class="sky-result-col">
@@ -253,6 +252,7 @@ import InventoryWindow from '../components/InventoryWindow.vue';
 import ItemIcon from '../components/ItemIcon.vue';
 import MapPicker from '../components/MapPicker.vue';
 import Segmented from '../components/Segmented.vue';
+import StateBlock from '../components/StateBlock.vue';
 import DimensionPicker from '../components/DimensionPicker.vue';
 import { useAuth } from '../composables/useAuth.js';
 import { readCache, writeCache } from '../composables/localCache.js';

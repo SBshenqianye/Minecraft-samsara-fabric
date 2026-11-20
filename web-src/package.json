@@ -12,8 +12,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "check:framework": "node ../tools/agent/check-framework.mjs",
-    "check": "npm run check:framework && npm run check:routes && npm run lint && npm run typecheck && npm run test && npm run build",
-    "check:routes": "node ../tools/agent/check-routes.mjs"
+    "check": "npm run check:framework && npm run check:routes && npm run check:page-state && npm run lint && npm run typecheck && npm run test && npm run build",
+    "check:routes": "node ../tools/agent/check-routes.mjs",
+    "check:page-state": "node ../tools/agent/check-page-state.mjs"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",

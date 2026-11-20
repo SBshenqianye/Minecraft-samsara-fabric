@@ -11,6 +11,9 @@
 - **调试辅助命令独立**：`fakeplayers`/`groups`/`settings` 移到 `DebugPlayerCommands`，`help`/`restart` 移到 `DebugHelpCommand`；`debug` 根节点只做装配。
 - **错误响应类型化**：所有接口错误统一为 `{"error":"..."}`（`WebHttp.ApiError`），业务失败判定统一走 `WebHttp.failed(body)`；JSON 字段名不变。
 
+### 重构
+- **页面状态统一**：新增区块级 `StateBlock`，权限/公告/容器/身份背包/轨迹/Diff/模组配置页的 10 处手写错误块与“读取中…”全部换成状态组件；`npm run check` 新增 `check-page-state` 守卫，避免再分叉。
+
 ### 修复
 - 修正拆分过程中 `debug rewind`/`debug track`/`debug config` 节点被误删的问题（已用测试服 RCON 实测恢复）。
 

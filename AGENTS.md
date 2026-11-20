@@ -41,6 +41,7 @@ $env:JAVA_HOME='C:\Program Files\Java\jdk-26.0.2.1'
 - **旧内核已全部删除**：`legacy-core/`、`legacy/`、`useLegacyPage`、`LegacyPanel`、`app.js` 全局壳都不存在；算法已迁入 `pages/<page>/`，不要以任何形式重新引入。
 - **不要引入 Pinia / TypeScript 大迁移 / 第二套 UI 框架**。
 - **禁止 `innerHTML`**；文本用插值或 `textContent`。
+- **页面状态只用 `PageState`（整页）/ `StateBlock`（区块）**：不允许手写 `<p class="container-message error">` 或“读取中…”；`npm run check` 的 `check-page-state` 会校验。
 - **存储路径只由 `storage/StoragePaths` 解析**：`getConfigDir()` 与 `"config/samsara"` 字面量只允许出现在该类；`storage` 包只依赖根入口与 `config`。
 - **领域包不 import `web`**：`web` 是外层，反向调用用接口在 `Samsara.onInitializeServer` 装配（参考 `audit/Audit`）。
 - **Java 架构守卫**：`ArchitectureGuardTest` 随 `gradle test` 执行上述两条，违规直接红；规则见 `docs/agent/legacy-audit-and-guardrails.md`。

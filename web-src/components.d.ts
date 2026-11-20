@@ -53,6 +53,7 @@ declare module 'vue' {
     RouterView: typeof import('vue-router')['RouterView']
     Segmented: typeof import('./src/components/Segmented.vue')['default']
     SegmentedButtons: typeof import('./src/components/SegmentedButtons.vue')['default']
+    StateBlock: typeof import('./src/components/StateBlock.vue')['default']
     TabShell: typeof import('./src/components/TabShell.vue')['default']
   }
 }
