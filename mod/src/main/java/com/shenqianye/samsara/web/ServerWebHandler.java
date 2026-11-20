@@ -28,7 +28,7 @@ final class ServerWebHandler {
             }
             if (serverService == null) {
                 status = 503;
-                WebHttp.json(exchange, status, Map.of("error", "本体服务未启动"));
+                WebHttp.json(exchange, status, WebHttp.error("本体服务未启动"));
                 return;
             }
             String path = exchange.getRequestURI().getPath();
@@ -39,15 +39,15 @@ final class ServerWebHandler {
                     body = host.parseObject(host.readBody(exchange));
                 } catch (LocalWebServer.BodyTooLarge e) {
                     status = 413;
-                    WebHttp.json(exchange, status, Map.of("error", "请求体过大"));
+                    WebHttp.json(exchange, status, WebHttp.error("请求体过大"));
                     return;
                 } catch (RuntimeException e) {
                     status = 400;
-                    WebHttp.json(exchange, status, Map.of("error", "请求体应为 JSON 对象"));
+                    WebHttp.json(exchange, status, WebHttp.error("请求体应为 JSON 对象"));
                     return;
                 }
             }
-            Map<String, Object> result;
+            Object result;
             if ("GET".equals(method)) {
                 if ("/api/server".equals(path) || "/api/server/config".equals(path)
                         || "/api/server/backups".equals(path)) {
@@ -61,14 +61,14 @@ final class ServerWebHandler {
                     var file = serverService.backupFile(id);
                     if (file == null) {
                         status = 404;
-                        WebHttp.json(exchange, status, Map.of("error", "备份不存在"));
+                        WebHttp.json(exchange, status, WebHttp.error("备份不存在"));
                         return;
                     }
                     WebHttp.sendFile(exchange, 200, "application/zip", id + ".zip", file);
                     return;
                 } else {
                     status = 404;
-                    result = Map.of("error", "Not Found");
+                    result = WebHttp.error("Not Found");
                 }
             } else if ("POST".equals(method)) {
                 switch (path) {
@@ -83,20 +83,20 @@ final class ServerWebHandler {
                     case "/api/server/console/complete" -> result = serverService.completeConsole(body);
                     default -> {
                         status = 404;
-                        result = Map.of("error", "Not Found");
+                        result = WebHttp.error("Not Found");
                     }
                 }
             } else {
                 status = 405;
-                result = Map.of("error", "Method Not Allowed");
+                result = WebHttp.error("Method Not Allowed");
             }
-            if (status == 200 && Boolean.FALSE.equals(result.get("ok"))) {
+            if (status == 200 && WebHttp.failed(result)) {
                 status = 400;
             }
             WebHttp.json(exchange, status, result);
         } catch (RuntimeException e) {
             status = 500;
-            WebHttp.json(exchange, status, Map.of("error", "服务器内部错误"));
+            WebHttp.json(exchange, status, WebHttp.error("服务器内部错误"));
             host.warnRoute(exchange, e);
         } finally {
             LocalWebServer.log(exchange, status, start);

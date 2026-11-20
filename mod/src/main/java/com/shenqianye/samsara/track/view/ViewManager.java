@@ -65,9 +65,7 @@ public final class ViewManager {
 
     private static final ViewManager INSTANCE = new ViewManager();
 
-    private final Map<UUID, ViewSession> sessions = new LinkedHashMap<>();
-    private final Map<UUID, Pending> pending = new LinkedHashMap<>();
-    private final Map<UUID, Long> lastStart = new HashMap<>();
+    private final ViewSessionStore store = new ViewSessionStore();
     private final ExecutorService loader = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "samsara-track-view-loader");
         t.setDaemon(true);
@@ -81,7 +79,7 @@ public final class ViewManager {
         return INSTANCE;
     }
 
-    private static final class Pending {
+    static final class Pending {
         final ViewSession session;
         final CompletableFuture<GroupLoad> future;
         final ViewSession old;
@@ -96,11 +94,11 @@ public final class ViewManager {
     record TargetSpec(UUID uuid, String name, List<UUID> aliases) {
     }
 
-    private record TargetLoad(TargetSpec spec, ViewTrackReader.LoadResult result,
+    record TargetLoad(TargetSpec spec, ViewTrackReader.LoadResult result,
                               List<ChatLogStore.Entry> chats, String error) {
     }
 
-    private record GroupLoad(List<TargetLoad> targets) {
+    record GroupLoad(List<TargetLoad> targets) {
         int totalSamples() {
             int total = 0;
             for (TargetLoad load : targets) {
@@ -136,7 +134,7 @@ public final class ViewManager {
                                      String startSpec, String optionText,
                                      boolean allowOthers) {
         long now = System.currentTimeMillis();
-        long last = lastStart.getOrDefault(viewer.getUUID(), 0L);
+        long last = store.lastStartMs(viewer.getUUID());
         if (now - last < COOLDOWN_MS) {
             return "操作过快：每人 1 次/秒，请稍后再试";
         }
@@ -230,11 +228,11 @@ public final class ViewManager {
                 + ViewTime.format(options.endMs())
                 + (targets.size() > 1 ? " · " + targets.size() + " 个目标" : "");
 
-        ViewSession old = sessions.get(viewer.getUUID());
-        if (pending.containsKey(viewer.getUUID())) {
+        ViewSession old = store.sessions().get(viewer.getUUID());
+        if (store.pending().containsKey(viewer.getUUID())) {
             return "上一回看请求仍在加载，请稍候";
         }
-        int active = sessions.size() + pending.size();
+        int active = store.activeCount();
         if (old == null && active >= MAX_SESSIONS) {
             return "回看并发已达上限（" + MAX_SESSIONS + " 个），请等其他人结束";
         }
@@ -266,7 +264,7 @@ public final class ViewManager {
             viewTarget.session = session;
             session.targets.add(viewTarget);
         }
-        lastStart.put(viewer.getUUID(), now);
+        store.markStart(viewer.getUUID(), now);
 
         final long start = startMs;
         final long end = options.endMs();
@@ -294,7 +292,7 @@ public final class ViewManager {
             }
             return new GroupLoad(List.copyOf(results));
         }, loader);
-        pending.put(viewer.getUUID(), new Pending(session, future, old));
+        store.pending().put(viewer.getUUID(), new Pending(session, future, old));
 
         Samsara.LOGGER.info("[回看] {} 请求回看 {}（周目 {} · {} → {} · {}x · {} 个目标）",
                 viewer.getScoreboardName(), canonical, cycleId,
@@ -355,11 +353,11 @@ public final class ViewManager {
 
     public synchronized void tick(MinecraftServer server) {
         drainPending(server);
-        if (sessions.isEmpty()) {
+        if (store.sessions().isEmpty()) {
             return;
         }
         long now = System.currentTimeMillis();
-        for (ViewSession s : new ArrayList<>(sessions.values())) {
+        for (ViewSession s : new ArrayList<>(store.sessions().values())) {
             ServerPlayer player = server.getPlayerList().getPlayer(s.viewer);
             if (player == null || player.hasDisconnected() || player.isRemoved()) {
                 restore(s, "观看者离线");
@@ -404,10 +402,10 @@ public final class ViewManager {
                 }
                 s.mannequin = s.primary == null ? null : s.primary.mannequin;
                 if (s.followActive && !s.scrubbingThisTick) {
-                    follow(s, player, trackTime);
+                    ViewCamera.follow(s, player, trackTime);
                 }
                 if (s.aimEnabled) {
-                    applyAim(s, player, trackTime, visible);
+                    ViewCamera.applyAim(s, player, trackTime, visible);
                 }
                 simulateChat(s, player, trackTime);
                 if (s.display != null) {
@@ -461,7 +459,7 @@ public final class ViewManager {
     }
 
     private void drainPending(MinecraftServer server) {
-        for (Iterator<Map.Entry<UUID, Pending>> it = pending.entrySet().iterator(); it.hasNext(); ) {
+        for (Iterator<Map.Entry<UUID, Pending>> it = store.pending().entrySet().iterator(); it.hasNext(); ) {
             Map.Entry<UUID, Pending> e = it.next();
             Pending p = e.getValue();
             if (!p.future.isDone()) {
@@ -592,7 +590,7 @@ public final class ViewManager {
             Samsara.LOGGER.info("[回看] {} 加载完成前已离线，取消", s.viewerName);
             return;
         }
-        ViewSession current = sessions.get(s.viewer);
+        ViewSession current = store.sessions().get(s.viewer);
         if (current != p.old) {
             Samsara.LOGGER.info("[回看] {} 的旧会话已被停止，取消本次加载", s.viewerName);
             return;
@@ -691,11 +689,11 @@ public final class ViewManager {
             s.legacyEquipment = s.primary.legacyEquipment;
             s.truncated = s.primary.truncated;
             s.cutoffApplied = s.primary.cutoffApplied;
-            sessions.put(s.viewer, s);
+            store.sessions().put(s.viewer, s);
             if (s.followActive) {
-                follow(s, viewer, s.startTrackMs);
+                ViewCamera.follow(s, viewer, s.startTrackMs);
             } else if (s.group) {
-                snapToScene(s, viewer, s.startTrackMs);
+                ViewCamera.snapToScene(s, viewer, s.startTrackMs);
             }
             s.display.update("[回看] " + s.displayName + " · 0%", 0f);
 
@@ -847,7 +845,7 @@ public final class ViewManager {
         ViewMannequin m = target.mannequin;
         if (m == null || m.isRemoved() || !target.ownsMannequin || m.level() != level) {
             if (m != null && target.ownsMannequin) {
-                releaseCamera(server, s, m);
+                ViewProtection.releaseCamera(server, s, m);
                 boolean keep = SharedViewMannequin.release(target);
                 if (!keep) {
                     m.discard();
@@ -944,7 +942,7 @@ public final class ViewManager {
     private void hideTarget(MinecraftServer server, ViewSession s, ViewTarget target, String reason) {
         if (target.mannequin != null) {
             if (target.ownsMannequin) {
-                releaseCamera(server, s, target.mannequin);
+                ViewProtection.releaseCamera(server, s, target.mannequin);
                 boolean keep = SharedViewMannequin.release(target);
                 if (!keep) {
                     target.mannequin.discard();
@@ -999,274 +997,6 @@ public final class ViewManager {
         target.eventsJumpPending = false;
     }
 
-    /** 跟随观察点：人偶身后 4.5 格、上方 2 格，并面向人偶（不是贴在人偶身体里）。 */
-    private static final double FOLLOW_DISTANCE = 4.5;
-    private static final double FOLLOW_HEIGHT = 2.0;
-
-    /**
-     * 自由活动 + 自动跟随：
-     * 观看者始终旁观，可在 {@code view.freeRoamRadius} 范围内自由飞行；
-     * 超出范围、人偶瞬移或换维度时才重新贴近。
-     */
-    private void follow(ViewSession s, ServerPlayer player, long trackTime) {
-        ViewTarget target = followTargetOf(s, null);
-        if (target == null || !target.visible || target.cursor == null) {
-            return;
-        }
-        ViewCursor.Point point = target.cursor.pointAt(trackTime);
-        ServerLevel level = findLevel(player.level().getServer(), point.dimension());
-        if (level == null) {
-            return;
-        }
-        int radius = Math.max(8, CommandConfig.getInstance().viewFreeRoamRadius());
-        boolean dimensionChanged = !point.dimension().equals(s.lastFollowDim);
-        boolean tooFar = player.distanceToSqr(point.x(), point.y(), point.z())
-                > (double) radius * radius;
-        if (s.followInitialized && !dimensionChanged && !target.teleported && !tooFar) {
-            return; // 自由活动范围内：不打断观看者
-        }
-        snapToObservation(s, player, level, point);
-        target.teleported = false;
-    }
-
-    /**
-     * 一键对齐（F-96）：单目标贴到理想观察点；多目标贴到场景中心；
-     * 有 --follow 时按该目标。不改变 follow 开关。
-     */
-    private void align(ViewSession s, ServerPlayer player, long trackTime) {
-        ViewTarget target = followTargetOf(s, null);
-        if (target != null && target.cursor != null) {
-            ViewCursor.Point point = target.cursor.pointAt(trackTime);
-            ServerLevel level = findLevel(player.level().getServer(), point.dimension());
-            if (level != null) {
-                snapToObservation(s, player, level, point);
-                target.teleported = false;
-                return;
-            }
-        }
-        if (s.group) {
-            snapToScene(s, player, trackTime);
-        }
-    }
-
-    /** 有 --follow 目标优先；否则单目标取 primary，多目标返回 null（走场景中心）。 */
-    private static ViewTarget followTargetOf(ViewSession s, List<ViewTarget> visible) {
-        if (s.followTarget != null) {
-            for (ViewTarget target : s.targets) {
-                if (target.uuid.equals(s.followTarget)
-                        && (visible == null || visible.contains(target))) {
-                    return target;
-                }
-            }
-            return null;
-        }
-        if (!s.group) {
-            return s.primary;
-        }
-        return null;
-    }
-
-    /** 多目标一键对齐：场景中心上方/后方，面向质心。 */
-    private void snapToScene(ViewSession s, ServerPlayer player, long trackTime) {
-        double cx = 0;
-        double cy = 0;
-        double cz = 0;
-        int count = 0;
-        for (ViewTarget target : s.targets) {
-            if (!target.visible || target.cursor == null) {
-                continue;
-            }
-            ViewCursor.Point point = target.cursor.pointAt(trackTime);
-            if (s.activeDimension != null && !point.dimension().equals(s.activeDimension)) {
-                continue;
-            }
-            cx += point.x();
-            cy += point.y();
-            cz += point.z();
-            count++;
-        }
-        if (count == 0) {
-            if (s.primary != null && s.primary.cursor != null) {
-                ViewCursor.Point point = s.primary.cursor.pointAt(trackTime);
-                ServerLevel level = findLevel(player.level().getServer(), point.dimension());
-                if (level != null) {
-                    snapToObservation(s, player, level, point);
-                }
-            }
-            return;
-        }
-        cx /= count;
-        cy /= count;
-        cz /= count;
-        ServerLevel level = findLevel(player.level().getServer(), s.activeDimension);
-        if (level == null) {
-            return;
-        }
-        double vx = cx;
-        double vy = cy + 10.0;
-        double vz = cz + 12.0;
-        double dx = cx - vx;
-        double dz = cz - vz;
-        double dy = (cy + 1.2) - (vy + 1.62);
-        float lookYaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
-        float lookPitch = (float) -Math.toDegrees(Math.atan2(dy, Math.hypot(dx, dz)));
-        player.teleportTo(level, vx, vy, vz, Set.of(), lookYaw, lookPitch, false);
-        player.setDeltaMovement(Vec3.ZERO);
-        player.fallDistance = 0;
-        s.followInitialized = true;
-        s.mannequinTeleported = false;
-        s.lastFollowDim = s.activeDimension;
-        s.lastWriteDim = s.activeDimension;
-        s.lastWriteX = vx;
-        s.lastWriteY = vy;
-        s.lastWriteZ = vz;
-        s.lastWriteAtMs = System.currentTimeMillis();
-        s.lastAimAtMs = System.currentTimeMillis();
-        if (s.aimTracker != null) {
-            s.aimTracker.reset();
-        }
-    }
-
-    private void snapToObservation(ViewSession s, ServerPlayer player,
-                                   ServerLevel level, ViewCursor.Point point) {
-        double yawRad = Math.toRadians(point.yaw());
-        double vx = point.x() + Math.sin(yawRad) * FOLLOW_DISTANCE;
-        double vy = point.y() + FOLLOW_HEIGHT;
-        double vz = point.z() - Math.cos(yawRad) * FOLLOW_DISTANCE;
-        double dx = point.x() - vx;
-        double dz = point.z() - vz;
-        double dy = (point.y() + 1.2) - (vy + 1.62);
-        float lookYaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
-        float lookPitch = (float) -Math.toDegrees(Math.atan2(dy, Math.hypot(dx, dz)));
-        player.teleportTo(level, vx, vy, vz, Set.of(), lookYaw, lookPitch, false);
-        player.setDeltaMovement(Vec3.ZERO);
-        player.fallDistance = 0;
-        s.followInitialized = true;
-        s.mannequinTeleported = false;
-        s.lastFollowDim = point.dimension();
-        s.lastWriteDim = point.dimension();
-        s.lastWriteX = vx;
-        s.lastWriteY = vy;
-        s.lastWriteZ = vz;
-        s.lastWriteAtMs = System.currentTimeMillis();
-        s.lastAimAtMs = System.currentTimeMillis();
-        if (s.aimTracker != null) {
-            s.aimTracker.reset();
-        }
-    }
-
-    /**
-     * 自动瞄准（F-100）：只发旋转增量，不改位置/速度。
-     * 单目标瞄该目标；群组瞄 --follow 目标，否则瞄视线中心最近且在 edge 内的人偶。
-     */
-    private void applyAim(ViewSession s, ServerPlayer player, long trackTime,
-                          List<ViewTarget> visible) {
-        if (player.getCamera() != player) {
-            return;
-        }
-        ViewTarget chosen = aimTargetOf(s, player, trackTime, visible);
-        if (chosen == null || chosen.cursor == null) {
-            return;
-        }
-        ViewCursor.Point point = chosen.cursor.pointAt(trackTime);
-        if (!point.dimension().equals(player.level().dimension().identifier().toString())) {
-            return;
-        }
-        double targetX = point.x();
-        double targetY = point.y() + 1.5;
-        double targetZ = point.z();
-        if (player.distanceToSqr(targetX, targetY, targetZ) > 128.0 * 128.0) {
-            return;
-        }
-        long now = System.currentTimeMillis();
-        double dt = Math.min(0.25, (now - s.lastAimAtMs) / 1000.0);
-        s.lastAimAtMs = now;
-        if (dt <= 0) {
-            return;
-        }
-        ViewAim.Delta delta;
-        try {
-            if (s.aimSnap) {
-                // 2~5Hz 快速对准：只在节流窗口到点时一次性转到位，避免缓慢拖拽头晕。
-                s.aimSnapAccumSec += dt;
-                double interval = 1.0 / Math.max(2, s.aimHz);
-                if (s.aimSnapAccumSec < interval) {
-                    return;
-                }
-                s.aimSnapAccumSec = 0.0;
-                delta = ViewAim.snap(player.getYRot(), player.getXRot(),
-                        player.getX(), player.getEyeY(), player.getZ(),
-                        targetX, targetY, targetZ, s.aimPitch);
-            } else {
-                if (s.aimTracker == null) {
-                    s.aimTracker = new ViewAim.Tracker(
-                            new ViewAim.Params(s.aimDeadzone, s.aimEdge, s.aimSpeed, s.aimPitch));
-                }
-                delta = s.aimTracker.step(player.getYRot(), player.getXRot(),
-                        player.getX(), player.getEyeY(), player.getZ(),
-                        targetX, targetY, targetZ, dt);
-            }
-        } catch (IllegalArgumentException e) {
-            s.aimEnabled = false;
-            return;
-        }
-        if (delta.isZero()) {
-            return;
-        }
-        float pitch = player.getXRot() + delta.pitch();
-        if (pitch > 90f) {
-            delta = new ViewAim.Delta(delta.yaw(), 90f - player.getXRot());
-        } else if (pitch < -90f) {
-            delta = new ViewAim.Delta(delta.yaw(), -90f - player.getXRot());
-        }
-        PositionMoveRotation change = new PositionMoveRotation(Vec3.ZERO, Vec3.ZERO,
-                delta.yaw(), delta.pitch());
-        player.connection.teleport(change, Set.of(
-                Relative.X, Relative.Y, Relative.Z,
-                Relative.DELTA_X, Relative.DELTA_Y, Relative.DELTA_Z,
-                Relative.Y_ROT, Relative.X_ROT));
-    }
-
-    private static ViewTarget aimTargetOf(ViewSession s, ServerPlayer player, long trackTime,
-                                          List<ViewTarget> visible) {
-        ViewTarget follow = followTargetOf(s, visible);
-        if (follow != null) {
-            return follow;
-        }
-        ViewTarget best = null;
-        double bestAngle = Double.MAX_VALUE;
-        for (ViewTarget target : visible) {
-            if (!target.visible || target.cursor == null) {
-                continue;
-            }
-            ViewCursor.Point point = target.cursor.pointAt(trackTime);
-            if (!point.dimension().equals(player.level().dimension().identifier().toString())) {
-                continue;
-            }
-            double angle = viewAngleTo(player, point.x(), point.y() + 1.5, point.z());
-            if (angle > s.aimEdge) {
-                continue;
-            }
-            if (angle < bestAngle) {
-                bestAngle = angle;
-                best = target;
-            }
-        }
-        return best;
-    }
-
-    /** 粗略视角角误差（度），用于在群组里挑选离视线中心最近的人偶。 */
-    private static double viewAngleTo(ServerPlayer player, double x, double y, double z) {
-        double dx = x - player.getX();
-        double dy = y - player.getEyeY();
-        double dz = z - player.getZ();
-        double horizontal = Math.hypot(dx, dz);
-        double targetYaw = Math.toDegrees(Math.atan2(-dx, dz));
-        double targetPitch = -Math.toDegrees(Math.atan2(dy, horizontal));
-        double dyaw = ((targetYaw - player.getYRot() + 540) % 360) - 180;
-        double dpitch = targetPitch - player.getXRot();
-        return Math.hypot(dyaw, dpitch);
-    }
 
     /** 长按方向键多久后自动加速到 4×。 */
     public static final long SCRUB_FAST_AFTER_MS = 600L;
@@ -1376,28 +1106,6 @@ public final class ViewManager {
         s.lastScrubJump = input != null && input.jump();
     }
 
-    /** 人偶被移除/替换前，如果相机正接管在它身上，先归还观看者。 */
-    private static void releaseCamera(MinecraftServer server, ViewSession s, Entity mannequin) {
-        if (server == null || mannequin == null) {
-            return;
-        }
-        ServerPlayer viewer = server.getPlayerList().getPlayer(s.viewer);
-        if (viewer != null && viewer.getCamera() == mannequin) {
-            viewer.setCamera(viewer);
-        }
-    }
-
-    private static boolean protectViewer() {
-        return CommandConfig.getInstance().viewProtectViewer();
-    }
-
-    /** 该玩家是否处于受保护的回看会话中（服务端伤害取消事件使用）。 */
-    public boolean protectsViewer(UUID viewer) {
-        ViewSession s = sessions.get(viewer);
-        return s != null && !s.restored
-                && (s.state == ViewSession.State.PLAYING || s.state == ViewSession.State.PAUSED)
-                && protectViewer();
-    }
 
     /** 聊天栏（左下角）可点击控制条：倍速 / 暂停 / 继续 / 倒放 / 停止。 */
     private static void sendControls(ViewSession s, ServerPlayer viewer) {
@@ -1490,9 +1198,9 @@ public final class ViewManager {
             if (actor == null) {
                 return stopAll(server);
             }
-            ViewSession s = sessions.get(actor.getUUID());
-            if (s == null && pending.containsKey(actor.getUUID())) {
-                pending.remove(actor.getUUID());
+            ViewSession s = store.sessions().get(actor.getUUID());
+            if (s == null && store.pending().containsKey(actor.getUUID())) {
+                store.pending().remove(actor.getUUID());
                 return "已取消正在加载的回看";
             }
             if (s == null) {
@@ -1508,7 +1216,7 @@ public final class ViewManager {
             return stopAll(server);
         }
         ViewSession found = null;
-        for (ViewSession s : sessions.values()) {
+        for (ViewSession s : store.sessions().values()) {
             if (s.viewerName.equalsIgnoreCase(target) || s.viewer.toString().equalsIgnoreCase(target)) {
                 found = s;
                 break;
@@ -1517,11 +1225,11 @@ public final class ViewManager {
         if (found == null) {
             UUID id = ViewTargetResolver.resolvePlayerId(server, target);
             if (id != null) {
-                Pending p = pending.remove(id);
+                Pending p = store.pending().remove(id);
                 if (p != null) {
                     return "已取消 " + target + " 正在加载的回看";
                 }
-                found = sessions.get(id);
+                found = store.sessions().get(id);
             }
         }
         if (found == null) {
@@ -1536,12 +1244,12 @@ public final class ViewManager {
     }
 
     private String stopAll(MinecraftServer server) {
-        int n = sessions.size() + pending.size();
+        int n = store.activeCount();
         if (n == 0) {
             return "当前没有进行中的回看";
         }
-        pending.clear();
-        for (ViewSession s : new ArrayList<>(sessions.values())) {
+        store.pending().clear();
+        for (ViewSession s : new ArrayList<>(store.sessions().values())) {
             restore(s, "手动停止（all）");
         }
         return "已停止全部回看（" + n + " 个）";
@@ -1570,7 +1278,7 @@ public final class ViewManager {
                 target.vehicle.remove();
                 target.vehicle = null;
             }
-            releaseCamera(server, s, target.mannequin);
+            ViewProtection.releaseCamera(server, s, target.mannequin);
             if (target.mannequin != null && target.ownsMannequin) {
                 boolean keep = SharedViewMannequin.release(target);
                 if (!keep) {
@@ -1626,10 +1334,10 @@ public final class ViewManager {
                     + (s.displayName == null ? "" : "（" + s.displayName + "）")));
         }
 
-        sessions.remove(s.viewer, s);
+        store.sessions().remove(s.viewer, s);
         s.state = ViewSession.State.IDLE;
         // 恢复录制：只有回到非旁观且不再观看任何会话时才重新开段
-        if (viewer != null && !viewer.isSpectator() && !sessions.containsKey(viewer.getUUID())) {
+        if (viewer != null && !viewer.isSpectator() && !store.sessions().containsKey(viewer.getUUID())) {
             TrackRecorder.getInstance().resumePlayer(viewer);
         }
         Samsara.LOGGER.info("[回看] 结束: viewer={} target={} cycle={} reason={} skippedPosition={} skippedMode={}",
@@ -1716,7 +1424,7 @@ public final class ViewManager {
         if (viewer.getCamera() != viewer) {
             viewer.setCamera(viewer);
         }
-        align(s, viewer, s.trackTime(System.currentTimeMillis()));
+        ViewCamera.align(s, viewer, s.trackTime(System.currentTimeMillis()));
         return "已回到上帝视角（" + (s.group ? "场景中心" : s.displayName) + " 观察点，可自由飞行）";
     }
 
@@ -1795,7 +1503,7 @@ public final class ViewManager {
         if (s.followActive) {
             ServerPlayer viewer = server.getPlayerList().getPlayer(s.viewer);
             if (viewer != null) {
-                follow(s, viewer, targetMs);
+                ViewCamera.follow(s, viewer, targetMs);
             }
         }
         float progress = s.progress(System.currentTimeMillis());
@@ -1873,7 +1581,7 @@ public final class ViewManager {
         if (viewer == null || mannequin == null) {
             return;
         }
-        ViewSession s = sessions.get(viewer.getUUID());
+        ViewSession s = store.sessions().get(viewer.getUUID());
         if (s == null || s.closed()) {
             return;
         }
@@ -1958,12 +1666,17 @@ public final class ViewManager {
 
     /** 录制端用：该 UUID 是否正在回看（不解析名字，避免每 tick 查玩家表）。 */
     public synchronized boolean isViewing(UUID viewer) {
-        return viewer != null && sessions.containsKey(viewer);
+        return viewer != null && store.sessions().containsKey(viewer);
+    }
+
+    /** 该玩家是否处于受保护的回看会话中（服务端伤害取消事件使用）。 */
+    public boolean protectsViewer(UUID viewer) {
+        return ViewProtection.protectsViewer(store.sessions(), viewer);
     }
 
     /** camera 固定焦点：人偶离开焦点范围时隐藏，回来时恢复；只影响本会话的客户端实体。 */
     public synchronized void setMannequinVisible(UUID viewer, boolean visible) {
-        ViewSession s = viewer == null ? null : sessions.get(viewer);
+        ViewSession s = viewer == null ? null : store.sessions().get(viewer);
         if (s == null) {
             return;
         }
@@ -2001,34 +1714,22 @@ public final class ViewManager {
     }
 
     private ViewSession findSession(MinecraftServer server, ServerPlayer actor, String target) {
-        if (target == null || target.isBlank()) {
-            return actor == null ? null : sessions.get(actor.getUUID());
-        }
-        UUID id = ViewTargetResolver.resolvePlayerId(server, target);
-        ViewSession s = id == null ? null : sessions.get(id);
-        if (s == null) {
-            for (ViewSession candidate : sessions.values()) {
-                if (candidate.viewerName.equalsIgnoreCase(target)) {
-                    return candidate;
-                }
-            }
-        }
-        return s;
+        return store.find(server, actor, target);
     }
 
     public synchronized String status(MinecraftServer server, ServerPlayer actor, String target) {
         ViewSession s = null;
         if (target == null || target.isBlank()) {
             if (actor != null) {
-                s = sessions.get(actor.getUUID());
+                s = store.sessions().get(actor.getUUID());
             }
         } else {
             UUID id = ViewTargetResolver.resolvePlayerId(server, target);
             if (id != null) {
-                s = sessions.get(id);
+                s = store.sessions().get(id);
             }
             if (s == null) {
-                for (ViewSession candidate : sessions.values()) {
+                for (ViewSession candidate : store.sessions().values()) {
                     if (candidate.viewerName.equalsIgnoreCase(target)) {
                         s = candidate;
                         break;
@@ -2037,8 +1738,8 @@ public final class ViewManager {
             }
         }
         if (s == null) {
-            if (actor != null && pending.containsKey(actor.getUUID())) {
-                ViewSession p = pending.get(actor.getUUID()).session;
+            if (actor != null && store.pending().containsKey(actor.getUUID())) {
+                ViewSession p = store.pending().get(actor.getUUID()).session;
                 return "回看加载中 · 目标 " + p.targetName + " · 周目 " + p.cycleId
                         + " · " + p.options.speed() + "×";
             }
@@ -2109,7 +1810,7 @@ public final class ViewManager {
                 // 控制台无法显示按钮，默认广播给所有观看者
                 return broadcastControls(server, null, true);
             }
-            ViewSession own = sessions.get(actor.getUUID());
+            ViewSession own = store.sessions().get(actor.getUUID());
             if (own == null || own.closed()) {
                 return "你当前没有进行中的回看";
             }
@@ -2142,7 +1843,7 @@ public final class ViewManager {
             return "广播回看控制条需要管理员权限";
         }
         int sent = 0;
-        for (ViewSession s : sessions.values()) {
+        for (ViewSession s : store.sessions().values()) {
             if (s.closed()) {
                 continue;
             }
@@ -2249,8 +1950,8 @@ public final class ViewManager {
 
     /** 观看者退出：先恢复，再让服务器保存 playerdata（F-84/F-85）。 */
     public synchronized void onDisconnect(UUID viewer) {
-        pending.remove(viewer);
-        ViewSession s = sessions.get(viewer);
+        store.pending().remove(viewer);
+        ViewSession s = store.sessions().get(viewer);
         if (s != null) {
             restore(s, "观看者退出");
         }
@@ -2259,11 +1960,11 @@ public final class ViewManager {
     /** SERVER_STOPPING/SERVER_STOPPED：先恢复观看者，再让服务器保存。 */
     public synchronized void shutdown(MinecraftServer server) {
         currentServer = server;
-        pending.clear();
-        for (ViewSession s : new ArrayList<>(sessions.values())) {
+        store.pending().clear();
+        for (ViewSession s : new ArrayList<>(store.sessions().values())) {
             restore(s, "服务器停止");
         }
-        sessions.clear();
+        store.sessions().clear();
         SharedViewMannequin.clear();
         cleanupOrphans(server);
         currentServer = null;
@@ -2351,7 +2052,7 @@ public final class ViewManager {
         return null;
     }
 
-    private static ServerLevel findLevel(MinecraftServer server, String dimension) {
+    static ServerLevel findLevel(MinecraftServer server, String dimension) {
         if (server == null) {
             return null;
         }
@@ -2381,6 +2082,9 @@ public final class ViewManager {
         return new GameProfile(uuid, name == null ? uuid.toString() : name);
     }
 }
+
+
+
 
 
 

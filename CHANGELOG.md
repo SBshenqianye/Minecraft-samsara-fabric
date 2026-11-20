@@ -3,6 +3,17 @@
 > 面向玩家与服主的功能变化；实现细节、未达标项与证据见[《实现状态》](docs/实现状态.md)。
 > 每个版本按「新增 / 修复 / 优化 / 变更 / 重构 / 文档」分组，只写功能口径。
 
+## 重构 2026-11-20 · 巨型类收尾与接口类型化（Web 0.62.9）
+
+### 重构
+- **世界栈执行阶段独立**：导入队列、归档、栈顶交换的落盘与回滚从 `WorldStackAdmin` 移到 `WorldStackExecutor`，管理类只剩只读模型与排序/取消。
+- **回看镜头与保护独立**：自动跟随、一键对齐、场景中心对齐、自动瞄准移到 `ViewCamera`；相机归还与伤害豁免移到 `ViewProtection`；会话、加载队列、启动冷却移到 `ViewSessionStore`。
+- **调试辅助命令独立**：`fakeplayers`/`groups`/`settings` 移到 `DebugPlayerCommands`，`help`/`restart` 移到 `DebugHelpCommand`；`debug` 根节点只做装配。
+- **错误响应类型化**：所有接口错误统一为 `{"error":"..."}`（`WebHttp.ApiError`），业务失败判定统一走 `WebHttp.failed(body)`；JSON 字段名不变。
+
+### 修复
+- 修正拆分过程中 `debug rewind`/`debug track`/`debug config` 节点被误删的问题（已用测试服 RCON 实测恢复）。
+
 ## 变更 2026-11-18 · 跨周目数据与管理端 UI（Web 0.62.9）
 
 ### 变更

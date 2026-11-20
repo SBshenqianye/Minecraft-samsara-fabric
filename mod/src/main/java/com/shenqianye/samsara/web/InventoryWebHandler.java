@@ -43,7 +43,7 @@ final class InventoryWebHandler {
                     body = LocalWebServer.readBody(exchange);
                 } catch (LocalWebServer.BodyTooLarge e) {
                     status = 413;
-                    WebHttp.json(exchange, status, Map.of("error", "请求体过大"));
+                    WebHttp.json(exchange, status, WebHttp.error("请求体过大"));
                     return;
                 }
                 Map<String, Object> result;
@@ -73,7 +73,7 @@ final class InventoryWebHandler {
                     body = LocalWebServer.readBody(exchange);
                 } catch (LocalWebServer.BodyTooLarge e) {
                     status = 413;
-                    WebHttp.json(exchange, status, Map.of("error", "请求体过大"));
+                    WebHttp.json(exchange, status, WebHttp.error("请求体过大"));
                     return;
                 }
                 Map<String, Object> result = "/api/inventory/web/write".equals(path)
@@ -88,10 +88,10 @@ final class InventoryWebHandler {
                 return;
             }
             status = 404;
-            WebHttp.json(exchange, status, Map.of("error", "未知背包接口"));
+            WebHttp.json(exchange, status, WebHttp.error("未知背包接口"));
         } catch (RuntimeException e) {
             status = 500;
-            WebHttp.json(exchange, status, Map.of("error", WebHttp.errorDetail(e)));
+            WebHttp.json(exchange, status, WebHttp.error(WebHttp.errorDetail(e)));
             host.warnRoute(exchange, e);
         } finally {
             LocalWebServer.log(exchange, status, start);

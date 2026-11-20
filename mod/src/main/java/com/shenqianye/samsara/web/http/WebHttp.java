@@ -81,6 +81,25 @@ public final class WebHttp {
         return error.getClass().getSimpleName() + ": " + singleLine;
     }
 
+    /** 统一错误响应体：{"error":"..."}。 */
+    public record ApiError(String error) {
+    }
+
+    public static ApiError error(String message) {
+        return new ApiError(message);
+    }
+
+    /** 业务失败判定：错误响应，或带 {@code ok=false} 的响应体。 */
+    public static boolean failed(Object body) {
+        if (body instanceof ApiError) {
+            return true;
+        }
+        if (body instanceof Map<?, ?> map) {
+            return Boolean.FALSE.equals(map.get("ok"));
+        }
+        return false;
+    }
+
     public static void json(HttpExchange exchange, int status, Object body) throws IOException {
         String text = GSON.toJson(body);
         IdempotencyService.getInstance().store(exchange, status, text);

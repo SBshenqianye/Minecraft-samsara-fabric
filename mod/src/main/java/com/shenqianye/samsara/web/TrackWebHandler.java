@@ -29,7 +29,7 @@ final class TrackWebHandler {
             String path = exchange.getRequestURI().getPath();
             if (!"GET".equals(exchange.getRequestMethod())) {
                 status = 405;
-                WebHttp.json(exchange, status, Map.of("error", "Method Not Allowed"));
+                WebHttp.json(exchange, status, WebHttp.error("Method Not Allowed"));
                 return;
             }
             if ("/api/track".equals(path) || "/api/track/list".equals(path)) {
@@ -41,10 +41,10 @@ final class TrackWebHandler {
                 return;
             }
             status = 404;
-            WebHttp.json(exchange, status, Map.of("error", "未知轨迹接口"));
+            WebHttp.json(exchange, status, WebHttp.error("未知轨迹接口"));
         } catch (RuntimeException e) {
             status = 500;
-            WebHttp.json(exchange, status, Map.of("error", WebHttp.errorDetail(e)));
+            WebHttp.json(exchange, status, WebHttp.error(WebHttp.errorDetail(e)));
             host.warnRoute(exchange, e);
         } finally {
             LocalWebServer.log(exchange, status, start);

@@ -28,7 +28,7 @@ final class PermissionsWebHandler {
             }
             if (permissionService == null) {
                 status = 503;
-                WebHttp.json(exchange, status, Map.of("error", "权限树服务未启动"));
+                WebHttp.json(exchange, status, WebHttp.error("权限树服务未启动"));
                 return;
             }
             String path = exchange.getRequestURI().getPath();
@@ -39,15 +39,15 @@ final class PermissionsWebHandler {
                     body = host.parseObject(host.readBody(exchange));
                 } catch (LocalWebServer.BodyTooLarge e) {
                     status = 413;
-                    WebHttp.json(exchange, status, Map.of("error", "请求体过大"));
+                    WebHttp.json(exchange, status, WebHttp.error("请求体过大"));
                     return;
                 } catch (RuntimeException e) {
                     status = 400;
-                    WebHttp.json(exchange, status, Map.of("error", "请求体应为 JSON 对象"));
+                    WebHttp.json(exchange, status, WebHttp.error("请求体应为 JSON 对象"));
                     return;
                 }
             }
-            Map<String, Object> result;
+            Object result;
             switch (path) {
                 case "/api/permissions" -> {
                     if ("GET".equals(method)) {
@@ -56,29 +56,29 @@ final class PermissionsWebHandler {
                         result = permissionService.save(body);
                     } else {
                         status = 405;
-                        result = Map.of("error", "Method Not Allowed");
+                        result = WebHttp.error("Method Not Allowed");
                     }
                 }
                 case "/api/permissions/reload" -> {
                     if (!"POST".equals(method)) {
                         status = 405;
-                        result = Map.of("error", "Method Not Allowed");
+                        result = WebHttp.error("Method Not Allowed");
                     } else {
                         result = permissionService.reload();
                     }
                 }
                 default -> {
                     status = 404;
-                    result = Map.of("error", "Not Found");
+                    result = WebHttp.error("Not Found");
                 }
             }
-            if (status == 200 && Boolean.FALSE.equals(result.get("ok"))) {
+            if (status == 200 && WebHttp.failed(result)) {
                 status = 400;
             }
             WebHttp.json(exchange, status, result);
         } catch (RuntimeException e) {
             status = 500;
-            WebHttp.json(exchange, status, Map.of("error", "服务器内部错误"));
+            WebHttp.json(exchange, status, WebHttp.error("服务器内部错误"));
             host.warnRoute(exchange, e);
         } finally {
             LocalWebServer.log(exchange, status, start);

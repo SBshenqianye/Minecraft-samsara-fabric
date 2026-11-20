@@ -28,7 +28,7 @@ final class OutputWebHandler {
             }
             if (outputService == null) {
                 status = 503;
-                WebHttp.json(exchange, status, Map.of("error", "输出格式服务未启动"));
+                WebHttp.json(exchange, status, WebHttp.error("输出格式服务未启动"));
                 return;
             }
             String path = exchange.getRequestURI().getPath();
@@ -39,15 +39,15 @@ final class OutputWebHandler {
                     body = host.parseObject(host.readBody(exchange));
                 } catch (LocalWebServer.BodyTooLarge e) {
                     status = 413;
-                    WebHttp.json(exchange, status, Map.of("error", "请求体过大"));
+                    WebHttp.json(exchange, status, WebHttp.error("请求体过大"));
                     return;
                 } catch (RuntimeException e) {
                     status = 400;
-                    WebHttp.json(exchange, status, Map.of("error", "请求体应为 JSON 对象"));
+                    WebHttp.json(exchange, status, WebHttp.error("请求体应为 JSON 对象"));
                     return;
                 }
             }
-            Map<String, Object> result;
+            Object result;
             switch (path) {
                 case "/api/output" -> {
                     if ("GET".equals(method)) {
@@ -56,13 +56,13 @@ final class OutputWebHandler {
                         result = outputService.save(body);
                     } else {
                         status = 405;
-                        result = Map.of("error", "Method Not Allowed");
+                        result = WebHttp.error("Method Not Allowed");
                     }
                 }
                 case "/api/output/preview" -> {
                     if (!"POST".equals(method)) {
                         status = 405;
-                        result = Map.of("error", "Method Not Allowed");
+                        result = WebHttp.error("Method Not Allowed");
                     } else {
                         result = outputService.preview(body);
                     }
@@ -70,23 +70,23 @@ final class OutputWebHandler {
                 case "/api/output/reload" -> {
                     if (!"POST".equals(method)) {
                         status = 405;
-                        result = Map.of("error", "Method Not Allowed");
+                        result = WebHttp.error("Method Not Allowed");
                     } else {
                         result = outputService.reload();
                     }
                 }
                 default -> {
                     status = 404;
-                    result = Map.of("error", "Not Found");
+                    result = WebHttp.error("Not Found");
                 }
             }
-            if (status == 200 && Boolean.FALSE.equals(result.get("ok"))) {
+            if (status == 200 && WebHttp.failed(result)) {
                 status = 400;
             }
             WebHttp.json(exchange, status, result);
         } catch (RuntimeException e) {
             status = 500;
-            WebHttp.json(exchange, status, Map.of("error", "服务器内部错误"));
+            WebHttp.json(exchange, status, WebHttp.error("服务器内部错误"));
             host.warnRoute(exchange, e);
         } finally {
             LocalWebServer.log(exchange, status, start);

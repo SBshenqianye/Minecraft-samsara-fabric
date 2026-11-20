@@ -48,7 +48,7 @@ final class AnnouncementsWebHandler {
                 body = host.readBody(exchange);
             } catch (LocalWebServer.BodyTooLarge e) {
                 status = 413;
-                WebHttp.json(exchange, status, Map.of("error", "请求体过大"));
+                WebHttp.json(exchange, status, WebHttp.error("请求体过大"));
                 return;
             }
             JsonObject object;
@@ -60,7 +60,7 @@ final class AnnouncementsWebHandler {
             }
             if (object == null) {
                 status = 400;
-                WebHttp.json(exchange, status, Map.of("error", "请求体应为 JSON 对象"));
+                WebHttp.json(exchange, status, WebHttp.error("请求体应为 JSON 对象"));
                 return;
             }
             if ("PUT".equals(method)) {
@@ -71,7 +71,7 @@ final class AnnouncementsWebHandler {
                 }
                 if (list == null) {
                     status = 400;
-                    WebHttp.json(exchange, status, Map.of("error", "缺少 announcements 数组"));
+                    WebHttp.json(exchange, status, WebHttp.error("缺少 announcements 数组"));
                     return;
                 }
                 Map<String, Object> result = service.save(list);
@@ -83,7 +83,7 @@ final class AnnouncementsWebHandler {
             }
             if (!"POST".equals(method)) {
                 status = 405;
-                WebHttp.json(exchange, status, Map.of("error", "Method Not Allowed"));
+                WebHttp.json(exchange, status, WebHttp.error("Method Not Allowed"));
                 return;
             }
             String player = object.has("player") && object.get("player").isJsonPrimitive()
@@ -124,10 +124,10 @@ final class AnnouncementsWebHandler {
                 return;
             }
             status = 404;
-            WebHttp.json(exchange, status, Map.of("error", "Not Found"));
+            WebHttp.json(exchange, status, WebHttp.error("Not Found"));
         } catch (RuntimeException e) {
             status = 500;
-            WebHttp.json(exchange, status, Map.of("error", "服务器内部错误"));
+            WebHttp.json(exchange, status, WebHttp.error("服务器内部错误"));
             host.warnRoute(exchange, e);
         } finally {
             LocalWebServer.log(exchange, status, start);

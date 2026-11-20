@@ -53,7 +53,7 @@ final class ContainersWebHandler {
                     body = host.readBody(exchange);
                 } catch (LocalWebServer.BodyTooLarge e) {
                     status = 413;
-                    WebHttp.json(exchange, status, Map.of("error", "请求体过大"));
+                    WebHttp.json(exchange, status, WebHttp.error("请求体过大"));
                     return;
                 }
                 Map<String, Object> result = containerService.scan(body);
@@ -68,7 +68,7 @@ final class ContainersWebHandler {
                     body = host.readBody(exchange);
                 } catch (LocalWebServer.BodyTooLarge e) {
                     status = 413;
-                    WebHttp.json(exchange, status, Map.of("error", "请求体过大"));
+                    WebHttp.json(exchange, status, WebHttp.error("请求体过大"));
                     return;
                 }
                 Map<String, Object> result = containerService.item(body);
@@ -82,7 +82,7 @@ final class ContainersWebHandler {
                     body = host.readBody(exchange);
                 } catch (LocalWebServer.BodyTooLarge e) {
                     status = 413;
-                    WebHttp.json(exchange, status, Map.of("error", "请求体过大"));
+                    WebHttp.json(exchange, status, WebHttp.error("请求体过大"));
                     return;
                 }
                 AgentAuthService.AuthContext context = AgentAuthService.getInstance()
@@ -95,10 +95,10 @@ final class ContainersWebHandler {
                 return;
             }
             status = 404;
-            WebHttp.json(exchange, status, Map.of("error", "未知的容器接口"));
+            WebHttp.json(exchange, status, WebHttp.error("未知的容器接口"));
         } catch (RuntimeException e) {
             status = 500;
-            WebHttp.json(exchange, status, Map.of("error", WebHttp.errorDetail(e)));
+            WebHttp.json(exchange, status, WebHttp.error(WebHttp.errorDetail(e)));
             host.warnRoute(exchange, e);
         } finally {
             LocalWebServer.log(exchange, status, start);

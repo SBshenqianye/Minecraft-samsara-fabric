@@ -21,12 +21,12 @@ final class UserWebHandler {
         try {
             if (userService == null) {
                 status = 503;
-                WebHttp.json(exchange, status, Map.of("error", "用户端 Web 未启动"));
+                WebHttp.json(exchange, status, WebHttp.error("用户端 Web 未启动"));
                 return;
             }
             if (!"GET".equals(exchange.getRequestMethod())) {
                 status = 405;
-                WebHttp.json(exchange, status, Map.of("error", "Method Not Allowed"));
+                WebHttp.json(exchange, status, WebHttp.error("Method Not Allowed"));
                 return;
             }
             String path = exchange.getRequestURI().getPath();
@@ -56,7 +56,7 @@ final class UserWebHandler {
                 WorldStackIconService.IconFile icon = userService.icon(query.getOrDefault("stack", ""));
                 if (icon == null) {
                     status = 404;
-                    WebHttp.json(exchange, status, Map.of("error", "没有这个栈层图标"));
+                    WebHttp.json(exchange, status, WebHttp.error("没有这个栈层图标"));
                     return;
                 }
                 WebHttp.sendBytes(exchange, 200, icon.mime(), icon.bytes());
@@ -69,7 +69,7 @@ final class UserWebHandler {
                 MojangSkinService.Skin skin = userService.avatar(uuid, name);
                 if (skin == null) {
                     status = 404;
-                    WebHttp.json(exchange, status, Map.of("error", "没有可用的 Mojang 皮肤"));
+                    WebHttp.json(exchange, status, WebHttp.error("没有可用的 Mojang 皮肤"));
                     return;
                 }
                 WebHttp.sendBytes(exchange, 200, skin.mime(), skin.bytes());
@@ -82,7 +82,7 @@ final class UserWebHandler {
                 MojangSkinService.Skin skin = userService.head(uuid, name);
                 if (skin == null) {
                     status = 404;
-                    WebHttp.json(exchange, status, Map.of("error", "没有可用的玩家头像"));
+                    WebHttp.json(exchange, status, WebHttp.error("没有可用的玩家头像"));
                     return;
                 }
                 WebHttp.sendBytes(exchange, 200, skin.mime(), skin.bytes());
@@ -94,7 +94,7 @@ final class UserWebHandler {
                         query.getOrDefault("uuid", id), query.getOrDefault("name", id));
                 if (skin == null) {
                     status = 404;
-                    WebHttp.json(exchange, status, Map.of("error", "没有可用的 3D 皮肤"));
+                    WebHttp.json(exchange, status, WebHttp.error("没有可用的 3D 皮肤"));
                     return;
                 }
                 WebHttp.sendBytes(exchange, 200, skin.mime(), skin.bytes());
@@ -120,30 +120,29 @@ final class UserWebHandler {
                 Integer scale = WebHttp.intParam(query.get("scale"));
                 if (dimension.isBlank() || rx == null || rz == null || scale == null) {
                     status = 400;
-                    WebHttp.json(exchange, status, Map.of("error",
-                            "参数应为 stack=<栈层>&dim=<维度>&rx=<int>&rz=<int>&scale=1|2|4|8"));
+                    WebHttp.json(exchange, status, WebHttp.error("参数应为 stack=<栈层>&dim=<维度>&rx=<int>&rz=<int>&scale=1|2|4|8"));
                     return;
                 }
                 if (scale != 1 && scale != 2 && scale != 4 && scale != 8) {
                     status = 400;
-                    WebHttp.json(exchange, status, Map.of("error", "scale 只能是 1、2、4、8"));
+                    WebHttp.json(exchange, status, WebHttp.error("scale 只能是 1、2、4、8"));
                     return;
                 }
                 byte[] png = userService.tile(stack, dimension, rx, rz, scale,
                         !"0".equals(query.get("shade")));
                 if (png == null) {
                     status = 404;
-                    WebHttp.json(exchange, status, Map.of("error", "没有这个地图区块"));
+                    WebHttp.json(exchange, status, WebHttp.error("没有这个地图区块"));
                     return;
                 }
                 WebHttp.sendBytes(exchange, 200, "image/png", png);
                 return;
             }
             status = 404;
-            WebHttp.json(exchange, status, Map.of("error", "Not Found"));
+            WebHttp.json(exchange, status, WebHttp.error("Not Found"));
         } catch (RuntimeException e) {
             status = 500;
-            WebHttp.json(exchange, status, Map.of("error", "服务器内部错误"));
+            WebHttp.json(exchange, status, WebHttp.error("服务器内部错误"));
             SamsaraLog.warnUser(exchange, e);
         } finally {
             LocalWebServer.log(exchange, status, start);

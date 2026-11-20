@@ -30,7 +30,7 @@ final class WorldStackWebHandler {
             }
             if (worldStackService == null) {
                 status = 503;
-                WebHttp.json(exchange, status, Map.of("error", "世界栈服务未启动"));
+                WebHttp.json(exchange, status, WebHttp.error("世界栈服务未启动"));
                 return;
             }
             String path = exchange.getRequestURI().getPath();
@@ -43,11 +43,11 @@ final class WorldStackWebHandler {
                     body = host.parseObject(LocalWebServer.readBody(exchange, bodyLimit));
                 } catch (LocalWebServer.BodyTooLarge e) {
                     status = 413;
-                    WebHttp.json(exchange, status, Map.of("error", "请求体过大"));
+                    WebHttp.json(exchange, status, WebHttp.error("请求体过大"));
                     return;
                 } catch (RuntimeException e) {
                     status = 400;
-                    WebHttp.json(exchange, status, Map.of("error", "请求体应为 JSON 对象"));
+                    WebHttp.json(exchange, status, WebHttp.error("请求体应为 JSON 对象"));
                     return;
                 }
             }
@@ -71,7 +71,7 @@ final class WorldStackWebHandler {
                     result = worldStackService.job(id);
                 } else {
                     status = 404;
-                    result = Map.of("error", "Not Found");
+                    result = WebHttp.error("Not Found");
                 }
             } else if ("POST".equals(method)) {
                 switch (path) {
@@ -99,12 +99,12 @@ final class WorldStackWebHandler {
                             result = worldStackService.cleanupTimelineSnapshot(body);
                     default -> {
                         status = 404;
-                        result = Map.of("error", "Not Found");
+                        result = WebHttp.error("Not Found");
                     }
                 }
             } else {
                 status = 405;
-                result = Map.of("error", "Method Not Allowed");
+                result = WebHttp.error("Method Not Allowed");
             }
             if (status == 200 && result instanceof Map<?, ?> map
                     && Boolean.FALSE.equals(map.get("ok"))) {
@@ -113,7 +113,7 @@ final class WorldStackWebHandler {
             WebHttp.json(exchange, status, result);
         } catch (RuntimeException | LinkageError e) {
             status = 500;
-            WebHttp.json(exchange, status, Map.of("error", "服务器内部错误：" + WebHttp.errorDetail(e)));
+            WebHttp.json(exchange, status, WebHttp.error("服务器内部错误：" + WebHttp.errorDetail(e)));
             com.shenqianye.samsara.Samsara.LOGGER.warn("[web] 处理 {} 失败: {}", exchange.getRequestURI().getPath(), e.toString());
         } finally {
             LocalWebServer.log(exchange, status, start);

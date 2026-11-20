@@ -48,7 +48,7 @@ import java.util.UUID;
  * </pre>
  */
 public class DebugCommand {
-    private static SeasonManager manager() { return SeasonManager.getInstance(); }
+    static SeasonManager manager() { return SeasonManager.getInstance(); }
     // 破坏性操作的二次确认统一由 ConfirmGuard 管理（按操作 key 隔离 + 30 秒有效期），
     // 不再使用各命令自己的 boolean 待确认标记。
 
@@ -116,19 +116,10 @@ public class DebugCommand {
                                                                                 IntegerArgumentType.getInteger(ctx, "stateId"),
                                                                                 IntegerArgumentType.getInteger(ctx, "scale")))))))));
         var samsaraNode = Commands.literal("samsara")
-                .executes(ctx -> sendHelp(ctx.getSource()))
-                .then(Commands.literal("help")
-                        .executes(ctx -> sendHelp(ctx.getSource())))
+                .executes(ctx -> DebugHelpCommand.send(ctx.getSource()))
+                .then(DebugHelpCommand.helpNode())
                 .then(DebugMetaCommands.versionNode())
-                .then(Commands.literal("restart")
-                        .requires(src -> com.shenqianye.samsara.permission.PermissionChecker
-                                .check(src, "restart"))
-                        .executes(ctx -> restart(ctx.getSource(),
-                                com.shenqianye.samsara.config.CommandConfig.getInstance()
-                                        .shutdownCountdownSeconds()))
-                        .then(Commands.argument("seconds", IntegerArgumentType.integer(1, 300))
-                                .executes(ctx -> restart(ctx.getSource(),
-                                        IntegerArgumentType.getInteger(ctx, "seconds")))))
+                .then(DebugHelpCommand.restartNode())
                 .then(IdentityCommand.identityNode())
                 .then(com.shenqianye.samsara.opauth.OpAuthCommand.registerNode())
                 .then(com.shenqianye.samsara.opauth.OpAuthCommand.loginNode())
@@ -287,18 +278,8 @@ public class DebugCommand {
                                                                 IntegerArgumentType.getInteger(ctx, "id"),
                                                                 StringArgumentType.getString(ctx, "field"),
                                                                 StringArgumentType.getString(ctx, "value"))))))))
-                        .then(Commands.literal("fakeplayers")
-                                .requires(PermissionRequirements.ownerAnd("debug fakeplayers"))
-                                .then(Commands.argument("names", StringArgumentType.greedyString())
-                                        .suggests(SuggestionProviders.fakePlayersProvider())
-                                        .executes(DebugCommand::fakePlayers)))
-                        .then(Commands.literal("groups")
-                                .requires(PermissionRequirements.ownerAnd("debug groups"))
-                                .executes(ctx -> reply(ctx.getSource(), previewGroups(ctx, null)))
-                                .then(Commands.argument("names", StringArgumentType.greedyString())
-                                        .suggests(SuggestionProviders.playerListProvider())
-                                        .executes(ctx -> reply(ctx.getSource(),
-                                                previewGroups(ctx, StringArgumentType.getString(ctx, "names"))))))
+                        .then(DebugPlayerCommands.fakePlayersNode())
+                        .then(DebugPlayerCommands.groupsNode())
                         .then(DebugRewindCommands.node())
                         .then(DebugTrackCommands.node())
                         .then(Commands.literal("config")
@@ -311,22 +292,7 @@ public class DebugCommand {
                                                 .executes(ctx -> replyOrErr(ctx, manager().config(
                                                         StringArgumentType.getString(ctx, "key"),
                                                         StringArgumentType.getString(ctx, "value")))))))
-                        .then(Commands.literal("settings")
-                                .requires(PermissionRequirements.ownerAnd("debug settings"))
-                                .executes(ctx -> reply(ctx.getSource(), manager().settingsText()))
-                                .then(Commands.literal("groupdist")
-                                        .then(Commands.argument("blocks", IntegerArgumentType.integer(0, 10000))
-                                                .executes(ctx -> reply(ctx.getSource(), manager().setGroupMinDistance(
-                                                        IntegerArgumentType.getInteger(ctx, "blocks"))))))
-                                .then(Commands.literal("birthjitter")
-                                        .then(Commands.argument("blocks", IntegerArgumentType.integer(0, 1000))
-                                                .executes(ctx -> reply(ctx.getSource(), manager().setBirthpointJitter(
-                                                        IntegerArgumentType.getInteger(ctx, "blocks"))))))
-                                .then(Commands.literal("birthreset")
-                                        .then(Commands.argument("on", StringArgumentType.word())
-                                                .suggests(SuggestionProviders.boolProvider())
-                                                .executes(ctx -> reply(ctx.getSource(), manager().setResetIndividualBirthpoint(
-                                                        Boolean.parseBoolean(StringArgumentType.getString(ctx, "on"))))))))
+                        .then(DebugPlayerCommands.settingsNode())
                         .then(DebugClaimCommands.node())
                         .then(IdentityCommand.debugIdentityNode())
                         .then(permNode())
@@ -508,181 +474,6 @@ public class DebugCommand {
         return manager().reset();
     }
     /**
-     * fakeplayers 三种形态 + clear：
-     *  - `clear`             → 清空注入池
-     *  - 纯数字 `3`          → TestPlayer1..3
-     *  - 前缀+数量 `guard 3` → guard1,guard2,guard3
-     *  - 名字序列 `Alice,Bob` → 按名字逐个生成
-     * 注入后即进入注册玩家池（视为刚上线），供 /samsara debug groups 与 /season start 分组使用。
-     */
-    private static int fakePlayers(CommandContext<CommandSourceStack> ctx) {
-        String arg = StringArgumentType.getString(ctx, "names").trim();
-        // 聊天栏补全点击会补一个逗号（列表参数），末尾逗号不代表空名字，直接忽略。
-        while (arg.endsWith(",") || arg.endsWith("，")) {
-            arg = arg.substring(0, arg.length() - 1).trim();
-        }
-        List<String> names = new ArrayList<>();
-        if ("clear".equalsIgnoreCase(arg)) {
-            PlayerRegistry.getInstance().clearInjected();
-            return reply(ctx.getSource(), "已清空注入的测试玩家（当前注入池 0 人）");
-        }
-        if (arg.matches("\\d+")) {
-            int n = Integer.parseInt(arg);
-            for (int i = 1; i <= n; i++) {
-                names.add("TestPlayer" + i);
-            }
-        } else {
-            String[] tokens = arg.split("\\s+");
-            if (tokens.length == 2 && !tokens[0].isEmpty() && !tokens[0].matches("\\d+") && tokens[1].matches("\\d+")) {
-                String prefix = tokens[0];
-                int n = Integer.parseInt(tokens[1]);
-                for (int i = 1; i <= n; i++) {
-                    names.add(prefix + i);
-                }
-            } else {
-                for (String s : arg.split("[,，]")) {
-                    s = s.trim();
-                    if (!s.isEmpty()) {
-                        names.add(s);
-                    }
-                }
-            }
-        }
-        if (names.isEmpty()) {
-            return reply(ctx.getSource(), "参数为空（clear=清空；数字=批量 TestPlayer1..N；前缀+数字=如 guard 3；逗号分隔名字）");
-        }
-        PlayerRegistry.getInstance().inject(names);
-        StringBuilder sb = new StringBuilder("注入 " + names.size() + " 名测试玩家（名 → 离线UUID，分组数据）：\n");
-        for (String name : names) {
-            UUID offlineUuid = UUID.nameUUIDFromBytes(("OfflinePlayer:" + name).getBytes(StandardCharsets.UTF_8));
-            sb.append("  ").append(name).append(" → ").append(offlineUuid).append('\n');
-        }
-        sb.append("当前注入池共 ").append(PlayerRegistry.getInstance().injectedCount()).append(" 人（clear 清空）");
-        return reply(ctx.getSource(), sb.toString().trim());
-    }
-
-    /** 分组 dry-run：名单缺省用注册玩家；指定名单用 [] 临时构造（不影响注入池） */
-    private static String previewGroups(CommandContext<CommandSourceStack> ctx, String spec) {
-        List<PlayerRegistry.RegPlayer> players;
-        if (spec != null && !spec.isBlank()) {
-            List<String> names = new ArrayList<>();
-            for (String s : spec.split("[,，]")) {
-                s = s.trim();
-                if (!s.isEmpty()) {
-                    names.add(s);
-                }
-            }
-            List<PlayerRegistry.RegPlayer> tmp = new ArrayList<>();
-            for (String n : names) {
-                tmp.add(new PlayerRegistry.RegPlayer(n, PlayerRegistry.offlineUuid(n), System.currentTimeMillis()));
-            }
-            if (tmp.isEmpty()) {
-                return "名单为空";
-            }
-            players = tmp;
-        } else {
-            players = PlayerRegistry.getInstance().read(ctx.getSource().getServer());
-            if (players.isEmpty()) {
-                return "当前没有注册玩家（先用 /samsara debug fakeplayers 注入名单）";
-            }
-        }
-        return manager().previewGroups(ctx.getSource().getServer(), players);
-    }
-
-    private static int sendHelp(CommandSourceStack src) {
-        String head = ChatFormat.getFirstPrefix();
-        String cont = ChatFormat.getContinuePrefix();
-        ChatUi.send(src,
-                ChatUi.text(head + "指令列表（青色=点击执行 · 黄色=点击填入，不执行）", ChatFormatting.WHITE),
-                ChatUi.text(cont + "玩家：", ChatFormatting.GRAY),
-                ChatUi.line(ChatUi.text(cont, ChatFormatting.GRAY),
-                        ChatUi.run("版本", "/samsara version", "查看模组与游戏版本"),
-                        ChatUi.run("MSPT", "/samsara mspt", "查看服务器 MSPT"),
-                        ChatUi.run("TPS", "/samsara tps", "查看服务器 TPS")),
-                ChatUi.line(ChatUi.text(cont, ChatFormatting.GRAY),
-                        ChatUi.run("我的位置", "/samsara where", "查看自己的维度、坐标、区块与朝向"),
-                        ChatUi.run("世界栈", "/samsara world list", "查看栈底→栈顶与当前世界"),
-                        ChatUi.run("出生点", "/samsara spawn", "当前世界 / 当前轮 / 出生点"),
-                        ChatUi.run("出生点历史", "/samsara spawn history", "查看同世界历次出生点"),
-                        ChatUi.run("圈地信息", "/samsara claim info", "查看当前区块的圈地信息"),
-                        ChatUi.run("边界开关", "/samsara claim boundary", "切换边界持续显示")),
-                ChatUi.line(ChatUi.text(cont, ChatFormatting.GRAY),
-                        ChatUi.run("身份状态", "/samsara identity status", "查看自己的身份组与 data UUID")),
-                ChatUi.line(ChatUi.text(cont, ChatFormatting.GRAY),
-                        ChatUi.suggest("发起开新周目", "/samsara season advance ",
-                                "无管理员且在线 >1 人时发起投票；填入 same 或 new"),
-                        ChatUi.run("同意开新周目", "/samsara season agree", "同意当前进行中的投票"),
-                        ChatUi.run("取消/撤回投票", "/samsara season cancel",
-                                "发起者撤回，或管理员取消进行中的投票"),
-                        ChatUi.run("投票状态", "/samsara season vote-status",
-                                "查看发起者、模式、同意名单与剩余时间")),
-                ChatUi.line(ChatUi.text(cont, ChatFormatting.GRAY),
-                        ChatUi.suggest("回看时段", "/samsara track list ", "填入 /samsara track list <玩家>"),
-                        ChatUi.suggest("片段收藏", "/samsara track clip add ",
-                                "填入 /samsara track clip add <目标> <开始时间> --duration 30m"),
-                        ChatUi.run("收藏列表", "/samsara track clip list", "查看自己的收藏片段"),
-                        ChatUi.suggest("向玩家传送", "/samsara tpa ", "填入 /samsara tpa <玩家>"),
-                        ChatUi.suggest("请玩家过来", "/samsara tpahere ", "填入 /samsara tpahere <玩家>")),
-                ChatUi.text(cont + "管理员（点击只填入，仍受权限检查）：", ChatFormatting.GRAY),
-                ChatUi.line(ChatUi.text(cont, ChatFormatting.GRAY),
-                        ChatUi.suggestIfPermitted(src, "reset same", "同世界重置",
-                                "/samsara reset same", "倒流删未保护区 + 排斥点重生（需二次确认）"),
-                        ChatUi.suggestIfPermitted(src, "reset new", "新世界入栈",
-                                "/samsara reset new ", "填入 /samsara reset new [种子]（会停服）"),
-                        ChatUi.suggestIfPermitted(src, "world enter", "进入旧世界",
-                                "/samsara world enter ", "填入 /samsara world enter <世界名>（会停服）"),
-                        ChatUi.suggestIfPermitted(src, "world leave", "返回下层",
-                                "/samsara world leave", "返回世界栈下一层（会停服）")),
-                ChatUi.line(ChatUi.text(cont, ChatFormatting.GRAY),
-                        ChatUi.suggestIf(isOwner(src), "调试状态",
-                                "/samsara debug status", "查看调试总览"),
-                        ChatUi.suggestIf(isOwner(src), "圈地管理",
-                                "/samsara debug claim list", "查看全部圈地旗帜"),
-                        ChatUi.suggestIf(isOwner(src), "权限配置",
-                                "/samsara debug perm list", "查看命令权限等级"),
-                        ChatUi.suggestIf(isOwner(src), "身份映射",
-                                "/samsara debug identity map", "查看全部身份组"),
-                        ChatUi.suggestIf(isOwner(src), "身份审计",
-                                "/samsara debug identity audit", "检查重复 UUID、空组、非法 data"),
-                        ChatUi.suggestIf(isOwner(src), "倒流预览",
-                                "/samsara debug rewind preview", "预览将倒流的区块（不执行）")),
-                ChatUi.line(ChatUi.text(cont, ChatFormatting.GRAY),
-                        ChatUi.suggestIfPermitted(src, "camera start", "镜头回看",
-                                "/samsara camera start ", "轨迹 + Diff 同时回看；--no-track/--no-diff 可单独关闭"),
-                        ChatUi.suggestIfPermitted(src, "camera status", "镜头状态",
-                                "/samsara camera status", "查看轨迹与 Diff 的进度/暂停/倍速"),
-                        ChatUi.suggestIfPermitted(src, "camera stop", "停止镜头",
-                                "/samsara camera stop", "同时清理轨迹人偶与 Diff HUD")),
-                ChatUi.line(ChatUi.text(cont, ChatFormatting.GRAY),
-                        ChatUi.suggestIf(isOwner(src), "轨迹回放",
-                                "/samsara debug track replay ", "填入 /samsara debug track replay <玩家> <开始时刻>"),
-                        ChatUi.suggestIf(isOwner(src), "轨迹回看",
-                                "/samsara track view ", "填入 /samsara track view <玩家> <开始时间>"),
-                        ChatUi.suggestIf(isOwner(src), "Diff 回看",
-                                "/samsara diff view ", "填入 /samsara diff view [--from ... --to ...]"),
-                        ChatUi.suggestIf(isOwner(src), "全部调试命令",
-                                "/samsara debug ", "点击填入后自行补参数")),
-                ChatUi.text(cont + "完整命令树：输入 /samsara <Tab> 逐级补全；玩家名、周目、时长、回看参数均支持 Tab。",
-                        ChatFormatting.GRAY));
-        return 1;
-    }
-
-    /** /samsara version：从 FabricLoader 取模组版本 + 显示名 + 游戏版本 */
-
-    private static int restart(CommandSourceStack src, int seconds) {
-        if (!com.shenqianye.samsara.shutdown.ShutdownAnnouncer.request(
-                src.getServer(), seconds)) {
-            return reply(src, "已有正在进行的关服倒计时");
-        }
-        return 1;
-    }
-
-
-    private static boolean isOwner(CommandSourceStack src) {
-        return src.permissions().hasPermission(Permissions.COMMANDS_OWNER);
-    }
-
-    /**
      * 发送格式化调试回复消息到聊天栏。
      * <p>
      * 使用 {@link ChatFormat} 统一格式：首行带 {@code [周目管理·调试] ▸ } 前缀，
@@ -707,4 +498,5 @@ public class DebugCommand {
         return reply(ctx.getSource(), message);
     }
 }
+
 

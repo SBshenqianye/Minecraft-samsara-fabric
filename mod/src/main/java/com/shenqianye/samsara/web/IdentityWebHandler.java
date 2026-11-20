@@ -33,7 +33,7 @@ final class IdentityWebHandler {
             }
             if (identityService == null) {
                 status = 503;
-                WebHttp.json(exchange, status, Map.of("error", "身份服务未启动"));
+                WebHttp.json(exchange, status, WebHttp.error("身份服务未启动"));
                 return;
             }
             String path = exchange.getRequestURI().getPath();
@@ -44,15 +44,15 @@ final class IdentityWebHandler {
                     body = host.parseObject(host.readBody(exchange));
                 } catch (LocalWebServer.BodyTooLarge e) {
                     status = 413;
-                    WebHttp.json(exchange, status, Map.of("error", "请求体过大"));
+                    WebHttp.json(exchange, status, WebHttp.error("请求体过大"));
                     return;
                 } catch (RuntimeException e) {
                     status = 400;
-                    WebHttp.json(exchange, status, Map.of("error", "请求体应为 JSON 对象"));
+                    WebHttp.json(exchange, status, WebHttp.error("请求体应为 JSON 对象"));
                     return;
                 }
             }
-            Map<String, Object> result;
+            Object result;
             switch (path) {
                 case "/api/identity" -> {
                     if ("GET".equals(method)) {
@@ -61,13 +61,13 @@ final class IdentityWebHandler {
                         result = identityService.save(body);
                     } else {
                         status = 405;
-                        result = Map.of("error", "Method Not Allowed");
+                        result = WebHttp.error("Method Not Allowed");
                     }
                 }
                 case "/api/identity/preview" -> {
                     if (!"POST".equals(method)) {
                         status = 405;
-                        result = Map.of("error", "Method Not Allowed");
+                        result = WebHttp.error("Method Not Allowed");
                     } else {
                         result = identityService.preview(body);
                     }
@@ -75,7 +75,7 @@ final class IdentityWebHandler {
                 case "/api/identity/rebind" -> {
                     if (!"POST".equals(method)) {
                         status = 405;
-                        result = Map.of("error", "Method Not Allowed");
+                        result = WebHttp.error("Method Not Allowed");
                     } else {
                         result = identityService.rebind(body);
                     }
@@ -83,7 +83,7 @@ final class IdentityWebHandler {
                 case "/api/identity/reload" -> {
                     if (!"POST".equals(method)) {
                         status = 405;
-                        result = Map.of("error", "Method Not Allowed");
+                        result = WebHttp.error("Method Not Allowed");
                     } else {
                         result = identityService.reload();
                     }
@@ -91,7 +91,7 @@ final class IdentityWebHandler {
                 case "/api/identity/audit" -> {
                     if (!"GET".equals(method)) {
                         status = 405;
-                        result = Map.of("error", "Method Not Allowed");
+                        result = WebHttp.error("Method Not Allowed");
                     } else {
                         result = identityService.audit();
                     }
@@ -99,7 +99,7 @@ final class IdentityWebHandler {
                 case "/api/identity/generate" -> {
                     if (!"POST".equals(method)) {
                         status = 405;
-                        result = Map.of("error", "Method Not Allowed");
+                        result = WebHttp.error("Method Not Allowed");
                     } else {
                         result = identityService.generate();
                     }
@@ -107,7 +107,7 @@ final class IdentityWebHandler {
                 case "/api/identity/resolve" -> {
                     if (!"POST".equals(method)) {
                         status = 405;
-                        result = Map.of("error", "Method Not Allowed");
+                        result = WebHttp.error("Method Not Allowed");
                     } else {
                         result = identityService.resolve(body);
                     }
@@ -115,7 +115,7 @@ final class IdentityWebHandler {
                 case "/api/identity/data" -> {
                     if (!"GET".equals(method)) {
                         status = 405;
-                        result = Map.of("error", "Method Not Allowed");
+                        result = WebHttp.error("Method Not Allowed");
                     } else {
                         Map<String, String> query = WebHttp.parseQuery(exchange.getRequestURI().getRawQuery());
                         result = inspectData(query.get("uuid"));
@@ -124,7 +124,7 @@ final class IdentityWebHandler {
                 case "/api/identity/data/backup" -> {
                     if (!"POST".equals(method)) {
                         status = 405;
-                        result = Map.of("error", "Method Not Allowed");
+                        result = WebHttp.error("Method Not Allowed");
                     } else {
                         result = backupData(body.get("uuid"));
                     }
@@ -132,7 +132,7 @@ final class IdentityWebHandler {
                 case "/api/identity/data/list" -> {
                     if (!"GET".equals(method)) {
                         status = 405;
-                        result = Map.of("error", "Method Not Allowed");
+                        result = WebHttp.error("Method Not Allowed");
                     } else {
                         result = identityService.dataList();
                     }
@@ -140,7 +140,7 @@ final class IdentityWebHandler {
                 case "/api/identity/data/backups" -> {
                     if (!"GET".equals(method)) {
                         status = 405;
-                        result = Map.of("error", "Method Not Allowed");
+                        result = WebHttp.error("Method Not Allowed");
                     } else {
                         Map<String, String> query = WebHttp.parseQuery(exchange.getRequestURI().getRawQuery());
                         result = identityService.dataBackups(query.get("uuid"));
@@ -149,23 +149,23 @@ final class IdentityWebHandler {
                 case "/api/identity/data/label" -> {
                     if (!"POST".equals(method)) {
                         status = 405;
-                        result = Map.of("error", "Method Not Allowed");
+                        result = WebHttp.error("Method Not Allowed");
                     } else {
                         result = identityService.dataLabel(body);
                     }
                 }
                 default -> {
                     status = 404;
-                    result = Map.of("error", "Not Found");
+                    result = WebHttp.error("Not Found");
                 }
             }
-            if (status == 200 && Boolean.FALSE.equals(result.get("ok"))) {
+            if (status == 200 && WebHttp.failed(result)) {
                 status = 400;
             }
             WebHttp.json(exchange, status, result);
         } catch (RuntimeException e) {
             status = 500;
-            WebHttp.json(exchange, status, Map.of("error", "服务器内部错误"));
+            WebHttp.json(exchange, status, WebHttp.error("服务器内部错误"));
             host.warnRoute(exchange, e);
         } finally {
             host.log(exchange, status, start);

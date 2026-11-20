@@ -6,6 +6,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.reflect.TypeToken;
 import com.shenqianye.samsara.config.spec.ConfigEditorService;
+import com.shenqianye.samsara.web.http.WebHttp;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.slf4j.Logger;
@@ -363,7 +364,7 @@ public final class LocalWebServer {
             }
             if (!"POST".equals(exchange.getRequestMethod())) {
                 status = 405;
-                json(exchange, status, Map.of("error", "Method Not Allowed"));
+                json(exchange, status, WebHttp.error("Method Not Allowed"));
                 return;
             }
             json(exchange, 200, service.reload());
@@ -455,7 +456,7 @@ public final class LocalWebServer {
             }
             if (!"GET".equals(exchange.getRequestMethod())) {
                 status = 405;
-                json(exchange, status, Map.of("error", "Method Not Allowed"));
+                json(exchange, status, WebHttp.error("Method Not Allowed"));
                 return;
             }
             json(exchange, 200, service.status());
@@ -476,13 +477,13 @@ public final class LocalWebServer {
             }
             if (!"GET".equals(exchange.getRequestMethod())) {
                 status = 405;
-                json(exchange, status, Map.of("error", "Method Not Allowed"));
+                json(exchange, status, WebHttp.error("Method Not Allowed"));
                 return;
             }
             json(exchange, 200, storageLayoutService.model());
         } catch (RuntimeException e) {
             status = 500;
-            json(exchange, status, Map.of("error", errorDetail(e)));
+            json(exchange, status, WebHttp.error(errorDetail(e)));
         } finally {
             log(exchange, status, start);
         }
@@ -506,23 +507,23 @@ public final class LocalWebServer {
         AgentAuthService.AuthContext context = AgentAuthService.getInstance().authenticate(
                 exchange.getRequestHeaders().getFirst("Authorization"), token);
         if (context == null) {
-            json(exchange, 401, Map.of("error", "未授权：缺少或错误的 Bearer token"));
+            json(exchange, 401, WebHttp.error("未授权：缺少或错误的 Bearer token"));
             return 401;
         }
         exchange.setAttribute(AgentAuthService.ATTR_CONTEXT, context);
         String path = exchange.getRequestURI().getPath();
         if (path.startsWith("/api/agent/tokens") && !context.admin()) {
-            json(exchange, 403, Map.of("error", "token 管理仅管理员可用"));
+            json(exchange, 403, WebHttp.error("token 管理仅管理员可用"));
             return 403;
         }
         AgentScope required = ApiScope.required(exchange.getRequestMethod(), path);
         if (!context.has(required)) {
-            json(exchange, 403, Map.of("error", "token 缺少 scope：" + required.id()));
+            json(exchange, 403, WebHttp.error("token 缺少 scope：" + required.id()));
             return 403;
         }
         if (!AgentAuthService.getInstance().allow(context, required)) {
             exchange.getResponseHeaders().set("Retry-After", "60");
-            json(exchange, 429, Map.of("error", "请求过于频繁，请稍后再试"));
+            json(exchange, 429, WebHttp.error("请求过于频繁，请稍后再试"));
             return 429;
         }
         IdempotencyService idempotency = IdempotencyService.getInstance();
@@ -584,6 +585,7 @@ public final class LocalWebServer {
     static final class BodyTooLarge extends Exception {
     }
 }
+
 
 
 

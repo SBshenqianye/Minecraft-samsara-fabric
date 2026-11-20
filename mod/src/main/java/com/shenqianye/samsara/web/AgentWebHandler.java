@@ -55,14 +55,14 @@ final class AgentWebHandler {
                     body = host.readBody(exchange);
                 } catch (LocalWebServer.BodyTooLarge e) {
                     status = 413;
-                    WebHttp.json(exchange, status, Map.of("error", "请求体过大"));
+                    WebHttp.json(exchange, status, WebHttp.error("请求体过大"));
                     return;
                 }
                 Map<String, Object> request = GSON.fromJson(body,
                         new TypeToken<Map<String, Object>>() { }.getType());
                 if (request == null) {
                     status = 400;
-                    WebHttp.json(exchange, status, Map.of("error", "请求体应为 JSON 对象"));
+                    WebHttp.json(exchange, status, WebHttp.error("请求体应为 JSON 对象"));
                     return;
                 }
                 if ("POST".equals(method)) {
@@ -87,14 +87,14 @@ final class AgentWebHandler {
                     return;
                 }
                 status = 405;
-                WebHttp.json(exchange, status, Map.of("error", "Method Not Allowed"));
+                WebHttp.json(exchange, status, WebHttp.error("Method Not Allowed"));
                 return;
             }
             status = 404;
-            WebHttp.json(exchange, status, Map.of("error", "Not Found"));
+            WebHttp.json(exchange, status, WebHttp.error("Not Found"));
         } catch (RuntimeException e) {
             status = 500;
-            WebHttp.json(exchange, status, Map.of("error", "服务器内部错误"));
+            WebHttp.json(exchange, status, WebHttp.error("服务器内部错误"));
             host.warnRoute(exchange, e);
         } finally {
             LocalWebServer.log(exchange, status, start);

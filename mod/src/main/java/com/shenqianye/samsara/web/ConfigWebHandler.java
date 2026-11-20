@@ -50,14 +50,13 @@ final class ConfigWebHandler {
                     body = LocalWebServer.readBody(exchange);
                 } catch (LocalWebServer.BodyTooLarge e) {
                     status = 413;
-                    WebHttp.json(exchange, status, Map.of("error", "请求体过大"));
+                    WebHttp.json(exchange, status, WebHttp.error("请求体过大"));
                     return;
                 }
                 SaveRequest request = parseSave(body);
                 if (request == null) {
                     status = 400;
-                    WebHttp.json(exchange, status, Map.of("error",
-                            "请求体应为 {\"file\":\"samsara:commands\",\"values\":{...}}"));
+                    WebHttp.json(exchange, status, WebHttp.error("请求体应为 {\"file\":\"samsara:commands\",\"values\":{...}}"));
                     return;
                 }
                 WebHttp.json(exchange, 200, ConfigEditorService.getInstance()
@@ -74,7 +73,7 @@ final class ConfigWebHandler {
                             new TypeToken<List<Map<String, Object>>>() { }.getType());
                 } catch (RuntimeException e) {
                     status = 400;
-                    WebHttp.json(exchange, status, Map.of("error", "curve 应为 JSON 数组"));
+                    WebHttp.json(exchange, status, WebHttp.error("curve 应为 JSON 数组"));
                     return;
                 }
                 boolean keepAll = "1".equals(query.get("keepAll"))
@@ -122,7 +121,7 @@ final class ConfigWebHandler {
             }
             if (!"PUT".equals(method)) {
                 status = 405;
-                WebHttp.json(exchange, status, Map.of("error", "Method Not Allowed"));
+                WebHttp.json(exchange, status, WebHttp.error("Method Not Allowed"));
                 return;
             }
             String body;
@@ -130,14 +129,13 @@ final class ConfigWebHandler {
                 body = LocalWebServer.readBody(exchange);
             } catch (LocalWebServer.BodyTooLarge e) {
                 status = 413;
-                WebHttp.json(exchange, status, Map.of("error", "请求体过大"));
+                WebHttp.json(exchange, status, WebHttp.error("请求体过大"));
                 return;
             }
             SaveRequest request = parseSave(body);
             if (request == null) {
                 status = 400;
-                WebHttp.json(exchange, status, Map.of("error",
-                        "请求体应为 {\"file\":\"commands\",\"values\":{...}}"));
+                WebHttp.json(exchange, status, WebHttp.error("请求体应为 {\"file\":\"commands\",\"values\":{...}}"));
                 return;
             }
             if (request.file().contains(":") || !request.source().isBlank()) {
@@ -168,7 +166,7 @@ final class ConfigWebHandler {
             WebHttp.json(exchange, 200, result);
         } catch (RuntimeException e) {
             status = 500;
-            WebHttp.json(exchange, status, Map.of("error", "服务器内部错误"));
+            WebHttp.json(exchange, status, WebHttp.error("服务器内部错误"));
             host.warnRoute(exchange, e);
         } finally {
             LocalWebServer.log(exchange, status, start);
