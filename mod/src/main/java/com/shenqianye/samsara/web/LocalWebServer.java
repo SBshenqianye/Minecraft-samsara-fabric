@@ -441,54 +441,9 @@ public final class LocalWebServer {
 
 
     private void handleItems(HttpExchange exchange) throws IOException {
-        long start = System.currentTimeMillis();
-        int status = 200;
-        try {
-            int auth = authorize(exchange);
-            if (auth != 0) {
-                status = auth;
-                return;
-            }
-            String path = exchange.getRequestURI().getPath();
-            String method = exchange.getRequestMethod();
-            if ("GET".equals(method) && "/api/items/schema".equals(path)) {
-                Map<String, Object> result = itemService.schema();
-                status = result.get("ok") == Boolean.TRUE ? 200 : 400;
-                json(exchange, status, result);
-                return;
-            }
-            if ("POST".equals(method) && ("/api/items/describe".equals(path)
-                    || "/api/items/build".equals(path) || "/api/items/raw".equals(path)
-                    || "/api/items/craft".equals(path))) {
-                String body;
-                try {
-                    body = readBody(exchange);
-                } catch (BodyTooLarge e) {
-                    status = 413;
-                    json(exchange, status, Map.of("error", "请求体过大"));
-                    return;
-                }
-                Map<String, Object> result = "/api/items/describe".equals(path)
-                        ? itemService.describe(body) : "/api/items/raw".equals(path)
-                        ? itemService.raw(body) : "/api/items/craft".equals(path)
-                        ? itemService.craft(body) : itemService.build(body);
-                Object requested = result.get("status");
-                status = requested instanceof Number number ? number.intValue()
-                        : result.get("ok") == Boolean.TRUE ? 200 : 400;
-                json(exchange, status, result);
-                return;
-            }
-            status = 404;
-            json(exchange, status, Map.of("error", "未知物品接口"));
-        } catch (RuntimeException e) {
-            status = 500;
-            json(exchange, status, Map.of("error", errorDetail(e)));
-            LOG.warn("[web] 物品操作 {} 失败: {}", exchange.getRequestURI().getPath(),
-                    e.getMessage());
-        } finally {
-            log(exchange, status, start);
-        }
+        new ItemsWebHandler(this, itemService).handle(exchange);
     }
+
 
     private void handleStatus(HttpExchange exchange) throws IOException {        long start = System.currentTimeMillis();
         int status = 200;
