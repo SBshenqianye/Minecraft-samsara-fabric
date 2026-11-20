@@ -1040,17 +1040,15 @@ public final class ContainerIndexService {
     }
 
     /** 读取接口附带物品元数据，供 Web 容器页显示图标/名称/数量/组件。 */
-    private List<Map<String, Object>> itemModels(ContainerEntry entry) {
-        List<Map<String, Object>> rows = new ArrayList<>();
+    private List<ContainerViews.ItemRow> itemModels(ContainerEntry entry) {
+        List<ContainerViews.ItemRow> rows = new ArrayList<>();
         for (int i = 0; i < entry.slots.size(); i++) {
             String encoded = entry.slots.get(i);
             if (encoded == null || encoded.isBlank()) continue;
             ItemStack stack = LotteryItemCodec.decode(encoded, registries);
             if (stack.isEmpty()) continue;
-            Map<String, Object> row = new LinkedHashMap<>(
-                    com.shenqianye.samsara.item.ItemStackModel.compact(stack, encoded));
-            row.put("slot", i);
-            rows.add(row);
+            rows.add(new ContainerViews.ItemRow(
+                    com.shenqianye.samsara.item.ItemStackModel.compact(stack, encoded), i));
         }
         return rows;
     }

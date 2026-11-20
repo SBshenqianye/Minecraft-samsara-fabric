@@ -160,8 +160,8 @@ public final class ItemWebService {
             String encoded = LotteryItemCodec.encode(result, registries);
             out.put("result", ItemStackModel.compact(result, encoded));
             List<ItemStack> remainders = recipe.value().getRemainingItems(input);
-            List<Map<String, Object>> remaining = new java.util.ArrayList<>(
-                    java.util.Collections.nCopies(9, null));
+            List<com.shenqianye.samsara.item.ItemStackView.Compact> remaining =
+                    new java.util.ArrayList<>(java.util.Collections.nCopies(9, null));
             int remainderIndex = 0;
             for (int i = 0; i < 9; i++) {
                 ItemStack stack = null;

@@ -50,93 +50,71 @@ public final class ItemStackModel {
 
     // ---- 读取 ----
 
-    public static Map<String, Object> describe(ItemStack stack, RegistryAccess registries, String encoded) {
-        Map<String, Object> out = new LinkedHashMap<>();
+    public static ItemStackView.Detail describe(ItemStack stack, RegistryAccess registries,
+                                                String encoded) {
         if (stack == null || stack.isEmpty()) {
-            out.put("empty", true);
-            return out;
+            return new ItemStackView.Detail(true, null, null, null, null, null, null, null, null,
+                    null, null, null, null, null, null, null, null, null, null, null, null, null,
+                    null, null, null, null, null, null, null);
         }
         String id = String.valueOf(BuiltInRegistries.ITEM.getKey(stack.getItem()));
         int colon = id.indexOf(':');
-        out.put("empty", false);
-        out.put("id", id);
-        out.put("icon", colon >= 0 ? id.substring(colon + 1) : id);
-        out.put("name", stack.getHoverName().getString());
-        out.put("zh", ItemLang.zh(id));
-        out.put("count", stack.getCount());
-        out.put("maxStack", stack.getMaxStackSize());
-        out.put("encoded", encoded == null ? "" : encoded);
-        out.put("signature", signature(stack));
-        out.put("glint", stack.hasFoil());
-        out.put("components", stack.getComponents().toString());
-        out.put("componentCount", stack.getComponents().size());
-        out.put("snbt", snbt(stack, registries));
-
         Component customName = stack.get(DataComponents.CUSTOM_NAME);
-        out.put("customName", customName == null ? "" : customName.getString());
         Component itemName = stack.get(DataComponents.ITEM_NAME);
-        out.put("itemName", itemName == null ? "" : itemName.getString());
         ItemLore lore = stack.get(DataComponents.LORE);
         List<String> loreLines = new ArrayList<>();
         if (lore != null) {
             lore.lines().forEach(line -> loreLines.add(line.getString()));
         }
-        out.put("lore", loreLines);
-        out.put("enchantments", enchantments(stack.get(DataComponents.ENCHANTMENTS)));
-        out.put("storedEnchantments", enchantments(stack.get(DataComponents.STORED_ENCHANTMENTS)));
-        out.put("unbreakable", stack.has(DataComponents.UNBREAKABLE));
-        out.put("damage", stack.getDamageValue());
-        out.put("maxDamage", stack.getMaxDamage());
-        // 与原版 ItemStack#getRarity 一致：附魔会把普通/罕见抬到稀有，稀有抬到史诗。
-        out.put("rarity", stack.getRarity().getSerializedName());
-        // 编辑器只认“显式覆盖”的组件，避免把物品默认值或附魔推导值写死进物品。
+        // 编辑器只认"显式设置"的稀有度；不设置就按物品默认值，附魔抬升值写回会污染物品。
         Rarity explicitRarity = stack.get(DataComponents.RARITY);
         Rarity defaultRarity = stack.getPrototype() == null
                 ? null : stack.getPrototype().get(DataComponents.RARITY);
-        out.put("rarityComponent", explicitRarity == null || explicitRarity == defaultRarity
-                ? "" : explicitRarity.getSerializedName());
-        out.put("glintOverride", stack.get(DataComponents.ENCHANTMENT_GLINT_OVERRIDE));
-        out.put("dye", dye(stack));
-        out.put("tint", tint(stack));
-        out.put("customModelData", customModelData(stack.get(DataComponents.CUSTOM_MODEL_DATA)));
-        out.put("attributes", attributes(stack.get(DataComponents.ATTRIBUTE_MODIFIERS)));
-        out.put("potion", potion(stack.get(DataComponents.POTION_CONTENTS)));
-        return out;
+        return new ItemStackView.Detail(false, id, colon >= 0 ? id.substring(colon + 1) : id,
+                stack.getHoverName().getString(), ItemLang.zh(id), stack.getCount(),
+                stack.getMaxStackSize(), encoded == null ? "" : encoded, signature(stack),
+                stack.hasFoil(), stack.getComponents().toString(), stack.getComponents().size(),
+                snbt(stack, registries),
+                customName == null ? "" : customName.getString(),
+                itemName == null ? "" : itemName.getString(),
+                loreLines,
+                enchantments(stack.get(DataComponents.ENCHANTMENTS)),
+                enchantments(stack.get(DataComponents.STORED_ENCHANTMENTS)),
+                stack.has(DataComponents.UNBREAKABLE), stack.getDamageValue(),
+                stack.getMaxDamage(),
+                // 与原版 ItemStack#getRarity 一致：附魔会把普通/罕见抬升稀有，稀有抬升史诗。
+                stack.getRarity().getSerializedName(),
+                explicitRarity == null || explicitRarity == defaultRarity
+                        ? "" : explicitRarity.getSerializedName(),
+                stack.get(DataComponents.ENCHANTMENT_GLINT_OVERRIDE), dye(stack), tint(stack),
+                customModelData(stack.get(DataComponents.CUSTOM_MODEL_DATA)),
+                attributes(stack.get(DataComponents.ATTRIBUTE_MODIFIERS)),
+                potion(stack.get(DataComponents.POTION_CONTENTS)));
     }
 
     /** 容器/背包列表用的轻量模型。 */
-    public static Map<String, Object> compact(ItemStack stack, String encoded) {
-        Map<String, Object> out = new LinkedHashMap<>();
-        if (stack == null || stack.isEmpty()) return out;
+    public static ItemStackView.Compact compact(ItemStack stack, String encoded) {
+        if (stack == null || stack.isEmpty()) {
+            return new ItemStackView.Compact(null, null, null, null, null, null, null, null, null,
+                    null, null, null, null, null, null, null, null, null, null, null, null);
+        }
         String id = String.valueOf(BuiltInRegistries.ITEM.getKey(stack.getItem()));
         int colon = id.indexOf(':');
-        out.put("id", id);
-        out.put("icon", colon >= 0 ? id.substring(colon + 1) : id);
-        out.put("name", stack.getHoverName().getString());
-        out.put("zh", ItemLang.zh(id));
-        out.put("count", stack.getCount());
-        out.put("maxStack", stack.getMaxStackSize());
-        out.put("encoded", encoded == null ? "" : encoded);
-        out.put("components", stack.getComponents().toString());
-        out.put("signature", signature(stack));
-        out.put("glint", stack.hasFoil());
-        Integer tint = tint(stack);
-        out.put("tint", tint);
-        out.put("componentCount", stack.getComponents().size());
         Component customName = stack.get(DataComponents.CUSTOM_NAME);
-        out.put("customName", customName == null ? "" : customName.getString());
         ItemLore lore = stack.get(DataComponents.LORE);
         List<String> loreLines = new ArrayList<>();
         if (lore != null) lore.lines().forEach(line -> loreLines.add(line.getString()));
-        out.put("lore", loreLines);
-        out.put("enchantments", enchantments(stack.get(DataComponents.ENCHANTMENTS)));
-        out.put("unbreakable", stack.has(DataComponents.UNBREAKABLE));
-        out.put("damage", stack.getDamageValue());
-        out.put("maxDamage", stack.getMaxDamage());
-        out.put("rarity", stack.getRarity().getSerializedName());
-        out.put("attributes", attributes(stack.get(DataComponents.ATTRIBUTE_MODIFIERS)));
-        out.put("potion", potion(stack.get(DataComponents.POTION_CONTENTS)));
-        return out;
+        return new ItemStackView.Compact(id, colon >= 0 ? id.substring(colon + 1) : id,
+                stack.getHoverName().getString(), ItemLang.zh(id), stack.getCount(),
+                stack.getMaxStackSize(), encoded == null ? "" : encoded,
+                stack.getComponents().toString(), signature(stack), stack.hasFoil(), tint(stack),
+                stack.getComponents().size(),
+                customName == null ? "" : customName.getString(), loreLines,
+                enchantments(stack.get(DataComponents.ENCHANTMENTS)),
+                stack.has(DataComponents.UNBREAKABLE), stack.getDamageValue(),
+                stack.getMaxDamage(), stack.getRarity().getSerializedName(),
+                attributes(stack.get(DataComponents.ATTRIBUTE_MODIFIERS)),
+                potion(stack.get(DataComponents.POTION_CONTENTS)));
     }
 
     /** 完整物品 SNBT（含 id/count/components），供 Web 原始 NBT 编辑。 */
@@ -169,36 +147,26 @@ public final class ItemStackModel {
         return id + "|" + stack.getComponents().toString();
     }
 
-    private static List<Map<String, Object>> enchantments(ItemEnchantments value) {
-        List<Map<String, Object>> out = new ArrayList<>();
+    private static List<ItemStackView.Enchant> enchantments(ItemEnchantments value) {
+        List<ItemStackView.Enchant> out = new ArrayList<>();
         if (value == null || value.isEmpty()) return out;
         for (Map.Entry<Holder<Enchantment>, Integer> entry : value.entrySet()) {
-            String id = key(entry.getKey());
-            Map<String, Object> row = new LinkedHashMap<>();
-            row.put("id", id);
-            row.put("name", entry.getKey().value().description().getString());
-            row.put("level", entry.getValue());
-            row.put("maxLevel", entry.getKey().value().getMaxLevel());
-            out.add(row);
+            out.add(new ItemStackView.Enchant(key(entry.getKey()),
+                    entry.getKey().value().description().getString(), entry.getValue(),
+                    entry.getKey().value().getMaxLevel()));
         }
-        out.sort((a, b) -> String.valueOf(a.get("id")).compareTo(String.valueOf(b.get("id"))));
+        out.sort((a, b) -> a.id().compareTo(b.id()));
         return out;
     }
 
-    private static List<Map<String, Object>> attributes(ItemAttributeModifiers value) {
-        List<Map<String, Object>> out = new ArrayList<>();
+    private static List<ItemStackView.Attribute> attributes(ItemAttributeModifiers value) {
+        List<ItemStackView.Attribute> out = new ArrayList<>();
         if (value == null) return out;
-        value.modifiers().forEach(entry -> {
-            Map<String, Object> row = new LinkedHashMap<>();
-            String id = key(entry.attribute());
-            row.put("id", id);
-            row.put("name", Component.translatable(entry.attribute().value().getDescriptionId()).getString());
-            row.put("amount", entry.modifier().amount());
-            row.put("operation", entry.modifier().operation().getSerializedName());
-            row.put("slot", entry.slot().getSerializedName());
-            row.put("modifierId", entry.modifier().id().toString());
-            out.add(row);
-        });
+        value.modifiers().forEach(entry -> out.add(new ItemStackView.Attribute(
+                key(entry.attribute()),
+                Component.translatable(entry.attribute().value().getDescriptionId()).getString(),
+                entry.modifier().amount(), entry.modifier().operation().getSerializedName(),
+                entry.slot().getSerializedName(), entry.modifier().id().toString())));
         return out;
     }
 
@@ -215,38 +183,27 @@ public final class ItemStackModel {
         return null;
     }
 
-    private static Map<String, Object> customModelData(CustomModelData value) {
+    private static ItemStackView.CustomModelData customModelData(CustomModelData value) {
         if (value == null) return null;
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("floats", new ArrayList<>(value.floats()));
-        out.put("flags", new ArrayList<>(value.flags()));
-        out.put("strings", new ArrayList<>(value.strings()));
-        out.put("colors", new ArrayList<>(value.colors()));
-        return out;
+        return new ItemStackView.CustomModelData(new ArrayList<>(value.floats()),
+                new ArrayList<>(value.flags()), new ArrayList<>(value.strings()),
+                new ArrayList<>(value.colors()));
     }
 
-    private static Map<String, Object> potion(PotionContents value) {
+    private static ItemStackView.Potion potion(PotionContents value) {
         if (value == null) return null;
-        Map<String, Object> out = new LinkedHashMap<>();
         String id = value.potion().flatMap(Holder::unwrapKey)
                 .map(ItemStackModel::key).orElse("");
-        out.put("id", id);
-        out.put("name", id.isBlank() ? "" : pretty(id));
-        out.put("customColor", value.customColor().orElse(null));
-        out.put("color", value.hasEffects() ? Integer.valueOf(value.getColor()) : null);
-        List<Map<String, Object>> effects = new ArrayList<>();
+        List<ItemStackView.Effect> effects = new ArrayList<>();
         for (MobEffectInstance effect : value.customEffects()) {
-            Map<String, Object> row = new LinkedHashMap<>();
-            row.put("id", key(effect.getEffect()));
-            row.put("name", effect.getEffect().value().getDisplayName().getString());
-            row.put("duration", effect.getDuration());
-            row.put("amplifier", effect.getAmplifier());
-            row.put("ambient", effect.isAmbient());
-            row.put("visible", effect.isVisible());
-            effects.add(row);
+            effects.add(new ItemStackView.Effect(key(effect.getEffect()),
+                    effect.getEffect().value().getDisplayName().getString(),
+                    effect.getDuration(), effect.getAmplifier(), effect.isAmbient(),
+                    effect.isVisible()));
         }
-        out.put("effects", effects);
-        return out;
+        return new ItemStackView.Potion(id, id.isBlank() ? "" : pretty(id),
+                value.customColor().orElse(null),
+                value.hasEffects() ? Integer.valueOf(value.getColor()) : null, effects);
     }
 
     // ---- 写入 ----

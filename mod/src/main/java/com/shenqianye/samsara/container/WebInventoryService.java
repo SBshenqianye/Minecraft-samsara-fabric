@@ -123,16 +123,13 @@ public final class WebInventoryService {
     }
 
     private Map<String, Object> model(List<String> slots) {
-        List<Map<String, Object>> items = new ArrayList<>();
+        List<ContainerViews.SlotItem> items = new ArrayList<>();
         for (int i = 0; i < slots.size(); i++) {
             String encoded = slots.get(i);
             if (encoded == null || encoded.isBlank()) continue;
             ItemStack stack = decode(encoded);
             if (stack.isEmpty()) continue;
-            Map<String, Object> row = new LinkedHashMap<>(
-                    ItemStackModel.compact(stack, encoded));
-            row.put("slot", i);
-            items.add(row);
+            items.add(new ContainerViews.SlotItem(ItemStackModel.compact(stack, encoded), i));
         }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("ok", true);

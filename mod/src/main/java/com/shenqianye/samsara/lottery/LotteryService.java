@@ -485,17 +485,15 @@ public final class LotteryService {
     public synchronized LotteryViews.FundInventory fundInventory() {
         List<String> slots = new ArrayList<>(fund);
         while (slots.size() < MIN_FUND_SLOTS) slots.add("");
-        List<Map<String, Object>> items = new ArrayList<>();
+        List<LotteryViews.FundItem> items = new ArrayList<>();
         for (int i = 0; i < slots.size(); i++) {
             String encoded = slots.get(i);
             if (encoded == null || encoded.isBlank()) continue;
             ItemStack stack = LotteryItemCodec.decode(encoded, registries);
             if (stack.isEmpty()) continue;
-            Map<String, Object> row = new LinkedHashMap<>(
-                    com.shenqianye.samsara.item.ItemStackModel.compact(stack, encoded));
-            row.put("value", ItemValueService.getInstance().valueOf(stack));
-            row.put("slot", i);
-            items.add(row);
+            items.add(new LotteryViews.FundItem(
+                    com.shenqianye.samsara.item.ItemStackModel.compact(stack, encoded),
+                    ItemValueService.getInstance().valueOf(stack), i));
         }
         return new LotteryViews.FundInventory(true, slots.size(), MIN_FUND_SLOTS, slots, items,
                 ItemValueService.getInstance().valueOf(LotteryItemCodec.decodeAll(slots, registries)));

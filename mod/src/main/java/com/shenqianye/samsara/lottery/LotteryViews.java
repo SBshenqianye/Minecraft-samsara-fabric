@@ -1,5 +1,8 @@
 package com.shenqianye.samsara.lottery;
 
+import com.google.gson.annotations.JsonAdapter;
+import com.shenqianye.samsara.item.ItemStackView;
+
 import java.util.List;
 import java.util.Map;
 
@@ -72,9 +75,14 @@ public final class LotteryViews {
     public record PublicFund(double value, int count, List<Map<String, Object>> items) {
     }
 
+    /** 基金仓库的一行物品（物品字段平铺 + value/slot）。 */
+    @JsonAdapter(ItemStackView.FlatJson.class)
+    public record FundItem(ItemStackView.Compact item, double value, int slot) {
+    }
+
     /** 基金仓库格子视图。 */
     public record FundInventory(boolean ok, int size, int minSize, List<String> slots,
-                                List<Map<String, Object>> items, double value) implements Outcome {
+                                List<FundItem> items, double value) implements Outcome {
     }
 
     /** 写操作结果：{@code {"ok":true,"message":"..."}}。 */

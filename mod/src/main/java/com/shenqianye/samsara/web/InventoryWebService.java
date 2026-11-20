@@ -31,7 +31,7 @@ public final class InventoryWebService {
         return PlayerInventoryService.getInstance().write(body, actor);
     }
 
-    public Map<String, Object> item(String body) {
+    public com.shenqianye.samsara.container.ContainerViews.Outcome item(String body) {
         return PlayerInventoryService.getInstance().item(body);
     }
 

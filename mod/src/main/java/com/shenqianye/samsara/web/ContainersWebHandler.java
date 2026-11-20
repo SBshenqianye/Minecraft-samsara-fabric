@@ -71,8 +71,8 @@ final class ContainersWebHandler {
                     WebHttp.json(exchange, status, WebHttp.error("请求体过大"));
                     return;
                 }
-                Map<String, Object> result = containerService.item(body);
-                status = result.get("ok") == Boolean.TRUE ? 200 : 400;
+                ContainerViews.Outcome result = containerService.item(body);
+                status = result.httpStatus();
                 WebHttp.json(exchange, status, result);
                 return;
             }

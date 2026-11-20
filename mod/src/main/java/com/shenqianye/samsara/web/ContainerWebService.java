@@ -108,41 +108,39 @@ public final class ContainerWebService {
      * <p>
      * 响应里是共享物品模型（{@code ItemStackModel.describe}），仍为 Map。
      */
-    public Map<String, Object> item(String body) {
+    public ContainerViews.Outcome item(String body) {
         Map<String, Object> request = parse(body);
         if (request == null) {
-            return errorMap(400, "请求体应为 JSON 对象");
+            return statusError(400, "请求体应为 JSON 对象");
         }
         String encoded = string(request, "encoded");
         String id = string(request, "id");
         int count = intOrNull(request.get("count")) == null ? 1 : intOrNull(request.get("count"));
         boolean unlimited = Boolean.TRUE.equals(request.get("unlimited"));
         if (count < 1) {
-            return errorMap(400, "数量至少为 1");
+            return statusError(400, "数量至少为 1");
         }
-        return onServerMap(() -> {
-            if (server == null) return errorMap(503, "服务器未启动");
+        return onServer(() -> {
+            if (server == null) return statusError(503, "服务器未启动");
             ItemStack stack;
             if (encoded != null && !encoded.isBlank()) {
                 stack = LotteryItemCodec.decode(encoded, server.registryAccess());
-                if (stack.isEmpty()) return errorMap(400, "物品编码无效");
+                if (stack.isEmpty()) return statusError(400, "物品编码无效");
                 stack.setCount(count);
             } else {
                 Identifier identifier = Identifier.tryParse(id);
-                if (identifier == null) return errorMap(400, "物品 ID 格式不正确");
+                if (identifier == null) return statusError(400, "物品 ID 格式不正确");
                 Item item = BuiltInRegistries.ITEM.getOptional(identifier).orElse(null);
-                if (item == null || item == Items.AIR) return errorMap(400, "未知物品：" + id);
+                if (item == null || item == Items.AIR) return statusError(400, "未知物品：" + id);
                 stack = new ItemStack(item, count);
             }
             if (!unlimited && stack.getCount() > stack.getMaxStackSize()) {
-                return errorMap(400, "数量超过最大堆叠数 " + stack.getMaxStackSize());
+                return statusError(400, "数量超过最大堆叠数 " + stack.getMaxStackSize());
             }
             String result = LotteryItemCodec.encode(stack, server.registryAccess());
-            if (result.isBlank()) return errorMap(500, "物品编码失败");
-            Map<String, Object> out = new LinkedHashMap<>();
-            out.put("ok", true);
-            out.putAll(ItemStackModel.describe(stack, server.registryAccess(), result));
-            return out;
+            if (result.isBlank()) return statusError(500, "物品编码失败");
+            return new com.shenqianye.samsara.container.ContainerViews.ItemResponse(true,
+                    ItemStackModel.describe(stack, server.registryAccess(), result));
         });
     }
 
@@ -180,28 +178,6 @@ public final class ContainerWebService {
             return future.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
         } catch (Exception e) {
             return new ContainerViews.StatusError(false, 500, "容器操作失败：" + e.getMessage());
-        }
-    }
-
-    private Map<String, Object> onServerMap(Supplier<Map<String, Object>> action) {
-        if (server == null) {
-            return errorMap(503, "服务器未启动");
-        }
-        try {
-            if (server.isSameThread()) {
-                return action.get();
-            }
-            CompletableFuture<Map<String, Object>> future = new CompletableFuture<>();
-            server.execute(() -> {
-                try {
-                    future.complete(action.get());
-                } catch (Throwable t) {
-                    future.completeExceptionally(t);
-                }
-            });
-            return future.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-        } catch (Exception e) {
-            return errorMap(500, "容器操作失败：" + e.getMessage());
         }
     }
 
@@ -260,12 +236,7 @@ public final class ContainerWebService {
         return fallback;
     }
 
-    /** 物品辅助接口的错误体（与共享物品模型同层，保留 Map）。 */
-    private static Map<String, Object> errorMap(int status, String message) {
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("ok", false);
-        out.put("status", status);
-        out.put("error", message);
-        return out;
+    private static ContainerViews.StatusError statusError(int status, String message) {
+        return new ContainerViews.StatusError(false, status, message);
     }
 }

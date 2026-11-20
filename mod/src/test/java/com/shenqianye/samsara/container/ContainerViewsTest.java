@@ -43,7 +43,12 @@ class ContainerViewsTest {
     void readCarriesContainerAndItems() {
         ContainerViews.Entry entry = new ContainerViews.Entry("d", 0, 0, 0, "t", 1, 0, "",
                 true, 1L, 2L, "loaded", List.of(""));
-        ContainerViews.Read read = new ContainerViews.Read(true, entry, List.of(Map.of("slot", 0)));
+        ContainerViews.Read read = new ContainerViews.Read(true, entry,
+                List.of(new ContainerViews.ItemRow(
+                        new com.shenqianye.samsara.item.ItemStackView.Compact("minecraft:stone",
+                                "stone", "石头", "石头", 1, 64, "enc", "{}", "sig", false, null,
+                                0, "", List.of(), List.of(), false, 0, 0, "common", List.of(),
+                                null), 0)));
         Map<String, Object> out = json(read);
         assertEquals(Set.of("ok", "container", "items"), out.keySet());
         assertEquals(List.of("dimension", "x", "y", "z", "type", "size", "nonEmpty", "axis",

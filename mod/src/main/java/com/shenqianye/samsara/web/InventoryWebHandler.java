@@ -46,15 +46,17 @@ final class InventoryWebHandler {
                     WebHttp.json(exchange, status, WebHttp.error("请求体过大"));
                     return;
                 }
-                Map<String, Object> result;
                 if ("/api/inventory/item".equals(path)) {
-                    result = inventoryService.item(body);
-                } else {
-                    AgentAuthService.AuthContext context = AgentAuthService.getInstance()
-                            .context(exchange);
-                    String actor = context == null ? "admin" : context.actor();
-                    result = inventoryService.write(body, actor);
+                    com.shenqianye.samsara.container.ContainerViews.Outcome outcome =
+                            inventoryService.item(body);
+                    status = outcome.httpStatus();
+                    WebHttp.json(exchange, status, outcome);
+                    return;
                 }
+                AgentAuthService.AuthContext context = AgentAuthService.getInstance()
+                        .context(exchange);
+                String actor = context == null ? "admin" : context.actor();
+                Map<String, Object> result = inventoryService.write(body, actor);
                 Object requested = result.get("status");
                 status = requested instanceof Number number ? number.intValue()
                         : result.get("ok") == Boolean.TRUE ? 200 : 400;

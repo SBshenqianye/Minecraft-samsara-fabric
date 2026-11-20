@@ -153,40 +153,38 @@ public final class PlayerInventoryService {
     }
 
     /** 与容器页相同：把物品 id + count 或已有编码转换成写入编码。 */
-    public Map<String, Object> item(String body) {
+    public ContainerViews.Outcome item(String body) {
         Map<String, Object> request = parse(body);
-        if (request == null) return error(400, "请求体应为 JSON 对象");
+        if (request == null) return statusError(400, "请求体应为 JSON 对象");
         String encoded = string(request, "encoded");
         String id = string(request, "id");
         int count = intValue(request.get("count"), 1);
         boolean unlimited = Boolean.TRUE.equals(request.get("unlimited"));
-        if (count < 1) return error(400, "数量至少为 1");
-        return onServer(() -> {
-            if (server == null) return error(503, "服务器未启动");
+        if (count < 1) return statusError(400, "数量至少为 1");
+        return onServerOutcome(() -> {
+            if (server == null) return statusError(503, "服务器未启动");
             ItemStack stack;
             if (!encoded.isBlank()) {
                 stack = LotteryItemCodec.decode(encoded, registries);
-                if (stack.isEmpty()) return error(400, "物品编码无效");
+                if (stack.isEmpty()) return statusError(400, "物品编码无效");
                 stack.setCount(count);
             } else {
                 var identifier = net.minecraft.resources.Identifier.tryParse(id);
-                if (identifier == null) return error(400, "物品 ID 格式不正确");
+                if (identifier == null) return statusError(400, "物品 ID 格式不正确");
                 var item = BuiltInRegistries.ITEM.getOptional(identifier).orElse(null);
                 if (item == null || item == net.minecraft.world.item.Items.AIR) {
-                    return error(400, "未知物品：" + id);
+                    return statusError(400, "未知物品：" + id);
                 }
                 stack = new ItemStack(item, count);
             }
             if (!unlimited && stack.getCount() > stack.getMaxStackSize()) {
-                return error(400, "数量超过最大堆叠数 " + stack.getMaxStackSize());
+                return statusError(400, "数量超过最大堆叠数 " + stack.getMaxStackSize());
             }
             String result = LotteryItemCodec.encode(stack, registries);
-            if (result.isBlank()) return error(500, "物品编码失败");
-            Map<String, Object> out = new LinkedHashMap<>();
-            out.put("ok", true);
-            out.putAll(com.shenqianye.samsara.item.ItemStackModel.describe(
-                    stack, registries, result));
-            return out;
+            if (result.isBlank()) return statusError(500, "物品编码失败");
+            return new ContainerViews.ItemResponse(true,
+                    com.shenqianye.samsara.item.ItemStackModel.describe(
+                            stack, registries, result));
         });
     }
 
@@ -654,20 +652,18 @@ public final class PlayerInventoryService {
         return out;
     }
 
-    private List<Map<String, Object>> items(List<String> encodedSlots, SlotSpec spec) {
-        List<Map<String, Object>> out = new ArrayList<>();
+    private List<com.shenqianye.samsara.container.ContainerViews.InventoryRow> items(
+            List<String> encodedSlots, SlotSpec spec) {
+        List<com.shenqianye.samsara.container.ContainerViews.InventoryRow> out = new ArrayList<>();
         for (int i = 0; i < encodedSlots.size(); i++) {
             String encoded = encodedSlots.get(i);
             if (encoded == null || encoded.isBlank()) continue;
             ItemStack stack = LotteryItemCodec.decode(encoded, registries);
             if (stack.isEmpty()) continue;
             String id = String.valueOf(BuiltInRegistries.ITEM.getKey(stack.getItem()));
-            Map<String, Object> item = new LinkedHashMap<>(
-                    com.shenqianye.samsara.item.ItemStackModel.compact(stack, encoded));
-            item.put("slot", i);
-            item.put("absoluteSlot", spec.base + i);
-            item.put("id", id);
-            out.add(item);
+            out.add(new com.shenqianye.samsara.container.ContainerViews.InventoryRow(
+                    com.shenqianye.samsara.item.ItemStackModel.compact(stack, encoded),
+                    i, spec.base + i, id));
         }
         return out;
     }
@@ -900,6 +896,34 @@ public final class PlayerInventoryService {
         } catch (RuntimeException e) {
             return null;
         }
+    }
+
+    private ContainerViews.Outcome onServerOutcome(
+            java.util.function.Supplier<ContainerViews.Outcome> action) {
+        if (server == null) {
+            return statusError(503, "服务器未启动");
+        }
+        try {
+            if (server.isSameThread()) {
+                return action.get();
+            }
+            java.util.concurrent.CompletableFuture<ContainerViews.Outcome> future =
+                    new java.util.concurrent.CompletableFuture<>();
+            server.execute(() -> {
+                try {
+                    future.complete(action.get());
+                } catch (Throwable t) {
+                    future.completeExceptionally(t);
+                }
+            });
+            return future.get(30, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (Exception e) {
+            return statusError(500, "背包操作失败：" + e.getMessage());
+        }
+    }
+
+    private static ContainerViews.StatusError statusError(int status, String message) {
+        return new ContainerViews.StatusError(false, status, message);
     }
 
     private static Map<String, Object> error(int status, String message) {

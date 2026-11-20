@@ -1,5 +1,8 @@
 package com.shenqianye.samsara.container;
 
+import com.google.gson.annotations.JsonAdapter;
+import com.shenqianye.samsara.item.ItemStackView;
+
 import java.util.List;
 import java.util.Map;
 
@@ -14,6 +17,26 @@ public final class ContainerViews {
     private ContainerViews() {
     }
 
+    /** 容器读取接口的一行物品（物品字段平铺 + slot）。 */
+    @JsonAdapter(ItemStackView.FlatJson.class)
+    public record ItemRow(ItemStackView.Compact item, int slot) {
+    }
+
+    /** 背包行（物品字段平铺 + slot/absoluteSlot/id）。 */
+    @JsonAdapter(ItemStackView.FlatJson.class)
+    public record InventoryRow(ItemStackView.Compact item, int slot, int absoluteSlot, String id) {
+    }
+
+    /** 背包槽位行（物品字段平铺 + slot）。 */
+    @JsonAdapter(ItemStackView.FlatJson.class)
+    public record SlotItem(ItemStackView.Compact item, int slot) {
+    }
+
+    /** 物品辅助接口：{@code {"ok":true, ...物品字段}}。 */
+    @JsonAdapter(ItemStackView.FlatJson.class)
+    public record ItemResponse(boolean ok, ItemStackView.Detail item) implements Outcome {
+    }
+
     /** 单个容器；{@code slots} 只在读取接口出现。 */
     public record Entry(String dimension, int x, int y, int z, String type, int size, int nonEmpty,
                         String axis, boolean empty, long revision, long updatedAt, String source,
@@ -26,7 +49,7 @@ public final class ContainerViews {
     }
 
     /** `/api/containers/read` 成功。 */
-    public record Read(boolean ok, Entry container, List<Map<String, Object>> items) implements Outcome {
+    public record Read(boolean ok, Entry container, List<ItemRow> items) implements Outcome {
     }
 
     /** `/api/containers/scan` 成功。 */
@@ -69,7 +92,7 @@ public final class ContainerViews {
 
     /** 容器的统一出口；JSON 只序列化 record 组件。 */
     public sealed interface Outcome permits ListPage, Read, Scan, ScanBusy, Write, Offline, Error,
-            StatusError {
+            StatusError, ItemResponse {
         boolean ok();
 
         default int httpStatus() {
