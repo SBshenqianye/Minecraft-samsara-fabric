@@ -96,11 +96,9 @@ class ContainerIndexServiceTest {
         service.putForTest(entry("minecraft:overworld", 0, 64, 0, "a"));
         service.putForTest(entry("minecraft:overworld", 200, 64, 0, "b"));
         var model = service.list("minecraft:overworld", 0, 0, 32, "minecraft:chest");
-        assertEquals(1, model.get("total"));
-        @SuppressWarnings("unchecked")
-        List<java.util.Map<String, Object>> rows = (List<java.util.Map<String, Object>>) model.get("containers");
-        assertEquals(1, rows.size());
-        assertEquals(0, rows.get(0).get("x"));
+        assertEquals(1, model.total());
+        assertEquals(1, model.containers().size());
+        assertEquals(0, model.containers().get(0).x());
         service.clearForTest();
     }
 

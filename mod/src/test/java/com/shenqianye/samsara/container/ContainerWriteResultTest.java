@@ -26,7 +26,7 @@ class ContainerWriteResultTest {
         ContainerIndexService.WriteResult result = ContainerIndexService.WriteResult.ok(entry);
         assertTrue(result.ok());
         assertEquals(200, result.status());
-        assertNotNull(result.toModel().get("container"));
+        assertNotNull(result.toModel().container());
     }
 
     @Test

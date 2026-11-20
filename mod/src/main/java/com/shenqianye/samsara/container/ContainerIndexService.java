@@ -221,14 +221,15 @@ public final class ContainerIndexService {
 
     // ---- 查询 ----
 
-    public Map<String, Object> list(String dimension, Integer x, Integer z, int radius, String type) {
+    public ContainerViews.ListPage list(String dimension, Integer x, Integer z, int radius,
+                                        String type) {
         return list(dimension, x, z, radius, type, "");
     }
 
-    public Map<String, Object> list(String dimension, Integer x, Integer z, int radius, String type,
-                                    String query) {
+    public ContainerViews.ListPage list(String dimension, Integer x, Integer z, int radius,
+                                        String type, String query) {
         synchronized (lock) {
-            List<Map<String, Object>> rows = new ArrayList<>();
+            List<ContainerViews.Entry> rows = new ArrayList<>();
             String dimFilter = dimension == null || dimension.isBlank() ? null : dimension;
             String typeFilter = type == null || type.isBlank() ? null : type;
             String itemQuery = query == null ? "" : query.trim().toLowerCase(java.util.Locale.ROOT);
@@ -249,19 +250,15 @@ public final class ContainerIndexService {
                     if (Math.abs(entry.x - x) > r || Math.abs(entry.z - z) > r) continue;
                 }
                 if (!itemQuery.isEmpty() && !matchesQuery(entry, itemQuery)) continue;
-                rows.add(entry.toModel(false, sourceOf(entry)));
+                rows.add(entry.view(false, sourceOf(entry)));
                 if (rows.size() >= MAX_LIST) break;
             }
-            Map<String, Object> out = new LinkedHashMap<>();
-            out.put("ok", true);
-            out.put("dimension", dimFilter == null ? "" : dimFilter);
-            out.put("radius", Math.max(0, radius));
-            out.put("type", typeFilter == null ? "" : typeFilter);
-            out.put("q", query == null ? "" : query);
-            out.put("total", rows.size());
-            out.put("containers", rows);
-            out.put("indexSize", entries.size());
-            return out;
+            return new ContainerViews.ListPage(true,
+                    dimFilter == null ? "" : dimFilter,
+                    Math.max(0, radius),
+                    typeFilter == null ? "" : typeFilter,
+                    query == null ? "" : query,
+                    rows.size(), rows, entries.size());
         }
     }
 
@@ -317,7 +314,7 @@ public final class ContainerIndexService {
         };
     }
 
-    public Map<String, Object> read(String dimension, int x, int y, int z) {
+    public ContainerViews.Outcome read(String dimension, int x, int y, int z) {
         synchronized (lock) {
             ServerLevel level = level(dimension);
             BlockPos requested = new BlockPos(x, y, z);
@@ -622,22 +619,19 @@ public final class ContainerIndexService {
         }
     }
 
-    public Map<String, Object> scan(String dimension, Integer x, Integer z, int radius) {
+    public ContainerViews.Outcome scan(String dimension, Integer x, Integer z, int radius) {
         synchronized (lock) {
             long now = System.currentTimeMillis();
             if (now - lastScanAt < SCAN_COOLDOWN_MS) {
-                Map<String, Object> out = new LinkedHashMap<>();
-                out.put("ok", false);
-                out.put("error", "扫描过于频繁，请稍后再试");
-                out.put("retryAfterMs", SCAN_COOLDOWN_MS - (now - lastScanAt));
-                return out;
+                return new ContainerViews.ScanBusy(false, "扫描过于频繁，请稍后再试",
+                        SCAN_COOLDOWN_MS - (now - lastScanAt), 429);
             }
             lastScanAt = now;
             List<ServerLevel> levels = new ArrayList<>();
             if (dimension != null && !dimension.isBlank()) {
                 ServerLevel level = level(dimension);
                 if (level == null) {
-                    return Map.of("ok", false, "error", "维度不存在：" + dimension);
+                    return error("维度不存在：" + dimension);
                 }
                 levels.add(level);
             } else if (server != null) {
@@ -682,14 +676,8 @@ public final class ContainerIndexService {
                 }
             }
             lastScanQueued = queuedChunks;
-            Map<String, Object> out = new LinkedHashMap<>();
-            out.put("ok", true);
-            out.put("queuedChunks", queuedChunks);
-            out.put("queuedContainers", queuedContainers);
-            out.put("indexSize", entries.size());
-            out.put("dimension", dimension == null ? "" : dimension);
-            out.put("cooldownMs", SCAN_COOLDOWN_MS);
-            return out;
+            return new ContainerViews.Scan(true, queuedChunks, queuedContainers, entries.size(),
+                    dimension == null ? "" : dimension, SCAN_COOLDOWN_MS);
         }
     }
 
@@ -1047,12 +1035,8 @@ public final class ContainerIndexService {
         return "cache";
     }
 
-    private Map<String, Object> okRead(ContainerEntry entry, String source) {
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("ok", true);
-        out.put("container", entry.toModel(true, source));
-        out.put("items", itemModels(entry));
-        return out;
+    private ContainerViews.Read okRead(ContainerEntry entry, String source) {
+        return new ContainerViews.Read(true, entry.view(true, source), itemModels(entry));
     }
 
     /** 读取接口附带物品元数据，供 Web 容器页显示图标/名称/数量/组件。 */
@@ -1071,11 +1055,8 @@ public final class ContainerIndexService {
         return rows;
     }
 
-    private static Map<String, Object> error(String message) {
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("ok", false);
-        out.put("error", message);
-        return out;
+    private static ContainerViews.Error error(String message) {
+        return new ContainerViews.Error(false, message);
     }
 
     private ServerLevel level(String dimension) {
@@ -1116,18 +1097,12 @@ public final class ContainerIndexService {
             return new WriteResult(false, status, error, null);
         }
 
-        public Map<String, Object> toModel() {
-            Map<String, Object> out = new LinkedHashMap<>();
-            out.put("ok", ok);
-            out.put("queued", status == 202);
-            if (!error.isBlank()) {
-                if (ok) out.put("message", error);
-                else out.put("error", error);
-            }
-            if (entry != null) {
-                out.put("container", entry.toModel(true, status == 202 ? "pending" : "loaded"));
-            }
-            return out;
+        public ContainerViews.Write toModel() {
+            String message = ok && !error.isBlank() ? error : null;
+            String failure = !ok && !error.isBlank() ? error : null;
+            return new ContainerViews.Write(ok, status == 202, message, failure, status,
+                    !ok && entry != null ? entry.revision : null,
+                    entry == null ? null : entry.view(true, status == 202 ? "pending" : "loaded"));
         }
     }
 

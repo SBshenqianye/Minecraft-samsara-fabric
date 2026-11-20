@@ -1,9 +1,7 @@
 package com.shenqianye.samsara.container;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 容器索引条目：维度 + 方块坐标 + 容器类型 + 非空槽位物品编码。
@@ -42,24 +40,11 @@ public final class ContainerEntry {
         return false;
     }
 
-    public Map<String, Object> toModel(boolean includeSlots, String source) {
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("dimension", dimension);
-        out.put("x", x);
-        out.put("y", y);
-        out.put("z", z);
-        out.put("type", type);
-        out.put("size", size);
-        out.put("nonEmpty", nonEmpty);
-        out.put("axis", axis == null ? "" : axis);
-        out.put("empty", empty());
-        out.put("revision", revision);
-        out.put("updatedAt", updatedAt);
-        out.put("source", source == null ? "cache" : source);
-        if (includeSlots) {
-            out.put("slots", new ArrayList<>(slots));
-        }
-        return out;
+    public ContainerViews.Entry view(boolean includeSlots, String source) {
+        return new ContainerViews.Entry(dimension, x, y, z, type, size, nonEmpty,
+                axis == null ? "" : axis, empty(), revision, updatedAt,
+                source == null ? "cache" : source,
+                includeSlots ? new ArrayList<>(slots) : null);
     }
 
     public ContainerEntry copy() {
