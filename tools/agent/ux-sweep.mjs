@@ -23,7 +23,7 @@ const ROUTES = [
   '/server', '/server/config', '/server/backup', '/server/console', '/server/audit',
   '/containers', '/identity-inventory-inline', '/identity-inventory', '/user',
   '/lottery', '/track', '/diff', '/sky/containers', '/inventory', '/config-editor',
-  '/permissions', '/announcements',
+  '/permissions', '/announcements', '/mods/puppet-player-config.json',
 ];
 
 const session = await launchPage({ profilePrefix: 'samsara-ux-' });

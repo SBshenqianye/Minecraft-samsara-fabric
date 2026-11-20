@@ -93,7 +93,7 @@ public final class ViewManager {
         }
     }
 
-    private record TargetSpec(UUID uuid, String name, List<UUID> aliases) {
+    record TargetSpec(UUID uuid, String name, List<UUID> aliases) {
     }
 
     private record TargetLoad(TargetSpec spec, ViewTrackReader.LoadResult result,
@@ -186,8 +186,8 @@ public final class ViewManager {
         List<TargetSpec> targets;
         try {
             targets = allTargets && options.players().isEmpty()
-                    ? discoverTargets(server, roots, cycleId, startMs, options.endMs())
-                    : resolveTargets(server, specs);
+                    ? ViewTargetResolver.discoverTargets(server, roots, cycleId, startMs, options.endMs())
+                    : ViewTargetResolver.resolveTargets(server, specs);
         } catch (IllegalArgumentException e) {
             return e.getMessage();
         }
@@ -247,7 +247,7 @@ public final class ViewManager {
         UUID followTarget = null;
         boolean followActive;
         if (options.followTarget() != null) {
-            TargetSpec follow = findTarget(targets, options.followTarget());
+            TargetSpec follow = ViewTargetResolver.findTarget(targets, options.followTarget());
             if (follow == null) {
                 return "--follow 指定的目标不在本次回放中: " + options.followTarget();
             }
@@ -315,20 +315,13 @@ public final class ViewManager {
     }
 
     public static TargetRef resolveTargetRef(MinecraftServer server, String spec) {
-        TargetSpec target = resolveTarget(server, spec == null ? "" : spec.trim());
-        return target == null ? null : new TargetRef(target.uuid(), target.name());
+        ViewTargetResolver.TargetRef ref = ViewTargetResolver.resolveTargetRef(server, spec);
+        return ref == null ? null : new TargetRef(ref.uuid(), ref.name());
     }
 
     /** 身份组别名（命令层收藏/统计用）。 */
     public static List<UUID> aliasesOf(UUID uuid) {
-        List<UUID> aliases = new ArrayList<>(com.shenqianye.samsara.identity.IdentityService
-                .getInstance().aliasesOf(uuid));
-        UUID canonical = com.shenqianye.samsara.identity.IdentityService.getInstance()
-                .identityOf(uuid);
-        if (canonical != null && !aliases.contains(canonical)) {
-            aliases.add(canonical);
-        }
-        return aliases;
+        return ViewTargetResolver.aliasesOf(uuid);
     }
 
     /** 从收藏片段开始回看（F-103）。 */
@@ -358,84 +351,6 @@ public final class ViewManager {
     }
 
     /** 解析逗号列表已经由命令层拆好的目标；重复目标去重。 */
-    private static List<TargetSpec> resolveTargets(MinecraftServer server, List<String> specs) {
-        Map<UUID, TargetSpec> resolved = new LinkedHashMap<>();
-        for (String raw : specs) {
-            if (raw == null || raw.isBlank()) {
-                continue;
-            }
-            TargetSpec spec = resolveTarget(server, raw.trim());
-            if (spec == null) {
-                throw new IllegalArgumentException("找不到玩家: " + raw
-                        + "（可用 /samsara debug fakeplayers 注入测试名单）");
-            }
-            resolved.putIfAbsent(spec.uuid(), spec);
-        }
-        return new ArrayList<>(resolved.values());
-    }
-
-    private static TargetSpec resolveTarget(MinecraftServer server, String spec) {
-        ServerPlayer onlineTarget = server.getPlayerList().getPlayerByName(spec);
-        UUID targetUuid = onlineTarget != null ? onlineTarget.getUUID() : resolvePlayerId(server, spec);
-        if (targetUuid == null) {
-            return null;
-        }
-        UUID canonical = com.shenqianye.samsara.identity.IdentityService.getInstance()
-                .identityOf(targetUuid);
-        if (canonical == null) {
-            canonical = targetUuid;
-        }
-        String name = onlineTarget != null ? onlineTarget.getScoreboardName()
-                : displayName(server, targetUuid, spec);
-        List<UUID> aliases = new ArrayList<>(com.shenqianye.samsara.identity.IdentityService
-                .getInstance().aliasesOf(targetUuid));
-        if (!aliases.contains(canonical)) {
-            aliases.add(canonical);
-        }
-        return new TargetSpec(canonical, name, List.copyOf(aliases));
-    }
-
-    /** 该时段有轨迹的全体玩家（按身份组合并多个账号入口）。 */
-    private List<TargetSpec> discoverTargets(MinecraftServer server, List<Path> roots,
-                                             int cycleId, long from, long to) {
-        List<ViewTrackReader.AvailablePlayer> found =
-                ViewTrackReader.availablePlayers(roots, cycleId, from, to);
-        Map<UUID, LinkedHashSet<UUID>> groups = new LinkedHashMap<>();
-        for (ViewTrackReader.AvailablePlayer player : found) {
-            UUID canonical = com.shenqianye.samsara.identity.IdentityService.getInstance()
-                    .identityOf(player.uuid());
-            if (canonical == null) {
-                canonical = player.uuid();
-            }
-            groups.computeIfAbsent(canonical, id -> new LinkedHashSet<>()).add(player.uuid());
-        }
-        List<TargetSpec> out = new ArrayList<>();
-        for (Map.Entry<UUID, LinkedHashSet<UUID>> entry : groups.entrySet()) {
-            UUID canonical = entry.getKey();
-            UUID displayId = entry.getValue().iterator().next();
-            String name = displayName(server, displayId, canonical.toString());
-            List<UUID> aliases = new ArrayList<>(entry.getValue());
-            aliases.addAll(com.shenqianye.samsara.identity.IdentityService.getInstance()
-                    .aliasesOf(canonical));
-            if (!aliases.contains(canonical)) {
-                aliases.add(canonical);
-            }
-            out.add(new TargetSpec(canonical, name, List.copyOf(new LinkedHashSet<>(aliases))));
-        }
-        return out;
-    }
-
-    /** 按 UUID / 名字在目标列表里查找（--follow）。 */
-    private static TargetSpec findTarget(List<TargetSpec> targets, String spec) {
-        for (TargetSpec target : targets) {
-            if (target.uuid().toString().equalsIgnoreCase(spec)
-                    || target.name().equalsIgnoreCase(spec)) {
-                return target;
-            }
-        }
-        return null;
-    }
-
     // ---- 每 tick ----
 
     public synchronized void tick(MinecraftServer server) {
@@ -1600,7 +1515,7 @@ public final class ViewManager {
             }
         }
         if (found == null) {
-            UUID id = resolvePlayerId(server, target);
+            UUID id = ViewTargetResolver.resolvePlayerId(server, target);
             if (id != null) {
                 Pending p = pending.remove(id);
                 if (p != null) {
@@ -2146,7 +2061,7 @@ public final class ViewManager {
         if (target == null || target.isBlank()) {
             return actor == null ? null : sessions.get(actor.getUUID());
         }
-        UUID id = resolvePlayerId(server, target);
+        UUID id = ViewTargetResolver.resolvePlayerId(server, target);
         ViewSession s = id == null ? null : sessions.get(id);
         if (s == null) {
             for (ViewSession candidate : sessions.values()) {
@@ -2165,7 +2080,7 @@ public final class ViewManager {
                 s = sessions.get(actor.getUUID());
             }
         } else {
-            UUID id = resolvePlayerId(server, target);
+            UUID id = ViewTargetResolver.resolvePlayerId(server, target);
             if (id != null) {
                 s = sessions.get(id);
             }
@@ -2304,11 +2219,11 @@ public final class ViewManager {
      * 避免玩家手打长串时间戳/参数。
      */
     public synchronized Component list(MinecraftServer server, String targetName, int page) {
-        UUID uuid = resolvePlayerId(server, targetName);
+        UUID uuid = ViewTargetResolver.resolvePlayerId(server, targetName);
         if (uuid == null) {
             return Component.literal("[周目管理] ▸ 找不到玩家: " + targetName);
         }
-        String display = displayName(server, uuid, targetName);
+        String display = ViewTargetResolver.displayName(server, uuid, targetName);
         TrackRecorder recorder = TrackRecorder.getInstance();
         List<Path> roots = recorder.trackRoots();
         if (roots.isEmpty()) {
@@ -2457,45 +2372,6 @@ public final class ViewManager {
         return sb.length() == 0 ? "无" : sb.toString();
     }
 
-    /** 目标解析：直接 UUID / 在线名 / 注册名单 / usercache。 */
-    private static UUID resolvePlayerId(MinecraftServer server, String spec) {
-        if (spec == null || spec.isBlank()) {
-            return null;
-        }
-        try {
-            return UUID.fromString(spec.trim());
-        } catch (IllegalArgumentException ignored) {
-        }
-        ServerPlayer online = server.getPlayerList().getPlayerByName(spec);
-        if (online != null) {
-            return online.getUUID();
-        }
-        UUID id = TrackRecorder.resolveUuid(server, spec);
-        if (id != null) {
-            return id;
-        }
-        try {
-            return server.services().nameToIdCache().get(spec).map(n -> n.id()).orElse(null);
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    private static String displayName(MinecraftServer server, UUID uuid, String fallback) {
-        ServerPlayer online = server.getPlayerList().getPlayer(uuid);
-        if (online != null) {
-            return online.getScoreboardName();
-        }
-        try {
-            var found = server.services().nameToIdCache().get(uuid);
-            if (found.isPresent()) {
-                return found.get().name();
-            }
-        } catch (Exception ignored) {
-        }
-        return fallback;
-    }
-
     private static String rootMessage(Throwable t) {
         Throwable c = t;
         while (c.getCause() != null && c.getCause() != c) {
@@ -2562,3 +2438,5 @@ public final class ViewManager {
         return new GameProfile(uuid, name == null ? uuid.toString() : name);
     }
 }
+
+

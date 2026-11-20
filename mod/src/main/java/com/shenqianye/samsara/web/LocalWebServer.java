@@ -790,71 +790,9 @@ public final class LocalWebServer {
 
 
     private void handleAudit(HttpExchange exchange) throws IOException {
-        long start = System.currentTimeMillis();
-        int status = 200;
-        try {
-            int auth = authorize(exchange);
-            if (auth != 0) {
-                status = auth;
-                return;
-            }
-            String path = exchange.getRequestURI().getPath();
-            String method = exchange.getRequestMethod();
-            if ("GET".equals(method)) {
-                Map<String, String> query = parseQuery(exchange.getRequestURI().getRawQuery());
-                int offset = Math.max(0, intParam(query, "offset", 0));
-                int limit = Math.max(1, Math.min(100, intParam(query, "limit", 30)));
-                List<Map<String, Object>> entries = WebAuditService.get().listPage(offset, limit);
-                int total = WebAuditService.get().total();
-                Map<String, Object> out = new LinkedHashMap<>();
-                out.put("ok", true);
-                out.put("entries", entries);
-                out.put("offset", offset);
-                out.put("limit", limit);
-                out.put("total", total);
-                out.put("hasMore", offset + entries.size() < total);
-                json(exchange, 200, out);
-                return;
-            }
-            if (!"POST".equals(method)) {
-                status = 405;
-                json(exchange, status, Map.of("error", "Method Not Allowed"));
-                return;
-            }
-            Map<String, Object> body;
-            try {
-                body = parseObject(readBody(exchange));
-            } catch (BodyTooLarge e) {
-                status = 413;
-                json(exchange, status, Map.of("error", "请求体过大"));
-                return;
-            } catch (RuntimeException e) {
-                status = 400;
-                json(exchange, status, Map.of("error", "请求体应为 JSON 对象"));
-                return;
-            }
-            String id = body.get("id") == null ? "" : String.valueOf(body.get("id"));
-            Map<String, Object> result;
-            if ("/api/audit/preview".equals(path)) {
-                result = WebAuditService.get().preview(id);
-            } else if ("/api/audit/rollback".equals(path)) {
-                result = WebAuditService.get().rollback(id,
-                        Boolean.TRUE.equals(body.get("confirm"))
-                                || "true".equalsIgnoreCase(String.valueOf(body.get("confirm"))));
-            } else {
-                status = 404;
-                result = Map.of("error", "Not Found");
-            }
-            if (status == 200 && Boolean.FALSE.equals(result.get("ok"))) status = 400;
-            json(exchange, status, result);
-        } catch (RuntimeException e) {
-            status = 500;
-            json(exchange, status, Map.of("error", "服务器内部错误：" + errorDetail(e)));
-            LOG.warn("[web] 审计处理失败: {}", e.toString());
-        } finally {
-            log(exchange, status, start);
-        }
+        new AuditWebHandler(this).handle(exchange);
     }
+
 
     private void handleWorldStack(HttpExchange exchange) throws IOException {
         new WorldStackWebHandler(this, worldStackService).handle(exchange);

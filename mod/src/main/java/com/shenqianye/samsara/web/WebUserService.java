@@ -51,25 +51,14 @@ public final class WebUserService {
     }
 
     /** 服务器概况：只保留公开字段。 */
-    public Map<String, Object> status() {
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("ok", true);
-        out.put("scope", "user");
-        out.put("generatedAt", System.currentTimeMillis());
+    public UserStatus status() {
         if (server != null) {
-            out.put("online", server.getPlayerList().getPlayerCount());
-            out.put("maxPlayers", server.getPlayerList().getMaxPlayers());
-            out.put("version", server.getServerVersion());
-            out.put("motd", server.getMotd());
-            out.put("tickCount", server.getTickCount());
-        } else {
-            out.put("online", 0);
-            out.put("maxPlayers", 0);
-            out.put("version", "");
-            out.put("motd", "");
-            out.put("tickCount", 0);
+            return new UserStatus(true, "user", System.currentTimeMillis(),
+                    server.getPlayerList().getPlayerCount(),
+                    server.getPlayerList().getMaxPlayers(),
+                    server.getServerVersion(), server.getMotd(), server.getTickCount());
         }
-        return out;
+        return new UserStatus(true, "user", System.currentTimeMillis(), 0, 0, "", "", 0);
     }
 
     /** 世界栈公开列表：栈层 id/顺序/种子/在线人数，不含路径与备份。 */

@@ -81,10 +81,10 @@ class WebUserServiceTest {
     @Test
     void statusWithoutServerIsStillPublicSafe() {
         WebUserService userService = new WebUserService(new WebMapService(world), null);
-        Map<String, Object> status = userService.status();
-        assertEquals("user", status.get("scope"));
-        assertEquals(0, status.get("online"));
-        assertFalse(status.containsKey("worldRoot"));
+        UserStatus status = userService.status();
+        assertEquals("user", status.scope());
+        assertEquals(0, status.online());
+        assertEquals("", status.version());
     }
 
     @Test
