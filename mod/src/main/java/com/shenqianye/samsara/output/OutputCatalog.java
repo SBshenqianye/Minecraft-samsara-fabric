@@ -98,12 +98,14 @@ public final class OutputCatalog {
     private static OutputTemplate whereResult() {
         List<OutputVariable> variables = new ArrayList<>(List.of(
                 text("dimension", "维度", "主世界（minecraft:overworld）", true),
-                number("x", "X 坐标", "55"),
-                number("y", "Y 坐标", "48"),
-                number("z", "Z 坐标", "4"),
-                number("chunkX", "区块 X", "3"),
-                number("chunkZ", "区块 Z", "0"),
-                text("facing", "朝向", "北", true),
+                // 坐标/区块/朝向是 line 变量的字段级来源；默认片段已改用 line 变量，
+                // 这里不能再标 required，否则默认片段自己过不了校验。
+                optionalNumber("x", "X 坐标", "55"),
+                optionalNumber("y", "Y 坐标", "48"),
+                optionalNumber("z", "Z 坐标", "4"),
+                optionalNumber("chunkX", "区块 X", "3"),
+                optionalNumber("chunkZ", "区块 Z", "0"),
+                optional("facing", "朝向", "北"),
                 // 逐项开关（where.show*）只置位对应行；关闭的字段为空，不回退整段内置文本。
                 optional("coordinateLine", "坐标行", "\n坐标 55, 48, 4"),
                 optional("chunkLine", "区块行", "\n区块 3, 0 · 朝向 北"),
@@ -128,12 +130,12 @@ public final class OutputCatalog {
         List<OutputVariable> variables = new ArrayList<>(List.of(
                 text("player", "玩家名", "Alice", true),
                 text("dimension", "维度", "主世界（minecraft:overworld）", true),
-                number("x", "X 坐标", "55"),
-                number("y", "Y 坐标", "48"),
-                number("z", "Z 坐标", "4"),
-                number("chunkX", "区块 X", "3"),
-                number("chunkZ", "区块 Z", "0"),
-                text("facing", "朝向", "北", true),
+                optionalNumber("x", "X 坐标", "55"),
+                optionalNumber("y", "Y 坐标", "48"),
+                optionalNumber("z", "Z 坐标", "4"),
+                optionalNumber("chunkX", "区块 X", "3"),
+                optionalNumber("chunkZ", "区块 Z", "0"),
+                optional("facing", "朝向", "北"),
                 optional("coordinateLine", "坐标行", "\n坐标 55, 48, 4"),
                 optional("chunkLine", "区块行", "\n区块 3, 0 · 朝向 北"),
                 optional("facingLine", "朝向行", "")
@@ -531,8 +533,9 @@ public final class OutputCatalog {
 
     private static OutputTemplate lotteryQuote() {
         List<OutputVariable> variables = new ArrayList<>(List.of(
-                text("dayLabel", "结算日", "2026-11-05", true),
-                number("guess", "猜测数字", "7"),
+                // 下注估值默认不展示结算日与猜测数字；两个变量仍供自定义模板使用，不能标 required。
+                optional("dayLabel", "结算日", "2026-11-05"),
+                optionalNumber("guess", "猜测数字", "7"),
                 number("tickets", "张数", "1"),
                 number("affordable", "最多可买", "3"),
                 text("itemLine", "主手物品", "附魔钻石镐 × 1", true),
@@ -723,6 +726,10 @@ public final class OutputCatalog {
 
     private static OutputVariable number(String key, String label, String sample) {
         return new OutputVariable(key, label, sample, true, OutputVariableType.NUMBER);
+    }
+
+    private static OutputVariable optionalNumber(String key, String label, String sample) {
+        return new OutputVariable(key, label, sample, false, OutputVariableType.NUMBER);
     }
 
     private static OutputVariable uuid(String key, String label, String sample) {

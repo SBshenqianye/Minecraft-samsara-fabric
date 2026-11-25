@@ -230,6 +230,18 @@ class YamlStoreTest {
     }
 
     @Test
+    void freshOutputFileReloadsWithoutWarnings() {
+        YamlStore first = new YamlStore(tmp);
+        first.load(ConfigSchema.OUTPUT);
+
+        YamlStore second = new YamlStore(tmp);
+        second.load(ConfigSchema.OUTPUT);
+
+        assertEquals(List.of(), second.warnings(),
+                "首次启动写出的默认 output.yml 必须能原样重载；非法默认会导致每次启动重写并丢掉自定义");
+    }
+
+    @Test
     void invalidOutputTemplateFallsBackToDefaultAndWarns() throws Exception {
         Files.writeString(tmp.resolve("output.yml"), """
                 where:

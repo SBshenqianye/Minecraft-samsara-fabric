@@ -61,13 +61,12 @@ class TemplateCodecTest {
         OutputTemplate template = OutputCatalog.template("where.result");
         assertNotNull(template);
         List<TemplatePart> parts = List.of(
-                new TextPart("坐标 "),
-                new VariablePart("x"),
+                new TextPart("位置 "),
                 new VariablePart("nope")
         );
         Map<String, String> errors = TemplateCodec.validate(template, parts);
-        assertTrue(errors.containsKey("parts[2].var"));
-        assertTrue(errors.get("parts").contains("y"));
+        assertTrue(errors.containsKey("parts[1].var"));
+        assertTrue(errors.get("parts").contains("dimension"));
     }
 
     @Test
