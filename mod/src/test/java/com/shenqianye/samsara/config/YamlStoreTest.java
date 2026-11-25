@@ -1,6 +1,7 @@
 package com.shenqianye.samsara.config;
 
 import com.shenqianye.samsara.output.OutputCatalog;
+import com.shenqianye.samsara.output.OutputTemplate;
 import com.shenqianye.samsara.output.TemplateCodec;
 import com.shenqianye.samsara.output.TemplatePart;
 import com.shenqianye.samsara.output.TextPart;
@@ -9,6 +10,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -227,6 +229,27 @@ class YamlStoreTest {
         List<TemplatePart> after = TemplateCodec.parse(
                 reloaded.load(ConfigSchema.OUTPUT).get("where.result"));
         assertEquals("自定义\n第二行 ", ((TextPart) after.get(0)).text());
+    }
+
+    @Test
+    void collidingTemplateKeysRoundTrip() throws Exception {
+        YamlStore store = new YamlStore(tmp);
+        store.load(ConfigSchema.OUTPUT);
+        String yaml = Files.readString(tmp.resolve("output.yml"));
+        assertTrue(yaml.contains("identity.status.disabled:"),
+                "含点模板键必须写出，不能被同名前缀键 identity.status 吞掉");
+
+        OutputTemplate template = OutputCatalog.template("identity.status.disabled");
+        List<TemplatePart> custom = new ArrayList<>(template.defaultParts());
+        custom.add(0, new TextPart("自定义标记"));
+        assertTrue(store.save(ConfigSchema.OUTPUT,
+                Map.of("identity.status.disabled", TemplateCodec.toConfig(custom))).ok());
+
+        YamlStore reloaded = new YamlStore(tmp);
+        List<TemplatePart> after = TemplateCodec.parse(
+                reloaded.load(ConfigSchema.OUTPUT).get("identity.status.disabled"));
+        assertEquals("自定义标记", ((TextPart) after.get(0)).text());
+        assertEquals(List.of(), reloaded.warnings());
     }
 
     @Test

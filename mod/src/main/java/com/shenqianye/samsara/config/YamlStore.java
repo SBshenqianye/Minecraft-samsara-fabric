@@ -17,9 +17,11 @@ import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 单个 samsara 配置目录的 YAML 读写。
@@ -217,7 +219,10 @@ public final class YamlStore {
     private static Map<String, Object> flatten(String id, Map<String, Object> root) {
         Map<String, Object> out = new LinkedHashMap<>();
         for (ConfigEntry entry : ConfigSchema.entries(id)) {
-            Object value = navigate(root, entry.path());
+            // 含点的键可能以顶层字面量写出（见 literalPaths），优先按完整键名读取。
+            Object value = root.containsKey(entry.path())
+                    ? root.get(entry.path())
+                    : navigate(root, entry.path());
             if (value != null) {
                 out.put(entry.path(), value);
             }
@@ -275,6 +280,11 @@ public final class YamlStore {
     private static Map<String, Object> flattenJson(String id, JsonObject root, String prefix) {
         Map<String, Object> out = new LinkedHashMap<>();
         for (ConfigEntry entry : ConfigSchema.entries(id)) {
+            JsonElement literal = root.get(entry.path());
+            if (literal != null) {
+                out.put(entry.path(), jsonToJava(literal));
+                continue;
+            }
             if (!entry.path().startsWith(prefix)) {
                 continue;
             }
@@ -397,12 +407,17 @@ public final class YamlStore {
         out.append("# 可手工编辑；保存请走本地 Web 面板或 /samsara debug reload。\n");
         out.append("# 非法值会在加载时回退默认并记录 WARN。\n\n");
         Node root = new Node();
+        Set<String> literalPaths = literalPaths(id);
         for (ConfigEntry entry : ConfigSchema.entries(id)) {
             Object value = values.get(entry.path());
             if (value == null) {
                 value = entry.defaultValue();
             }
-            insert(root, entry, value, entry.path().split("\\."), 0);
+            if (literalPaths.contains(entry.path())) {
+                insertLiteral(root, entry, value);
+            } else {
+                insert(root, entry, value, entry.path().split("\\."), 0);
+            }
         }
         String group = null;
         for (Node child : root.children.values()) {
@@ -413,6 +428,32 @@ public final class YamlStore {
             renderNode(out, child, 0);
         }
         return out.toString();
+    }
+
+    /**
+     * 含点的模板键（如 identity.status.disabled）会与同名前缀键（identity.status）在 YAML 嵌套里
+     * 互相覆盖：前缀节点已有值，子节点就永远不会被写出。这里把“前缀键的子键”改成顶层字面量键，
+     * 读取时优先按字面量查找，保证所有键都能往返。
+     */
+    private static Set<String> literalPaths(String id) {
+        List<ConfigEntry> entries = ConfigSchema.entries(id);
+        Set<String> out = new HashSet<>();
+        for (ConfigEntry entry : entries) {
+            for (ConfigEntry other : entries) {
+                if (other.path().startsWith(entry.path() + ".")) {
+                    out.add(other.path());
+                }
+            }
+        }
+        return out;
+    }
+
+    private static void insertLiteral(Node root, ConfigEntry entry, Object value) {
+        Node node = root.children.computeIfAbsent(entry.path(), k -> new Node());
+        node.key = entry.path();
+        node.group = entry.group();
+        node.entry = entry;
+        node.value = value;
     }
 
     private static void insert(Node root, ConfigEntry entry, Object value, String[] parts, int index) {
